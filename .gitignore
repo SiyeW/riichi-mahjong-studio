@@ -3,6 +3,7 @@ dist/
 build/
 release/
 .mjai-runtime/
+.vscode/launch.local.env
 
 config.json
 records/

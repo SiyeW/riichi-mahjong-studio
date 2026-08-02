@@ -45,6 +45,19 @@ Python suite with `python -m unittest discover -s python/environment -p
 Copy `config.example.json` to `config.json` only when a local configuration is
 needed. `config.json` is intentionally ignored by Git.
 
+### VS Code debugging
+
+Open this repository folder in VS Code, select
+`Riichi Mahjong Studio：调试主程序与界面`, and press F5. The tracked launch
+configuration uses `.mjai-runtime/debug/config.json`; that directory is ignored
+by Git and excluded from application packaging. Engine packages placed under
+the ignored `engines/` directory and records under `records/` are local-only as
+well.
+
+Copy `.vscode/launch.local.env.example` to `.vscode/launch.local.env` and set
+`MJAI_BACKEND_PYTHON` to a Python environment containing the release
+dependencies. The local env file is ignored and must never be committed.
+
 ## Compatibility names
 
 The product is not based on, endorsed by, or distributed with Mortal. The name

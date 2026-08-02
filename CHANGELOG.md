@@ -5,6 +5,8 @@ public API and application that may still change incompatibly.
 
 ## [Unreleased]
 
+- Add VS Code launch and task definitions with an ignored, isolated debug
+  configuration and local Python-environment override.
 - Expand the About panel with application licensing, third-party attribution,
   and maintainer information, and expose declared engine legal documents in
   the engine manager.
