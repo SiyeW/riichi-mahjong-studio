@@ -2869,6 +2869,13 @@ body {
   line-height: 1.15;
 }
 
+.about-summary {
+  margin: 0 0 calc(0.9rem * var(--chrome-scale));
+  color: var(--text-dim);
+  font-size: var(--ui-font-md);
+  line-height: 1.55;
+}
+
 .mortal-import-modal {
   width: min(calc(41.25rem * var(--ui-scale)), 92vw);
 }
@@ -2926,9 +2933,48 @@ body {
 }
 
 .about-link-list a {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(0.8rem * var(--chrome-scale));
   color: rgba(197, 243, 233, 0.95);
   text-decoration: none;
   font-size: var(--ui-font-lg);
+}
+
+.about-link-list small {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  font-size: var(--ui-font-xs);
+}
+
+.about-document-actions,
+.engine-legal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(0.35rem * var(--chrome-scale));
+}
+
+.about-legal-note {
+  color: var(--text-muted);
+  font-size: var(--ui-font-xs);
+  line-height: 1.45;
+}
+
+.about-document-actions button,
+.engine-legal-actions button {
+  padding: calc(0.35rem * var(--chrome-scale)) calc(0.6rem * var(--chrome-scale));
+  border: 1px solid rgba(140, 195, 188, 0.3);
+  border-radius: calc(2px * var(--chrome-scale));
+  color: rgba(220, 250, 243, 0.96);
+  background: rgba(23, 83, 78, 0.58);
+  cursor: pointer;
+}
+
+.about-document-actions button:hover,
+.engine-legal-actions button:hover:not(:disabled) {
+  border-color: rgba(159, 226, 213, 0.62);
+  background: rgba(28, 105, 94, 0.72);
 }
 
 .about-link-list a:hover {
@@ -3476,6 +3522,25 @@ body {
   flex-direction: column;
   gap: calc(0.38rem * var(--shanten-scale));
   min-width: 0;
+}
+
+.engine-legal-field {
+  display: grid;
+  gap: calc(0.26rem * var(--shanten-scale));
+}
+
+.engine-legal-field > span {
+  color: var(--text-dim);
+  font-size: calc(0.78rem * var(--shanten-scale));
+}
+
+.engine-legal-actions {
+  gap: calc(0.3rem * var(--shanten-scale));
+}
+
+.engine-legal-actions button {
+  padding: calc(0.3rem * var(--shanten-scale)) calc(0.48rem * var(--shanten-scale));
+  font-size: calc(0.74rem * var(--shanten-scale));
 }
 
 .engine-profile-item {

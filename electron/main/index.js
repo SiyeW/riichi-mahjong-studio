@@ -4,6 +4,7 @@ const fs = require('node:fs')
 const { app, BrowserWindow, clipboard, dialog, ipcMain, shell } = require('electron')
 const { createPythonServices } = require('./services/python-services')
 const { buildSettings, loadSettings, saveSettings } = require('./state/settings')
+const { discoverEnginePackages } = require('./state/engine-package-registry')
 const { createSessionStore } = require('./state/session-store')
 const { createGameFileStore } = require('./state/game-file-store')
 const { normalizeMortalReportUrl } = require('./mortal-report-url')
@@ -29,6 +30,20 @@ const appOptions = {
   cwd: process.cwd(),
   isPackaged: app.isPackaged,
   execPath: process.execPath,
+}
+
+const APP_LEGAL_DOCUMENTS = Object.freeze({
+  license: 'LICENSE',
+  thirdPartyNotices: 'THIRD_PARTY_NOTICES.md',
+})
+
+async function openLocalDocument(filePath) {
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    throw new Error('声明文件不存在，请检查安装是否完整')
+  }
+  const errorMessage = await shell.openPath(filePath)
+  if (errorMessage) throw new Error(errorMessage)
+  return true
 }
 
 const pythonServices = createPythonServices(appOptions)
@@ -625,6 +640,25 @@ function registerIpcHandlers() {
     }
     await shell.openExternal(target.toString())
     return true
+  })
+  ipcMain.handle('legal:open-app-document', async (event, documentId) => {
+    const fileName = APP_LEGAL_DOCUMENTS[String(documentId || '')]
+    if (!fileName) throw new Error('未知的声明文件')
+    return openLocalDocument(path.join(resourceRoot, fileName))
+  })
+  ipcMain.handle('legal:open-engine-document', async (event, payload) => {
+    const field = payload?.kind === 'license'
+      ? 'licenses'
+      : payload?.kind === 'notice'
+        ? 'notices'
+        : ''
+    if (!field) throw new Error('未知的引擎声明类型')
+    const engineId = String(payload?.engineId || '')
+    const documentIndex = Number(payload?.index)
+    const engine = discoverEnginePackages(appOptions).engines.find((item) => item.id === engineId)
+    const document = Number.isInteger(documentIndex) ? engine?.[field]?.[documentIndex] : null
+    if (!document?.available) throw new Error('引擎声明文件不存在')
+    return openLocalDocument(document.resolvedPath)
   })
   ipcMain.handle('game:save', () => saveGame())
   ipcMain.handle('game:save-as', () => saveGameAs())

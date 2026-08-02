@@ -37,6 +37,9 @@ interface TrainerSettings {
             }
           }>
         }
+        licenses: Array<{ name: string; available: boolean }>
+        notices: Array<{ name: string; available: boolean }>
+        sourceUrl: string
         launch: {
           executable: string
           arguments: string[]
@@ -692,6 +695,12 @@ interface Window {
     readClipboardText: () => Promise<string>
     writeClipboardText: (text: string) => Promise<{ ok: boolean }>
     openExternal: (url: string) => Promise<boolean>
+    openAppLegalDocument: (documentId: 'license' | 'thirdPartyNotices') => Promise<boolean>
+    openEngineLegalDocument: (payload: {
+      engineId: string
+      kind: 'license' | 'notice'
+      index: number
+    }) => Promise<boolean>
     onUiZoomShortcut: (callback: (direction: 'in' | 'out' | 'reset') => void) => () => void
     onPythonEvent: (callback: (event: TrainerPythonEvent) => void) => () => void
     onRecordDirtyChanged: (callback: (dirty: boolean) => void) => () => void

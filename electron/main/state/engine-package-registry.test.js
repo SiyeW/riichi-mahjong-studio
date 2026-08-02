@@ -47,6 +47,14 @@ function customEngine(id = 'third-party.test-engine') {
       cancellation: false,
       reload: true,
     },
+    licenses: [{
+      name: 'Test license',
+      path: 'LICENSE',
+    }],
+    notices: [{
+      name: 'Third-party notices',
+      path: 'THIRD_PARTY_NOTICES.md',
+    }],
   }
 }
 
@@ -92,6 +100,11 @@ function testPortablePackagesAndDuplicatePrecedence() {
     )
     fs.mkdirSync(path.dirname(executablePath), { recursive: true })
     fs.writeFileSync(executablePath, 'mock executable')
+    fs.writeFileSync(path.join(portableDir, 'engines', 'test', 'LICENSE'), 'test license')
+    fs.writeFileSync(
+      path.join(portableDir, 'engines', 'test', 'THIRD_PARTY_NOTICES.md'),
+      'test notices',
+    )
     writeJson(
       path.join(portableDir, 'engines', 'z-duplicate', 'engine.json'),
       customEngine(),
@@ -116,6 +129,11 @@ function testPortablePackagesAndDuplicatePrecedence() {
     assert.equal(launch.cwd, path.join(portableDir, 'engines', 'test'))
     assert.equal(launch.arguments[0], '--stdio')
     assert.ok(path.isAbsolute(launch.executable))
+    const publicEngine = publicCatalog.engines.find(
+      (engine) => engine.id === 'third-party.test-engine',
+    )
+    assert.deepEqual(publicEngine.licenses, [{ name: 'Test license', available: true }])
+    assert.deepEqual(publicEngine.notices, [{ name: 'Third-party notices', available: true }])
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })
   }
@@ -158,6 +176,10 @@ function testUnsafePathsAreRejected() {
   const engine = customEngine()
   engine.entrypoints['windows-x64'].executable = '../outside.exe'
   assert.ok(validateEngineManifest(engine).some((error) => error.includes('safe relative path')))
+
+  const unsafeLicenseEngine = customEngine()
+  unsafeLicenseEngine.licenses[0].path = '../LICENSE'
+  assert.ok(validateEngineManifest(unsafeLicenseEngine).some((error) => error.includes('licenses entry path')))
 
   const model = customModel()
   model.file = 'C:/outside.bin'

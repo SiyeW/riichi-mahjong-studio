@@ -5,6 +5,10 @@ public API and application that may still change incompatibly.
 
 ## [Unreleased]
 
+- Expand the About panel with application licensing, third-party attribution,
+  and maintainer information, and expose declared engine legal documents in
+  the engine manager.
+- Include the Apache-2.0 license in packaged application resources.
 - Reserve integration points for separately distributed engines, models, and
   sound packs.
 - Continue terminology and public-release review.

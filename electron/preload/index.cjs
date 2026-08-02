@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld('trainerAPI', {
   readClipboardText: () => ipcRenderer.invoke('clipboard:read-text'),
   writeClipboardText: (text) => ipcRenderer.invoke('clipboard:write-text', text),
   openExternal: (url) => ipcRenderer.invoke('system:open-external', url),
+  openAppLegalDocument: (documentId) => ipcRenderer.invoke('legal:open-app-document', documentId),
+  openEngineLegalDocument: (payload) => ipcRenderer.invoke('legal:open-engine-document', payload),
   onUiZoomShortcut: (callback) => {
     const handler = (_event, direction) => callback(direction)
     ipcRenderer.on('ui:zoom-shortcut', handler)

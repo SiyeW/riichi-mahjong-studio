@@ -47,6 +47,16 @@ function validateEngineManifest(manifest) {
   addError(errors, ID_PATTERN.test(manifest.id || ''), 'id is invalid')
   addError(errors, typeof manifest.name === 'string' && manifest.name.length > 0, 'name is required')
   addError(errors, SEMVER_PATTERN.test(manifest.version || ''), 'version must be semantic version')
+  if (manifest.sourceUrl !== undefined) {
+    let sourceUrlValid = false
+    try {
+      const sourceUrl = new URL(manifest.sourceUrl)
+      sourceUrlValid = sourceUrl.protocol === 'https:' || sourceUrl.protocol === 'http:'
+    } catch {
+      sourceUrlValid = false
+    }
+    addError(errors, sourceUrlValid, 'sourceUrl must be an HTTP or HTTPS URL')
+  }
   addError(
     errors,
     manifest.protocol?.name === 'riichi-engine-protocol'
@@ -117,6 +127,27 @@ function validateEngineManifest(manifest) {
       errors,
       'capabilities.opponentInputModes',
     )
+  }
+
+  for (const field of ['licenses', 'notices']) {
+    const documents = manifest[field]
+    if (documents === undefined) continue
+    addError(errors, Array.isArray(documents), `${field} must be an array`)
+    if (!Array.isArray(documents)) continue
+    for (const document of documents) {
+      addError(errors, isObject(document), `${field} entries must be objects`)
+      if (!isObject(document)) continue
+      addError(
+        errors,
+        typeof document.name === 'string' && document.name.length > 0,
+        `${field} entry name is required`,
+      )
+      addError(
+        errors,
+        isSafePackagePath(document.path),
+        `${field} entry path must be a safe relative path`,
+      )
+    }
   }
   return errors
 }
@@ -249,6 +280,24 @@ function discoverEnginePackages(options = {}) {
           ))
         }
       }
+      const legalDocuments = (field) => (manifest[field] || []).map((document) => {
+        const resolvedPath = path.resolve(path.dirname(manifestPath), document.path)
+        const available = fs.existsSync(resolvedPath) && fs.statSync(resolvedPath).isFile()
+        if (!available) {
+          diagnostics.push(createDiagnostic(
+            'error',
+            `engine-${field.slice(0, -1)}-missing`,
+            resolvedPath,
+            `${field.slice(0, -1)} document is missing for ${manifest.id}`,
+          ))
+        }
+        return {
+          name: document.name,
+          relativePath: document.path,
+          resolvedPath,
+          available,
+        }
+      })
       engineById.set(manifest.id, {
         id: manifest.id,
         name: manifest.name,
@@ -261,6 +310,8 @@ function discoverEnginePackages(options = {}) {
           ? path.resolve(path.dirname(manifestPath), entrypoint.executable)
           : '',
         launchAvailable,
+        licenses: legalDocuments('licenses'),
+        notices: legalDocuments('notices'),
       })
     }
   }
@@ -380,6 +431,9 @@ function publicEngineCatalog(catalog) {
           type: 'object',
           properties: {},
         },
+        licenses: engine.licenses.map(({ name, available }) => ({ name, available })),
+        notices: engine.notices.map(({ name, available }) => ({ name, available })),
+        sourceUrl: engine.manifest.sourceUrl || '',
         enginePath: engine.executablePath,
         launch: engine.launchAvailable && entrypoint
           ? {
