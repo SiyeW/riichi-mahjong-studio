@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Riichi Mahjong Studio：调试主程序",
+      "name": "RMS: Main Process",
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "${workspaceFolder}/node_modules/electron/dist/electron",
@@ -16,7 +16,7 @@
         "VITE_DEV_SERVER_URL": "http://127.0.0.1:5173",
         "MJAI_TRAINER_CONFIG": "${workspaceFolder}/.mjai-runtime/debug/config.json"
       },
-      "preLaunchTask": "Riichi Mahjong Studio：启动界面开发服务器",
+      "preLaunchTask": "RMS: Start Renderer",
       "console": "integratedTerminal",
       "outputCapture": "std",
       "skipFiles": [
@@ -27,7 +27,7 @@
       }
     },
     {
-      "name": "Riichi Mahjong Studio：附加到界面",
+      "name": "RMS: Renderer",
       "type": "chrome",
       "request": "attach",
       "port": 9222,
@@ -38,10 +38,10 @@
   ],
   "compounds": [
     {
-      "name": "Riichi Mahjong Studio：调试主程序与界面",
+      "name": "RMS: Debug",
       "configurations": [
-        "Riichi Mahjong Studio：调试主程序",
-        "Riichi Mahjong Studio：附加到界面"
+        "RMS: Main Process",
+        "RMS: Renderer"
       ],
       "stopAll": true
     }

@@ -2,7 +2,7 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Riichi Mahjong Studio：启动界面开发服务器",
+      "label": "RMS: Start Renderer",
       "type": "shell",
       "command": "npm",
       "args": [

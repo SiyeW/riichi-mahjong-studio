@@ -43,8 +43,8 @@ SOFTWARE.
 - Local path: `src/assets/tiles/Regular_shortnames`
 - Dedication: CC0 1.0 / public domain dedication
 - Snapshot: commit `26e127ba2117f45cdce5ea0225748cc0cfad3169`.
-  The local SVGs are renamed copies of the upstream Regular set with private
-  Inkscape export-path metadata removed.
+  The local SVGs are renamed copies of the upstream Regular set with
+  editor-specific Inkscape export-path metadata removed.
 
 The upstream notice states: “This work is in the public domain. For more
 information, visit https://creativecommons.org/publicdomain/zero/1.0/.”
@@ -54,9 +54,8 @@ information, visit https://creativecommons.org/publicdomain/zero/1.0/.”
 - Upstream: https://github.com/killerducky/killer_mortal_gui
 - Reviewed upstream commit: `9f85c6ba7c554ad5957ed01e1dc36c7f3064ce40`.
 - Local use: selected CSS zoom, color, and table-spacing expressions in
-  `src/styles.css`, the optional `killerducky` color theme, and public
-  report-format compatibility were adapted from this project. No upstream
-  branding or non-tile media is bundled.
+  `src/styles.css`, the optional `killerducky` color theme, and
+  report-format compatibility were adapted from this project.
 - License: MIT
 
 MIT License

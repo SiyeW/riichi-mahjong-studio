@@ -34,7 +34,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         self.assertEqual(service._quantize_shanten_probability(0.000001), 0.00001)
         self.assertEqual(service._quantize_shanten_probability(0.00124), 0.0012)
 
-    def test_empty_engine_commands_do_not_resolve_to_private_builtins(self):
+    def test_empty_engine_commands_remain_unconfigured(self):
         defaults = service.get_default_models_config()
         decision_command = service._resolve_configured_engine_command(
             {

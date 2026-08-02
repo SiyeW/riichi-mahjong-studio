@@ -1,9 +1,7 @@
-# Security policy
+# Security Policy
 
-The public edition is pre-release software. Security reports should not include
-private model files, game records, credentials, or captured proprietary assets.
-
-Until a dedicated private reporting address is published, please open a GitHub
-issue only for reports that are safe to disclose publicly. For sensitive
-reports, contact the repository owner through their GitHub profile and request
-a private channel without including exploit details in the first message.
+Please do not disclose security vulnerabilities or exploit details in a public
+issue. For reports that are safe to discuss publicly, open a GitHub issue. For
+sensitive reports, contact the repository owner through their GitHub profile
+and request a confidential contact method without including the details in the
+first message.

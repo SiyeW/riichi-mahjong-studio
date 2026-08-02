@@ -1,20 +1,13 @@
 # Contributing
 
-This repository is in an early public migration stage. Please keep changes
-small, tested, and independent of non-public assets.
+Issues, suggestions, and code contributions are welcome. For a large change,
+please open an issue first to discuss the approach.
 
-Do not commit:
+Before submitting a pull request:
 
-- model weights, engine executables, or private runtime packages;
-- captured sound effects or artwork without a redistributable license;
-- local `config.json`, game records, logs, tokens, or machine-specific paths;
-- organization-specific branding or time-limited access controls.
+1. Keep the change focused and update the relevant documentation.
+2. Add or update tests when behavior changes.
+3. Run the TypeScript, Electron, and Python checks described in `README.md`.
 
-New third-party material must include its upstream URL, exact revision, license,
-and required notice in `THIRD_PARTY_NOTICES.md`. Engine integrations should use
-the separately published `riichi-engine-protocol` contract rather than adding a
-private built-in path.
-
-Before submitting a change, run the TypeScript check, renderer build, Electron
-unit tests, Python unit tests, and the repository audit described in
-`docs/public-release-checklist.md`.
+When adding third-party code or assets, record the upstream source, revision,
+license, and any required notices in `THIRD_PARTY_NOTICES.md`.

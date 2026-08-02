@@ -1554,8 +1554,6 @@ function normalizeColorScheme(value: unknown): ColorSchemeId {
   return value === 'killerducky' ? 'killerducky' : 'default'
 }
 
-// Sound packs are intentionally empty in the public alpha. Volume and voice
-// settings remain so a licensed or original sound-pack provider can be added.
 const enabledSoundSources = new Map<string, string>()
 
 const settings = reactive<TrainerSettings>({

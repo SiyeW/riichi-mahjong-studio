@@ -14,7 +14,7 @@ function testWriteMetadataIsPortable() {
     metadata: {
       app: 'riichi-mahjong-studio',
       models: {
-        teachingModel: { modelPath: 'D:\\private\\model.pth' },
+        teachingModel: { modelPath: 'D:\\models\\example.pth' },
       },
       recovery: { kind: 'stale-marker' },
     },

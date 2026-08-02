@@ -1,31 +1,10 @@
 # Terminology
 
-The following names define the public architecture. They are deliberately
-provider-neutral unless a specific external format is being identified.
-
-Chinese-language product prose uses `立直麻将`, and English-language product
-prose uses `Riichi Mahjong`. Geographic qualifiers are not used for the game or
-its rule system. Language names and locale identifiers may still be used when
-they describe translation or software localization.
-
-| Public term | Meaning |
-| --- | --- |
-| decision engine | An optional external engine that evaluates player actions. |
-| opponent-analysis engine | An optional external engine that estimates opponent state. |
-| engine package | User-installed executable metadata conforming to the package contract. |
-| model package | User-installed weight metadata associated with a compatible engine. |
-| engine protocol | The separately versioned JSON-RPC communication contract. |
-| analysis source | Stable identity used to distinguish cached results from different engines or models. |
-
-## Compatibility-specific names
-
-`Mortal` is used only when referring to Mortal itself or to its public online
-review-report format. Import functions and persisted record source identifiers
-that contain `mortal-report` are compatibility boundaries, not bundled engine
-identities. They should not be reused for generic decision-engine features.
-
-`mjai` identifies the established event vocabulary used at compatibility
-boundaries. New host-specific concepts should use the neutral terms above.
-
-Old private product names, organization initials, built-in model nicknames, and
-expiry terminology are not part of the public vocabulary.
+| English | 中文 | Meaning |
+| --- | --- | --- |
+| decision engine | 决策引擎 | Evaluates legal actions and returns scores or recommendations. |
+| opponent-analysis engine | 对手分析引擎 | Predicts opponents' shanten states and tile risks. |
+| engine package | 引擎包 | An installable engine runtime and its manifest. |
+| model package | 模型包 | Model files and metadata used by a compatible engine. |
+| engine protocol | 引擎协议 | The communication contract between the application and an engine. |
+| analysis source | 分析来源 | Identifies the engine and model that produced cached analysis. |

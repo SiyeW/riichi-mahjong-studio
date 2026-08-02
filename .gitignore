@@ -15,7 +15,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-.conda/
+.conda*/
 .venv/
 venv/
 
