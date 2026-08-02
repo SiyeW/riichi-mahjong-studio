@@ -8,6 +8,10 @@ public API and application that may still change incompatibly.
 - Reserve integration points for separately distributed engines, models, and
   sound packs.
 - Continue terminology and public-release review.
+- Pin the vendored MahjongRepository/mahjong source to upstream `v2.0.0` and
+  record the concrete MIT-licensed killer_mortal_gui CSS adaptations.
+- Replace the libriichi-specific shuffled-wall conversion with the host's own
+  physical wall representation.
 
 ## [0.4.0-alpha.1] - 2026-08-02
 

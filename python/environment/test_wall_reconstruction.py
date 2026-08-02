@@ -20,7 +20,7 @@ class _NoShuffle:
         return None
 
 
-def _canonical_libriichi_sequence():
+def _ordered_tile_set():
     result = []
     for suit in ("m", "p", "s"):
         for number in range(1, 10):
@@ -68,15 +68,17 @@ class WallGenerationTests(unittest.TestCase):
         self.assertEqual(DORA_POSITIONS, (131, 129, 127, 125, 123))
         self.assertEqual(URA_POSITIONS, (130, 128, 126, 124, 122))
 
-    def test_libriichi_internal_sections_map_to_existing_display_indices(self):
-        sequence = _canonical_libriichi_sequence()
+    def test_wall_is_stored_directly_in_application_physical_order(self):
+        sequence = _ordered_tile_set()
         wall = build_wall(_NoShuffle())
 
-        self.assertEqual(wall[:52], sequence[:52])
-        self.assertEqual(wall[52:122], list(reversed(sequence[66:136])))
-        self.assertEqual([wall[index] for index in RINSHAN_DRAW_POSITIONS], list(reversed(sequence[52:56])))
-        self.assertEqual([wall[index] for index in DORA_POSITIONS], list(reversed(sequence[56:61])))
-        self.assertEqual([wall[index] for index in URA_POSITIONS], sequence[61:66])
+        self.assertEqual(wall, sequence)
+        self.assertEqual(len(wall[:52]), 52)
+        self.assertEqual(len(wall[52:122]), 70)
+        self.assertEqual(len(wall[122:]), 14)
+        self.assertEqual(len([wall[index] for index in RINSHAN_DRAW_POSITIONS]), 4)
+        self.assertEqual(len([wall[index] for index in DORA_POSITIONS]), 5)
+        self.assertEqual(len([wall[index] for index in URA_POSITIONS]), 5)
 
 
 class ImportedWallReconstructionTests(unittest.TestCase):

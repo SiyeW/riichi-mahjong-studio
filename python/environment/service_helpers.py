@@ -235,9 +235,12 @@ def now_iso():
 
 
 def build_wall(randomizer):
-    # libriichi shuffles one sequence, then slices it into haipai, rinshan,
-    # dora, ura and yama. Convert that internal layout to this application's
-    # physical/display layout, where normal draws run forward from index 52.
+    """Build a shuffled wall in the application's physical index order.
+
+    Indices 0-51 are the four starting hands, 52-121 are live-wall draws,
+    and 122-135 are the dead wall.  Callers interpret the dead-wall slots via
+    the application's dora, ura-dora, and rinshan position constants.
+    """
     sequence = []
     for suit in ("m", "p", "s"):
         for number in range(1, 10):
@@ -249,17 +252,7 @@ def build_wall(randomizer):
     for tile in HONOR_TILES:
         sequence.extend((tile, tile, tile, tile))
     randomizer.shuffle(sequence)
-
-    full_wall = [None] * 136
-    full_wall[:52] = sequence[:52]
-    full_wall[52:122] = reversed(sequence[66:136])
-    for position, tile in zip(RINSHAN_DRAW_POSITIONS, reversed(sequence[52:56])):
-        full_wall[position] = tile
-    for position, tile in zip(DORA_INDICATOR_POSITIONS, reversed(sequence[56:61])):
-        full_wall[position] = tile
-    for position, tile in zip(URA_INDICATOR_POSITIONS, sequence[61:66]):
-        full_wall[position] = tile
-    return full_wall
+    return sequence
 
 
 def sort_tiles(tiles):

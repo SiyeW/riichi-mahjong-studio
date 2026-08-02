@@ -9,8 +9,11 @@ and retain their respective upstream licenses.
 - Upstream: https://github.com/MahjongRepository/mahjong
 - Local path: `python/vendor/mahjong`
 - License: MIT
-- Snapshot: imported source snapshot; the exact upstream commit is not yet
-  recorded and must be pinned before a stable release.
+- Snapshot: upstream tag `v2.0.0`, commit
+  `27ee0f926132d0659e83a26540ce996b09fe4257` (2026-04-02). The vendored
+  `mahjong` package tree was verified byte-for-byte against that commit before
+  local terminology edits. Local changes are limited to comments and
+  docstrings.
 
 MIT License
 
@@ -39,6 +42,9 @@ SOFTWARE.
 - Upstream: https://github.com/FluffyStuff/riichi-mahjong-tiles
 - Local path: `src/assets/tiles/Regular_shortnames`
 - Dedication: CC0 1.0 / public domain dedication
+- Snapshot: commit `26e127ba2117f45cdce5ea0225748cc0cfad3169`.
+  The local SVGs are renamed copies of the upstream Regular set with private
+  Inkscape export-path metadata removed.
 
 The upstream notice states: “This work is in the public domain. For more
 information, visit https://creativecommons.org/publicdomain/zero/1.0/.”
@@ -46,8 +52,11 @@ information, visit https://creativecommons.org/publicdomain/zero/1.0/.”
 ## killerducky/killer_mortal_gui
 
 - Upstream: https://github.com/killerducky/killer_mortal_gui
-- Local use: the optional `killerducky` color theme and public report-format
-  compatibility were informed by this project; no upstream media is bundled.
+- Reviewed upstream commit: `9f85c6ba7c554ad5957ed01e1dc36c7f3064ce40`.
+- Local use: selected CSS zoom, color, and table-spacing expressions in
+  `src/styles.css`, the optional `killerducky` color theme, and public
+  report-format compatibility were adapted from this project. No upstream
+  branding or non-tile media is bundled.
 - License: MIT
 
 MIT License
