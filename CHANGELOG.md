@@ -5,6 +5,7 @@ public API and application that may still change incompatibly.
 
 ## [Unreleased]
 
+- Standardise game and rule-system prose on `立直麻将` and `Riichi Mahjong`.
 - Add VS Code launch and task definitions with an ignored, isolated debug
   configuration and local Python-environment override.
 - Expand the About panel with application licensing, third-party attribution,

@@ -3,6 +3,11 @@
 The following names define the public architecture. They are deliberately
 provider-neutral unless a specific external format is being identified.
 
+Chinese-language product prose uses `立直麻将`, and English-language product
+prose uses `Riichi Mahjong`. Geographic qualifiers are not used for the game or
+its rule system. Language names and locale identifiers may still be used when
+they describe translation or software localization.
+
 | Public term | Meaning |
 | --- | --- |
 | decision engine | An optional external engine that evaluates player actions. |
