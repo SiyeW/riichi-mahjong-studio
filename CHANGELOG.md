@@ -12,6 +12,8 @@ public API and application that may still change incompatibly.
   record the concrete MIT-licensed killer_mortal_gui CSS adaptations.
 - Replace the libriichi-specific shuffled-wall conversion with the host's own
   physical wall representation.
+- Add an opt-in local corpus checker for regression-testing recent external
+  `.mjtrain` records without copying them into the repository.
 
 ## [0.4.0-alpha.1] - 2026-08-02
 
