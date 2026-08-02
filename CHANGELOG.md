@@ -5,6 +5,7 @@ public API and application that may still change incompatibly.
 
 ## [Unreleased]
 
+- Align public-facing spelling and status identifiers.
 - Standardise game and rule-system prose on `立直麻将` and `Riichi Mahjong`.
 - Add VS Code launch and task definitions with an ignored, isolated debug
   configuration and local Python-environment override.
