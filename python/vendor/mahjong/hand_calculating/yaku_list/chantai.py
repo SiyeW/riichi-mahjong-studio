@@ -1,0 +1,38 @@
+from collections.abc import Collection, Sequence
+
+from mahjong.constants import HONOR_INDICES, TERMINAL_INDICES
+from mahjong.hand_calculating.yaku import Yaku
+from mahjong.utils import is_chi
+
+
+class Chantai(Yaku):
+    """
+    混全帯么九: Every set must have at least one terminal or honor tile.
+
+    The pair must also be a terminal or honor. Must contain at least one sequence (123 or 789).
+    """
+
+    yaku_id = 28
+    name = "Chantai"
+    han_open = 1
+    han_closed = 2
+
+    def is_condition_met(self, hand: Collection[Sequence[int]], *args) -> bool:
+        """Check whether every set contains a terminal or honor, with at least one chi."""
+        honor_sets = 0
+        terminal_sets = 0
+        count_of_chi = 0
+        for item in hand:
+            if is_chi(item):
+                count_of_chi += 1
+
+            first = item[0]
+            if first in TERMINAL_INDICES or item[-1] in TERMINAL_INDICES:
+                terminal_sets += 1
+            elif first in HONOR_INDICES:
+                honor_sets += 1
+
+        if count_of_chi == 0:
+            return False
+
+        return terminal_sets + honor_sets == 5 and terminal_sets != 0 and honor_sets != 0

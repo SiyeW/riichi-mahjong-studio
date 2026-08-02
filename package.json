@@ -1,0 +1,69 @@
+{
+  "name": "riichi-mahjong-studio",
+  "version": "0.4.0-alpha.1",
+  "private": true,
+  "author": "SiyeWu",
+  "description": "Local desktop Riichi Mahjong practice trainer with branching game records.",
+  "main": "electron/main/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:renderer": "vite",
+    "dev:electron": "node scripts/run-electron.mjs",
+    "build": "npm run type-check && vite build",
+    "type-check": "vue-tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.5.22"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "@vitejs/plugin-vue": "^6.0.1",
+    "electron": "^34.3.2",
+    "electron-builder": "^26.8.1",
+    "jimp": "^1.6.1",
+    "playwright": "^1.60.0",
+    "to-ico": "^1.1.5",
+    "typescript": "^5.8.3",
+    "vite": "^7.1.11",
+    "vue-tsc": "^3.1.1"
+  },
+  "build": {
+    "appId": "org.riichi.mahjong.studio",
+    "productName": "Riichi Mahjong Studio",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "!electron/**/*.test.js",
+      "!node_modules/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "electronLanguages": [
+      "en-US",
+      "zh-CN"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "release/electron"
+    },
+    "extraResources": [
+      {
+        "from": "release/backend/environment-service",
+        "to": "backend/environment-service"
+      },
+      {
+        "from": "THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      }
+    ],
+    "win": {
+      "target": [
+        "dir"
+      ]
+    }
+  }
+}

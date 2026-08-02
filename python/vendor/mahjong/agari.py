@@ -1,0 +1,226 @@
+from collections.abc import Collection, Sequence
+
+
+class Agari:
+    """Agari (winning hand) detection."""
+
+    @staticmethod
+    def is_agari(tiles_34: Sequence[int], open_sets_34: Collection[Sequence[int]] | None = None) -> bool:
+        """
+        Determine whether the given tiles form a complete hand structure.
+
+        Validate the tile arrangement only (4 melds + 1 pair, seven pairs, or thirteen orphans),
+        not yaku or scoring. When open sets are provided, the declared meld tiles are subtracted
+        before checking.
+
+        The concealed portion can be passed alone without melds, which is valid
+        for any number of melds (0-4) plus 1 pair:
+
+        0 melds + 1 pair (valid hand):
+
+        >>> tiles_34 = [0] * 34
+        >>> tiles_34[0] = 2
+        >>> Agari.is_agari(tiles_34)
+        True
+
+        1 meld (triplet) without a pair is not a valid hand:
+
+        >>> tiles_34 = [0] * 34
+        >>> tiles_34[0] = 3
+        >>> Agari.is_agari(tiles_34)
+        False
+
+        :param tiles_34: hand in 34-format count array (length 34)
+        :param open_sets_34: declared melds as arrays of tile indices in 34-format
+        :return: True if the hand is complete
+        """
+        if open_sets_34:
+            # subtract declared meld tiles so the algorithm checks only the closed portion
+            tiles = list(tiles_34)
+            for meld in open_sets_34:
+                tiles[meld[0]] -= 1
+                tiles[meld[1]] -= 1
+                tiles[meld[2]] -= 1
+                if len(meld) > 3:
+                    tiles[meld[3]] -= 1
+        else:
+            tiles = tiles_34
+
+        j = (
+            (1 << tiles[27])
+            | (1 << tiles[28])
+            | (1 << tiles[29])
+            | (1 << tiles[30])
+            | (1 << tiles[31])
+            | (1 << tiles[32])
+            | (1 << tiles[33])
+        )
+
+        if j >= 0x10:
+            return False
+
+        # 13 orphans
+        if ((j & 3) == 2) and (
+            tiles[0]
+            * tiles[8]
+            * tiles[9]
+            * tiles[17]
+            * tiles[18]
+            * tiles[26]
+            * tiles[27]
+            * tiles[28]
+            * tiles[29]
+            * tiles[30]
+            * tiles[31]
+            * tiles[32]
+            * tiles[33]
+            == 2
+        ):
+            return True
+
+        # seven pairs
+        if not (j & 10) and sum([tiles[i] == 2 for i in range(34)]) == 7:
+            return True
+
+        if j & 2:
+            return False
+
+        n00 = tiles[0] + tiles[3] + tiles[6]
+        n01 = tiles[1] + tiles[4] + tiles[7]
+        n02 = tiles[2] + tiles[5] + tiles[8]
+
+        n10 = tiles[9] + tiles[12] + tiles[15]
+        n11 = tiles[10] + tiles[13] + tiles[16]
+        n12 = tiles[11] + tiles[14] + tiles[17]
+
+        n20 = tiles[18] + tiles[21] + tiles[24]
+        n21 = tiles[19] + tiles[22] + tiles[25]
+        n22 = tiles[20] + tiles[23] + tiles[26]
+
+        n0 = (n00 + n01 + n02) % 3
+        if n0 == 1:
+            return False
+
+        n1 = (n10 + n11 + n12) % 3
+        if n1 == 1:
+            return False
+
+        n2 = (n20 + n21 + n22) % 3
+        if n2 == 1:
+            return False
+
+        if (n0 == 2) + (n1 == 2) + (n2 == 2) + (tiles[27] == 2) + (tiles[28] == 2) + (tiles[29] == 2) + (
+            tiles[30] == 2
+        ) + (tiles[31] == 2) + (tiles[32] == 2) + (tiles[33] == 2) != 1:
+            return False
+
+        nn0 = (n00 * 1 + n01 * 2) % 3
+        m0 = Agari._to_meld(tiles, 0)
+        nn1 = (n10 * 1 + n11 * 2) % 3
+        m1 = Agari._to_meld(tiles, 9)
+        nn2 = (n20 * 1 + n21 * 2) % 3
+        m2 = Agari._to_meld(tiles, 18)
+
+        if j & 4:
+            return (
+                not (n0 | nn0 | n1 | nn1 | n2 | nn2)
+                and Agari._is_mentsu(m0)
+                and Agari._is_mentsu(m1)
+                and Agari._is_mentsu(m2)
+            )
+
+        if n0 == 2:
+            return (
+                not (n1 | nn1 | n2 | nn2)
+                and Agari._is_mentsu(m1)
+                and Agari._is_mentsu(m2)
+                and Agari._is_atama_mentsu(nn0, m0)
+            )
+
+        if n1 == 2:
+            return (
+                not (n2 | nn2 | n0 | nn0)
+                and Agari._is_mentsu(m2)
+                and Agari._is_mentsu(m0)
+                and Agari._is_atama_mentsu(nn1, m1)
+            )
+
+        return (
+            not (n0 | nn0 | n1 | nn1)
+            and Agari._is_mentsu(m0)
+            and Agari._is_mentsu(m1)
+            and Agari._is_atama_mentsu(nn2, m2)
+        )
+
+    @staticmethod
+    def _is_mentsu(m: int) -> bool:
+        a = m & 7
+        b = 0
+        c = 0
+        if a in {1, 4}:
+            b = c = 1
+        elif a == 2:
+            b = c = 2
+        m >>= 3
+        a = (m & 7) - b
+
+        if a < 0:
+            return False
+
+        for _ in range(6):
+            b = c
+            c = 0
+            if a in {1, 4}:
+                b += 1
+                c += 1
+            elif a == 2:
+                b += 2
+                c += 2
+            m >>= 3
+            a = (m & 7) - b
+            if a < 0:
+                return False
+
+        m >>= 3
+        a = (m & 7) - c
+
+        return a in {0, 3}
+
+    @staticmethod
+    def _is_atama_mentsu(nn: int, m: int) -> bool:
+        if nn == 0:
+            if (m & (7 << 6)) >= (2 << 6) and Agari._is_mentsu(m - (2 << 6)):
+                return True
+            if (m & (7 << 15)) >= (2 << 15) and Agari._is_mentsu(m - (2 << 15)):
+                return True
+            if (m & (7 << 24)) >= (2 << 24) and Agari._is_mentsu(m - (2 << 24)):
+                return True
+        elif nn == 1:
+            if (m & (7 << 3)) >= (2 << 3) and Agari._is_mentsu(m - (2 << 3)):
+                return True
+            if (m & (7 << 12)) >= (2 << 12) and Agari._is_mentsu(m - (2 << 12)):
+                return True
+            if (m & (7 << 21)) >= (2 << 21) and Agari._is_mentsu(m - (2 << 21)):
+                return True
+        elif nn == 2:
+            if (m & 7) >= 2 and Agari._is_mentsu(m - 2):
+                return True
+            if (m & (7 << 9)) >= (2 << 9) and Agari._is_mentsu(m - (2 << 9)):
+                return True
+            if (m & (7 << 18)) >= (2 << 18) and Agari._is_mentsu(m - (2 << 18)):
+                return True
+        return False
+
+    @staticmethod
+    def _to_meld(tiles: Sequence[int], d: int) -> int:
+        return (
+            tiles[d]
+            | (tiles[d + 1] << 3)
+            | (tiles[d + 2] << 6)
+            | (tiles[d + 3] << 9)
+            | (tiles[d + 4] << 12)
+            | (tiles[d + 5] << 15)
+            | (tiles[d + 6] << 18)
+            | (tiles[d + 7] << 21)
+            | (tiles[d + 8] << 24)
+        )

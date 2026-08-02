@@ -1,0 +1,700 @@
+/// <reference types="vite/client" />
+
+interface TrainerSettings {
+  configPath: string
+  runtime?: {
+    releaseMode: boolean
+    builtInRuntimeLabel: string
+    builtInModelLabel: string
+    opponentAnalysisInputModes: Array<'public' | 'full-information'>
+    engineCatalog: {
+      schemaVersion: number
+      engines: Array<{
+        id: string
+        name: string
+        version: string
+        builtIn: boolean
+        enginePath: string
+        kinds: Array<'decision' | 'opponent-analysis'>
+        capabilities: Record<string, unknown>
+        modelFormats: Array<{
+          id?: string
+          extensions?: string[]
+          inputSchema?: string
+          outputSchema?: string
+        }>
+        optionsSchema: {
+          type?: string
+          properties?: Record<string, {
+            type?: 'string' | 'number' | 'integer' | 'boolean'
+            enum?: Array<string | number | boolean>
+            default?: unknown
+            minimum?: number
+            maximum?: number
+            'x-ui'?: {
+              label?: string
+              control?: string
+            }
+          }>
+        }
+        launch: {
+          executable: string
+          arguments: string[]
+          cwd: string
+        } | null
+      }>
+      models: Array<{
+        id: string
+        name: string
+        engineId: string
+        format: string
+        builtIn: boolean
+        compatible: boolean
+        runtimePath: string
+        sha256: string
+        inputSchema: string
+        outputSchema: string
+        opponentInputModes: Array<'public' | 'full-information'>
+      }>
+      diagnostics: Array<{
+        severity: 'error' | 'warning'
+        code: string
+        path: string
+        message: string
+      }>
+    }
+  }
+  training: {
+    mode: 'no_review' | 'threshold_review' | 'always_review' | 'preview_before_click'
+    mistakeThreshold: number
+    thinkingTimeMinS: number
+    thinkingTimeMaxS: number
+  }
+  modeDefaults: {
+    autoAdvanceDelayMs: number
+  }
+  display: {
+    colorScheme: 'default' | 'killerducky'
+    reduceMotion: boolean
+    uiScale: number
+    showTsumogiriInPlay: boolean
+  }
+  records: {
+    saveRecoveryOnExit: boolean
+  }
+  audio: {
+    volume: number
+    voice: 'male' | 'female'
+  }
+  engines: TrainerEngineSettings
+}
+
+interface TrainerEngineProfile {
+  id: string
+  name: string
+  engineId: string
+  enginePath: string
+  modelId: string
+  modelPath: string
+  builtIn: boolean
+  autoName?: boolean
+  available: boolean
+  unavailableReason?: string
+  engineVersion?: string
+  modelFormat?: string
+  modelSha256?: string
+  engineCommand?: string[]
+  engineCwd?: string
+  inputModes?: Array<'public' | 'full-information'>
+  options: {
+    botVersion?: 'v3' | 'v4'
+    temperature?: number
+    [key: string]: unknown
+  }
+}
+
+interface TrainerEngineDescription {
+  protocol: { name: string; major: number; minor?: number }
+  engine: {
+    id: string
+    name: string
+    version: string
+    kinds: Array<'decision' | 'opponent-analysis'>
+    modelFormats?: Array<{
+      id?: string
+      extensions?: string[]
+      inputSchema?: string
+      outputSchema?: string
+    }>
+  }
+  capabilities: Record<string, unknown>
+  optionsSchema: {
+    type?: string
+    properties?: Record<string, {
+      type?: 'string' | 'number' | 'integer' | 'boolean'
+      enum?: Array<string | number | boolean>
+      default?: unknown
+      minimum?: number
+      maximum?: number
+      'x-ui'?: { label?: string; control?: string }
+    }>
+  }
+}
+
+interface TrainerEngineSettings {
+  schemaVersion: number
+  decisionProfiles: TrainerEngineProfile[]
+  opponentAnalysisProfiles: TrainerEngineProfile[]
+  selectedDecisionProfileId: string
+  selectedOpponentAnalysisProfileId: string
+}
+
+type TrainerModelActivityState = 'idle' | 'loading' | 'running' | 'error'
+
+interface TrainerModelRuntimeState {
+  profileId: string
+  ready: boolean
+  unloaded: boolean
+}
+
+interface TrainerAutoAnalysisStatus {
+  status: 'idle' | 'running' | 'canceled' | 'completed'
+  completed: number
+  total: number
+  cached: number
+  analyzed: number
+  failed: number
+  currentNodeId: string | null
+  currentModel: 'decision' | 'opponent' | null
+  message: string
+  timeline: string
+  timelineReady: number
+}
+
+interface TrainerStatusSnapshot {
+  mode: 'play' | 'research'
+  controlledSeat: number
+  pendingSeatSwitch: number | null
+  visibleHands: boolean
+  gameLoaded: boolean
+  aiThinkingTimeS: number
+  device: string
+  modelPerformance: {
+    decision: number[]
+    opponentAnalysis: number
+  }
+  analysisVisibility: {
+    decisionRecommendations: boolean
+    opponentAnalysis: boolean
+  }
+  modelActivity: {
+    decision: TrainerModelActivityState[]
+    opponentAnalysis: TrainerModelActivityState
+    errors?: {
+      decision: Array<string | null>
+      opponentAnalysis: string | null
+    }
+  }
+  modelRuntime: {
+    decision: TrainerModelRuntimeState
+    opponentAnalysis: TrainerModelRuntimeState
+  }
+  autoAnalysis: TrainerAutoAnalysisStatus
+}
+
+interface TrainerAction {
+  id: string
+  candidateId?: string
+  type: string
+  actor: number
+  pai?: string
+  variant?: string
+  reasonLabel?: string
+  consumed?: string[]
+  label: string
+  value?: number
+  probability?: number
+  bar?: number
+  tsumogiri?: boolean
+}
+
+interface TrainerTreeNode {
+  id: string
+  parentId: string | null
+  children: string[]
+  mainChildId: string | null
+  depth: number
+  roundDepth?: number
+  roundRootId?: string
+  roundIndex?: number
+  bakaze?: string | null
+  kyoku?: number | null
+  honba?: number
+  kyotaku?: number
+  scores?: number[]
+  phase?: string | null
+  type: string
+  action: Record<string, unknown> | null
+  isDecision?: boolean
+  comparison?: {
+    actor: number
+    phase?: string
+    chosenKey: string
+    bestKey: string
+    chosenLabel: string
+    bestLabel: string
+    chosenPai?: string | null
+    bestPai?: string | null
+    isBest: boolean
+    chosenValue: number
+    bestValue: number
+    chosenProbability: number
+    bestProbability: number
+    chosenBar?: number | null
+    bestBar?: number | null
+    valueGap: number
+    probabilityGap: number
+    chosenRank: number
+  } | null
+  isCurrent: boolean
+}
+
+interface TrainerResultInfo {
+  eventType: string
+  title: string
+  detail: string
+  reason?: string | null
+  scores: number[]
+  ranks?: number[]
+  deltas: number[]
+  actor?: number
+  target?: number
+  han?: number
+  fu?: number
+  yaku?: string[]
+  yakuDetails?: Array<{
+    name: string
+    han: number
+    isYakuman: boolean
+  }>
+  uraMarkers?: string[]
+  isOpenHand?: boolean
+  cost?: {
+    main?: number
+    additional?: number
+    main_bonus?: number
+    additional_bonus?: number
+    kyoutaku_bonus?: number
+    total?: number
+    yaku_level?: string
+  }
+}
+
+interface TrainerRoundSummary {
+  id: string
+  parentRoundId: string | null
+  childRoundIds: string[]
+  mainNextRoundId: string | null
+  depth: number
+  roundIndex: number
+  bakaze?: string | null
+  kyoku?: number | null
+  honba?: number
+  kyotaku?: number
+  scores?: number[]
+  phase?: string | null
+  tailScores?: number[]
+  tailPhase?: string | null
+  resultInfo?: TrainerResultInfo | null
+  matchEndInfo?: TrainerResultInfo | null
+  isCurrent: boolean
+}
+
+interface TrainerGameView {
+  gameId: string | null
+  matchId?: string | null
+  readOnly?: boolean
+  sourceUrl?: string | null
+  readOnlyReason?: string | null
+  currentNodeId: string | null
+  nodeComment: string
+  opponentAnalysis?: Record<string, unknown> | null
+  matchSummary?: {
+    matchId: string
+    matchType: string
+    roundIndex: number
+    bakaze: string
+    kyoku: number
+    honba: number
+    kyotaku: number
+    scores: number[]
+    dealer: number
+    westEntered: boolean
+    ended: boolean
+  } | null
+  table: {
+    matchId?: string | null
+    bakaze: string
+    kyoku: number
+    honba: number
+    kyotaku: number
+    roundIndex?: number
+    westEntered?: boolean
+    dealer: number
+    currentActor: number
+    phase: string
+    turn: number
+    drawIndex: number
+    lastDrawnSeat?: number | null
+    lastDrawnTile?: string | null
+    autoAdvanceMode?: string | null
+    wallRemaining: number
+    doraIndicators: string[]
+    uraIndicators?: string[]
+    scores: number[]
+    hands: string[][]
+    rivers: string[][]
+    melds: Array<Array<Record<string, unknown>>>
+    actionHistory?: Array<Record<string, unknown>>
+    riichiDeclared?: boolean[]
+    riichiAccepted?: boolean[]
+    pendingRiichiSeat?: number | null
+    riichiDiscardState?: string | null
+    pendingRiichiDiscard?: {
+      actor: number
+      pai: string
+      tsumogiri: boolean
+      targetActor: number
+      riichi?: boolean
+    } | null
+    pendingKan?: {
+      actor: number
+      pai: string
+      target?: number
+      variant?: string
+      label?: string
+      source?: string
+    } | null
+    pendingDiscard: {
+      actor: number
+      pai: string
+      tsumogiri: boolean
+      targetActor: number
+      riichi?: boolean
+    } | null
+    reactionWindow: {
+      discard: {
+        actor: number
+        pai: string
+        tsumogiri: boolean
+        targetActor: number
+      }
+      thinkingTimeS?: number
+      reactions: Array<{
+        seat: number
+        response: Record<string, unknown>
+        priority: number
+      }>
+      selected: {
+        seat: number
+        response: Record<string, unknown>
+        priority: number
+      }
+    } | null
+    kanReactionWindow?: {
+      kan: {
+        actor: number
+        pai: string
+        variant?: string
+      }
+      thinkingTimeS?: number
+      reactions: Array<{
+        seat: number
+        response: Record<string, unknown>
+        priority: number
+      }>
+      selected: {
+        seat: number
+        response: Record<string, unknown>
+        priority: number
+      }
+    } | null
+    lastAction: {
+      type: string
+      actor: number
+      pai?: string
+      reason?: string
+      reasonLabel?: string
+      tsumogiri?: boolean
+      consumed?: string[]
+      target?: number
+      variant?: string
+      riichi?: boolean
+      source?: string
+    } | null
+    resultInfo?: TrainerResultInfo | null
+  } | null
+  legalActions: TrainerAction[]
+  analysis: {
+    model: string
+    seat: number
+    mode?: string
+    bestAction?: Record<string, unknown> | null
+    discardEntries: Array<{
+      candidateId?: string
+      scoreGroupId?: string
+      pai: string
+      tsumogiri?: boolean
+      value: number
+      probability?: number
+      rank?: number
+      bar?: number
+      isBest?: boolean
+    }>
+    specialEntries?: Array<{
+      candidateId?: string
+      scoreGroupId?: string
+      type: string
+      variant: string
+      label: string
+      pai?: string
+      consumed?: string[]
+      value: number
+      probability?: number
+      rank?: number
+      bar?: number
+      isBest?: boolean
+    }>
+    reactionEntries?: Array<{
+      candidateId?: string
+      scoreGroupId?: string
+      type: string
+      variant: string
+      label: string
+      pai?: string
+      consumed?: string[]
+      value: number
+      probability?: number
+      rank?: number
+      bar?: number
+      isBest?: boolean
+    }>
+    error?: string
+  } | null
+  comparison: {
+    actor: number
+    phase?: string
+    chosenKey: string
+    bestKey: string
+    chosenLabel: string
+    bestLabel: string
+    chosenPai?: string | null
+    bestPai?: string | null
+    isBest: boolean
+    chosenValue: number
+    bestValue: number
+    chosenProbability: number
+    bestProbability: number
+    valueGap: number
+    probabilityGap: number
+    chosenRank: number
+  } | null
+  pendingReview: {
+    phase: string
+    parentNodeId: string
+    proposedNodeId: string
+    chosenKey: string
+    chosenFromDrawn?: boolean
+    bestKey: string
+    chosenPai?: string | null
+    bestPai?: string | null
+    chosenLabel: string
+    bestLabel: string
+    comparison: {
+      actor: number
+      phase?: string
+      chosenKey: string
+      bestKey: string
+      chosenLabel: string
+      bestLabel: string
+      chosenPai?: string | null
+      bestPai?: string | null
+      isBest: boolean
+      chosenValue: number
+      bestValue: number
+      chosenProbability: number
+      bestProbability: number
+      chosenBar?: number | null
+      bestBar?: number | null
+      valueGap: number
+      probabilityGap: number
+      chosenRank: number
+    }
+  } | null
+  tree: {
+    rootNodeId: string
+    currentNodeId: string
+    mainLeafNodeId: string
+    currentRoundRootId?: string | null
+    revision?: number
+    compact?: boolean
+    nodes?: TrainerTreeNode[] | Record<string, TrainerTreeNode>
+    rounds?: TrainerRoundSummary[]
+  } | null
+}
+
+interface TrainerEnvironmentResponse {
+  request_id: string
+  command: string
+  state: TrainerStatusSnapshot
+  view: TrainerGameView
+  timestamp: string
+  playPrefetch?: {
+    generation: number
+    ready: boolean
+    waiting: boolean
+    finished: boolean
+    committed?: boolean
+    fallback?: boolean
+    error?: string | null
+  }
+}
+
+interface TrainerPythonEvent {
+  type: string
+  model?: 'decision' | 'opponent_analysis'
+  seat?: number
+  active?: boolean
+  activityState?: TrainerModelActivityState
+  error?: string | null
+  averageMs?: number
+  runtime?: TrainerModelRuntimeState
+  opponentAnalysis?: Record<string, unknown>
+  nodeId?: string
+  gameId?: string
+  analysisKey?: string
+  analysis?: TrainerGameView['analysis']
+  treeComparisons?: Array<{
+    id: string
+    comparison: TrainerTreeNode['comparison']
+  }>
+  treeRevision?: number | null
+  generation?: number
+  state?: TrainerStatusSnapshot
+  autoAnalysis?: TrainerAutoAnalysisStatus
+  timestamp?: string
+}
+
+interface Window {
+  trainerAPI?: {
+    getSettings: () => Promise<TrainerSettings>
+    saveSettings: (settings: Partial<TrainerSettings>) => Promise<TrainerSettings>
+    describeEngine: (profile: {
+      engineId?: string
+      enginePath: string
+      kind: 'decision' | 'opponent-analysis'
+    }) => Promise<TrainerEngineDescription>
+    chooseEngineFile: () => Promise<string>
+    chooseEngineWeight: () => Promise<string>
+    activateEngine: (payload: {
+      kind: 'decision' | 'opponent'
+      profileId: string
+      engines: TrainerEngineSettings
+    }) => Promise<TrainerSettings>
+    unloadEngine: (payload: {
+      kind: 'decision' | 'opponent'
+    }) => Promise<TrainerStatusSnapshot>
+    getStatus: () => Promise<TrainerStatusSnapshot>
+    getGameView: () => Promise<TrainerEnvironmentResponse>
+    createGame: () => Promise<TrainerStatusSnapshot>
+    closeGame: () => Promise<TrainerEnvironmentResponse>
+    advanceGame: () => Promise<TrainerEnvironmentResponse>
+    confirmPendingReview: () => Promise<TrainerEnvironmentResponse>
+    submitUserAction: (action: { type: string; pai?: string; variant?: string; fromDrawn?: boolean; candidateId?: string }) => Promise<TrainerEnvironmentResponse>
+    jumpToNode: (nodeId: string, treeRevision?: number) => Promise<TrainerEnvironmentResponse>
+    setMainBranch: (nodeId: string) => Promise<TrainerEnvironmentResponse>
+    setNodeComment: (nodeId: string, comment: string) => Promise<{
+      request_id: string
+      command: string
+      nodeId: string
+      comment: string
+      changed: boolean
+      timestamp: string
+    }>
+    deleteNode: (nodeId: string) => Promise<TrainerEnvironmentResponse>
+    getRecordDirty: () => Promise<boolean>
+    saveGame: () => Promise<{ path: string; state: TrainerStatusSnapshot; view: TrainerGameView; recordDirty: boolean; recoveryRecord: boolean } | null>
+    saveGameAs: () => Promise<{ path: string; state: TrainerStatusSnapshot; view: TrainerGameView; recordDirty: boolean; recoveryRecord: boolean } | null>
+    openGame: () => Promise<{ path: string; state: TrainerStatusSnapshot; view: TrainerGameView; recordDirty: boolean; recoveryRecord: boolean } | null>
+    showRecordInFolder: () => Promise<boolean>
+    restoreStartupRecovery: () => Promise<{ path: string; state: TrainerStatusSnapshot; view: TrainerGameView; recordDirty: boolean; recoveryRecord: boolean } | null>
+    importMortalReport: (payload: {
+      input: string
+      reconstructWalls?: boolean
+      seed?: string
+    }) => Promise<{
+      sourceUrl: string
+      reconstruction?: { seed: number; roundCount: number } | null
+      state: TrainerStatusSnapshot
+      view: TrainerGameView
+      recordDirty: boolean
+    }>
+    importCustomTenhou: (payload: {
+      input: string
+      reconstructWalls?: boolean
+      seed?: string
+    }) => Promise<{
+      reconstruction?: { seed: number; roundCount: number } | null
+      state: TrainerStatusSnapshot
+      view: TrainerGameView
+      recordDirty: boolean
+    }>
+    exportCustomTenhou: () => Promise<{
+      tenhou: string
+      mortal: string
+      naga: string
+    }>
+    setMode: (mode: 'play' | 'research') => Promise<TrainerStatusSnapshot>
+    requestSeatSwitch: (seat: number) => Promise<TrainerStatusSnapshot>
+    toggleVisibleHands: () => Promise<TrainerStatusSnapshot>
+    setAnalysisVisibility: (visibility: {
+      decisionRecommendations?: boolean
+      opponentAnalysis?: boolean
+    }) => Promise<TrainerEnvironmentResponse>
+    restartBackend: () => Promise<{ ok: boolean }>
+    getWallView: () => Promise<{
+      tiles: Array<{ index: number; tile: string; status: string }>
+      complete: boolean
+      canReconstruct: boolean
+      seed: number | null
+      origin: 'generated' | 'imported' | 'reconstructed'
+      sourceUrl: string | null
+    }>
+    reconstructWalls: (seed?: string) => Promise<TrainerEnvironmentResponse & {
+      reconstruction: { seed: number; roundCount: number }
+    }>
+    importWall: (tiles: string[]) => Promise<TrainerEnvironmentResponse>
+    getLatestMjaiDebug: () => Promise<{ debug: Record<string, unknown> }>
+    getShanten: () => Promise<{ opponents: Record<string, number[]> }>
+    getShantenMjai: () => Promise<{ debug: Record<string, unknown> }>
+    clearAnalysisCaches: () => Promise<{
+      state: TrainerStatusSnapshot
+      cleared: {
+        decisionEntries: number
+        opponentEntries: number
+        comparisons: number
+        pendingReview: boolean
+        treeRevision: number
+      }
+    }>
+    startAutoAnalysis: () => Promise<TrainerEnvironmentResponse>
+    cancelAutoAnalysis: () => Promise<TrainerEnvironmentResponse>
+    readClipboardText: () => Promise<string>
+    writeClipboardText: (text: string) => Promise<{ ok: boolean }>
+    openExternal: (url: string) => Promise<boolean>
+    onUiZoomShortcut: (callback: (direction: 'in' | 'out' | 'reset') => void) => () => void
+    onPythonEvent: (callback: (event: TrainerPythonEvent) => void) => () => void
+    onRecordDirtyChanged: (callback: (dirty: boolean) => void) => () => void
+    onBeforeClose: (callback: () => void | Promise<void>) => () => void
+  }
+}

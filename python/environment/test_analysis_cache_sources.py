@@ -1,0 +1,365 @@
+import copy
+import unittest
+from unittest import mock
+
+import service
+
+
+class AnalysisCacheSourceTest(unittest.TestCase):
+    def setUp(self):
+        service.STATE["controlledSeat"] = 0
+        service.STATE["nextGameId"] = 1
+
+    def test_display_name_does_not_change_source_identity(self):
+        first = service._build_analysis_source(
+            "decision",
+            "sha256:engine",
+            "decision-analysis-v3",
+            "decision-v1",
+            display_name="Default model",
+        )
+        renamed = service._build_analysis_source(
+            "decision",
+            "sha256:engine",
+            "decision-analysis-v3",
+            "decision-v1",
+            display_name="Renamed model",
+        )
+
+        self.assertEqual(first["id"], renamed["id"])
+        self.assertEqual(first["cacheFingerprint"], renamed["cacheFingerprint"])
+
+    def test_opponent_cache_preserves_zero_and_tiny_positive_probabilities(self):
+        self.assertEqual(service._quantize_shanten_probability(0), 0.0)
+        self.assertEqual(service._quantize_shanten_probability(0.000001), 0.00001)
+        self.assertEqual(service._quantize_shanten_probability(0.00124), 0.0012)
+
+    def test_empty_engine_commands_do_not_resolve_to_private_builtins(self):
+        defaults = service.get_default_models_config()
+        decision_command = service._resolve_configured_engine_command(
+            {
+                "engineCommand": [],
+                "modelPath": "legacy-model.pth",
+            },
+            defaults["teachingModel"],
+            kind="decision",
+        )
+        opponent_command = service._resolve_configured_engine_command(
+            {
+                "engineCommand": [],
+                "modelPath": "legacy-shanten-model.pth",
+            },
+            defaults["opponentAnalysis"],
+            kind="opponent-analysis",
+        )
+
+        self.assertEqual(decision_command, [])
+        self.assertEqual(opponent_command, [])
+
+    def test_regular_view_command_does_not_reconfigure_engines(self):
+        previous_game = service.STATE["game"]
+        previous_loaded = service.STATE["gameLoaded"]
+        service.STATE["game"] = None
+        service.STATE["gameLoaded"] = False
+        try:
+            with (
+                mock.patch.object(service, "configure_decision_engine_from_config") as decision_configure,
+                mock.patch.object(service, "configure_opponent_analysis_engine_from_config") as opponent_configure,
+            ):
+                service.handle_command("test", "get_game_view", {})
+            decision_configure.assert_not_called()
+            opponent_configure.assert_not_called()
+        finally:
+            service.STATE["game"] = previous_game
+            service.STATE["gameLoaded"] = previous_loaded
+
+    def test_saved_model_draft_does_not_replace_runtime_model_path(self):
+        previous_runtime = service._RUNTIME_MODELS_CONFIG
+        service._RUNTIME_MODELS_CONFIG = {
+            **service.get_default_models_config(),
+            "teachingModel": {"modelPath": "loaded-model.pth"},
+        }
+        try:
+            with mock.patch.object(
+                service,
+                "load_project_config",
+                return_value={"models": {"teachingModel": {"modelPath": "draft-model.pth"}}},
+            ):
+                self.assertEqual(service.get_teaching_model_path(), "loaded-model.pth")
+        finally:
+            service._RUNTIME_MODELS_CONFIG = previous_runtime
+
+    def test_engine_profiles_are_the_runtime_model_source(self):
+        config = {
+            "models": {
+                "teachingModel": {"modelPath": "stale-model.pth"},
+            },
+            "engines": {
+                "selectedDecisionProfileId": "decision.custom",
+                "selectedOpponentAnalysisProfileId": "opponent.custom",
+                "decisionProfiles": [
+                    {
+                        "id": "decision.custom",
+                        "engineId": "custom.decision",
+                        "enginePath": "decision.exe",
+                        "modelId": "decision.weights",
+                        "modelPath": "decision.onnx",
+                        "options": {"temperature": 0.75},
+                    }
+                ],
+                "opponentAnalysisProfiles": [
+                    {
+                        "id": "opponent.custom",
+                        "engineId": "custom.opponent",
+                        "enginePath": "opponent.exe",
+                        "modelId": "opponent.weights",
+                        "modelPath": "opponent.onnx",
+                        "inputModes": ["public"],
+                        "options": {"threads": 2},
+                    }
+                ],
+            },
+        }
+
+        models = service._models_config_from_project_config(config)
+
+        self.assertEqual(models["teachingModel"]["modelPath"], "decision.onnx")
+        self.assertEqual(models["opponentModel"]["modelPath"], "decision.onnx")
+        self.assertEqual(models["teachingModel"]["temperature"], 0.75)
+        self.assertEqual(models["opponentAnalysis"]["modelPath"], "opponent.onnx")
+        self.assertEqual(models["opponentAnalysis"]["engineOptions"], {"threads": 2})
+
+    def test_legacy_cache_keys_migrate_to_short_source_references(self):
+        game = service.create_empty_game(101010)
+        node = game["nodes"][game["currentNodeId"]]
+        decision_identity = "sha256:" + ("a" * 64)
+        opponent_identity = "sha256:" + ("b" * 64)
+        decision_result = {
+            "error": None,
+            "model": "Example decision model",
+            "engineFingerprint": "sha256:" + ("c" * 64),
+        }
+        opponent_result = {
+            "status": "ready",
+            "engineFingerprint": opponent_identity,
+            "hostPostprocessorVersion": "opponent-analysis-v3",
+            "predictions": {"opponents": {}, "ron_wait": {}},
+            "ground_truth": {"opponents": {}, "ron_wait": {}},
+        }
+        node["analysisCache"] = {
+            f"v2::0::discard::{decision_identity}::decision-analysis-v1": decision_result,
+        }
+        node[service._SHANTEN_CACHE_FIELD] = {
+            "v3::0::public::best_model.pth:100:123": opponent_result,
+        }
+
+        service._migrate_analysis_cache_storage(game)
+
+        decision_key = next(iter(node["analysisCache"]))
+        opponent_key = next(iter(node[service._SHANTEN_CACHE_FIELD]))
+        self.assertRegex(decision_key, r"^m3::0::discard::m-[0-9a-f]{16}$")
+        self.assertRegex(opponent_key, r"^o4::0::public::o-[0-9a-f]{16}$")
+        self.assertNotIn(decision_identity, decision_key)
+        self.assertNotIn(opponent_identity, opponent_key)
+        self.assertNotIn("engineFingerprint", node[service._SHANTEN_CACHE_FIELD][opponent_key])
+        self.assertEqual(len(game[service._ANALYSIS_SOURCES_FIELD]), 2)
+        with (
+            mock.patch.object(
+                service.DECISION_ENGINE_GATEWAY,
+                "cache_identity",
+                return_value=decision_result["engineFingerprint"],
+            ),
+            mock.patch.object(
+                service.SHANTEN_GATEWAY,
+                "cache_identity",
+                return_value=opponent_identity,
+            ),
+        ):
+            self.assertEqual(
+                service._decision_cache_key(
+                    0,
+                    "discard",
+                    service._current_decision_analysis_source(),
+                ),
+                decision_key,
+            )
+            # Host-masked legacy output stays available only as a stale fallback.
+            self.assertNotEqual(
+                service._build_shanten_cache_key(0, "public"),
+                opponent_key,
+            )
+
+    def test_stale_result_remains_visible_until_current_result_succeeds(self):
+        game = service.create_empty_game(202020)
+        node = game["nodes"][game["currentNodeId"]]
+        old_source = service._build_analysis_source(
+            "decision",
+            "sha256:old",
+            "decision-analysis-v3",
+            "decision-v1",
+            display_name="Old model",
+        )
+        current_source = service._build_analysis_source(
+            "decision",
+            "sha256:current",
+            "decision-analysis-v3",
+            "decision-v1",
+            display_name="Current model",
+        )
+        old_key = service._decision_cache_key(0, "discard", old_source)
+        current_key = service._decision_cache_key(0, "discard", current_source)
+        service._register_analysis_source(game, old_source)
+        node["analysisCache"][old_key] = {"error": None, "discardEntries": [1]}
+
+        stale = service._find_stale_cache_entry(
+            game,
+            node,
+            current_key,
+            "analysisCache",
+        )
+        self.assertEqual(stale["cacheStatus"], "stale")
+        self.assertEqual(stale["cacheSource"]["displayName"], "Old model")
+
+        current_result = {
+            "error": None,
+            "discardEntries": [2],
+            "engineFingerprint": "sha256:runtime",
+        }
+        with mock.patch.object(
+            service,
+            "_current_decision_analysis_source",
+            return_value=copy.deepcopy(current_source),
+        ):
+            stored = service._store_decision_analysis(
+                game,
+                node,
+                current_key,
+                current_result,
+            )
+
+        self.assertEqual(stored["discardEntries"], [2])
+        self.assertNotIn("engineFingerprint", stored)
+        self.assertNotIn(old_key, node["analysisCache"])
+        self.assertIn(current_key, node["analysisCache"])
+        self.assertEqual(
+            game[service._ANALYSIS_SOURCES_FIELD][current_source["id"]]["engineFingerprint"],
+            "sha256:runtime",
+        )
+
+    def test_current_opponent_request_keeps_stale_cache_visible(self):
+        game = service.create_empty_game(212121)
+        node = game["nodes"][game["currentNodeId"]]
+        context = {
+            "gameId": game["gameId"],
+            "nodeId": node["id"],
+            "seat": 0,
+            "inputMode": "public",
+            "cacheKey": "o4::0::public::o-current",
+            "cacheEpoch": service._SHANTEN_CACHE_EPOCH,
+        }
+        node[service._SHANTEN_CACHE_FIELD] = {
+            "o4::0::public::o-previous": {
+                "status": "ready",
+                "predictions": {"opponents": {"kamicha": [1.0]}, "ron_wait": {}},
+                "ground_truth": {"opponents": {}, "ron_wait": {}},
+            },
+        }
+        previous_game = service.STATE["game"]
+        previous_loaded = service.STATE["gameLoaded"]
+        previous_enabled = service.STATE["opponentAnalysisEnabled"]
+        service.STATE["game"] = game
+        service.STATE["gameLoaded"] = True
+        service.STATE["opponentAnalysisEnabled"] = True
+        try:
+            with (
+                mock.patch.object(service, "_current_shanten_context", return_value=context),
+                mock.patch.object(
+                    service.SHANTEN_GATEWAY,
+                    "get_latest",
+                    return_value={
+                        "status": "loading",
+                        "predictions": {},
+                        "ground_truth": {},
+                        "context": copy.deepcopy(context),
+                    },
+                ),
+                mock.patch.object(service, "request_current_shanten_prediction") as request,
+            ):
+                result = service.get_current_shanten_analysis()
+        finally:
+            service.STATE["game"] = previous_game
+            service.STATE["gameLoaded"] = previous_loaded
+            service.STATE["opponentAnalysisEnabled"] = previous_enabled
+
+        self.assertEqual(result["cacheStatus"], "stale")
+        self.assertEqual(result["context"], context)
+        request.assert_not_called()
+
+    def test_stale_opponent_cache_starts_current_request_before_returning(self):
+        game = service.create_empty_game(232323)
+        node = game["nodes"][game["currentNodeId"]]
+        context = {
+            "gameId": game["gameId"],
+            "nodeId": node["id"],
+            "seat": 0,
+            "inputMode": "public",
+            "cacheKey": "o4::0::public::o-current",
+            "cacheEpoch": service._SHANTEN_CACHE_EPOCH,
+        }
+        node[service._SHANTEN_CACHE_FIELD] = {
+            "o4::0::public::o-previous": {
+                "status": "ready",
+                "predictions": {"opponents": {"kamicha": [1.0]}, "ron_wait": {}},
+                "ground_truth": {"opponents": {}, "ron_wait": {}},
+            },
+        }
+        previous_game = service.STATE["game"]
+        previous_loaded = service.STATE["gameLoaded"]
+        previous_enabled = service.STATE["opponentAnalysisEnabled"]
+        service.STATE["game"] = game
+        service.STATE["gameLoaded"] = True
+        service.STATE["opponentAnalysisEnabled"] = True
+        try:
+            with (
+                mock.patch.object(service, "_current_shanten_context", return_value=context),
+                mock.patch.object(
+                    service.SHANTEN_GATEWAY,
+                    "get_latest",
+                    return_value={"status": "idle", "context": {}},
+                ),
+                mock.patch.object(service, "request_current_shanten_prediction") as request,
+            ):
+                result = service.get_current_shanten_analysis()
+        finally:
+            service.STATE["game"] = previous_game
+            service.STATE["gameLoaded"] = previous_loaded
+            service.STATE["opponentAnalysisEnabled"] = previous_enabled
+
+        self.assertEqual(result["cacheStatus"], "stale")
+        request.assert_called_once_with(node["snapshot"])
+
+    def test_auto_analysis_only_accepts_the_requested_source(self):
+        game = service.create_empty_game(303030)
+        node = game["nodes"][game["currentNodeId"]]
+        old_source = service._build_analysis_source(
+            "decision", "old", "post", "decision-v1"
+        )
+        current_source = service._build_analysis_source(
+            "decision", "current", "post", "decision-v1"
+        )
+        old_key = service._decision_cache_key(0, "discard", old_source)
+        current_key = service._decision_cache_key(0, "discard", current_source)
+        node["analysisCache"][old_key] = {"error": None}
+        item = {
+            "kind": "decision",
+            "nodeId": node["id"],
+            "cacheKey": current_key,
+        }
+
+        self.assertFalse(service._auto_item_is_cached(game, item))
+        node["analysisCache"][current_key] = {"error": None}
+        self.assertTrue(service._auto_item_is_cached(game, item))
+
+
+if __name__ == "__main__":
+    unittest.main()

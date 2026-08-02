@@ -1,0 +1,20 @@
+from collections.abc import Collection, Sequence
+
+from mahjong.hand_calculating.yaku import Yaku
+
+
+class AkaDora(Yaku):
+    """赤ドラ: Red five."""
+
+    yaku_id = 121
+    name = "Aka Dora"
+    han_open = 1
+    han_closed = 1
+
+    def is_condition_met(self, hand: Collection[Sequence[int]], *args) -> bool:
+        """Return True unconditionally; this yaku is awarded by the hand evaluation logic."""
+        return True
+
+    def __str__(self) -> str:
+        """Return the yaku name with the current han count."""
+        return f"Aka Dora {self.han_closed}"
