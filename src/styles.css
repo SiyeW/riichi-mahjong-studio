@@ -2760,6 +2760,10 @@ body {
   background: rgba(8, 80, 94, 0.78) !important;
 }
 
+.settings-btn-secondary:hover:not(:disabled) {
+  background: rgba(12, 105, 120, 0.95) !important;
+}
+
 .settings-subsection {
   margin-top: calc(0.9rem * var(--chrome-scale));
   display: grid;
@@ -2841,13 +2845,6 @@ body {
   line-height: 1.15;
 }
 
-.about-summary {
-  margin: 0 0 calc(0.9rem * var(--chrome-scale));
-  color: var(--text-dim);
-  font-size: var(--ui-font-md);
-  line-height: 1.55;
-}
-
 .mortal-import-modal {
   width: min(calc(41.25rem * var(--ui-scale)), 92vw);
 }
@@ -2904,6 +2901,13 @@ body {
   gap: calc(0.22rem * var(--chrome-scale));
 }
 
+.about-link-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: calc(0.8rem * var(--chrome-scale));
+}
+
 .about-link-list a {
   display: flex;
   align-items: baseline;
@@ -2914,10 +2918,10 @@ body {
   font-size: var(--ui-font-lg);
 }
 
-.about-link-list small {
+.about-link-license {
   flex: 0 0 auto;
-  color: var(--text-muted);
-  font-size: var(--ui-font-xs);
+  color: var(--text-dim);
+  font-size: var(--ui-font-lg);
 }
 
 .about-document-actions,
@@ -2933,7 +2937,6 @@ body {
   line-height: 1.45;
 }
 
-.about-document-actions button,
 .engine-legal-actions button {
   padding: calc(0.35rem * var(--chrome-scale)) calc(0.6rem * var(--chrome-scale));
   border: 1px solid rgba(140, 195, 188, 0.3);
@@ -2943,7 +2946,6 @@ body {
   cursor: pointer;
 }
 
-.about-document-actions button:hover,
 .engine-legal-actions button:hover:not(:disabled) {
   border-color: rgba(159, 226, 213, 0.62);
   background: rgba(28, 105, 94, 0.72);

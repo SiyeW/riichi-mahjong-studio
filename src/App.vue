@@ -1396,10 +1396,9 @@
         <div class="about-brand">
           <div>
             <strong>Riichi Mahjong Studio</strong>
-            <span>立直麻将牌谱研究与练习工具</span>
+            <span>立直麻将研究室</span>
           </div>
         </div>
-        <p class="about-summary">公开开发中的桌面应用。主程序与外部引擎相互独立，各自遵循自己的开源许可证。</p>
         <div class="about-grid">
           <div class="about-item">
             <span class="about-label">当前版本</span>
@@ -1409,22 +1408,36 @@
             <span class="about-label">主程序许可证</span>
             <span class="about-value">Apache License 2.0</span>
             <div class="about-document-actions">
-              <button @click="openAppLegalDocument('license')">查看许可证全文</button>
-              <button @click="openAppLegalDocument('thirdPartyNotices')">查看第三方声明</button>
+              <button class="settings-btn-secondary" @click="openAppLegalDocument('license')">查看许可证全文</button>
+              <button class="settings-btn-secondary" @click="openAppLegalDocument('thirdPartyNotices')">查看第三方声明</button>
             </div>
             <small class="about-legal-note">完整版权归属、来源版本与修改说明以第三方声明为准。</small>
           </div>
           <div class="about-item about-links">
-            <span class="about-label">第三方开源材料</span>
+            <span class="about-label">第三方开源项目</span>
             <div class="about-link-list">
-              <a href="https://github.com/MahjongRepository/mahjong" @click.prevent="openExternalLink('https://github.com/MahjongRepository/mahjong')"><span>MahjongRepository/mahjong</span><small>MIT</small></a>
-              <a href="https://github.com/FluffyStuff/riichi-mahjong-tiles" @click.prevent="openExternalLink('https://github.com/FluffyStuff/riichi-mahjong-tiles')"><span>FluffyStuff/riichi-mahjong-tiles</span><small>CC0 1.0</small></a>
-              <a href="https://github.com/killerducky/killer_mortal_gui" @click.prevent="openExternalLink('https://github.com/killerducky/killer_mortal_gui')"><span>killerducky/killer_mortal_gui</span><small>MIT</small></a>
+              <div class="about-link-row">
+                <a href="https://github.com/killerducky/killer_mortal_gui" @click.prevent="openExternalLink('https://github.com/killerducky/killer_mortal_gui')">killerducky/killer_mortal_gui</a>
+                <span class="about-link-license">MIT</span>
+              </div>
+              <div class="about-link-row">
+                <a href="https://github.com/FluffyStuff/riichi-mahjong-tiles" @click.prevent="openExternalLink('https://github.com/FluffyStuff/riichi-mahjong-tiles')">FluffyStuff/riichi-mahjong-tiles</a>
+                <span class="about-link-license">CC0 1.0</span>
+              </div>
+              <div class="about-link-row">
+                <a href="https://github.com/MahjongRepository/mahjong" @click.prevent="openExternalLink('https://github.com/MahjongRepository/mahjong')">MahjongRepository/mahjong</a>
+                <span class="about-link-license">MIT</span>
+              </div>
             </div>
           </div>
           <div class="about-item about-links">
             <span class="about-label">项目维护者</span>
-            <div class="about-link-list"><a href="https://github.com/SiyeW" @click.prevent="openExternalLink('https://github.com/SiyeW')"><span>SiyeW</span><small>GitHub</small></a></div>
+            <div class="about-link-list">
+              <div class="about-link-row">
+                <a href="https://github.com/SiyeW" @click.prevent="openExternalLink('https://github.com/SiyeW')">SiyeW</a>
+                <span class="about-link-license">GitHub</span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
