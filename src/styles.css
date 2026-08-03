@@ -130,6 +130,10 @@ body {
   text-overflow: ellipsis;
 }
 
+.title-block .eyebrow.is-placeholder {
+  visibility: hidden;
+}
+
 .title-block h1 {
   width: 100%;
   min-width: 0;

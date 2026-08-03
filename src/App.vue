@@ -33,7 +33,7 @@
     <header class="topbar">
       <div class="title-block">
         <div>
-          <p class="eyebrow">Riichi Mahjong Studio</p>
+          <p class="eyebrow" :class="{ 'is-placeholder': !recordHeaderTitle }">Riichi Mahjong Studio</p>
           <h1>
             <button
               v-if="recordPath"
@@ -42,7 +42,7 @@
               aria-label="在资源管理器中显示当前存档"
               @click="showRecordInFolder"
             >{{ recordHeaderTitle }}</button>
-            <span v-else class="record-title-text">{{ recordHeaderTitle }}</span>
+            <span v-else class="record-title-text">Riichi Mahjong Studio</span>
           </h1>
         </div>
       </div>
