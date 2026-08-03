@@ -247,6 +247,9 @@ def _load_json_file(path):
 
 
 def _project_config_paths():
+    configured_path = str(os.environ.get("MJAI_TRAINER_CONFIG") or "").strip()
+    if configured_path:
+        return (Path(configured_path).expanduser().resolve(),)
     if getattr(sys, "frozen", False):
         return (
             Path(sys.executable).resolve().parent / "config.json",
