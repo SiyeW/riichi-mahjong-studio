@@ -970,7 +970,6 @@ def build_mortal_report_game(
         "ended": last_snapshot.get("phase") == "match_end",
     }
     game = {
-        "formatVersion": 2,
         "gameId": game_id,
         "matchId": match_id,
         "seed": 0,

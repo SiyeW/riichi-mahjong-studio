@@ -4,6 +4,7 @@ import argparse
 import copy
 import gzip
 import json
+import re
 import sys
 from collections import Counter
 from datetime import datetime
@@ -86,8 +87,8 @@ def validate_snapshot_wall(snapshot: dict[str, Any], context: str) -> bool:
 
 
 def validate_loaded_record(record: dict[str, Any]) -> tuple[int, int, int]:
-    if int(record.get("formatVersion") or 0) != 2:
-        raise ValueError("only formatVersion 2 is part of this regression corpus")
+    if int(record.get("formatVersion") or 0) not in (2, 3):
+        raise ValueError("the regression corpus supports formatVersion 2 and 3")
 
     service.load_game_record(copy.deepcopy(record))
     game = service.STATE.get("game")
@@ -125,13 +126,58 @@ def validate_loaded_record(record: dict[str, Any]) -> tuple[int, int, int]:
     current_snapshot = nodes[game["currentNodeId"]]["snapshot"]
     service.build_match_summary(game, current_snapshot)
 
+    expected_game = semantic_game_copy(game)
     exported = service.serialize_game_record()
+    if int(exported.get("formatVersion") or 0) != 3:
+        raise ValueError("serializer did not produce formatVersion 3")
+    validate_portable_record(exported)
     original_count = len(nodes)
     service.load_game_record(exported)
     reloaded_nodes = service.STATE["game"].get("nodes") or {}
     if len(reloaded_nodes) != original_count:
         raise ValueError("serialize/reload changed the node count")
+    if semantic_game_copy(service.STATE["game"]) != expected_game:
+        raise ValueError("serialize/reload changed semantic game data")
     return original_count, wall_count, legal_action_nodes
+
+
+def semantic_game_copy(game: dict[str, Any]) -> dict[str, Any]:
+    value = copy.deepcopy(game)
+    value.pop("treeRevision", None)
+    value.pop("formatVersion", None)
+    value.pop("roundWallStorage", None)
+    for node in (value.get("nodes") or {}).values():
+        for field in ("id", "type", "actor", "depth", "isDecision"):
+            node.pop(field, None)
+        snapshot = node.get("snapshot") or {}
+        snapshot.pop("matchState", None)
+        snapshot.pop("kyokuState", None)
+        snapshot.pop("wallState", None)
+        service._sanitize_persisted_action(node.get("action"))
+        service._sanitize_persisted_action(snapshot.get("lastAction"))
+        service._sanitize_persisted_action(snapshot.get("actionHistory"))
+        service._sanitize_persisted_action(snapshot.get("melds"))
+    return json.loads(json.dumps(value, ensure_ascii=False))
+
+
+def validate_portable_record(record: dict[str, Any]) -> None:
+    forbidden_keys = {"models", "modelPath", "engineFile", "sourcePath"}
+    drive_path = re.compile(r"^[A-Za-z]:[\\/]")
+
+    def walk(value: Any, context: str) -> None:
+        if isinstance(value, dict):
+            for key, child in value.items():
+                child_context = f"{context}.{key}" if context else str(key)
+                if key in forbidden_keys:
+                    raise ValueError(f"portable record contains machine-local field: {child_context}")
+                walk(child, child_context)
+        elif isinstance(value, list):
+            for child in value:
+                walk(child, f"{context}[]")
+        elif isinstance(value, str) and (drive_path.match(value) or value.startswith("\\\\")):
+            raise ValueError(f"portable record contains an absolute local path: {context}")
+
+    walk(record, "")
 
 
 def parse_since(value: str) -> float:

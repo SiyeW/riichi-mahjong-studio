@@ -142,11 +142,13 @@ async function writeCurrentGameRecord(targetPath, options = {}) {
   const record = prepareGameRecordForWrite(response.record, {
     appVersion: app.getVersion(),
     recovery,
-    recoverySourcePath: recovery ? gameFileStore.getCurrentPath() : '',
   })
   fs.mkdirSync(path.dirname(targetPath), { recursive: true })
   const useCompression = path.extname(targetPath).toLowerCase() !== '.json'
   writeFileAtomically(targetPath, encodeGameRecord(record, useCompression))
+  if (recovery) {
+    gameFileStore.writeRecoverySourcePath(gameFileStore.getCurrentPath())
+  }
   if (rememberPath) {
     gameFileStore.setCurrentPath(targetPath)
   }
@@ -204,13 +206,15 @@ async function importGameRecordFile(filePath) {
   const isNativeRecord = path.extname(filePath).toLowerCase() === '.mjtrain'
   const managedRecoveryRecord = gameFileStore.isRecoveryPath(filePath)
   const recoveryRecord = managedRecoveryRecord || isRecoveryGameRecord(record)
-  const storedSourcePath = managedRecoveryRecord ? getRecoverySourcePath(record) : ''
+  const storedSourcePath = managedRecoveryRecord
+    ? gameFileStore.readRecoverySourcePath() || getRecoverySourcePath(record)
+    : ''
   const recoverySourcePath = path.isAbsolute(storedSourcePath)
     && !gameFileStore.isRecoveryPath(storedSourcePath)
     ? storedSourcePath
     : ''
   if (recoveryRecord) {
-    gameFileStore.openRecoveryRecord(path.parse(filePath).name, recoverySourcePath)
+    gameFileStore.openRecoveryRecord(recoverySourcePath)
   } else if (isNativeRecord) {
     gameFileStore.setCurrentPath(filePath)
   } else {

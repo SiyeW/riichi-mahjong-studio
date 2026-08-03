@@ -39,6 +39,7 @@ const RECOVERY_DIRECTORY_NAME = '.recovery'
 const RECOVERY_DISPLAY_NAME = '未保存的对局'
 const RECOVERY_FILE_NAME = `${RECOVERY_DISPLAY_NAME}.mjtrain`
 const LEGACY_RECOVERY_FILE_NAME = '未保存的恢复存档.mjtrain'
+const RECOVERY_SESSION_FILE_NAME = 'session.json'
 
 function pathsEqual(left, right) {
   if (!left || !right) return false
@@ -75,6 +76,10 @@ function createGameFileStore(baseDir) {
     return path.join(baseDir, 'records', LEGACY_RECOVERY_FILE_NAME)
   }
 
+  function recoverySessionPath() {
+    return path.join(baseDir, 'records', RECOVERY_DIRECTORY_NAME, RECOVERY_SESSION_FILE_NAME)
+  }
+
   return {
     getCurrentPath() {
       return currentPath
@@ -90,7 +95,7 @@ function createGameFileStore(baseDir) {
     clearCurrentPath() {
       currentPath = null
     },
-    openRecoveryRecord(_sourceName = '', sourcePath = '') {
+    openRecoveryRecord(sourcePath = '') {
       currentPath = sourcePath || null
       recoveryRecord = true
       suggestedFileName = currentPath
@@ -103,6 +108,34 @@ function createGameFileStore(baseDir) {
     },
     getRecoveryPath() {
       return recoveryPath()
+    },
+    getRecoverySessionPath() {
+      return recoverySessionPath()
+    },
+    writeRecoverySourcePath(sourcePath = '') {
+      const sessionPath = recoverySessionPath()
+      const normalized = path.isAbsolute(sourcePath) && !pathsEqual(sourcePath, recoveryPath())
+        ? path.resolve(sourcePath)
+        : ''
+      if (!normalized) {
+        if (fs.existsSync(sessionPath)) fs.rmSync(sessionPath, { force: true })
+        return ''
+      }
+      fs.mkdirSync(path.dirname(sessionPath), { recursive: true })
+      fs.writeFileSync(sessionPath, `${JSON.stringify({ sourcePath: normalized })}\n`, 'utf8')
+      return normalized
+    },
+    readRecoverySourcePath() {
+      const sessionPath = recoverySessionPath()
+      if (!fs.existsSync(sessionPath)) return ''
+      try {
+        const sourcePath = JSON.parse(fs.readFileSync(sessionPath, 'utf8'))?.sourcePath
+        if (typeof sourcePath !== 'string' || !path.isAbsolute(sourcePath)) return ''
+        if (pathsEqual(sourcePath, recoveryPath()) || pathsEqual(sourcePath, legacyRecoveryPath())) return ''
+        return path.resolve(sourcePath)
+      } catch {
+        return ''
+      }
     },
     resolveRecoveryPathForRestore() {
       const targetPath = recoveryPath()
@@ -205,6 +238,7 @@ module.exports = {
   RECOVERY_DIRECTORY_NAME,
   RECOVERY_DISPLAY_NAME,
   RECOVERY_FILE_NAME,
+  RECOVERY_SESSION_FILE_NAME,
   buildSuggestedFileName,
   createGameFileStore,
   pathsEqual,

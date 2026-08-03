@@ -6,8 +6,8 @@ const path = require('node:path')
 const {
   LEGACY_RECOVERY_FILE_NAME,
   RECOVERY_DIRECTORY_NAME,
-  RECOVERY_DISPLAY_NAME,
   RECOVERY_FILE_NAME,
+  RECOVERY_SESSION_FILE_NAME,
   createGameFileStore,
   pathsEqual,
 } = require('./game-file-store')
@@ -22,7 +22,7 @@ function testRecoveryRecordLifecycle() {
   assert.equal(pathsEqual('D:/Portable-Test/records/a', 'd:\\portable-test\\records\\a'), true)
 
   const sourcePath = path.join(baseDir, 'records', 'original.mjtrain')
-  store.openRecoveryRecord(RECOVERY_DISPLAY_NAME, sourcePath)
+  store.openRecoveryRecord(sourcePath)
   store.beginRecord({ dirty: false })
   assert.equal(store.isRecoveryRecord(), true)
   assert.equal(store.getCurrentPath(), sourcePath)
@@ -33,7 +33,7 @@ function testRecoveryRecordLifecycle() {
   store.setCurrentPath(path.join(baseDir, 'records', 'formal.mjtrain'))
   assert.equal(store.isRecoveryRecord(), false)
 
-  assert.match(store.openRecoveryRecord('旧恢复名称'), /未保存的对局\.mjtrain$/)
+  assert.match(store.openRecoveryRecord(), /未保存的对局\.mjtrain$/)
   assert.equal(store.getCurrentPath(), null)
 
   store.beginRecord({ dirty: true, nodeId: 'node-1' })
@@ -43,6 +43,26 @@ function testRecoveryRecordLifecycle() {
   assert.equal(store.isDirty(), false)
   store.markDirty()
   assert.equal(store.isDirty(), false)
+}
+
+function testRecoverySourcePathUsesLocalSessionMetadata() {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mjai-recovery-session-'))
+  try {
+    const store = createGameFileStore(baseDir)
+    const sourcePath = path.join(baseDir, 'records', 'original.mjtrain')
+    assert.equal(store.getRecoverySessionPath(), path.join(
+      baseDir,
+      'records',
+      RECOVERY_DIRECTORY_NAME,
+      RECOVERY_SESSION_FILE_NAME,
+    ))
+    assert.equal(store.writeRecoverySourcePath(sourcePath), sourcePath)
+    assert.equal(store.readRecoverySourcePath(), sourcePath)
+    assert.equal(store.writeRecoverySourcePath('relative.mjtrain'), '')
+    assert.equal(store.readRecoverySourcePath(), '')
+  } finally {
+    fs.rmSync(baseDir, { recursive: true, force: true })
+  }
 }
 
 function testLegacyRecoveryRecordIsMovedOutOfTheRecordsRoot() {
@@ -77,6 +97,7 @@ function testDefaultDirectoryIsCreatedBesideExecutableRoot() {
 }
 
 testRecoveryRecordLifecycle()
+testRecoverySourcePathUsesLocalSessionMetadata()
 testLegacyRecoveryRecordIsMovedOutOfTheRecordsRoot()
 testDefaultDirectoryIsCreatedBesideExecutableRoot()
 console.log('game file store tests passed')

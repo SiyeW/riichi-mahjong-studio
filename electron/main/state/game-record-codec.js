@@ -24,16 +24,15 @@ function prepareGameRecordForWrite(record, options = {}) {
   }
   delete metadata.models
   delete metadata.recovery
+  delete metadata.app
+  delete metadata.recordType
   if (options.appVersion) {
     metadata.appVersion = String(options.appVersion)
   }
   if (options.recovery) {
     metadata.recovery = {
       kind: RECOVERY_RECORD_KIND,
-      schemaVersion: 2,
-    }
-    if (options.recoverySourcePath) {
-      metadata.recovery.sourcePath = String(options.recoverySourcePath)
+      schemaVersion: 3,
     }
   }
   return {

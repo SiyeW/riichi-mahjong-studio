@@ -1,5 +1,6 @@
-import unittest
+import copy
 import random
+import unittest
 from unittest.mock import patch
 
 import service
@@ -119,20 +120,18 @@ class GameRecordFormatTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(record["formatVersion"], 2)
-        self.assertEqual(record["metadata"]["recordType"], "branching-match")
-        self.assertNotIn("models", record["metadata"])
+        self.assertEqual(record["formatVersion"], 3)
+        self.assertNotIn("metadata", record)
         self.assertEqual(
             record["state"],
             {
                 "mode": "research",
                 "controlledSeat": 2,
-                "pendingSeatSwitch": None,
                 "visibleHands": True,
             },
         )
 
-    def test_read_only_record_has_an_accurate_record_type(self):
+    def test_read_only_state_remains_in_game_metadata_without_a_redundant_record_type(self):
         record = service._serialize_game_record_from_parts(
             {"metadata": {"readOnly": True}, "nodes": {}},
             {
@@ -143,7 +142,101 @@ class GameRecordFormatTests(unittest.TestCase):
             },
         )
 
-        self.assertEqual(record["metadata"]["recordType"], "read-only-analysis")
+        self.assertTrue(record["game"]["metadata"]["readOnly"])
+        self.assertNotIn("metadata", record)
+
+    def test_v3_record_uses_one_snapshot_shape_and_reconstructs_runtime_nodes(self):
+        game = service.create_empty_game(12345)
+        root = game["nodes"]["n_root"]
+        start = game["nodes"]["n_1"]
+        root["snapshot"]["actionHistory"] = []
+        start["snapshot"]["actionHistory"] = [{"type": "start_kyoku"}]
+        start["action"]["meta"] = {
+            "thinking_time_s": 0.4,
+            "engineFingerprint": "sha256:test",
+            "source": "local-legal-actions",
+        }
+
+        record = service._serialize_game_record_from_parts(
+            game,
+            {
+                "mode": "research",
+                "controlledSeat": 0,
+                "pendingSeatSwitch": 2,
+                "visibleHands": False,
+            },
+        )
+
+        self.assertEqual(record["formatVersion"], 3)
+        self.assertNotIn("pendingSeatSwitch", record["state"])
+        self.assertNotIn("treeRevision", record["game"])
+        self.assertNotIn("pendingReview", record["game"])
+        self.assertIn("roundStateStorage", record["game"])
+        for node in record["game"]["nodes"].values():
+            for field in ("id", "type", "parentId", "actor", "depth", "isDecision"):
+                self.assertNotIn(field, node)
+            self.assertNotIn("analysisCache", node)
+            self.assertNotIn("matchState", node["snapshot"])
+            self.assertNotIn("kyokuState", node["snapshot"])
+            self.assertNotIn("actionHistory", node["snapshot"])
+        self.assertEqual(
+            record["game"]["nodes"]["n_1"]["snapshot"]["actionHistoryDelta"],
+            [{"type": "start_kyoku"}],
+        )
+        self.assertNotIn("meta", record["game"]["nodes"]["n_1"]["action"])
+
+        with patch.object(service, "request_current_shanten_prediction"):
+            service.load_game_record(record)
+        loaded = service.STATE["game"]
+        self.assertEqual(loaded["nodes"]["n_root"]["depth"], 0)
+        self.assertEqual(loaded["nodes"]["n_1"]["parentId"], "n_root")
+        self.assertEqual(loaded["nodes"]["n_1"]["depth"], 1)
+        self.assertEqual(
+            loaded["nodes"]["n_1"]["snapshot"]["actionHistory"],
+            [{"type": "start_kyoku"}],
+        )
+        self.assertIn("matchState", loaded["nodes"]["n_1"]["snapshot"])
+        self.assertIn("kyokuState", loaded["nodes"]["n_1"]["snapshot"])
+        self.assertEqual(
+            loaded["nodes"]["n_1"]["snapshot"]["matchState"]["matchType"],
+            loaded["matchState"]["matchType"],
+        )
+        self.assertEqual(
+            loaded["nodes"]["n_1"]["snapshot"]["matchState"]["roundSeeds"],
+            loaded["matchState"]["roundSeeds"],
+        )
+        self.assertEqual(service.STATE["pendingSeatSwitch"], None)
+
+        child_id = service.create_node(
+            loaded,
+            "n_1",
+            {"type": "test_transition", "actor": 0},
+            copy.deepcopy(loaded["nodes"]["n_1"]["snapshot"]),
+        )
+        self.assertIn(child_id, loaded["nodes"]["n_1"]["children"])
+        self.assertEqual(loaded["nodes"][child_id]["depth"], 2)
+
+    def test_action_history_reset_is_preserved(self):
+        game = service.create_empty_game(999)
+        game["nodes"]["n_root"]["snapshot"]["actionHistory"] = [{"type": "old"}]
+        game["nodes"]["n_1"]["snapshot"]["actionHistory"] = [{"type": "start_kyoku"}]
+        record = service._serialize_game_record_from_parts(
+            game,
+            {
+                "mode": "play",
+                "controlledSeat": 0,
+                "pendingSeatSwitch": None,
+                "visibleHands": False,
+            },
+        )
+        stored = record["game"]["nodes"]["n_1"]["snapshot"]
+        self.assertTrue(stored["actionHistoryReset"])
+        with patch.object(service, "request_current_shanten_prediction"):
+            service.load_game_record(record)
+        self.assertEqual(
+            service.STATE["game"]["nodes"]["n_1"]["snapshot"]["actionHistory"],
+            [{"type": "start_kyoku"}],
+        )
 
     def test_complete_round_walls_are_stored_once_and_hydrated(self):
         wall = tuple(build_wall(random.Random(123)))
