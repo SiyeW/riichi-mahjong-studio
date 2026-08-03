@@ -31,9 +31,9 @@
       </defs>
     </svg>
     <header class="topbar">
-      <div class="title-block">
+      <div class="title-block" :class="{ 'app-title-only': !recordHeaderTitle }">
         <div>
-          <p class="eyebrow" :class="{ 'is-placeholder': !recordHeaderTitle }">Riichi Mahjong Studio</p>
+          <p v-if="recordHeaderTitle" class="eyebrow">Riichi Mahjong Studio</p>
           <h1>
             <button
               v-if="recordPath"

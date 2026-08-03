@@ -130,10 +130,6 @@ body {
   text-overflow: ellipsis;
 }
 
-.title-block .eyebrow.is-placeholder {
-  visibility: hidden;
-}
-
 .title-block h1 {
   width: 100%;
   min-width: 0;
@@ -142,6 +138,10 @@ body {
   letter-spacing: 0.02em;
   white-space: nowrap;
   overflow: visible;
+}
+
+.title-block.app-title-only h1 {
+  transform: translateY(calc(-0.25rem * var(--chrome-scale)));
 }
 
 .record-title-button,
