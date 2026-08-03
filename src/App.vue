@@ -37,7 +37,7 @@
           <h1>
             <button
               v-if="recordPath"
-              class="record-title-button"
+              class="record-title-button record-title-text"
               type="button"
               aria-label="在资源管理器中显示当前存档"
               @click="showRecordInFolder"
@@ -90,7 +90,7 @@
             class="toolbar-button-hint"
             :title="isReadOnlyRecord ? READ_ONLY_RECORD_HINT : undefined"
           >
-            <button @click="toggleMode" :disabled="isReadOnlyRecord">{{ modeButtonLabel }}</button>
+            <button @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
           </span>
         </span>
         <span class="toolbar-section">
@@ -2901,7 +2901,7 @@ watch(
 
 const recordPath = ref('')
 const recordHeaderTitle = computed(() => {
-  if (!recordPath.value) return 'Riichi Mahjong Studio'
+  if (!recordPath.value) return ''
   return fileNameFromPath(recordPath.value)
 })
 const recordDirty = ref(false)
@@ -7156,7 +7156,7 @@ async function importWallFromClipboard() {
 }
 
 async function toggleMode() {
-  if (!window.trainerAPI || isReadOnlyRecord.value) return
+  if (!window.trainerAPI || !status.gameLoaded || isReadOnlyRecord.value) return
   gameplayResponseGeneration += 1
   cancelPendingWheelNavigation()
   clearAutoAdvanceTimer()
@@ -7166,7 +7166,7 @@ async function toggleMode() {
 }
 
 async function showRoundMapInResearchMode() {
-  if (!window.trainerAPI) return
+  if (!window.trainerAPI || !status.gameLoaded) return
   if (status.mode !== 'research') {
     gameplayResponseGeneration += 1
     cancelPendingWheelNavigation()

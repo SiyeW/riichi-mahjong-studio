@@ -220,6 +220,15 @@ function defaultRoots(options = {}) {
   if (path.resolve(userEngineRoot) !== path.resolve(builtInEngineRoot)) {
     roots.push({ path: userEngineRoot, builtIn: false })
   }
+  const configuredRoots = String(options.env?.MJAI_ENGINE_ROOTS || '')
+    .split(path.delimiter)
+    .map((rootPath) => rootPath.trim())
+    .filter(Boolean)
+  for (const configuredRoot of configuredRoots) {
+    const resolvedRoot = path.resolve(configuredRoot)
+    if (roots.some((root) => path.resolve(root.path) === resolvedRoot)) continue
+    roots.push({ path: resolvedRoot, builtIn: false })
+  }
   return {
     engineRoots: roots,
     modelRoots: roots,

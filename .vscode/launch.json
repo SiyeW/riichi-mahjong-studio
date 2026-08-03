@@ -13,6 +13,7 @@
       "cwd": "${workspaceFolder}",
       "envFile": "${workspaceFolder}/.vscode/launch.local.env",
       "env": {
+        "ELECTRON_RUN_AS_NODE": null,
         "VITE_DEV_SERVER_URL": "http://127.0.0.1:5173",
         "MJAI_TRAINER_CONFIG": "${workspaceFolder}/.mjai-runtime/debug/config.json"
       },

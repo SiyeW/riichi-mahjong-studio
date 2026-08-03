@@ -22,7 +22,7 @@
       "problemMatcher": {
         "owner": "riichi-mahjong-studio",
         "pattern": {
-          "regexp": "^(.*)$",
+          "regexp": "^\\s*(?:error|Error)(?::|\\s)(.*)$",
           "message": 1
         },
         "background": {

@@ -8627,6 +8627,7 @@ def handle_command(request_id, command, payload):
             return build_response(request_id, command)
 
         if command == "set_mode":
+            ensure_game_loaded()
             next_mode = normalize_mode(payload.get("mode"))
             if next_mode == "play" and is_read_only_game():
                 raise ValueError("This replay has no complete wall and cannot enter play mode.")

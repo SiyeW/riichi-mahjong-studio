@@ -172,6 +172,33 @@ function testMissingExecutableMakesPackageUnavailable() {
   }
 }
 
+function testExternalEngineRootsFromEnvironment() {
+  const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mjai-external-engine-'))
+  try {
+    writeJson(path.join(externalRoot, 'engine.json'), customEngine())
+    const executablePath = path.join(externalRoot, 'runtime', 'test-engine.exe')
+    fs.mkdirSync(path.dirname(executablePath), { recursive: true })
+    fs.writeFileSync(executablePath, 'mock executable')
+    fs.writeFileSync(path.join(externalRoot, 'LICENSE'), 'test license')
+    fs.writeFileSync(path.join(externalRoot, 'THIRD_PARTY_NOTICES.md'), 'test notices')
+    writeJson(path.join(externalRoot, 'model.json'), customModel())
+    fs.writeFileSync(path.join(externalRoot, 'model.bin'), 'abc')
+
+    const catalog = discoverEnginePackages({
+      appDir: projectRoot,
+      portableDir: projectRoot,
+      resourceDir: projectRoot,
+      env: { MJAI_ENGINE_ROOTS: externalRoot },
+    })
+
+    assert.equal(catalog.engines[0].id, 'third-party.test-engine')
+    assert.equal(catalog.engines[0].builtIn, false)
+    assert.equal(catalog.models[0].compatible, true)
+  } finally {
+    fs.rmSync(externalRoot, { recursive: true, force: true })
+  }
+}
+
 function testUnsafePathsAreRejected() {
   const engine = customEngine()
   engine.entrypoints['windows-x64'].executable = '../outside.exe'
@@ -189,5 +216,6 @@ function testUnsafePathsAreRejected() {
 testEmptyPublicCatalog()
 testPortablePackagesAndDuplicatePrecedence()
 testMissingExecutableMakesPackageUnavailable()
+testExternalEngineRootsFromEnvironment()
 testUnsafePathsAreRejected()
 console.log('engine package registry tests passed')
