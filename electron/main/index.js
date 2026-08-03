@@ -1,10 +1,21 @@
 const path = require('node:path')
 const fs = require('node:fs')
+const { pathToFileURL } = require('node:url')
 
-const { app, BrowserWindow, clipboard, dialog, ipcMain, shell } = require('electron')
+const {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  net,
+  protocol,
+  shell,
+} = require('electron')
 const { createPythonServices } = require('./services/python-services')
 const { buildSettings, loadSettings, saveSettings } = require('./state/settings')
 const { discoverEnginePackages } = require('./state/engine-package-registry')
+const { discoverSoundPacks, resolveSoundPackFile } = require('./state/sound-pack-registry')
 const { createSessionStore } = require('./state/session-store')
 const { createGameFileStore } = require('./state/game-file-store')
 const { normalizeMortalReportUrl } = require('./mortal-report-url')
@@ -30,6 +41,37 @@ const appOptions = {
   cwd: process.cwd(),
   isPackaged: app.isPackaged,
   execPath: process.execPath,
+}
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: 'rms-sound',
+  privileges: {
+    secure: true,
+    standard: true,
+    stream: true,
+    supportFetchAPI: true,
+  },
+}])
+
+function registerSoundProtocol() {
+  protocol.handle('rms-sound', (request) => {
+    try {
+      const requestUrl = new URL(request.url)
+      const parts = requestUrl.pathname.split('/').filter(Boolean).map(decodeURIComponent)
+      if (requestUrl.hostname !== 'audio' || parts.length !== 2) {
+        return new Response('Sound not found', { status: 404 })
+      }
+      const filePath = resolveSoundPackFile(
+        discoverSoundPacks(appOptions),
+        parts[0],
+        parts[1],
+      )
+      if (!filePath) return new Response('Sound not found', { status: 404 })
+      return net.fetch(pathToFileURL(filePath).toString())
+    } catch {
+      return new Response('Sound not found', { status: 404 })
+    }
+  })
 }
 
 const APP_LEGAL_DOCUMENTS = Object.freeze({
@@ -456,6 +498,10 @@ function registerIpcHandlers() {
         ...current.records,
         ...(patch?.records || {}),
       },
+      audio: {
+        ...current.audio,
+        ...(patch?.audio || {}),
+      },
       window: {
         ...current.window,
         ...(patch?.window || {}),
@@ -751,6 +797,7 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(() => {
+  registerSoundProtocol()
   pythonServices.environmentService.onEvent((event) => {
     if (event.type === 'record_changed') {
       markRecordDirty()

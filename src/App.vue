@@ -602,33 +602,27 @@
             <span>{{ quickSettingsCollapsed ? '展开' : '折叠' }}</span>
           </button>
           <div v-if="!quickSettingsCollapsed" class="quick-training-content">
-            <div class="quick-audio-block">
+            <div class="quick-audio-block quick-time-block">
               <div class="quick-time-header">
                 <span>音量</span>
                 <strong>{{ quickAudioVolumeLabel }}</strong>
               </div>
-              <div class="quick-audio-row">
-                <div class="quick-time-slider-wrap quick-audio-slider-wrap">
-                  <div class="quick-time-track">
-                    <span class="quick-time-track-bg"></span>
-                    <span class="quick-time-track-fill" :style="{ width: `${quickAudioVolumePercent}%` }"></span>
-                    <span class="quick-time-thumb" :style="{ left: `${quickAudioVolumePercent}%` }"></span>
-                  </div>
-                  <input
-                    class="quick-time-range"
-                    type="range"
-                    min="0"
-                    max="100"
-                    step="1"
-                    :value="quickAudioVolumeValue"
-                    @input="onQuickAudioVolumeInput"
-                    @change="commitQuickAudioVolume"
-                  />
+              <div class="quick-time-slider-wrap">
+                <div class="quick-time-track">
+                  <span class="quick-time-track-bg"></span>
+                  <span class="quick-time-track-fill" :style="{ width: `${quickAudioVolumePercent}%` }"></span>
+                  <span class="quick-time-thumb" :style="{ left: `${quickAudioVolumePercent}%` }"></span>
                 </div>
-                <div class="seat-buttons seat-buttons-compact quick-voice-buttons">
-                  <button :class="{ active: settings.audio.voice === 'male' }" @click="setQuickAudioVoice('male')">男声</button>
-                  <button :class="{ active: settings.audio.voice === 'female' }" @click="setQuickAudioVoice('female')">女声</button>
-                </div>
+                <input
+                  class="quick-time-range"
+                  type="range"
+                  min="0"
+                  max="100"
+                  step="1"
+                  :value="quickAudioVolumeValue"
+                  @input="onQuickAudioVolumeInput"
+                  @change="commitQuickAudioVolume"
+                />
               </div>
             </div>
             <div v-if="status.mode === 'research'" class="quick-seat-block">
@@ -990,6 +984,18 @@
               <span class="settings-checkbox-label">退出时保留未保存的内容</span>
               <span class="settings-checkbox-description">关闭时覆盖保存未保存修改，并在下次启动时自动继续；始终只保留一份恢复存档。</span>
             </span>
+          </label>
+        </div>
+        <div class="settings-subsection">
+          <h3>音效</h3>
+          <label>
+            <span>音效包</span>
+            <select v-model="settingsDraft.audio.soundPackId">
+              <option value="">无</option>
+              <option v-for="pack in settings.runtime?.soundPackCatalog.packs || []" :key="pack.id" :value="pack.id">
+                {{ pack.name }}
+              </option>
+            </select>
           </label>
         </div>
       </section>
@@ -1520,7 +1526,6 @@ import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 
 const seats = [0, 1, 2, 3]
-type AudioVoice = 'male' | 'female'
 type ColorSchemeId = TrainerSettings['display']['colorScheme']
 
 const DEFAULT_SHANTEN_COLORS = [
@@ -1554,8 +1559,6 @@ function normalizeColorScheme(value: unknown): ColorSchemeId {
   return value === 'killerducky' ? 'killerducky' : 'default'
 }
 
-const enabledSoundSources = new Map<string, string>()
-
 const settings = reactive<TrainerSettings>({
   configPath: '',
   runtime: {
@@ -1563,6 +1566,17 @@ const settings = reactive<TrainerSettings>({
     builtInRuntimeLabel: '',
     builtInModelLabel: '',
     opponentAnalysisInputModes: ['public'],
+    engineCatalog: {
+      schemaVersion: 1,
+      engines: [],
+      models: [],
+      diagnostics: [],
+    },
+    soundPackCatalog: {
+      schemaVersion: 1,
+      packs: [],
+      diagnostics: [],
+    },
   },
   training: {
     mode: 'threshold_review',
@@ -1584,7 +1598,7 @@ const settings = reactive<TrainerSettings>({
   },
   audio: {
     volume: 50,
-    voice: 'female',
+    soundPackId: '',
   },
   engines: {
     schemaVersion: 3,
@@ -5184,7 +5198,6 @@ const tileArtworkLoadingLabel = computed(() => (
   `正在加载 (${tileArtworkLoadedCount.value}/${tileArtworkSources.length})`
 ))
 const preloadedTileImages: HTMLImageElement[] = []
-const preloadedAudioElements: HTMLAudioElement[] = []
 
 function tileImageSrc(tile: string): string {
   const assetName = tileAssetName(tile)
@@ -6795,6 +6808,7 @@ async function saveSettingsPanel() {
   next.training.mistakeThreshold = settingsDraft.training.mistakeThreshold
   next.display = JSON.parse(JSON.stringify(settingsDraft.display))
   next.records = JSON.parse(JSON.stringify(settingsDraft.records))
+  next.audio = JSON.parse(JSON.stringify(settingsDraft.audio))
   const saved = await window.trainerAPI.saveSettings(next)
   applySettings(saved)
   showSettingsPanel.value = false
@@ -6833,13 +6847,6 @@ async function commitQuickAudioVolume(event: Event) {
   quickVolumeDragValue.value = null
 }
 
-async function setQuickAudioVoice(voice: AudioVoice) {
-  if (settings.audio.voice === voice) return
-  await saveQuickSettings((next) => {
-    next.audio.voice = voice
-  })
-}
-
 async function onQuickThinkingTimeInput(event: Event) {
   const target = event.target as HTMLInputElement | null
   if (!target) return
@@ -6859,8 +6866,11 @@ async function commitQuickThinkingTime(event: Event) {
   quickThinkingDragValue.value = null
 }
 
-function getSoundSource(id: string): string | null {
-  return enabledSoundSources.get(id) || null
+function getSoundSource(event: string): string | null {
+  const selectedPack = settings.runtime?.soundPackCatalog.packs.find(
+    (pack) => pack.id === settings.audio.soundPackId,
+  )
+  return selectedPack?.sounds[event] || null
 }
 
 function preloadTileImage(src: string): Promise<void> {
@@ -6900,16 +6910,7 @@ function warmStaticAssets(): Promise<void> {
 
   const tileWarmup = Promise.all(tileArtworkSources.map(preloadTileImage)).then(() => undefined)
 
-  staticAssetsWarmupPromise = tileWarmup.then(() => {
-    const soundSources = Array.from(new Set(enabledSoundSources.values())).filter(Boolean)
-    soundSources.forEach((src) => {
-      const audio = new Audio()
-      audio.preload = 'auto'
-      audio.src = src
-      audio.load()
-      preloadedAudioElements.push(audio)
-    })
-  })
+  staticAssetsWarmupPromise = tileWarmup
   return staticAssetsWarmupPromise
 }
 
@@ -6929,8 +6930,8 @@ async function prepareRendererForDisplay() {
   await bootstrapRefresh
 }
 
-function playSoundById(id: string) {
-  const src = getSoundSource(id)
+function playSoundEvent(event: string) {
+  const src = getSoundSource(event)
   const volume = Math.max(0, Math.min(1, settings.audio.volume / 100))
   if (!src || volume <= 0) return
   const audio = new Audio(src)
@@ -6947,18 +6948,18 @@ function playSoundById(id: string) {
   void audio.play().catch(cleanup)
 }
 
-function announcementSoundId(type: string, voice: AudioVoice): string | null {
-  const map: Record<string, { male: string; female: string }> = {
-    pon: { male: '12', female: '13' },
-    daiminkan: { male: '14', female: '15' },
-    ankan: { male: '14', female: '15' },
-    kakan: { male: '14', female: '15' },
-    chi: { male: '16', female: '17' },
-    reach: { male: '18', female: '19' },
-    ron: { male: '20', female: '21' },
-    tsumo: { male: '22', female: '23' },
+function announcementSoundEvent(type: string): string | null {
+  const map: Record<string, string> = {
+    pon: 'call.pon',
+    daiminkan: 'call.kan',
+    ankan: 'call.kan',
+    kakan: 'call.kan',
+    chi: 'call.chi',
+    reach: 'call.riichi',
+    ron: 'win.ron',
+    tsumo: 'win.tsumo',
   }
-  return map[type]?.[voice] || null
+  return map[type] || null
 }
 
 function actionSignature(action: TrainerGameView['table']['lastAction']) {
@@ -6993,7 +6994,7 @@ function handleSoundTransitions(
   const hadPendingDiscard = Boolean(prevView.table.pendingDiscard || prevView.table.pendingRiichiDiscard)
   const hasPendingDiscard = Boolean(nextView.table.pendingDiscard || nextView.table.pendingRiichiDiscard)
   if (transitionDirection === 'forward' && hadPendingDiscard && !hasPendingDiscard) {
-    playSoundById('05')
+    playSoundEvent('action.confirmed')
   }
 
   const prevActionSig = actionSignature(prevView.table.lastAction)
@@ -7001,30 +7002,30 @@ function handleSoundTransitions(
   const nextActionSig = actionSignature(nextAction)
   if (nextAction && nextActionSig && nextActionSig !== prevActionSig) {
     if (nextAction.type === 'dahai') {
-      playSoundById('06')
+      playSoundEvent('tile.discard')
     } else if (nextAction.type === 'reach') {
-      const soundId = announcementSoundId('reach', settings.audio.voice)
-      if (soundId) playSoundById(soundId)
+      const soundEvent = announcementSoundEvent('reach')
+      if (soundEvent) playSoundEvent(soundEvent)
     } else if (['chi', 'pon', 'daiminkan', 'ankan', 'kakan'].includes(nextAction.type)) {
-      const soundId = announcementSoundId(nextAction.type, settings.audio.voice)
-      if (soundId) playSoundById(soundId)
+      const soundEvent = announcementSoundEvent(nextAction.type)
+      if (soundEvent) playSoundEvent(soundEvent)
     } else if (nextAction.type === 'hora') {
       const variant = nextAction.variant === 'tsumo' || nextAction.actor === nextAction.target ? 'tsumo' : 'ron'
-      const soundId = announcementSoundId(variant, settings.audio.voice)
-      if (soundId) playSoundById(soundId)
+      const soundEvent = announcementSoundEvent(variant)
+      if (soundEvent) playSoundEvent(soundEvent)
     }
   }
 
   if (status.mode === 'play' && !hasSpecialChoiceActions(prevView) && hasSpecialChoiceActions(nextView)) {
-    playSoundById('08')
+    playSoundEvent('action.required')
   }
 
   if (status.mode === 'play' && !prevView.pendingReview && nextView.pendingReview) {
-    playSoundById('04')
+    playSoundEvent('review.required')
   }
 
   if (!prevView.table.resultInfo && nextView.table.resultInfo) {
-    playSoundById('11')
+    playSoundEvent('round.result')
   }
 }
 

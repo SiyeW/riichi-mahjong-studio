@@ -2117,37 +2117,9 @@ body {
 }
 
 .quick-audio-block {
-  display: grid;
-  gap: calc(0.3rem * var(--chrome-scale));
-}
-
-.quick-audio-row {
-  display: flex;
-  align-items: center;
   width: 100%;
-  gap: calc(0.42rem * var(--chrome-scale));
 }
 
-.quick-audio-slider-wrap {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.quick-voice-buttons,
-.seat-buttons.seat-buttons-compact.quick-voice-buttons {
-  flex-shrink: 0;
-  width: max-content;
-  margin-left: auto;
-  grid-template-columns: repeat(2, max-content);
-}
-
-.quick-voice-buttons button {
-  min-width: calc(1.65rem * var(--chrome-scale));
-  padding-left: calc(0.4rem * var(--chrome-scale));
-  padding-right: calc(0.4rem * var(--chrome-scale));
-}
-
-.quick-voice-buttons button,
 .quick-seat-block .seat-buttons button,
 .quick-mode-btn {
   padding-top: calc(0.34rem * var(--chrome-scale));

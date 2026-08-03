@@ -66,6 +66,22 @@ interface TrainerSettings {
         message: string
       }>
     }
+    soundPackCatalog: {
+      schemaVersion: number
+      packs: Array<{
+        id: string
+        name: string
+        version: string
+        builtIn: boolean
+        sounds: Record<string, string>
+      }>
+      diagnostics: Array<{
+        severity: 'error' | 'warning'
+        code: string
+        path: string
+        message: string
+      }>
+    }
   }
   training: {
     mode: 'no_review' | 'threshold_review' | 'always_review' | 'preview_before_click'
@@ -87,7 +103,7 @@ interface TrainerSettings {
   }
   audio: {
     volume: number
-    voice: 'male' | 'female'
+    soundPackId: string
   }
   engines: TrainerEngineSettings
 }

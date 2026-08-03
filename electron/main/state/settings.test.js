@@ -16,7 +16,8 @@ function testPortableDefaultsHaveNoEngines() {
   assert.equal(settings.engines.selectedDecisionProfileId, '')
   assert.equal(settings.engines.selectedOpponentAnalysisProfileId, '')
   assert.equal(settings.audio.volume, 50)
-  assert.equal(settings.audio.voice, 'female')
+  assert.equal(settings.audio.soundPackId, '')
+  assert.equal('voice' in settings.audio, false)
 }
 
 function testUserProfilePersists() {
@@ -41,6 +42,36 @@ function testUserProfilePersists() {
   }
 }
 
+function testSoundPackSelectionPersistsOnlyWhileAvailable() {
+  const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'riichi-studio-sound-settings-'))
+  const options = { appDir: portableDir, portableDir, resourceDir: portableDir }
+  const packageRoot = path.join(portableDir, '.mjai-runtime', 'sound-packs', 'test')
+  const manifestPath = path.join(packageRoot, 'test.soundpack.json')
+  const soundPath = path.join(packageRoot, 'sounds', 'discard.wav')
+  try {
+    fs.mkdirSync(path.dirname(soundPath), { recursive: true })
+    fs.writeFileSync(soundPath, 'test')
+    fs.writeFileSync(manifestPath, JSON.stringify({
+      schemaVersion: 1,
+      id: 'local.test.sound',
+      name: 'Test Sound',
+      version: '1.0.0',
+      sounds: { 'tile.discard': 'sounds/discard.wav' },
+    }))
+
+    const settings = loadSettings(options)
+    settings.audio.soundPackId = 'local.test.sound'
+    saveSettings(settings, options)
+    assert.equal(loadSettings(options).audio.soundPackId, 'local.test.sound')
+
+    fs.rmSync(manifestPath)
+    assert.equal(loadSettings(options).audio.soundPackId, '')
+  } finally {
+    fs.rmSync(portableDir, { recursive: true, force: true })
+  }
+}
+
 testPortableDefaultsHaveNoEngines()
 testUserProfilePersists()
+testSoundPackSelectionPersistsOnlyWhileAvailable()
 console.log('settings tests passed')

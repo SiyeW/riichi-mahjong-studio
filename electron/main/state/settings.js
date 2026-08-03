@@ -8,6 +8,10 @@ const {
   discoverEnginePackages,
   publicEngineCatalog,
 } = require('./engine-package-registry')
+const {
+  discoverSoundPacks,
+  publicSoundPackCatalog,
+} = require('./sound-pack-registry')
 
 const DEFAULT_WINDOW_SETTINGS = Object.freeze({ width: 1440, height: 920 })
 const DEFAULT_TRAINING_SETTINGS = Object.freeze({
@@ -24,7 +28,7 @@ const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
   showTsumogiriInPlay: true,
 })
 const DEFAULT_RECORD_SETTINGS = Object.freeze({ saveRecoveryOnExit: true })
-const DEFAULT_AUDIO_SETTINGS = Object.freeze({ volume: 50, voice: 'female' })
+const DEFAULT_AUDIO_SETTINGS = Object.freeze({ volume: 50, soundPackId: '' })
 
 function normalizeTrainingMode(mode) {
   return {
@@ -58,7 +62,24 @@ function normalizeDisplaySettings(display = {}) {
   }
 }
 
-function getDefaultSettings(options = {}, engineCatalog = discoverEnginePackages(options)) {
+function normalizeAudioSettings(audio = {}, soundPackCatalog = { packs: [] }) {
+  const numericVolume = Number(audio.volume)
+  const requestedPackId = String(audio.soundPackId || '')
+  return {
+    volume: Number.isFinite(numericVolume)
+      ? Math.max(0, Math.min(100, numericVolume))
+      : DEFAULT_AUDIO_SETTINGS.volume,
+    soundPackId: soundPackCatalog.packs.some((pack) => pack.id === requestedPackId)
+      ? requestedPackId
+      : '',
+  }
+}
+
+function getDefaultSettings(
+  options = {},
+  engineCatalog = discoverEnginePackages(options),
+  soundPackCatalog = discoverSoundPacks(options),
+) {
   const engines = normalizeEngineSettings(null, null, engineCatalog)
   return {
     window: {
@@ -76,9 +97,7 @@ function getDefaultSettings(options = {}, engineCatalog = discoverEnginePackages
     records: {
       ...DEFAULT_RECORD_SETTINGS,
     },
-    audio: {
-      ...DEFAULT_AUDIO_SETTINGS,
-    },
+    audio: normalizeAudioSettings(DEFAULT_AUDIO_SETTINGS, soundPackCatalog),
     engines,
   }
 }
@@ -90,7 +109,8 @@ function buildPortableDefaultSettings() {
     models: [],
     diagnostics: [],
   }
-  const defaults = getDefaultSettings({}, emptyCatalog)
+  const emptySoundPackCatalog = { schemaVersion: 1, packs: [], diagnostics: [] }
+  const defaults = getDefaultSettings({}, emptyCatalog, emptySoundPackCatalog)
   const portableProfile = (profile, kind) => ({
     id: profile.id,
     name: profile.name,
@@ -128,7 +148,8 @@ function getSettingsPath(options = {}) {
 function loadSettings(options = {}) {
   const filePath = getSettingsPath(options)
   const engineCatalog = discoverEnginePackages(options)
-  const defaults = getDefaultSettings(options, engineCatalog)
+  const soundPackCatalog = discoverSoundPacks(options)
+  const defaults = getDefaultSettings(options, engineCatalog, soundPackCatalog)
 
   if (!fs.existsSync(filePath)) {
     return defaults
@@ -166,10 +187,7 @@ function loadSettings(options = {}) {
         ...defaults.records,
         ...(parsed.records || {}),
       },
-      audio: {
-        ...defaults.audio,
-        ...(parsed.audio || {}),
-      },
+      audio: normalizeAudioSettings(parsed.audio, soundPackCatalog),
       engines,
     }
   } catch (error) {
@@ -214,7 +232,9 @@ function saveSettings(settings, options = {}) {
     settings.display = normalizeDisplaySettings(settings.display)
   }
   const engineCatalog = discoverEnginePackages(options)
+  const soundPackCatalog = discoverSoundPacks(options)
   settings.engines = normalizeEngineSettings(settings.engines, legacyModels, engineCatalog)
+  settings.audio = normalizeAudioSettings(settings.audio, soundPackCatalog)
   const filePath = getSettingsPath(options)
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
   fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf8')
@@ -223,6 +243,7 @@ function saveSettings(settings, options = {}) {
 
 function buildSettings(settings, options = {}) {
   const engineCatalog = discoverEnginePackages(options)
+  const soundPackCatalog = discoverSoundPacks(options)
   const opponentAnalysisProfile = getSelectedOpponentAnalysisProfile(settings.engines)
   return {
     ...settings,
@@ -233,6 +254,7 @@ function buildSettings(settings, options = {}) {
       builtInModelLabel: '',
       opponentAnalysisInputModes: opponentAnalysisProfile?.inputModes || ['public'],
       engineCatalog: publicEngineCatalog(engineCatalog),
+      soundPackCatalog: publicSoundPackCatalog(soundPackCatalog),
     },
   }
 }
@@ -249,5 +271,6 @@ module.exports = {
   getDefaultSettings,
   loadSettings,
   migrateSettings,
+  normalizeAudioSettings,
   saveSettings,
 }
