@@ -943,13 +943,6 @@
           </div>
         </div>
         <div class="settings-subsection">
-          <h3>对局</h3>
-          <label>
-            <span>差异阈值（%）</span>
-            <input v-model.number="mistakeThresholdDisplay" type="number" min="0" max="100" step="1" />
-          </label>
-        </div>
-        <div class="settings-subsection">
           <h3>界面</h3>
           <label>
             <span>文字大小</span>
@@ -976,17 +969,6 @@
           </label>
         </div>
         <div class="settings-subsection">
-          <h3>存档</h3>
-          <label class="settings-checkbox settings-checkbox-with-description">
-            <input v-model="settingsDraft.records.saveRecoveryOnExit" type="checkbox" />
-            <span class="settings-checkbox-control" aria-hidden="true"></span>
-            <span class="settings-checkbox-copy">
-              <span class="settings-checkbox-label">退出时保留未保存的内容</span>
-              <span class="settings-checkbox-description">关闭时覆盖保存未保存修改，并在下次启动时自动继续；始终只保留一份恢复存档。</span>
-            </span>
-          </label>
-        </div>
-        <div class="settings-subsection">
           <h3>音效</h3>
           <label>
             <span>音效包</span>
@@ -996,6 +978,24 @@
                 {{ pack.name }}
               </option>
             </select>
+          </label>
+        </div>
+        <div class="settings-subsection">
+          <h3>对局</h3>
+          <label>
+            <span>差异阈值（%）</span>
+            <input v-model.number="mistakeThresholdDisplay" type="number" min="0" max="100" step="1" />
+          </label>
+        </div>
+        <div class="settings-subsection">
+          <h3>存档</h3>
+          <label class="settings-checkbox settings-checkbox-with-description">
+            <input v-model="settingsDraft.records.saveRecoveryOnExit" type="checkbox" />
+            <span class="settings-checkbox-control" aria-hidden="true"></span>
+            <span class="settings-checkbox-copy">
+              <span class="settings-checkbox-label">退出时保留未保存的内容</span>
+              <span class="settings-checkbox-description">关闭时覆盖保存未保存修改，并在下次启动时自动继续；始终只保留一份恢复存档。</span>
+            </span>
           </label>
         </div>
       </section>
