@@ -14,10 +14,10 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -31,9 +31,12 @@ jobs:
           }
 
       - name: Set up Conda
-        uses: conda-incubator/setup-miniconda@v3
+        uses: conda-incubator/setup-miniconda@v4
         with:
-          auto-activate-base: false
+          activate-environment: ""
+          auto-activate: false
+          channels: conda-forge
+          conda-remove-defaults: "true"
           miniforge-version: latest
 
       - name: Create backend environment
@@ -59,11 +62,24 @@ jobs:
             Select-Object -ExpandProperty FullName
           node --test $tests
 
-      - name: Build release artifacts
-        run: npm run package:release:win
+      - name: Build backend
+        run: npm run build:backend:win
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Collect third-party licenses
+        run: npm run collect:licenses
+
+      - name: Package Electron application
+        run: .\node_modules\.bin\electron-builder.cmd --win dir
+
+      - name: Prepare release archive
+        shell: powershell
+        run: .\scripts\prepare-release.ps1
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: riichi-mahjong-studio-windows-x64
           path: |

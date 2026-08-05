@@ -17,72 +17,28 @@ function Assert-ProjectPath {
     }
 }
 
-function Copy-LicenseFiles {
-    param(
-        [Parameter(Mandatory = $true)][string]$SourceDirectory,
-        [Parameter(Mandatory = $true)][string]$DestinationDirectory
-    )
-
-    $LicenseFiles = Get-ChildItem -LiteralPath $SourceDirectory -File |
-        Where-Object { $_.Name -match '^(LICENSE|COPYING|NOTICE)(\..*)?$' }
-    if (-not $LicenseFiles) {
-        throw "No license file found in $SourceDirectory"
-    }
-
-    New-Item -ItemType Directory -Path $DestinationDirectory -Force | Out-Null
-    foreach ($LicenseFile in $LicenseFiles) {
-        Copy-Item -LiteralPath $LicenseFile.FullName -Destination $DestinationDirectory
-    }
-}
-
 Assert-ProjectPath $TargetRoot
 if (Test-Path -LiteralPath $TargetRoot) {
     Remove-Item -LiteralPath $TargetRoot -Recurse -Force
 }
 New-Item -ItemType Directory -Path $TargetRoot | Out-Null
 
-$NpmCommand = (Get-Command npm.cmd -ErrorAction Stop).Source
-$NpmOutput = & $NpmCommand ls --omit=dev --all --json --long
+$NodeCommand = (Get-Command node.exe -ErrorAction Stop).Source
+$NpmOutput = & $NodeCommand (Join-Path $ProjectRoot 'scripts\collect-renderer-licenses.mjs')
 if ($LASTEXITCODE -ne 0) {
-    throw "npm ls failed with exit code $LASTEXITCODE."
+    throw "Renderer license collection failed with exit code $LASTEXITCODE."
 }
-$NpmTree = $NpmOutput | ConvertFrom-Json
-$NpmPackages = [System.Collections.Generic.List[object]]::new()
-$SeenNpmPackages = @{}
-
-function Visit-NpmPackage {
-    param([Parameter(Mandatory = $true)][object]$Package)
-
-    if ($Package.path -and $Package.path -ne $ProjectRoot) {
-        $Key = "$($Package.name)@$($Package.version)"
-        if (-not $SeenNpmPackages.ContainsKey($Key)) {
-            $SeenNpmPackages[$Key] = $true
-            $SafeName = ($Key -replace '[^A-Za-z0-9._-]', '_')
-            $Destination = Join-Path $TargetRoot (Join-Path 'renderer' $SafeName)
-            Copy-LicenseFiles -SourceDirectory $Package.path -DestinationDirectory $Destination
-            $NpmPackages.Add([pscustomobject]@{
-                Name = $Package.name
-                Version = $Package.version
-                License = $Package.license
-            })
-        }
-    }
-
-    if ($Package.dependencies) {
-        foreach ($Dependency in $Package.dependencies.PSObject.Properties) {
-            Visit-NpmPackage -Package $Dependency.Value
-        }
-    }
-}
-
-Visit-NpmPackage -Package $NpmTree
+$NpmPackages = $NpmOutput | ConvertFrom-Json
 
 if (-not (Test-Path -LiteralPath $EnvironmentRoot -PathType Container)) {
     throw 'Missing .conda-backend environment. Create it from environment.yml first.'
 }
 
-$CondaCommand = (Get-Command conda.exe -ErrorAction Stop).Source
-$CondaOutput = & $CondaCommand info --json
+$CondaExecutable = $env:CONDA_EXE
+if (-not $CondaExecutable -or -not (Test-Path -LiteralPath $CondaExecutable -PathType Leaf)) {
+    $CondaExecutable = (Get-Command conda -ErrorAction Stop).Source
+}
+$CondaOutput = & $CondaExecutable info --json
 if ($LASTEXITCODE -ne 0) {
     throw "conda info failed with exit code $LASTEXITCODE."
 }
