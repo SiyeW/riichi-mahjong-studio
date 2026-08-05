@@ -9,6 +9,7 @@
     "node": ">=22"
   },
   "scripts": {
+    "postinstall": "install-electron",
     "dev": "node scripts/dev.mjs",
     "dev:renderer": "vite",
     "dev:electron": "node scripts/run-electron.mjs",
