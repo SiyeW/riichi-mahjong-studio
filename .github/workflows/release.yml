@@ -72,7 +72,18 @@ jobs:
         run: npm run collect:licenses
 
       - name: Package Electron application
-        run: .\node_modules\.bin\electron-builder.cmd --win dir
+        shell: pwsh
+        run: |
+          $output = & .\node_modules\.bin\electron-builder.cmd --win dir 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) {
+            $output | Select-Object -Last 30 | ForEach-Object {
+              $message = $_.ToString().Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+              Write-Output "::error title=electron-builder failed::$message"
+            }
+            exit $exitCode
+          }
 
       - name: Prepare release archive
         shell: powershell
