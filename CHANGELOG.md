@@ -5,20 +5,18 @@ incompatible changes.
 
 ## [Unreleased]
 
-- Add multilingual project documentation and a project-local Conda backend
-  environment.
-- Add reproducible commands for building the Python backend and Windows
-  application.
-- Add VS Code launch and task definitions with an ignored, isolated debug
-  configuration and local Python-environment override.
-- Expand the About panel with application licensing, third-party attribution,
-  and maintainer information, and expose declared engine legal documents in
-  the engine manager.
-- Include the Apache-2.0 license in packaged application resources.
-- Add engine and model package discovery through Riichi Engine Protocol.
-- Improve wall reconstruction and branching game-record handling.
-- Add an opt-in local corpus checker for regression-testing recent external
-  `.mjtrain` records.
+- Add discovery and configuration of external engine and model packages through
+  Riichi Engine Protocol.
+- Add discoverable sound packs and sound-pack selection in the application
+  settings.
+- Improve game-record importing, wall reconstruction, branching, and storage
+  efficiency.
+- Improve the unloaded state, application title, settings layout, and licensing
+  information shown in the application.
+- Rewrite the project documentation in multiple languages, and add reproducible
+  local development, testing, debugging, and Windows build workflows.
+- Include the application license and third-party attribution in packaged
+  application resources.
 
 ## [0.4.0-alpha.1] - 2026-08-02
 
