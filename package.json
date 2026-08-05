@@ -1,6 +1,6 @@
 {
   "name": "riichi-mahjong-studio",
-  "version": "0.4.0-alpha.1",
+  "version": "0.4.0-alpha.2",
   "private": true,
   "author": "SiyeWu",
   "description": "Local desktop Riichi Mahjong practice trainer with branching game records.",
@@ -14,7 +14,9 @@
     "dev:electron": "node scripts/run-electron.mjs",
     "build": "npm run type-check && vite build",
     "build:backend:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ./build-backend.ps1",
-    "package:win": "npm run build:backend:win && npm run build && electron-builder --win dir",
+    "collect:licenses": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/collect-third-party-licenses.ps1",
+    "package:win": "npm run build:backend:win && npm run build && npm run collect:licenses && electron-builder --win dir",
+    "package:release:win": "npm run package:win && powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/prepare-release.ps1",
     "type-check": "vue-tsc --noEmit",
     "preview": "vite preview"
   },
@@ -24,11 +26,9 @@
   "devDependencies": {
     "@types/node": "^22.15.30",
     "@vitejs/plugin-vue": "^6.0.1",
-    "electron": "^34.3.2",
-    "electron-builder": "^26.8.1",
-    "jimp": "^1.6.1",
+    "electron": "^43.3.0",
+    "electron-builder": "^26.15.3",
     "playwright": "^1.60.0",
-    "to-ico": "^1.1.5",
     "typescript": "^5.8.3",
     "vite": "^7.1.11",
     "vue-tsc": "^3.1.1"
@@ -36,6 +36,7 @@
   "build": {
     "appId": "org.riichi.mahjong.studio",
     "productName": "Riichi Mahjong Studio",
+    "electronDist": "node_modules/electron/dist",
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -64,6 +65,10 @@
       {
         "from": "LICENSE",
         "to": "LICENSE"
+      },
+      {
+        "from": "release/third-party-licenses",
+        "to": "THIRD_PARTY_LICENSES"
       }
     ],
     "win": {

@@ -5,6 +5,8 @@ incompatible changes.
 
 ## [Unreleased]
 
+## [0.4.0-alpha.2] - 2026-08-05
+
 - Add discovery and configuration of external engine and model packages through
   Riichi Engine Protocol.
 - Add discoverable sound packs and sound-pack selection in the application

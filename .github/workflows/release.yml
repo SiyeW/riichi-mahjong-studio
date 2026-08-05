@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verify release version
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          if ($env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Tag $env:GITHUB_REF_NAME does not match package version $version."
+          }
+
+      - name: Set up Conda
+        uses: conda-incubator/setup-miniconda@v3
+        with:
+          auto-activate-base: false
+          miniforge-version: latest
+
+      - name: Create backend environment
+        shell: pwsh
+        run: |
+          conda create --yes --override-channels --channel conda-forge `
+            --prefix .conda-backend --file environment-win-64.lock
+          .\.conda-backend\python.exe -m pip install -r requirements-release.txt
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Run backend tests
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = (Resolve-Path 'python\environment').Path
+          .\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
+
+      - name: Run Electron tests
+        shell: pwsh
+        run: |
+          $tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
+            Select-Object -ExpandProperty FullName
+          node --test $tests
+
+      - name: Build release artifacts
+        run: npm run package:release:win
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: riichi-mahjong-studio-windows-x64
+          path: |
+            release/artifacts/*.zip
+            release/artifacts/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Create GitHub prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          $assets = Get-ChildItem -LiteralPath release\artifacts -File |
+            Where-Object { $_.Extension -eq '.zip' -or $_.Name -eq 'SHA256SUMS.txt' } |
+            Select-Object -ExpandProperty FullName
+          gh release create $env:GITHUB_REF_NAME @assets `
+            --verify-tag `
+            --target $env:GITHUB_SHA `
+            --title "Riichi Mahjong Studio $version" `
+            --notes-file release\artifacts\RELEASE_NOTES.md `
+            --prerelease
