@@ -15,7 +15,8 @@ from decision_adapter import to_relative_model_path
 
 
 class DecisionEngineGateway:
-    _RESULT_SEMANTICS_VERSION = "decision-probabilities-v1"
+    _RESULT_SEMANTICS_VERSION = "action-recommendation-host-v2"
+    _OUTPUT = {"id": "action-recommendation", "version": 1}
 
     def __init__(self) -> None:
         self._device = "auto"
@@ -26,8 +27,12 @@ class DecisionEngineGateway:
         self._model_format = ""
         self._expected_sha256 = ""
         self._configured_model_path: Optional[str] = None
+        self._configured_weights: List[Dict[str, str]] = []
         self._model_hash_cache: Optional[tuple[str, int, int, str]] = None
         self._last_fingerprint = ""
+        self._effective_options: Dict[str, Any] = {}
+        self._actual_device = ""
+        self._action_metrics: List[Dict[str, Any]] = []
         self._engine_kind = "decision"
         self._engine_command: Optional[List[str]] = None
         self._engine_cwd: Optional[str] = None
@@ -48,6 +53,7 @@ class DecisionEngineGateway:
             "decision",
             self._on_engine_notification,
             expected_engine_id=self._engine_id,
+            expected_engine_version=self._engine_version,
         )
 
     def configure_profile(
@@ -60,11 +66,27 @@ class DecisionEngineGateway:
         model_format: str,
         expected_sha256: str = "",
         model_path: Optional[str] = None,
+        weights: Optional[List[Dict[str, Any]]] = None,
         engine_command: Optional[List[str]] = None,
         engine_cwd: Optional[str] = None,
         engine_options: Optional[Dict[str, Any]] = None,
     ) -> None:
         next_model_path = str(model_path) if model_path else None
+        normalized_weights = [
+            {
+                "slotId": str(weight.get("slotId") or ""),
+                "format": str(weight.get("format") or ""),
+                "path": str(weight.get("path") or ""),
+            }
+            for weight in (weights or [])
+            if isinstance(weight, dict)
+        ]
+        if not normalized_weights and next_model_path:
+            normalized_weights = [{
+                "slotId": "model",
+                "format": str(model_format),
+                "path": next_model_path,
+            }]
         engine_kind = "decision"
         normalized_engine_options = dict(engine_options or {})
         configured_device = str(
@@ -89,6 +111,7 @@ class DecisionEngineGateway:
                 separators=(",", ":"),
             ),
             next_model_path or "",
+            json.dumps(normalized_weights, sort_keys=True, separators=(",", ":")),
         )
         current_config = (
             self._profile_id,
@@ -103,6 +126,7 @@ class DecisionEngineGateway:
             self._engine_cwd or "",
             json.dumps(self._engine_options, sort_keys=True, separators=(",", ":")),
             self._configured_model_path or "",
+            json.dumps(self._configured_weights, sort_keys=True, separators=(",", ":")),
         )
         if next_config == current_config:
             return
@@ -120,11 +144,13 @@ class DecisionEngineGateway:
             engine_cwd_value,
             engine_options_json,
             model_path_value,
+            weights_json,
         ) = next_config
         self._engine_command = list(command_parts) or None
         self._engine_cwd = engine_cwd_value or None
         self._engine_options = json.loads(engine_options_json)
         self._configured_model_path = model_path_value or None
+        self._configured_weights = json.loads(weights_json)
         self._external_engine = bool(self._engine_command)
         self._client = EngineProcessClient(
             self._engine_kind,
@@ -132,9 +158,13 @@ class DecisionEngineGateway:
             command=self._engine_command,
             cwd=self._engine_cwd,
             expected_engine_id=self._engine_id,
+            expected_engine_version=self._engine_version,
         )
         self._ready_models.clear()
         self._last_fingerprint = ""
+        self._effective_options = {}
+        self._actual_device = ""
+        self._action_metrics = []
         self._model_hash_cache = None
         with self._lock:
             self._response_times.clear()
@@ -143,110 +173,154 @@ class DecisionEngineGateway:
         self._set_activity(self._active_seat, "idle")
 
     def _initialize(self, model_path: str, timeout: float) -> Dict[str, Any]:
+        hello = self._client.describe()
+        initialized_weights = self._configured_weights or [{
+            "slotId": "model",
+            "format": self._model_format,
+            "path": model_path,
+        }]
+        output_contracts = hello.get("outputContracts") or []
+        action_contract = next(
+            (
+                output
+                for output in output_contracts
+                if isinstance(output, dict)
+                and output.get("id") == self._OUTPUT["id"]
+                and output.get("version") == self._OUTPUT["version"]
+            ),
+            None,
+        )
+        if action_contract is None:
+            raise RuntimeError("engine does not provide action-recommendation version 1")
+        slots = {
+            str(slot.get("id") or ""): slot
+            for slot in hello.get("weightSlots") or []
+            if isinstance(slot, dict)
+        }
+        configured_by_slot = {
+            weight["slotId"]: weight for weight in initialized_weights
+        }
+        for slot_id, weight in configured_by_slot.items():
+            slot = slots.get(slot_id)
+            formats = slot.get("formats") if isinstance(slot, dict) else None
+            if not isinstance(formats, list) or not any(
+                isinstance(item, dict) and item.get("id") == weight["format"]
+                for item in formats
+            ):
+                raise RuntimeError(f"engine does not accept the configured {slot_id} weight")
+        for slot_id, slot in slots.items():
+            required = slot.get("requiredForOutputs") or []
+            if any(
+                item.get("id") == self._OUTPUT["id"]
+                and item.get("version") == self._OUTPUT["version"]
+                for item in required
+                if isinstance(item, dict)
+            ) and slot_id not in configured_by_slot:
+                raise RuntimeError(f"engine requires the {slot_id} weight")
+        device_types = [
+            str(item.get("type") or "")
+            for item in hello.get("devices") or []
+            if isinstance(item, dict) and item.get("type")
+        ]
+        selected_device = self._device if self._device in device_types else ""
+        if not selected_device:
+            selected_device = device_types[0] if device_types else ""
+        if not selected_device:
+            raise RuntimeError("engine did not declare a usable device")
         result = self._client.initialize(
-            self._profile_id,
-            "decision",
-            model_path,
-            model_id=self._model_id,
-            model_format=self._model_format,
-            expected_sha256=self._expected_sha256,
-            device=self._device,
+            [dict(self._OUTPUT)],
+            [dict(weight) for weight in initialized_weights],
+            device=selected_device,
             options=self._engine_options,
             timeout=timeout,
         )
-        actual_engine_id = str(result.get("engineId") or "")
-        if actual_engine_id and actual_engine_id != self._engine_id:
-            raise RuntimeError(
-                f"engine identity mismatch: expected {self._engine_id}, "
-                f"received {actual_engine_id}"
-            )
-        if self._external_engine and str(result.get("outputSchema") or "") != "decision-v1":
-            raise RuntimeError("external decision engine must initialize with outputSchema=decision-v1")
-        self._last_fingerprint = str(result.get("fingerprint") or "")
+        outputs = result.get("outputs")
+        if not isinstance(outputs, list) or len(outputs) != 1:
+            raise RuntimeError("engine initialization returned unexpected outputs")
+        initialized_output = outputs[0]
+        if not isinstance(initialized_output, dict) or any(
+            initialized_output.get(key) != value for key, value in self._OUTPUT.items()
+        ):
+            raise RuntimeError("engine did not initialize action-recommendation version 1")
+        metrics = initialized_output.get("metrics")
+        self._action_metrics = [dict(item) for item in metrics] if isinstance(metrics, list) else []
+        self._effective_options = dict(result.get("effectiveOptions") or {})
+        self._actual_device = str((result.get("device") or {}).get("type") or selected_device)
+        self._last_fingerprint = ""
+        self._last_fingerprint = self.cache_identity(model_path)
         return result
 
     def uses_generic_protocol(self) -> bool:
         return self._external_engine
 
     @staticmethod
-    def _history_digest(events: List[Dict[str, Any]]) -> str:
-        payload = json.dumps(
-            events,
-            ensure_ascii=False,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        return f"sha256:{hashlib.sha256(payload).hexdigest()}"
-
-    @staticmethod
     def _validate_generic_result(
         result: Dict[str, Any],
         candidate_ids: set[str],
-        session_id: str,
-        position_id: str,
-        history_digest: str,
-        engine_fingerprint: str,
-    ) -> None:
-        for field, expected in (
-            ("sessionId", session_id),
-            ("positionId", position_id),
-            ("historyDigest", history_digest),
+    ) -> Dict[str, Any]:
+        outputs = result.get("outputs")
+        if not isinstance(outputs, list) or len(outputs) != 1:
+            raise RuntimeError("decision engine must return exactly one output")
+        output = outputs[0]
+        if (
+            not isinstance(output, dict)
+            or output.get("id") != "action-recommendation"
+            or output.get("version") != 1
+            or not isinstance(output.get("data"), dict)
         ):
-            if str(result.get(field) or "") != expected:
-                raise RuntimeError(f"decision engine did not echo {field}")
-        best_id = str(result.get("bestCandidateId") or "")
+            raise RuntimeError("decision engine returned an unexpected output")
+        data = output["data"]
+        best_id = str(data.get("bestCandidateId") or "")
         if best_id not in candidate_ids:
             raise RuntimeError("decision engine returned an unknown bestCandidateId")
-        if (
-            not engine_fingerprint
-            or str(result.get("engineFingerprint") or "") != engine_fingerprint
-        ):
-            raise RuntimeError("decision engine returned an unexpected engineFingerprint")
-        choices = result.get("choices")
-        if not isinstance(choices, list) or len(choices) != len(candidate_ids):
-            raise RuntimeError("decision engine must score every legal candidate")
+        candidates = data.get("candidates")
+        if candidates is None:
+            return {
+                "bestCandidateId": best_id,
+                "choices": [
+                    {
+                        "candidateId": candidate_id,
+                        "scoreGroupId": candidate_id,
+                        "rawValue": None,
+                        "probability": None,
+                        "metrics": {},
+                    }
+                    for candidate_id in sorted(candidate_ids)
+                ],
+            }
+        if not isinstance(candidates, list) or len(candidates) != len(candidate_ids):
+            raise RuntimeError("decision engine must cover every legal candidate")
         seen: set[str] = set()
-        probability_by_group: dict[str, float] = {}
-        value_by_group: dict[str, float] = {}
-        probability_count = 0
-        for choice in choices:
-            if not isinstance(choice, dict):
-                raise RuntimeError("decision engine returned an invalid choice")
-            candidate_id = str(choice.get("candidateId") or "")
+        choices = []
+        for candidate in candidates:
+            if not isinstance(candidate, dict):
+                raise RuntimeError("decision engine returned an invalid candidate result")
+            candidate_id = str(candidate.get("candidateId") or "")
             if candidate_id not in candidate_ids or candidate_id in seen:
                 raise RuntimeError("decision engine returned duplicate or unknown candidateId")
             seen.add(candidate_id)
-            raw_value = choice.get("rawValue")
-            if not isinstance(raw_value, (int, float)) or not math.isfinite(raw_value):
-                raise RuntimeError("decision engine returned an invalid rawValue")
-            score_group_id = str(choice.get("scoreGroupId") or candidate_id)
-            if not score_group_id:
-                raise RuntimeError("decision engine returned an invalid scoreGroupId")
-            previous_value = value_by_group.get(score_group_id)
-            if previous_value is not None and abs(previous_value - float(raw_value)) > 1e-9:
-                raise RuntimeError("decision engine returned inconsistent rawValue for a score group")
-            value_by_group[score_group_id] = float(raw_value)
-            if "probability" in choice:
-                probability = choice.get("probability")
-                if (
-                    not isinstance(probability, (int, float))
-                    or not math.isfinite(probability)
-                    or probability < 0
-                    or probability > 1
+            metrics = candidate.get("metrics")
+            if not isinstance(metrics, dict):
+                raise RuntimeError("decision engine candidate metrics must be an object")
+            for metric_id, value in metrics.items():
+                if value is not None and (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
                 ):
-                    raise RuntimeError("decision engine returned an invalid probability")
-                previous_probability = probability_by_group.get(score_group_id)
-                if (
-                    previous_probability is not None
-                    and abs(previous_probability - float(probability)) > 1e-9
-                ):
-                    raise RuntimeError("decision engine returned inconsistent probability for a score group")
-                probability_by_group[score_group_id] = float(probability)
-                probability_count += 1
-        if probability_count != len(candidate_ids):
-            raise RuntimeError("decision engine must return probability for every candidate")
-        if probability_by_group and abs(sum(probability_by_group.values()) - 1.0) > 1e-4:
-            raise RuntimeError("decision engine probabilities do not sum to 1")
+                    raise RuntimeError(f"decision engine returned invalid metric {metric_id}")
+            raw_value = metrics.get("q-value")
+            probability = metrics.get("policy")
+            if probability is not None and not 0 <= float(probability) <= 1:
+                raise RuntimeError("decision engine returned an invalid policy metric")
+            choices.append({
+                "candidateId": candidate_id,
+                "scoreGroupId": candidate_id,
+                "rawValue": float(raw_value) if raw_value is not None else None,
+                "probability": float(probability) if probability is not None else None,
+                "metrics": dict(metrics),
+            })
+        return {"bestCandidateId": best_id, "choices": choices}
 
     def analyze_candidates(
         self,
@@ -259,6 +333,7 @@ class DecisionEngineGateway:
         position_id: str = "",
         priority: str = "interactive",
     ) -> Dict[str, Any]:
+        del position_id, priority
         with self._lock:
             if self._error_latched or self._unloaded:
                 raise RuntimeError(self._activity_error or "决策引擎未加载")
@@ -271,8 +346,6 @@ class DecisionEngineGateway:
         self._set_activity(player_id, "loading" if initializing else "running")
         started_at = time.perf_counter()
         session_id = f"decision:seat-{int(player_id)}:{role}"
-        history_digest = self._history_digest(mjai_events)
-        stable_position_id = str(position_id or history_digest)
         candidates = []
         candidate_ids: set[str] = set()
         for index, action in enumerate(legal_actions):
@@ -294,33 +367,24 @@ class DecisionEngineGateway:
                 self._initialize(resolved_model_path, 120)
                 self._ready_models = {resolved_model_path}
             result = self._client.request(
-                "decision.analyze",
+                "analysis.run",
                 {
                     "sessionId": session_id,
-                    "positionId": stable_position_id,
-                    "historyDigest": history_digest,
-                    "seat": int(player_id),
-                    "role": str(role),
-                    "priority": str(priority),
+                    "controlledSeat": int(player_id),
+                    "inputMode": "standard",
                     "events": mjai_events,
-                    "candidates": candidates,
+                    "outputs": [{
+                        **self._OUTPUT,
+                        "parameters": {"candidates": candidates},
+                    }],
                 },
                 timeout=120 if initializing else 30,
             )
-            self._validate_generic_result(
+            normalized = self._validate_generic_result(
                 result,
                 candidate_ids,
-                session_id,
-                stable_position_id,
-                history_digest,
-                self._last_fingerprint,
             )
-            normalized = dict(result)
-            normalized["engineFingerprint"] = str(
-                result.get("engineFingerprint")
-                or self._last_fingerprint
-                or ""
-            )
+            normalized["engineFingerprint"] = self._last_fingerprint
             normalized["engineId"] = self._engine_id
             timing = result.get("timing")
             elapsed_ms = (
@@ -366,17 +430,52 @@ class DecisionEngineGateway:
         except OSError:
             return "missing"
 
+    @staticmethod
+    def _weight_sha256(path_value: str) -> str:
+        try:
+            digest = hashlib.sha256()
+            with Path(path_value).resolve().open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
+        except OSError:
+            return "missing"
+
     def cache_identity(self, model_path: Optional[str] = None) -> str:
         if self._last_fingerprint:
             return self._last_fingerprint
         resolved_model_path = model_path or self._configured_model_path
+        configured_weights = self._configured_weights or ([{
+            "slotId": "model",
+            "format": self._model_format,
+            "path": str(resolved_model_path or ""),
+        }] if resolved_model_path else [])
         source = {
             "engineId": self._engine_id,
             "version": self._engine_version,
-            "protocolMajor": 1,
-            "modelSha256": self._model_sha256(resolved_model_path),
-            "options": self._engine_options,
-            "outputSchema": "decision-v1",
+            "protocolMajor": 2,
+            "weights": [
+                {
+                    "slotId": weight["slotId"],
+                    "format": weight["format"],
+                    "sha256": (
+                        self._model_sha256(resolved_model_path)
+                        if weight["path"] == resolved_model_path
+                        else self._weight_sha256(weight["path"])
+                    ),
+                }
+                for weight in configured_weights
+            ],
+            "device": self._actual_device or self._device,
+            "options": self._effective_options or self._engine_options,
+            "outputContract": self._OUTPUT,
+            "metrics": [
+                {
+                    key: metric.get(key)
+                    for key in ("id", "format", "preferredDirection")
+                }
+                for metric in self._action_metrics
+            ],
             "resultSemanticsVersion": self._RESULT_SEMANTICS_VERSION,
         }
         encoded = json.dumps(
@@ -566,62 +665,8 @@ class DecisionEngineGateway:
         event_prefix_hashes: Optional[List[int]] = None,
         event_hash: Optional[int] = None,
     ) -> Dict[str, Any]:
-        with self._lock:
-            if self._error_latched or self._unloaded:
-                raise RuntimeError(self._activity_error or "决策引擎处于错误状态")
-        resolved_model_path = to_relative_model_path(str(model_path))
-        key = resolved_model_path
-        initializing = key not in self._ready_models
-        self._set_activity(player_id, "loading" if initializing else "running")
-        started_at = time.perf_counter()
-        try:
-            if initializing:
-                self._initialize(resolved_model_path, 120)
-                self._ready_models = {key}
-            result = self._client.request(
-                "decision.analyze",
-                {
-                    "sessionId": f"decision:seat-{int(player_id)}:{role}",
-                    "seat": int(player_id),
-                    "role": str(role or "analysis"),
-                    "events": mjai_events,
-                    "eventPrefixHashes": event_prefix_hashes,
-                    "eventHash": event_hash,
-                },
-                timeout=120 if initializing else 30,
-            )
-            response = result.get("response")
-            if not isinstance(response, dict):
-                raise RuntimeError("Decision engine returned no response")
-            response = dict(response)
-            response["engineFingerprint"] = str(
-                result.get("engineFingerprint")
-                or self._last_fingerprint
-                or ""
-            )
-            response["engineId"] = self._engine_id
-            timing = response.get("timing")
-            elapsed_ms = (
-                float(timing.get("total_ms"))
-                if isinstance(timing, dict)
-                and isinstance(timing.get("total_ms"), (int, float))
-                else (time.perf_counter() - started_at) * 1000
-            )
-            self._record_response_ms(elapsed_ms)
-            return response
-        except Exception as exc:
-            self._set_activity(
-                player_id,
-                "error",
-                self._format_error(
-                    "模型加载失败" if initializing else "模型推理失败",
-                    exc,
-                ),
-            )
-            raise
-        finally:
-            if self.activity_state() != "error":
-                self._set_activity(player_id, "idle")
+        del player_id, model_path, role, mjai_events, event_prefix_hashes, event_hash
+        raise RuntimeError("protocol 2 action requests require host-provided candidates")
 
     def reset_session(self) -> None:
         if not self._ready_models:

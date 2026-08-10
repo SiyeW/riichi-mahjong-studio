@@ -591,26 +591,36 @@ def _generic_scored_actions(
         if isinstance(choice, dict)
     }
     scored = []
-    probabilities = [
-        float(choice_by_id[str(action.get("id") or "")]["probability"])
-        for action in legal_actions
-    ]
-    for action, probability in zip(legal_actions, probabilities):
+    for action in legal_actions:
         candidate_id = str(action.get("id") or "")
         choice = choice_by_id[candidate_id]
+        raw_value = choice.get("rawValue")
+        probability = choice.get("probability")
+        has_value = isinstance(raw_value, (int, float)) and math.isfinite(float(raw_value))
+        has_probability = (
+            isinstance(probability, (int, float))
+            and math.isfinite(float(probability))
+            and 0 <= float(probability) <= 1
+        )
         scored.append({
             **copy.deepcopy(action),
             "candidateId": candidate_id,
             "scoreGroupId": str(choice.get("scoreGroupId") or candidate_id),
-            "value": float(choice["rawValue"]),
-            "probability": float(probability),
-            "bar": float(probability),
+            "value": float(raw_value) if has_value else 0.0,
+            "probability": float(probability) if has_probability else None,
+            "bar": float(probability) if has_probability else 0.0,
+            "hasValue": has_value,
+            "hasProbability": has_probability,
+            "metrics": copy.deepcopy(choice.get("metrics") or {}),
             "isBest": candidate_id == str(result.get("bestCandidateId") or ""),
         })
-    ranked_values = sorted({item["value"] for item in scored}, reverse=True)
+    ranked_values = sorted(
+        {item["value"] for item in scored if item["hasValue"]},
+        reverse=True,
+    )
     ranks = {value: index + 1 for index, value in enumerate(ranked_values)}
     for item in scored:
-        item["rank"] = ranks[item["value"]]
+        item["rank"] = ranks.get(item["value"], 0)
     return scored
 
 
@@ -681,7 +691,7 @@ def choose_ai_action(
         )
         result = _generic_best_action(response, legal_actions or [])
         thinking_time_s = _compute_model_thinking_time_s(
-            [float(entry["value"]) for entry in scored],
+            [float(entry["value"]) for entry in scored if entry.get("hasValue")],
         )
         if accumulate_thinking:
             _accumulate_thinking_time(thinking_time_s)

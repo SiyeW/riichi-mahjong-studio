@@ -517,13 +517,13 @@ function registerIpcHandlers() {
 
   ipcMain.handle('engine:describe', async (event, profile) => {
     const enginePath = String(profile?.enginePath || '')
-    const request = enginePath
-      ? {
-        ...profile,
-        engineCommand: [enginePath],
-        engineCwd: path.dirname(enginePath),
-      }
-      : (profile || {})
+    const request = {
+      ...(profile || {}),
+      engineCommand: Array.isArray(profile?.engineCommand) && profile.engineCommand.length
+        ? profile.engineCommand.map(String)
+        : (enginePath ? [enginePath] : []),
+      engineCwd: String(profile?.engineCwd || '') || (enginePath ? path.dirname(enginePath) : ''),
+    }
     const response = await pythonServices.environmentGateway.describeEngine(request)
     return response.description
   })
@@ -553,14 +553,11 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('engine:activate', async (event, payload) => {
-    const kind = payload?.kind === 'opponent' ? 'opponent-analysis' : 'decision'
     const profileId = String(payload?.profileId || '')
     if (!profileId) throw new Error('没有选择要加载的引擎')
     const previous = loadSettings(appOptions)
     const engines = JSON.parse(JSON.stringify(payload?.engines || previous.engines))
-    const profiles = kind === 'decision'
-      ? engines.decisionProfiles
-      : engines.opponentAnalysisProfiles
+    const profiles = engines.profiles
     const profile = Array.isArray(profiles)
       ? profiles.find((item) => item?.id === profileId)
       : null
@@ -571,35 +568,57 @@ function registerIpcHandlers() {
     if (!enginePath || !fs.existsSync(enginePath)) {
       throw new Error('引擎文件不存在')
     }
-    const modelPath = path.isAbsolute(profile.modelPath || '')
-      ? profile.modelPath
-      : path.resolve(projectRoot, profile.modelPath || '')
-    if (!modelPath || !fs.existsSync(modelPath)) {
-      throw new Error('权重文件不存在')
+    for (const weight of profile.weights || []) {
+      const weightPath = path.isAbsolute(weight.path || '')
+        ? weight.path
+        : path.resolve(projectRoot, weight.path || '')
+      if (!weightPath || !fs.existsSync(weightPath)) {
+        throw new Error(`权重文件不存在：${weight.slotId || '未命名槽位'}`)
+      }
     }
-    const activeKey = kind === 'decision'
-      ? 'selectedDecisionProfileId'
-      : 'selectedOpponentAnalysisProfileId'
-    engines[activeKey] = profileId
+    const assignedOutputs = Object.entries(engines.outputAssignments || {})
+      .filter(([, assignedProfileId]) => assignedProfileId === profileId)
+      .map(([outputId]) => outputId)
+    if (!assignedOutputs.length) throw new Error('尚未给这个引擎分配输出')
     const attempted = { ...previous, engines }
     saveSettings(attempted, appOptions)
-    const response = await pythonServices.environmentGateway.reloadEngines(kind)
-    const errors = response?.reload?.errors || {}
-    const error = errors[kind]
-    if (error) throw new Error(String(error))
-    if (kind === 'decision' && !response?.reload?.warmed?.teachingAnalysis) {
-      throw new Error('决策引擎未能完成加载')
+    const response = await pythonServices.environmentGateway.reloadEngines('')
+    if (assignedOutputs.includes('action-recommendation')) {
+      if (response?.reload?.errors?.decision) {
+        throw new Error(String(response.reload.errors.decision))
+      }
+      if (!response?.reload?.warmed?.teachingAnalysis) {
+        throw new Error('动作推荐未能完成加载')
+      }
     }
-    if (kind === 'opponent-analysis' && !response?.reload?.warmed?.opponentAnalysis) {
-      throw new Error('对手分析引擎未能完成加载')
+    if (assignedOutputs.some((outputId) => outputId !== 'action-recommendation')) {
+      if (response?.reload?.errors?.['opponent-analysis']) {
+        throw new Error(String(response.reload.errors['opponent-analysis']))
+      }
+      if (!response?.reload?.warmed?.opponentAnalysis) {
+        throw new Error('对手预测未能完成加载')
+      }
     }
     return buildSettings(loadSettings(appOptions), appOptions)
   })
 
   ipcMain.handle('engine:unload', async (event, payload) => {
-    const kind = payload?.kind === 'opponent' ? 'opponent-analysis' : 'decision'
-    const response = await pythonServices.environmentGateway.unloadEngine(kind)
-    return response.state
+    const profileId = String(payload?.profileId || '')
+    const engines = loadSettings(appOptions).engines
+    const assignedOutputs = Object.entries(engines.outputAssignments || {})
+      .filter(([, assignedProfileId]) => assignedProfileId === profileId)
+      .map(([outputId]) => outputId)
+    let state = null
+    if (assignedOutputs.includes('action-recommendation')) {
+      state = (await pythonServices.environmentGateway.unloadEngine('decision')).state
+    }
+    if (
+      assignedOutputs.includes('opponent-shanten')
+      || assignedOutputs.includes('opponent-deal-in-probability')
+    ) {
+      state = (await pythonServices.environmentGateway.unloadEngine('opponent-analysis')).state
+    }
+    return state
   })
 
   ipcMain.handle('status:get', () => sessionStore.getSnapshot())

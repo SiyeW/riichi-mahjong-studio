@@ -15,14 +15,14 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "decision",
             "sha256:engine",
             "decision-analysis-v3",
-            "decision-v1",
+            "action-recommendation@1",
             display_name="Default model",
         )
         renamed = service._build_analysis_source(
             "decision",
             "sha256:engine",
             "decision-analysis-v3",
-            "decision-v1",
+            "action-recommendation@1",
             display_name="Renamed model",
         )
 
@@ -95,29 +95,35 @@ class AnalysisCacheSourceTest(unittest.TestCase):
                 "teachingModel": {"modelPath": "stale-model.pth"},
             },
             "engines": {
-                "selectedDecisionProfileId": "decision.custom",
-                "selectedOpponentAnalysisProfileId": "opponent.custom",
-                "decisionProfiles": [
+                "profiles": [
                     {
                         "id": "decision.custom",
                         "engineId": "custom.decision",
                         "enginePath": "decision.exe",
-                        "modelId": "decision.weights",
-                        "modelPath": "decision.onnx",
+                        "weights": [{
+                            "slotId": "model",
+                            "format": "decision-onnx",
+                            "path": "decision.onnx",
+                        }],
                         "options": {"temperature": 0.75},
-                    }
-                ],
-                "opponentAnalysisProfiles": [
+                    },
                     {
                         "id": "opponent.custom",
                         "engineId": "custom.opponent",
                         "enginePath": "opponent.exe",
-                        "modelId": "opponent.weights",
-                        "modelPath": "opponent.onnx",
-                        "inputModes": ["public"],
+                        "weights": [{
+                            "slotId": "model",
+                            "format": "opponent-onnx",
+                            "path": "opponent.onnx",
+                        }],
                         "options": {"threads": 2},
-                    }
+                    },
                 ],
+                "outputAssignments": {
+                    "action-recommendation": "decision.custom",
+                    "opponent-shanten": "opponent.custom",
+                    "opponent-deal-in-probability": "opponent.custom",
+                },
             },
         }
 
@@ -129,7 +135,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         self.assertEqual(models["opponentAnalysis"]["modelPath"], "opponent.onnx")
         self.assertEqual(models["opponentAnalysis"]["engineOptions"], {"threads": 2})
 
-    def test_legacy_cache_keys_migrate_to_short_source_references(self):
+    def test_unrecognized_cache_keys_are_discarded(self):
         game = service.create_empty_game(101010)
         node = game["nodes"][game["currentNodeId"]]
         decision_identity = "sha256:" + ("a" * 64)
@@ -155,39 +161,9 @@ class AnalysisCacheSourceTest(unittest.TestCase):
 
         service._migrate_analysis_cache_storage(game)
 
-        decision_key = next(iter(node["analysisCache"]))
-        opponent_key = next(iter(node[service._SHANTEN_CACHE_FIELD]))
-        self.assertRegex(decision_key, r"^m3::0::discard::m-[0-9a-f]{16}$")
-        self.assertRegex(opponent_key, r"^o4::0::public::o-[0-9a-f]{16}$")
-        self.assertNotIn(decision_identity, decision_key)
-        self.assertNotIn(opponent_identity, opponent_key)
-        self.assertNotIn("engineFingerprint", node[service._SHANTEN_CACHE_FIELD][opponent_key])
-        self.assertEqual(len(game[service._ANALYSIS_SOURCES_FIELD]), 2)
-        with (
-            mock.patch.object(
-                service.DECISION_ENGINE_GATEWAY,
-                "cache_identity",
-                return_value=decision_result["engineFingerprint"],
-            ),
-            mock.patch.object(
-                service.SHANTEN_GATEWAY,
-                "cache_identity",
-                return_value=opponent_identity,
-            ),
-        ):
-            self.assertEqual(
-                service._decision_cache_key(
-                    0,
-                    "discard",
-                    service._current_decision_analysis_source(),
-                ),
-                decision_key,
-            )
-            # Host-masked legacy output stays available only as a stale fallback.
-            self.assertNotEqual(
-                service._build_shanten_cache_key(0, "public"),
-                opponent_key,
-            )
+        self.assertEqual(node["analysisCache"], {})
+        self.assertEqual(node[service._SHANTEN_CACHE_FIELD], {})
+        self.assertEqual(game[service._ANALYSIS_SOURCES_FIELD], {})
 
     def test_stale_result_remains_visible_until_current_result_succeeds(self):
         game = service.create_empty_game(202020)
@@ -196,14 +172,14 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "decision",
             "sha256:old",
             "decision-analysis-v3",
-            "decision-v1",
+            "action-recommendation@1",
             display_name="Old model",
         )
         current_source = service._build_analysis_source(
             "decision",
             "sha256:current",
             "decision-analysis-v3",
-            "decision-v1",
+            "action-recommendation@1",
             display_name="Current model",
         )
         old_key = service._decision_cache_key(0, "discard", old_source)
@@ -342,10 +318,10 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         game = service.create_empty_game(303030)
         node = game["nodes"][game["currentNodeId"]]
         old_source = service._build_analysis_source(
-            "decision", "old", "post", "decision-v1"
+            "decision", "old", "post", "action-recommendation@1"
         )
         current_source = service._build_analysis_source(
-            "decision", "current", "post", "decision-v1"
+            "decision", "current", "post", "action-recommendation@1"
         )
         old_key = service._decision_cache_key(0, "discard", old_source)
         current_key = service._decision_cache_key(0, "discard", current_source)

@@ -1,73 +1,79 @@
-const ENGINE_SETTINGS_SCHEMA_VERSION = 1
-
-// The public application intentionally ships without engine or model profiles.
-const BUILT_IN_DECISION_PROFILES = Object.freeze([])
-const BUILT_IN_OPPONENT_ANALYSIS_PROFILES = Object.freeze([])
+const ENGINE_SETTINGS_SCHEMA_VERSION = 2
+const SUPPORTED_OUTPUTS = Object.freeze([
+  'action-recommendation',
+  'opponent-shanten',
+  'opponent-deal-in-probability',
+])
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-function normalizeTemperature(value) {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) && numeric >= 0 ? numeric : 1
-}
-
 function catalogMaps(catalog = {}) {
   return {
     engines: new Map((catalog.engines || []).map((engine) => [engine.id, engine])),
-    models: new Map((catalog.models || []).map((model) => [model.id, model])),
   }
 }
 
-function normalizeProfile(source, kind, catalog) {
+function normalizeWeights(value) {
+  if (!Array.isArray(value)) return []
+  const slotIds = new Set()
+  return value
+    .filter(isObject)
+    .map((weight) => ({
+      slotId: String(weight.slotId || ''),
+      format: String(weight.format || ''),
+      path: String(weight.path || ''),
+    }))
+    .filter((weight) => {
+      if (!weight.slotId || slotIds.has(weight.slotId)) return false
+      slotIds.add(weight.slotId)
+      return true
+    })
+}
+
+function normalizeProfile(source, catalog) {
   const profile = isObject(source) ? source : {}
   const maps = catalogMaps(catalog)
-  const engine = maps.engines.get(String(profile.engineId || ''))
-  const model = maps.models.get(String(profile.modelId || ''))
+  const requestedEngineId = String(profile.engineId || '')
+  const requestedEnginePath = String(profile.enginePath || '')
+  const engine = maps.engines.get(requestedEngineId)
+    || (catalog.engines || []).find((item) => (
+      requestedEnginePath
+      && String(item.enginePath || '').toLowerCase() === requestedEnginePath.toLowerCase()
+    ))
   const entrypoint = engine?.manifest?.entrypoints
     ? Object.values(engine.manifest.entrypoints)[0]
     : null
+  const enginePath = String(engine?.executablePath || requestedEnginePath)
   const engineCommand = engine?.executablePath
-    ? [engine.executablePath, ...((entrypoint?.arguments || []).map(String))]
+    ? [engine.executablePath, ...(entrypoint?.arguments || []).map(String)]
     : (Array.isArray(profile.engineCommand) ? profile.engineCommand.map(String) : [])
-  const available = Boolean(engine?.launchAvailable && model?.compatible !== false)
+  const available = Boolean(engine?.launchAvailable || enginePath)
 
   return {
     id: String(profile.id || ''),
     name: String(profile.name ?? ''),
-    enginePath: String(engine?.executablePath || profile.enginePath || ''),
+    builtIn: Boolean(engine?.builtIn || profile.builtIn),
+    autoName: profile.autoName !== false,
+    enginePath,
     engineCommand,
     engineCwd: String(engine?.packageRoot || profile.engineCwd || ''),
-    engineId: String(engine?.id || profile.engineId || ''),
+    engineId: String(engine?.id || requestedEngineId),
     engineVersion: String(engine?.version || profile.engineVersion || ''),
-    modelPath: String(model?.runtimePath || profile.modelPath || ''),
-    modelId: String(model?.id || profile.modelId || ''),
-    modelFormat: String(model?.metadata?.format || profile.modelFormat || ''),
-    modelSha256: String(model?.metadata?.sha256 || profile.modelSha256 || ''),
+    weights: normalizeWeights(profile.weights),
+    device: String(profile.device || ''),
+    options: isObject(profile.options) ? { ...profile.options } : {},
     available,
-    unavailableReason: available ? '' : '引擎或模型包未安装',
-    ...(kind === 'decision'
-      ? {
-          options: {
-            ...(isObject(profile.options) ? profile.options : {}),
-            temperature: normalizeTemperature(profile.options?.temperature),
-          },
-        }
-      : {
-          inputModes: Array.isArray(profile.inputModes) && profile.inputModes.includes('public')
-            ? [...new Set(profile.inputModes.map(String))]
-            : ['public'],
-          options: isObject(profile.options) ? { ...profile.options } : {},
-        }),
+    unavailableReason: available ? '' : '引擎包未安装',
   }
 }
 
-function normalizeProfiles(profiles, kind, catalog) {
+function normalizeProfiles(profiles, catalog) {
   if (!Array.isArray(profiles)) return []
   const ids = new Set()
   return profiles
-    .map((profile) => normalizeProfile(profile, kind, catalog))
+    .map((profile) => normalizeProfile(profile, catalog))
     .filter((profile) => {
       if (!profile.id || ids.has(profile.id)) return false
       ids.add(profile.id)
@@ -75,94 +81,78 @@ function normalizeProfiles(profiles, kind, catalog) {
     })
 }
 
-function selectedProfileId(profiles, requestedId) {
-  const requested = String(requestedId || '')
-  if (profiles.some((profile) => profile.id === requested)) return requested
-  return profiles.find((profile) => profile.available)?.id || profiles[0]?.id || ''
+function normalizeAssignments(source, profiles) {
+  const assignments = isObject(source) ? source : {}
+  const profileIds = new Set(profiles.map((profile) => profile.id))
+  return Object.fromEntries(SUPPORTED_OUTPUTS.map((outputId) => {
+    const profileId = String(assignments[outputId] || '')
+    return [outputId, profileIds.has(profileId) ? profileId : '']
+  }))
 }
 
 function normalizeEngineSettings(source = {}, _legacyModels = null, catalog = {}) {
   const settings = isObject(source) ? source : {}
-  const decisionProfiles = normalizeProfiles(settings.decisionProfiles, 'decision', catalog)
-  const opponentAnalysisProfiles = normalizeProfiles(
-    settings.opponentAnalysisProfiles,
-    'opponent-analysis',
-    catalog,
-  )
+  const profiles = normalizeProfiles(settings.profiles, catalog)
   return {
     schemaVersion: ENGINE_SETTINGS_SCHEMA_VERSION,
-    decisionProfiles,
-    opponentAnalysisProfiles,
-    selectedDecisionProfileId: selectedProfileId(
-      decisionProfiles,
-      settings.selectedDecisionProfileId,
-    ),
-    selectedOpponentAnalysisProfileId: selectedProfileId(
-      opponentAnalysisProfiles,
-      settings.selectedOpponentAnalysisProfileId,
-    ),
+    profiles,
+    outputAssignments: normalizeAssignments(settings.outputAssignments, profiles),
   }
 }
 
-function resolveSelectedProfile(profiles, selectedId) {
-  return profiles.find((profile) => profile.id === selectedId) || null
+function assignedProfile(engineSettings, outputId) {
+  const profileId = String(engineSettings.outputAssignments?.[outputId] || '')
+  return engineSettings.profiles.find((profile) => profile.id === profileId) || null
 }
 
-function buildLegacyModels(engineSettings) {
-  const decision = resolveSelectedProfile(
-    engineSettings.decisionProfiles,
-    engineSettings.selectedDecisionProfileId,
-  )
-  const opponentAnalysis = resolveSelectedProfile(
-    engineSettings.opponentAnalysisProfiles,
-    engineSettings.selectedOpponentAnalysisProfileId,
-  )
-  const decisionModel = {
-    engine: String(decision?.engineId || ''),
-    profileId: String(decision?.id || ''),
-    engineId: String(decision?.engineId || ''),
-    engineVersion: String(decision?.engineVersion || ''),
-    enginePath: String(decision?.enginePath || ''),
-    engineCommand: Array.isArray(decision?.engineCommand) ? [...decision.engineCommand] : [],
-    engineCwd: String(decision?.engineCwd || ''),
-    engineOptions: { ...(decision?.options || {}) },
-    modelPath: String(decision?.modelPath || ''),
-    modelId: String(decision?.modelId || ''),
-    modelFormat: String(decision?.modelFormat || ''),
-    modelSha256: String(decision?.modelSha256 || ''),
-    temperature: normalizeTemperature(decision?.options?.temperature),
+function modelWeight(profile) {
+  return profile?.weights?.find((weight) => weight.slotId === 'model') || null
+}
+
+function runtimeProfile(profile) {
+  const weight = modelWeight(profile)
+  return {
+    profileId: String(profile?.id || ''),
+    engineId: String(profile?.engineId || ''),
+    engineVersion: String(profile?.engineVersion || ''),
+    enginePath: String(profile?.enginePath || ''),
+    engineCommand: Array.isArray(profile?.engineCommand) ? [...profile.engineCommand] : [],
+    engineCwd: String(profile?.engineCwd || ''),
+    engineOptions: { ...(profile?.options || {}) },
+    modelPath: String(weight?.path || ''),
+    modelId: '',
+    modelFormat: String(weight?.format || ''),
+    modelSha256: '',
+    device: String(profile?.device || ''),
   }
+}
+
+function buildRuntimeModels(engineSettings) {
+  const decision = assignedProfile(engineSettings, 'action-recommendation')
+  const shanten = assignedProfile(engineSettings, 'opponent-shanten')
+  const dealIn = assignedProfile(engineSettings, 'opponent-deal-in-probability')
+  const decisionModel = runtimeProfile(decision)
   return {
     teachingModel: { ...decisionModel },
     opponentModel: { ...decisionModel },
     opponentAnalysis: {
-      profileId: String(opponentAnalysis?.id || ''),
-      engineId: String(opponentAnalysis?.engineId || ''),
-      engineVersion: String(opponentAnalysis?.engineVersion || ''),
-      enginePath: String(opponentAnalysis?.enginePath || ''),
-      engineCommand: Array.isArray(opponentAnalysis?.engineCommand)
-        ? [...opponentAnalysis.engineCommand]
-        : [],
-      engineCwd: String(opponentAnalysis?.engineCwd || ''),
-      engineOptions: { ...(opponentAnalysis?.options || {}) },
-      modelPath: String(opponentAnalysis?.modelPath || ''),
-      modelId: String(opponentAnalysis?.modelId || ''),
-      modelFormat: String(opponentAnalysis?.modelFormat || ''),
-      modelSha256: String(opponentAnalysis?.modelSha256 || ''),
-      inputModes: [...(opponentAnalysis?.inputModes || ['public'])],
+      ...runtimeProfile(shanten || dealIn),
+      inputModes: ['public'],
     },
+    opponentShanten: runtimeProfile(shanten),
+    opponentDealInProbability: runtimeProfile(dealIn),
   }
 }
 
-function getSelectedOpponentAnalysisProfile(engineSettings) {
-  return resolveSelectedProfile(
-    engineSettings.opponentAnalysisProfiles,
-    engineSettings.selectedOpponentAnalysisProfileId,
-  )
+function getAssignedProfile(engineSettings, outputId) {
+  return assignedProfile(engineSettings, outputId)
 }
 
 function buildBuiltInProfiles() {
-  return { decisionProfiles: [], opponentAnalysisProfiles: [] }
+  return {
+    profiles: [],
+    outputAssignments: Object.fromEntries(SUPPORTED_OUTPUTS.map((outputId) => [outputId, ''])),
+  }
 }
 
 function migrateLegacyProfiles(source, _legacyModels, catalog) {
@@ -170,11 +160,10 @@ function migrateLegacyProfiles(source, _legacyModels, catalog) {
 }
 
 module.exports = {
-  BUILT_IN_DECISION_PROFILES,
-  BUILT_IN_OPPONENT_ANALYSIS_PROFILES,
+  SUPPORTED_OUTPUTS,
   buildBuiltInProfiles,
-  buildLegacyModels,
-  getSelectedOpponentAnalysisProfile,
+  buildRuntimeModels,
+  getAssignedProfile,
   migrateLegacyProfiles,
   normalizeEngineSettings,
 }

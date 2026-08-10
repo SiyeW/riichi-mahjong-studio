@@ -1,56 +1,53 @@
 const assert = require('node:assert/strict')
 
-const {
-  buildLegacyModels,
-  normalizeEngineSettings,
-} = require('./engine-registry')
+const { buildRuntimeModels, normalizeEngineSettings } = require('./engine-registry')
 
 function testFreshRegistryIsEmpty() {
   const engines = normalizeEngineSettings()
-  assert.deepEqual(engines.decisionProfiles, [])
-  assert.deepEqual(engines.opponentAnalysisProfiles, [])
-  assert.equal(engines.selectedDecisionProfileId, '')
-  assert.equal(engines.selectedOpponentAnalysisProfileId, '')
-  const legacy = buildLegacyModels(engines)
-  assert.equal(legacy.teachingModel.engineId, '')
-  assert.equal(legacy.teachingModel.modelPath, '')
-  assert.equal(legacy.opponentAnalysis.engineId, '')
+  assert.deepEqual(engines.profiles, [])
+  assert.deepEqual(engines.outputAssignments, {
+    'action-recommendation': '',
+    'opponent-shanten': '',
+    'opponent-deal-in-probability': '',
+  })
+  const runtime = buildRuntimeModels(engines)
+  assert.equal(runtime.teachingModel.engineId, '')
+  assert.equal(runtime.opponentAnalysis.engineId, '')
 }
 
 function testInstalledPackageRefreshesProfileIdentity() {
   const catalog = {
     engines: [{
-      id: 'example.decision',
+      id: 'example.engine',
       version: '2.0.0',
       executablePath: 'C:\\engine\\engine.exe',
       packageRoot: 'C:\\engine',
       launchAvailable: true,
       manifest: { entrypoints: { 'windows-x64': { arguments: ['--jsonl'] } } },
     }],
-    models: [{
-      id: 'example.model',
-      compatible: true,
-      runtimePath: 'C:\\engine\\model.onnx',
-      metadata: { format: 'example-onnx', sha256: 'a'.repeat(64) },
-    }],
   }
   const engines = normalizeEngineSettings({
-    selectedDecisionProfileId: 'profile.example',
-    decisionProfiles: [{
+    profiles: [{
       id: 'profile.example',
       name: 'Example',
-      engineId: 'example.decision',
-      modelId: 'example.model',
+      engineId: 'example.engine',
+      weights: [{ slotId: 'model', format: 'example-onnx', path: 'C:\\engine\\model.onnx' }],
+      device: 'cpu',
       options: { temperature: 0 },
     }],
-    opponentAnalysisProfiles: [],
+    outputAssignments: {
+      'action-recommendation': 'profile.example',
+      'opponent-shanten': '',
+      'opponent-deal-in-probability': '',
+    },
   }, null, catalog)
-  const profile = engines.decisionProfiles[0]
+  const profile = engines.profiles[0]
   assert.equal(profile.available, true)
   assert.equal(profile.engineVersion, '2.0.0')
-  assert.equal(profile.modelFormat, 'example-onnx')
+  assert.equal(profile.weights[0].format, 'example-onnx')
   assert.equal(profile.options.temperature, 0)
   assert.deepEqual(profile.engineCommand, ['C:\\engine\\engine.exe', '--jsonl'])
+  assert.equal(engines.outputAssignments['action-recommendation'], profile.id)
 }
 
 testFreshRegistryIsEmpty()

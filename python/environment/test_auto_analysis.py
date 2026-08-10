@@ -344,7 +344,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             )
             (portable_root / "config.json").write_text(
                 '{"models":{"teachingModel":{"modelPath":"selected.pth"}},'
-                '"engines":{"selectedDecisionProfileId":"profile.custom"}}',
+                '"engines":{"schemaVersion":2,"profiles":[],"outputAssignments":{"action-recommendation":"profile.custom"}}}',
                 encoding="utf-8",
             )
             with (
@@ -364,7 +364,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "selected.pth",
         )
         self.assertEqual(
-            config["engines"]["selectedDecisionProfileId"],
+            config["engines"]["outputAssignments"]["action-recommendation"],
             "profile.custom",
         )
 
@@ -451,6 +451,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         }
         with (
             mock.patch.object(service, "emit"),
+            mock.patch.object(service, "_auto_analysis_kind_enabled", return_value=True),
             mock.patch.object(service, "_run_auto_decision_item", return_value=decision_result),
             mock.patch.object(service._BG_EXECUTOR, "submit", side_effect=submit_immediately),
             mock.patch.object(
@@ -505,6 +506,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             return {"events": [], "prefixHashes": [0], "eventHash": 0}
 
         with (
+            mock.patch.object(service, "_auto_analysis_kind_enabled", return_value=True),
             mock.patch.object(service, "get_cached_mjai_stream_bundle", side_effect=prepare_stream),
             mock.patch.object(service, "_emit_auto_analysis_progress"),
             mock.patch.object(service.SHANTEN_GATEWAY, "request_background_predict", return_value=True),
@@ -640,7 +642,12 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "message": "",
         })
 
-        service.reprioritize_auto_analysis_from_node(game, current_id)
+        with mock.patch.object(
+            service,
+            "_auto_analysis_kind_enabled",
+            return_value=True,
+        ):
+            service.reprioritize_auto_analysis_from_node(game, current_id)
 
         ordered_items = [
             (item["nodeId"], item["kind"])

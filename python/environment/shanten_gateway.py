@@ -24,17 +24,9 @@ TILE34_NAMES = [
 
 _LATEST_SHANTEN_MJAI: Dict[str, Any] = {}
 _PROBABILITY_TOLERANCE = 1e-4
-_ENGINE_POSTPROCESSOR_VERSION = "opponent-analysis-v3"
-
-
-def _canonical_history_digest(events: list[dict]) -> str:
-    payload = json.dumps(
-        events,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return "sha256:" + hashlib.sha256(payload).hexdigest()
+_ENGINE_POSTPROCESSOR_VERSION = "opponent-analysis-host-v2"
+_SHANTEN_OUTPUT = {"id": "opponent-shanten", "version": 1}
+_DEAL_IN_OUTPUT = {"id": "opponent-deal-in-probability", "version": 1}
 
 
 def get_latest_shanten_mjai() -> Dict[str, Any]:
@@ -44,7 +36,11 @@ def get_latest_shanten_mjai() -> Dict[str, Any]:
 class ShantenPredictorGateway:
     """Background worker for opponent shanten prediction."""
 
-    def __init__(self, model_path: Optional[str] = None):
+    def __init__(
+        self,
+        model_path: Optional[str] = None,
+        enabled_outputs: Optional[list[str]] = None,
+    ):
         self._model_path = Path(model_path) if model_path else Path("__unconfigured__")
         self._process_client = EngineProcessClient(
             "opponent-analysis",
@@ -57,11 +53,23 @@ class ShantenPredictorGateway:
         self._model_id = ""
         self._model_format = ""
         self._engine_options: Dict[str, Any] = {}
+        self._configured_weights: list[Dict[str, str]] = []
+        requested_outputs = enabled_outputs or [
+            _SHANTEN_OUTPUT["id"],
+            _DEAL_IN_OUTPUT["id"],
+        ]
+        self._enabled_outputs = tuple(
+            output["id"]
+            for output in (_SHANTEN_OUTPUT, _DEAL_IN_OUTPUT)
+            if output["id"] in requested_outputs
+        )
         self._supported_input_modes = ("public",)
         self._model_hash_cache: Optional[tuple[str, int, int, str]] = None
         self._model_signature = self._read_model_signature()
         self._expected_sha256 = self._read_expected_sha256()
         self._engine_fingerprint = ""
+        self._effective_options: Dict[str, Any] = {}
+        self._actual_device = ""
         self._device_preference = "auto"
         self._model_ready = False
         self._initialization_lock = threading.Lock()
@@ -132,8 +140,6 @@ class ShantenPredictorGateway:
         return ""
 
     def _model_sha256(self) -> str:
-        if self._expected_sha256:
-            return self._expected_sha256
         try:
             path = self._model_path.resolve()
             stat = path.stat()
@@ -156,10 +162,18 @@ class ShantenPredictorGateway:
         source = {
             "engineId": self._engine_id,
             "version": self._engine_version,
-            "protocolMajor": 1,
-            "modelSha256": self._model_sha256(),
-            "options": self._engine_options,
-            "outputSchema": "opponent-analysis-v1",
+            "protocolMajor": 2,
+            "weights": [
+                {
+                    "slotId": weight["slotId"],
+                    "format": weight["format"],
+                    "sha256": self._weight_sha256(weight["path"]),
+                }
+                for weight in self._configured_weights
+            ],
+            "device": self._actual_device or self._device_preference,
+            "options": self._effective_options or self._engine_options,
+            "outputContracts": self._requested_output_contracts(),
             "resultSemanticsVersion": _ENGINE_POSTPROCESSOR_VERSION,
         }
         encoded = json.dumps(
@@ -193,16 +207,48 @@ class ShantenPredictorGateway:
         engine_command: Optional[list[str]] = None,
         engine_cwd: Optional[str] = None,
         engine_options: Optional[Dict[str, Any]] = None,
+        enabled_outputs: Optional[list[str]] = None,
+        weights: Optional[list[Dict[str, Any]]] = None,
     ) -> None:
         next_model_path = Path(model_path) if model_path else Path("__unconfigured__")
         if not next_model_path.is_absolute():
             next_model_path = Path.cwd() / next_model_path
         next_command = [str(part) for part in (engine_command or [])]
+        normalized_engine_options = dict(engine_options or {})
+        configured_device = str(normalized_engine_options.pop("device", "auto") or "auto")
+        if configured_device not in ("auto", "cpu", "cuda"):
+            configured_device = "auto"
+        normalized_weights = [
+            {
+                "slotId": str(weight.get("slotId") or ""),
+                "format": str(weight.get("format") or ""),
+                "path": str(weight.get("path") or ""),
+            }
+            for weight in (weights or [])
+            if isinstance(weight, dict)
+        ]
+        if not normalized_weights and model_path:
+            normalized_weights = [{
+                "slotId": "model",
+                "format": str(model_format),
+                "path": str(next_model_path.resolve()),
+            }]
         next_modes = tuple(
             mode
             for mode in (input_modes or ["public"])
             if mode in ("public", "full-information")
         ) or ("public",)
+        requested_outputs = enabled_outputs or [
+            _SHANTEN_OUTPUT["id"],
+            _DEAL_IN_OUTPUT["id"],
+        ]
+        next_outputs = tuple(
+            output["id"]
+            for output in (_SHANTEN_OUTPUT, _DEAL_IN_OUTPUT)
+            if output["id"] in requested_outputs
+        )
+        if not next_outputs:
+            raise ValueError("at least one supported opponent output is required")
         next_identity = (
             str(profile_id),
             str(engine_id),
@@ -213,8 +259,10 @@ class ShantenPredictorGateway:
             str(expected_sha256 or "").lower(),
             tuple(next_command),
             str(engine_cwd or ""),
-            json.dumps(engine_options or {}, sort_keys=True, separators=(",", ":")),
+            json.dumps(normalized_engine_options, sort_keys=True, separators=(",", ":")),
             next_modes,
+            next_outputs,
+            json.dumps(normalized_weights, sort_keys=True, separators=(",", ":")),
         )
         current_identity = (
             self._profile_id,
@@ -228,6 +276,8 @@ class ShantenPredictorGateway:
             getattr(self, "_engine_cwd", "") or "",
             json.dumps(self._engine_options, sort_keys=True, separators=(",", ":")),
             self._supported_input_modes,
+            self._enabled_outputs,
+            json.dumps(self._configured_weights, sort_keys=True, separators=(",", ":")),
         )
         if next_identity == current_identity:
             return
@@ -245,15 +295,15 @@ class ShantenPredictorGateway:
             engine_cwd_value,
             options_json,
             self._supported_input_modes,
+            self._enabled_outputs,
+            weights_json,
         ) = next_identity
         self._model_path = Path(model_path_value)
         self._model_hash_cache = None
         self._engine_command = list(command_parts)
         self._engine_cwd = engine_cwd_value
         self._engine_options = json.loads(options_json)
-        configured_device = str(self._engine_options.get("device") or "auto")
-        if configured_device not in ("auto", "cpu", "cuda"):
-            configured_device = "auto"
+        self._configured_weights = json.loads(weights_json)
         self._device_preference = configured_device
         self._process_client = EngineProcessClient(
             "opponent-analysis",
@@ -261,14 +311,35 @@ class ShantenPredictorGateway:
             command=self._engine_command or None,
             cwd=self._engine_cwd or None,
             expected_engine_id=self._engine_id,
+            expected_engine_version=self._engine_version,
         )
         self._model_signature = self._read_model_signature()
         self._engine_fingerprint = ""
+        self._effective_options = {}
+        self._actual_device = ""
         self._model_ready = False
         with self._activity_lock:
             self._error_latched = False
             self._unloaded = False
         self._set_activity("idle")
+
+    def _requested_output_contracts(self) -> list[Dict[str, Any]]:
+        return [
+            dict(output)
+            for output in (_SHANTEN_OUTPUT, _DEAL_IN_OUTPUT)
+            if output["id"] in self._enabled_outputs
+        ]
+
+    @staticmethod
+    def _weight_sha256(path_value: str) -> str:
+        try:
+            digest = hashlib.sha256()
+            with Path(path_value).resolve().open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
+        except OSError:
+            return "missing"
 
     def set_force_device(self, force_device: Optional[str]) -> None:
         """Forward a legacy device preference to engines that still support it."""
@@ -409,36 +480,93 @@ class ShantenPredictorGateway:
             return True
         self._set_activity("loading")
         try:
+            hello = self._process_client.describe()
+            contracts = {
+                (str(output.get("id") or ""), output.get("version")): output
+                for output in hello.get("outputContracts") or []
+                if isinstance(output, dict)
+            }
+            requested_outputs = self._requested_output_contracts()
+            for output in requested_outputs:
+                if (output["id"], output["version"]) not in contracts:
+                    raise RuntimeError(
+                        f"engine does not provide {output['id']} version {output['version']}"
+                    )
+            slots = {
+                str(slot.get("id") or ""): slot
+                for slot in hello.get("weightSlots") or []
+                if isinstance(slot, dict)
+            }
+            configured_by_slot = {
+                weight["slotId"]: weight for weight in self._configured_weights
+            }
+            for slot_id, weight in configured_by_slot.items():
+                slot = slots.get(slot_id)
+                formats = slot.get("formats") if isinstance(slot, dict) else None
+                if not isinstance(formats, list) or not any(
+                    isinstance(item, dict) and item.get("id") == weight["format"]
+                    for item in formats
+                ):
+                    raise RuntimeError(f"engine does not accept the configured {slot_id} weight")
+            requested_keys = {
+                (output["id"], output["version"]) for output in requested_outputs
+            }
+            for slot_id, slot in slots.items():
+                required = slot.get("requiredForOutputs") or []
+                if any(
+                    (item.get("id"), item.get("version")) in requested_keys
+                    for item in required
+                    if isinstance(item, dict)
+                ) and slot_id not in configured_by_slot:
+                    raise RuntimeError(f"engine requires the {slot_id} weight")
+            device_types = [
+                str(item.get("type") or "")
+                for item in hello.get("devices") or []
+                if isinstance(item, dict) and item.get("type")
+            ]
+            selected_device = (
+                self._device_preference
+                if self._device_preference in device_types
+                else (device_types[0] if device_types else "")
+            )
+            if not selected_device:
+                raise RuntimeError("engine did not declare a usable device")
             result = self._process_client.initialize(
-                self._profile_id,
-                "opponent-analysis",
-                str(self._model_path),
-                model_id=self._model_id,
-                model_format=self._model_format,
-                expected_sha256=self._expected_sha256,
-                device=self._device_preference,
+                requested_outputs,
+                [dict(weight) for weight in self._configured_weights],
+                device=selected_device,
                 options=self._engine_options,
                 timeout=180,
             )
-            if str(result.get("engineId") or "") != self._engine_id:
-                raise RuntimeError("opponent-analysis engine initialize identity mismatch")
-            if str(result.get("outputSchema") or "") != "opponent-analysis-v1":
-                raise RuntimeError(
-                    "opponent-analysis engine must initialize with "
-                    "outputSchema=opponent-analysis-v1"
-                )
-            self._model_ready = result.get("state") == "ready"
-            self._engine_fingerprint = str(result.get("fingerprint") or "")
-            if not self._engine_fingerprint:
-                raise RuntimeError("opponent-analysis engine returned no fingerprint")
-            capabilities = result.get("capabilities") or {}
-            runtime_modes = capabilities.get("opponentInputModes")
-            if isinstance(runtime_modes, list):
-                self._supported_input_modes = tuple(
-                    mode
-                    for mode in self._supported_input_modes
-                    if mode in runtime_modes
-                ) or ("public",)
+            outputs = result.get("outputs")
+            actual_outputs = {
+                (str(output.get("id") or ""), output.get("version"))
+                for output in outputs or []
+                if isinstance(output, dict)
+            }
+            expected_outputs = {
+                (output["id"], output["version"])
+                for output in requested_outputs
+            }
+            if actual_outputs != expected_outputs:
+                raise RuntimeError("engine initialization returned unexpected outputs")
+            revealed_supported = all(
+                bool(contracts[(output["id"], output["version"])].get("supportsRevealedHands"))
+                and bool(next(
+                    item.get("supportsRevealedHands")
+                    for item in outputs
+                    if item.get("id") == output["id"] and item.get("version") == output["version"]
+                ))
+                for output in requested_outputs
+            )
+            self._supported_input_modes = (
+                ("public", "full-information") if revealed_supported else ("public",)
+            )
+            self._effective_options = dict(result.get("effectiveOptions") or {})
+            self._actual_device = str((result.get("device") or {}).get("type") or selected_device)
+            self._engine_fingerprint = ""
+            self._engine_fingerprint = self.cache_identity()
+            self._model_ready = True
             if self._model_ready:
                 with self._lock:
                     self._latest["status"] = "loaded"
@@ -470,80 +598,91 @@ class ShantenPredictorGateway:
         self,
         result: Dict[str, Any],
         *,
-        session_id: str,
-        position_id: str,
-        history_digest: str,
         controlled_seat: int,
-        input_mode: str,
     ) -> list[Dict[str, Any]]:
-        echoes = {
-            "sessionId": session_id,
-            "positionId": position_id,
-            "historyDigest": history_digest,
-            "inputMode": input_mode,
-            "engineFingerprint": self._engine_fingerprint,
+        outputs = result.get("outputs")
+        if not isinstance(outputs, list) or len(outputs) != len(self._enabled_outputs):
+            raise RuntimeError("opponent prediction response has an unexpected output count")
+        by_output = {
+            (str(output.get("id") or ""), output.get("version")): output.get("data")
+            for output in outputs
+            if isinstance(output, dict) and isinstance(output.get("data"), dict)
         }
-        for field, expected in echoes.items():
-            if str(result.get(field) or "") != expected:
-                raise RuntimeError(f"opponent-analysis response {field} mismatch")
-
-        players = result.get("players")
-        if not isinstance(players, list) or len(players) != 3:
-            raise RuntimeError("opponent-analysis response must contain exactly three players")
+        shanten_data = by_output.get((_SHANTEN_OUTPUT["id"], _SHANTEN_OUTPUT["version"]))
+        deal_in_data = by_output.get((_DEAL_IN_OUTPUT["id"], _DEAL_IN_OUTPUT["version"]))
+        requested = set(self._enabled_outputs)
+        if (_SHANTEN_OUTPUT["id"] in requested) != isinstance(shanten_data, dict):
+            raise RuntimeError("opponent-shanten response is missing or unexpected")
+        if (_DEAL_IN_OUTPUT["id"] in requested) != isinstance(deal_in_data, dict):
+            raise RuntimeError("opponent-deal-in-probability response is missing or unexpected")
         expected_seats = {seat for seat in range(4) if seat != controlled_seat}
-        actual_seats: set[int] = set()
-        validated = []
-        for player in players:
-            if not isinstance(player, dict):
-                raise RuntimeError("opponent-analysis player must be an object")
-            seat = int(player.get("seat", -1))
-            if seat not in expected_seats or seat in actual_seats:
-                raise RuntimeError("opponent-analysis player seats are invalid")
-            actual_seats.add(seat)
+        validated = {seat: {"seat": seat} for seat in expected_seats}
 
-            shanten = player.get("shanten")
-            if not isinstance(shanten, list) or len(shanten) != 7:
-                raise RuntimeError("opponent-analysis shanten must contain values 0 through 6")
-            by_value: Dict[int, float] = {}
-            for entry in shanten:
-                if not isinstance(entry, dict):
-                    raise RuntimeError("opponent-analysis shanten entry must be an object")
-                value = int(entry.get("value", -1))
-                if value not in range(7) or value in by_value:
-                    raise RuntimeError("opponent-analysis shanten values are invalid")
-                by_value[value] = self._validate_probability(
-                    entry.get("probability"),
-                    f"players[{seat}].shanten[{value}]",
-                )
-            if set(by_value) != set(range(7)):
-                raise RuntimeError("opponent-analysis shanten values are incomplete")
-            if abs(sum(by_value.values()) - 1.0) > _PROBABILITY_TOLERANCE:
-                raise RuntimeError("opponent-analysis shanten probabilities do not sum to one")
-
-            waits = player.get("ronWaits")
-            if not isinstance(waits, dict) or set(waits) != set(TILE34_NAMES):
-                raise RuntimeError("opponent-analysis ronWaits must cover all 34 tiles")
-            validated_waits = {
-                tile: self._validate_probability(
-                    waits[tile],
-                    f"players[{seat}].ronWaits.{tile}",
-                )
-                for tile in TILE34_NAMES
-            }
-            validated.append(
-                {
-                    "seat": seat,
+        shanten_players = shanten_data.get("players") if isinstance(shanten_data, dict) else None
+        if shanten_players is not None:
+            if not isinstance(shanten_players, list) or len(shanten_players) != 3:
+                raise RuntimeError("opponent-shanten must contain exactly three players")
+            actual_seats: set[int] = set()
+            for player in shanten_players:
+                if not isinstance(player, dict):
+                    raise RuntimeError("opponent-shanten player must be an object")
+                seat = int(player.get("seat", -1))
+                if seat not in expected_seats or seat in actual_seats:
+                    raise RuntimeError("opponent-shanten player seats are invalid")
+                actual_seats.add(seat)
+                shanten = player.get("shanten")
+                if not isinstance(shanten, list) or len(shanten) != 7:
+                    raise RuntimeError("opponent-shanten must contain values 0 through 6")
+                by_value: Dict[int, float] = {}
+                for entry in shanten:
+                    if not isinstance(entry, dict):
+                        raise RuntimeError("opponent-shanten entry must be an object")
+                    value = int(entry.get("value", -1))
+                    if value not in range(7) or value in by_value:
+                        raise RuntimeError("opponent-shanten values are invalid")
+                    by_value[value] = self._validate_probability(
+                        entry.get("probability"),
+                        f"players[{seat}].shanten[{value}]",
+                    )
+                if set(by_value) != set(range(7)):
+                    raise RuntimeError("opponent-shanten values are incomplete")
+                if abs(sum(by_value.values()) - 1.0) > _PROBABILITY_TOLERANCE:
+                    raise RuntimeError("opponent-shanten probabilities do not sum to one")
+                validated[seat].update({
                     "shanten": [by_value[value] for value in range(7)],
                     "furiten": self._validate_probability(
                         player.get("furitenOrNoYaku"),
                         f"players[{seat}].furitenOrNoYaku",
                     ),
-                    "ronWaits": validated_waits,
+                })
+            if actual_seats != expected_seats:
+                raise RuntimeError("opponent-shanten response is missing a player")
+
+        deal_in_players = deal_in_data.get("players") if isinstance(deal_in_data, dict) else None
+        if deal_in_players is not None:
+            if not isinstance(deal_in_players, list) or len(deal_in_players) != 3:
+                raise RuntimeError("opponent-deal-in-probability must contain exactly three players")
+            actual_seats = set()
+            for player in deal_in_players:
+                if not isinstance(player, dict):
+                    raise RuntimeError("opponent-deal-in-probability player must be an object")
+                seat = int(player.get("seat", -1))
+                if seat not in expected_seats or seat in actual_seats:
+                    raise RuntimeError("opponent-deal-in-probability player seats are invalid")
+                actual_seats.add(seat)
+                waits = player.get("tiles")
+                if not isinstance(waits, dict) or set(waits) != set(TILE34_NAMES):
+                    raise RuntimeError("opponent-deal-in-probability must cover all 34 tiles")
+                validated[seat]["ronWaits"] = {
+                    tile: self._validate_probability(
+                        waits[tile],
+                        f"players[{seat}].tiles.{tile}",
+                    )
+                    for tile in TILE34_NAMES
                 }
-            )
-        if actual_seats != expected_seats:
-            raise RuntimeError("opponent-analysis response is missing a player")
-        return validated
+            if actual_seats != expected_seats:
+                raise RuntimeError("opponent-deal-in-probability response is missing a player")
+        return [validated[seat] for seat in sorted(validated)]
 
     def _ground_truth(
         self,
@@ -576,21 +715,23 @@ class ShantenPredictorGateway:
         for offset, label in enumerate(("shimocha", "toimen", "kamicha"), start=1):
             seat = (controlled_seat + offset) % 4
             player = by_seat[seat]
-            shanten = list(player["shanten"])
-            furiten = float(player["furiten"])
-            raw_waits = [float(player["ronWaits"][tile]) for tile in TILE34_NAMES]
-            display = np.zeros(8, dtype=np.float32)
-            display[0] = shanten[0] * (1.0 - furiten)
-            display[1:7] = shanten[1:7]
-            display[7] = shanten[0] * furiten
-            opponents[label] = [float(value) for value in display]
-            waits[label] = raw_waits
-            raw[label] = {
-                "seat": seat,
-                "shanten_probs": list(player["shanten"]),
-                "furiten_prob": furiten,
-                "ron_wait": raw_waits,
-            }
+            raw[label] = {"seat": seat}
+            if "shanten" in player:
+                shanten = list(player["shanten"])
+                furiten = float(player["furiten"])
+                display = np.zeros(8, dtype=np.float32)
+                display[0] = shanten[0] * (1.0 - furiten)
+                display[1:7] = shanten[1:7]
+                display[7] = shanten[0] * furiten
+                opponents[label] = [float(value) for value in display]
+                raw[label].update({
+                    "shanten_probs": shanten,
+                    "furiten_prob": furiten,
+                })
+            if "ronWaits" in player:
+                raw_waits = [float(player["ronWaits"][tile]) for tile in TILE34_NAMES]
+                waits[label] = raw_waits
+                raw[label]["ron_wait"] = raw_waits
 
         ground_truth_opponents: Dict[str, list[float]] = {}
         ground_truth_waits: Dict[str, list[float]] = {}
@@ -835,28 +976,25 @@ class ShantenPredictorGateway:
                     f"{context.get('gameId') or 'game'}:seat-{c}:"
                     f"opponent-analysis:{input_mode}"
                 )
-                position_id = str(context.get("nodeId") or "")
-                history_digest = _canonical_history_digest(events)
                 worker_result = self._process_client.request(
-                    "opponent.predict",
+                    "analysis.run",
                     {
                         "sessionId": session_id,
-                        "positionId": position_id,
-                        "historyDigest": history_digest,
                         "controlledSeat": c,
-                        "inputMode": input_mode,
-                        "priority": "background" if is_background else "interactive",
+                        "inputMode": (
+                            "revealed" if input_mode == "full-information" else "standard"
+                        ),
                         "events": events,
+                        "outputs": [
+                            {**output, "parameters": {}}
+                            for output in self._requested_output_contracts()
+                        ],
                     },
                     timeout=180 if initializing else 30,
                 )
                 players = self._validate_protocol_prediction(
                     worker_result,
-                    session_id=session_id,
-                    position_id=position_id,
-                    history_digest=history_digest,
                     controlled_seat=c,
-                    input_mode=input_mode,
                 )
                 result = self._protocol_result_to_host(
                     players,
@@ -873,7 +1011,8 @@ class ShantenPredictorGateway:
                 if not is_background:
                     with self._lock:
                         self._latest = result
-                worker_response_ms = worker_result.get("responseMs")
+                timing = worker_result.get("timing")
+                worker_response_ms = timing.get("totalMs") if isinstance(timing, dict) else None
                 self._record_response_ms(
                     float(worker_response_ms)
                     if isinstance(worker_response_ms, (int, float))

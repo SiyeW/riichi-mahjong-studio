@@ -14,7 +14,8 @@ from pathlib import Path
 
 from decision_adapter import analyze_action_choices, analyze_discard_choices, choose_ai_action, get_and_reset_ai_thinking_time_s, get_latest_mjai_debug, get_response_ms_by_seat, set_thinking_time_bounds, to_relative_model_path
 from decision_engine_gateway import DecisionEngineGateway
-from shanten_gateway import ShantenPredictorGateway, get_latest_shanten_mjai
+from opponent_gateway import OpponentAnalysisGateway
+from shanten_gateway import get_latest_shanten_mjai
 from mjai_stream import build_mjai_events_from_actions, build_mjai_stream
 from mortal_report_import import attach_mortal_review_cache, build_mortal_report_game, repair_mortal_report_game
 from custom_tenhou import (
@@ -84,7 +85,7 @@ PORTABLE_ROOT = Path(os.environ.get("MJAI_TRAINER_PORTABLE_DIR") or PROJECT_ROOT
 DECISION_ENGINE_GATEWAY = DecisionEngineGateway()
 DECISION_POOL = DECISION_ENGINE_GATEWAY
 DECISION_ANALYSIS_GATEWAY = DECISION_ENGINE_GATEWAY
-SHANTEN_GATEWAY = ShantenPredictorGateway()
+SHANTEN_GATEWAY = OpponentAnalysisGateway()
 _BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _PLAY_PREFETCH_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _PREWARM_EXECUTOR = ThreadPoolExecutor(max_workers=1)
@@ -162,6 +163,8 @@ def prewarm_runtime():
     errors = {}
 
     def _prewarm_decision():
+        if not DECISION_ENGINE_GATEWAY.runtime_status().get("profileId"):
+            return False, None
         try:
             ready = DECISION_ENGINE_GATEWAY.prewarm(0, teaching_model_path)
             error = (
@@ -180,6 +183,8 @@ def prewarm_runtime():
             )
 
     def _prewarm_opponent_analysis():
+        if not SHANTEN_GATEWAY.runtime_status().get("profileId"):
+            return False, None
         try:
             ready = SHANTEN_GATEWAY.prewarm()
             error = (
@@ -820,7 +825,7 @@ _DECISION_CACHE_VERSION = 3
 _DECISION_POSTPROCESSOR_VERSION = "decision-analysis-v1"
 _SHANTEN_CACHE_FIELD = "opponentAnalysisCache"
 _ANALYSIS_SOURCES_FIELD = "analysisSources"
-_ANALYSIS_SOURCE_SCHEMA_VERSION = 1
+_ANALYSIS_SOURCE_SCHEMA_VERSION = 2
 _SHANTEN_SECTIONS = ("predictions", "ground_truth")
 _SHANTEN_GROUPS = ("opponents", "ron_wait")
 _NODE_COMMENT_MAX_LENGTH = 20_000
@@ -833,8 +838,7 @@ def _analysis_source_display_name(kind):
     selected = models.get(config_key) if isinstance(models, dict) else None
     selected = selected if isinstance(selected, dict) else {}
     engines = config.get("engines") if isinstance(config, dict) else None
-    profile_key = "decisionProfiles" if kind == "decision" else "opponentAnalysisProfiles"
-    profiles = engines.get(profile_key) if isinstance(engines, dict) else None
+    profiles = engines.get("profiles") if isinstance(engines, dict) else None
     profile_name = next(
         (
             str(profile.get("name") or "")
@@ -858,7 +862,7 @@ def _build_analysis_source(
     kind,
     engine_identity,
     host_postprocessor_version,
-    output_schema,
+    output_contract,
     *,
     display_name=None,
 ):
@@ -866,7 +870,7 @@ def _build_analysis_source(
         "schemaVersion": _ANALYSIS_SOURCE_SCHEMA_VERSION,
         "kind": str(kind),
         "engineIdentity": str(engine_identity or "legacy-unknown"),
-        "outputSchema": str(output_schema),
+        "outputContract": str(output_contract),
     }
     if host_postprocessor_version:
         identity["hostPostprocessorVersion"] = str(host_postprocessor_version)
@@ -891,7 +895,7 @@ def _current_decision_analysis_source(model_path=None, *, include_display_name=F
         "decision",
         DECISION_ENGINE_GATEWAY.cache_identity(model_path),
         _DECISION_POSTPROCESSOR_VERSION,
-        "decision-v1",
+        "action-recommendation@1",
         display_name=(
             _analysis_source_display_name("decision")
             if include_display_name
@@ -905,7 +909,7 @@ def _current_shanten_analysis_source(*, include_display_name=False):
         "opponent",
         SHANTEN_GATEWAY.cache_identity(),
         None,
-        "opponent-analysis-v1",
+        "opponent-shanten@1+opponent-deal-in-probability@1",
         display_name=(
             _analysis_source_display_name("opponent")
             if include_display_name
@@ -1005,64 +1009,15 @@ def _migrate_analysis_cache_storage(game):
     for node in game.get("nodes", {}).values():
         decision_cache = node.setdefault("analysisCache", {})
         if isinstance(decision_cache, dict):
-            for old_key, result in list(decision_cache.items()):
-                if _cache_key_context(old_key) is not None:
-                    continue
-                parts = str(old_key).split("::")
-                if len(parts) != 5 or not parts[0].startswith("v"):
-                    continue
-                try:
-                    seat = int(parts[1])
-                except (TypeError, ValueError):
-                    continue
-                source = _build_analysis_source(
-                    "decision",
-                    (
-                        result.get("engineFingerprint")
-                        if isinstance(result, dict)
-                        else None
-                    ) or parts[3],
-                    parts[4],
-                    "decision-v1",
-                    display_name=str(
-                        (result or {}).get("model")
-                        if isinstance(result, dict)
-                        else "决策引擎"
-                    ),
-                )
-                _register_analysis_source(game, source, result)
-                new_key = _decision_cache_key(seat, parts[2], source)
-                decision_cache.setdefault(new_key, result)
-                decision_cache.pop(old_key, None)
+            for cache_key in list(decision_cache):
+                if _cache_key_context(cache_key) is None:
+                    decision_cache.pop(cache_key, None)
 
         opponent_cache = node.get(_SHANTEN_CACHE_FIELD)
-        if not isinstance(opponent_cache, dict):
-            continue
-        for old_key, result in list(opponent_cache.items()):
-            if _cache_key_context(old_key) is not None:
-                continue
-            parts = str(old_key).split("::")
-            if len(parts) != 4 or not parts[0].startswith("v"):
-                continue
-            try:
-                seat = int(parts[1])
-            except (TypeError, ValueError):
-                continue
-            result_payload = result if isinstance(result, dict) else {}
-            source = _build_analysis_source(
-                "opponent",
-                result_payload.get("engineFingerprint") or parts[3],
-                result_payload.get("hostPostprocessorVersion") or "opponent-analysis-v3",
-                "opponent-analysis-v1",
-                display_name="Opponent analysis",
-            )
-            _register_analysis_source(game, source, result_payload)
-            new_key = _shanten_cache_key(seat, parts[2], source)
-            compact = copy.deepcopy(result_payload)
-            compact.pop("engineFingerprint", None)
-            compact.pop("hostPostprocessorVersion", None)
-            opponent_cache.setdefault(new_key, compact)
-            opponent_cache.pop(old_key, None)
+        if isinstance(opponent_cache, dict):
+            for cache_key in list(opponent_cache):
+                if _cache_key_context(cache_key) is None:
+                    opponent_cache.pop(cache_key, None)
 
 
 def _migrate_discard_tsumogiri(game):
@@ -1404,27 +1359,32 @@ def get_default_models_config():
         "modelFormat": "",
         "modelSha256": "",
         "modelPath": "",
+        "weights": [],
         "engineCommand": [],
         "engineCwd": "",
         "engineOptions": {},
         "temperature": 1,
     }
+    empty_opponent = {
+        "profileId": "",
+        "engineId": "",
+        "engineVersion": "",
+        "modelId": "",
+        "modelFormat": "",
+        "modelSha256": "",
+        "modelPath": "",
+        "weights": [],
+        "inputModes": ["public"],
+        "engineCommand": [],
+        "engineCwd": "",
+        "engineOptions": {},
+    }
     return {
         "teachingModel": copy.deepcopy(empty_decision),
         "opponentModel": copy.deepcopy(empty_decision),
-        "opponentAnalysis": {
-            "profileId": "",
-            "engineId": "",
-            "engineVersion": "",
-            "modelId": "",
-            "modelFormat": "",
-            "modelSha256": "",
-            "modelPath": "",
-            "inputModes": ["public"],
-            "engineCommand": [],
-            "engineCwd": "",
-            "engineOptions": {},
-        },
+        "opponentAnalysis": copy.deepcopy(empty_opponent),
+        "opponentShanten": copy.deepcopy(empty_opponent),
+        "opponentDealInProbability": copy.deepcopy(empty_opponent),
     }
 
 
@@ -1445,16 +1405,25 @@ def _models_config_from_project_config(config):
             **defaults["opponentAnalysis"],
             **(models.get("opponentAnalysis") or {}),
         },
+        "opponentShanten": {
+            **defaults["opponentShanten"],
+            **(models.get("opponentShanten") or {}),
+        },
+        "opponentDealInProbability": {
+            **defaults["opponentDealInProbability"],
+            **(models.get("opponentDealInProbability") or {}),
+        },
     }
     engines = config.get("engines") if isinstance(config, dict) else None
     if not isinstance(engines, dict):
         return merged
 
-    def selected_profile(profile_key, selected_key):
-        profiles = engines.get(profile_key)
+    def selected_profile(output_id):
+        profiles = engines.get("profiles")
         if not isinstance(profiles, list):
             return None
-        selected_id = str(engines.get(selected_key) or "")
+        assignments = engines.get("outputAssignments")
+        selected_id = str(assignments.get(output_id) or "") if isinstance(assignments, dict) else ""
         return next(
             (
                 profile
@@ -1462,7 +1431,7 @@ def _models_config_from_project_config(config):
                 if isinstance(profile, dict)
                 and str(profile.get("id") or "") == selected_id
             ),
-            next((profile for profile in profiles if isinstance(profile, dict)), None),
+            None,
         )
 
     def model_from_profile(profile, base, *, opponent_analysis=False):
@@ -1470,6 +1439,19 @@ def _models_config_from_project_config(config):
             return base
         options = profile.get("options")
         options = options if isinstance(options, dict) else {}
+        options = copy.deepcopy(options)
+        if profile.get("device"):
+            options["device"] = str(profile.get("device"))
+        weights = profile.get("weights")
+        weights = weights if isinstance(weights, list) else []
+        model_weight = next(
+            (
+                weight
+                for weight in weights
+                if isinstance(weight, dict) and str(weight.get("slotId") or "") == "model"
+            ),
+            next((weight for weight in weights if isinstance(weight, dict)), {}),
+        )
         engine_path = str(profile.get("enginePath") or "")
         engine_command = profile.get("engineCommand")
         if not isinstance(engine_command, list):
@@ -1484,10 +1466,11 @@ def _models_config_from_project_config(config):
             "engineCommand": [str(value) for value in engine_command],
             "engineCwd": str(profile.get("engineCwd") or ""),
             "engineOptions": copy.deepcopy(options),
-            "modelId": str(profile.get("modelId") or ""),
-            "modelFormat": str(profile.get("modelFormat") or ""),
-            "modelSha256": str(profile.get("modelSha256") or ""),
-            "modelPath": str(profile.get("modelPath") or ""),
+            "modelId": "",
+            "modelFormat": str(model_weight.get("format") or ""),
+            "modelSha256": "",
+            "modelPath": str(model_weight.get("path") or ""),
+            "weights": copy.deepcopy(weights),
         }
         if opponent_analysis:
             input_modes = profile.get("inputModes")
@@ -1500,21 +1483,30 @@ def _models_config_from_project_config(config):
                 result["temperature"] = 1
         return result
 
-    decision = selected_profile("decisionProfiles", "selectedDecisionProfileId")
-    opponent_analysis = selected_profile(
-        "opponentAnalysisProfiles",
-        "selectedOpponentAnalysisProfileId",
-    )
+    decision = selected_profile("action-recommendation")
+    opponent_shanten = selected_profile("opponent-shanten")
+    opponent_deal_in = selected_profile("opponent-deal-in-probability")
     if decision:
         decision_model = model_from_profile(decision, merged["teachingModel"])
         merged["teachingModel"] = decision_model
         merged["opponentModel"] = copy.deepcopy(decision_model)
-    if opponent_analysis:
-        merged["opponentAnalysis"] = model_from_profile(
-            opponent_analysis,
-            merged["opponentAnalysis"],
+    if opponent_shanten:
+        merged["opponentShanten"] = model_from_profile(
+            opponent_shanten,
+            merged["opponentShanten"],
             opponent_analysis=True,
         )
+    if opponent_deal_in:
+        merged["opponentDealInProbability"] = model_from_profile(
+            opponent_deal_in,
+            merged["opponentDealInProbability"],
+            opponent_analysis=True,
+        )
+    merged["opponentAnalysis"] = copy.deepcopy(
+        merged["opponentShanten"]
+        if opponent_shanten
+        else merged["opponentDealInProbability"]
+    )
     return merged
 
 
@@ -1668,6 +1660,11 @@ def configure_decision_engine_from_config(config):
             or ""
         ),
         model_path=model_path,
+        weights=(
+            selected.get("weights")
+            if isinstance(selected.get("weights"), list)
+            else []
+        ),
         engine_command=engine_command,
         engine_cwd=_resolve_configured_engine_cwd(selected, engine_command),
         engine_options=(
@@ -1679,43 +1676,50 @@ def configure_decision_engine_from_config(config):
 
 
 def configure_opponent_analysis_engine_from_config(config):
-    defaults = get_default_models_config()["opponentAnalysis"]
     models = _models_config_from_project_config(config)
-    selected = models.get("opponentAnalysis") if isinstance(models, dict) else None
-    selected = selected if isinstance(selected, dict) else {}
-    engine_command = _resolve_configured_engine_command(
-        selected,
-        defaults,
-        kind="opponent-analysis",
-    )
-    SHANTEN_GATEWAY.configure_profile(
-        profile_id=str(selected.get("profileId") or defaults["profileId"]),
-        engine_id=str(selected.get("engineId") or defaults["engineId"]),
-        engine_version=str(
-            selected.get("engineVersion") or defaults["engineVersion"]
-        ),
-        model_id=str(selected.get("modelId") or defaults["modelId"]),
-        model_format=str(
-            selected.get("modelFormat") or defaults["modelFormat"]
-        ),
-        model_path=_resolve_engine_resource_path(
-            selected.get("modelPath") or defaults["modelPath"]
-        ),
-        expected_sha256=str(
-            selected.get("modelSha256") or defaults["modelSha256"]
-        ),
-        input_modes=(
-            selected.get("inputModes")
-            if isinstance(selected.get("inputModes"), list)
-            else defaults["inputModes"]
-        ),
-        engine_command=engine_command,
-        engine_cwd=_resolve_configured_engine_cwd(selected, engine_command),
-        engine_options=(
-            selected.get("engineOptions")
-            if isinstance(selected.get("engineOptions"), dict)
-            else {}
-        ),
+    defaults = get_default_models_config()
+
+    def gateway_profile(config_key):
+        selected = models.get(config_key) if isinstance(models, dict) else None
+        selected = selected if isinstance(selected, dict) else {}
+        if not str(selected.get("profileId") or ""):
+            return None
+        base = defaults[config_key]
+        engine_command = _resolve_configured_engine_command(
+            selected,
+            base,
+            kind="opponent",
+        )
+        return {
+            "profile_id": str(selected.get("profileId") or ""),
+            "engine_id": str(selected.get("engineId") or ""),
+            "engine_version": str(selected.get("engineVersion") or ""),
+            "model_id": str(selected.get("modelId") or ""),
+            "model_format": str(selected.get("modelFormat") or ""),
+            "model_path": _resolve_engine_resource_path(selected.get("modelPath") or ""),
+            "weights": [
+                {
+                    "slotId": str(weight.get("slotId") or ""),
+                    "format": str(weight.get("format") or ""),
+                    "path": _resolve_engine_resource_path(weight.get("path") or ""),
+                }
+                for weight in (selected.get("weights") or [])
+                if isinstance(weight, dict)
+            ],
+            "expected_sha256": str(selected.get("modelSha256") or ""),
+            "input_modes": ["public"],
+            "engine_command": engine_command,
+            "engine_cwd": _resolve_configured_engine_cwd(selected, engine_command),
+            "engine_options": (
+                selected.get("engineOptions")
+                if isinstance(selected.get("engineOptions"), dict)
+                else {}
+            ),
+        }
+
+    SHANTEN_GATEWAY.configure_profiles(
+        gateway_profile("opponentShanten"),
+        gateway_profile("opponentDealInProbability"),
     )
 
 
@@ -1794,7 +1798,6 @@ def describe_engine(payload):
     engine_id = str(payload.get("engineId") or "")
     command = payload.get("engineCommand")
     command = [str(part) for part in command] if isinstance(command, list) else None
-    kind = str(payload.get("kind") or "decision")
     if not command:
         raise ValueError("engine executable is unavailable")
     client = EngineProcessClient(
@@ -1802,14 +1805,12 @@ def describe_engine(payload):
         command=command,
         cwd=str(payload.get("engineCwd") or "") or None,
         expected_engine_id=engine_id or "",
+        expected_engine_version=str(payload.get("engineVersion") or ""),
     )
     try:
         hello = client.describe()
     finally:
         client.shutdown()
-    engine = hello.get("engine") or {}
-    if kind not in (engine.get("kinds") or []):
-        raise ValueError("engine kind is incompatible")
     return hello
 
 

@@ -3,18 +3,12 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const {
-  buildPortableDefaultSettings,
-  loadSettings,
-  saveSettings,
-} = require('./settings')
+const { buildPortableDefaultSettings, loadSettings, saveSettings } = require('./settings')
 
 function testPortableDefaultsHaveNoEngines() {
   const settings = buildPortableDefaultSettings()
-  assert.deepEqual(settings.engines.decisionProfiles, [])
-  assert.deepEqual(settings.engines.opponentAnalysisProfiles, [])
-  assert.equal(settings.engines.selectedDecisionProfileId, '')
-  assert.equal(settings.engines.selectedOpponentAnalysisProfileId, '')
+  assert.deepEqual(settings.engines.profiles, [])
+  assert.equal(settings.engines.outputAssignments['action-recommendation'], '')
   assert.equal(settings.audio.volume, 50)
   assert.equal(settings.audio.soundPackId, '')
   assert.equal('voice' in settings.audio, false)
@@ -25,18 +19,20 @@ function testUserProfilePersists() {
   const options = { appDir: portableDir, portableDir, resourceDir: portableDir }
   try {
     const settings = loadSettings(options)
-    settings.engines.decisionProfiles.push({
+    settings.engines.profiles.push({
       id: 'profile.example',
       name: 'My engine',
-      engineId: 'example.decision',
-      modelId: 'example.model',
+      engineId: 'example.engine',
+      enginePath: 'C:\\engine\\engine.exe',
+      weights: [{ slotId: 'model', format: 'example', path: 'C:\\engine\\model.bin' }],
+      device: 'cpu',
       options: { temperature: 0.5 },
     })
-    settings.engines.selectedDecisionProfileId = 'profile.example'
+    settings.engines.outputAssignments['action-recommendation'] = 'profile.example'
     saveSettings(settings, options)
     const reloaded = loadSettings(options)
-    assert.equal(reloaded.engines.selectedDecisionProfileId, 'profile.example')
-    assert.equal(reloaded.engines.decisionProfiles[0].name, 'My engine')
+    assert.equal(reloaded.engines.outputAssignments['action-recommendation'], 'profile.example')
+    assert.equal(reloaded.engines.profiles[0].name, 'My engine')
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })
   }
@@ -58,12 +54,10 @@ function testSoundPackSelectionPersistsOnlyWhileAvailable() {
       version: '1.0.0',
       sounds: { 'tile.discard': 'sounds/discard.wav' },
     }))
-
     const settings = loadSettings(options)
     settings.audio.soundPackId = 'local.test.sound'
     saveSettings(settings, options)
     assert.equal(loadSettings(options).audio.soundPackId, 'local.test.sound')
-
     fs.rmSync(manifestPath)
     assert.equal(loadSettings(options).audio.soundPackId, '')
   } finally {

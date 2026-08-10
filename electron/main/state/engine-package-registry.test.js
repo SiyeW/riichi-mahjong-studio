@@ -7,7 +7,6 @@ const {
   discoverEnginePackages,
   publicEngineCatalog,
   validateEngineManifest,
-  validateModelMetadata,
 } = require('./engine-package-registry')
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..')
@@ -19,58 +18,32 @@ function writeJson(filePath, value) {
 
 function customEngine(id = 'third-party.test-engine') {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
     name: 'Test Engine',
     version: '1.2.3',
-    protocol: {
-      name: 'riichi-engine-protocol',
-      major: 1,
-      minor: 0,
-    },
-    kinds: ['decision'],
+    sourceUrl: 'https://example.com/source',
+    protocol: { name: 'riichi-engine-protocol', major: 2, minor: 0 },
     entrypoints: {
       'windows-x64': {
         executable: 'runtime/test-engine.exe',
         arguments: ['--stdio'],
       },
     },
-    modelFormats: [{
-      id: 'test-checkpoint',
-      extensions: ['.bin'],
-      inputSchema: 'test-input-v1',
-      outputSchema: 'decision-v1',
-    }],
-    capabilities: {
-      multipleSessions: true,
-      incrementalHistory: false,
-      cancellation: false,
-      reload: true,
-    },
-    licenses: [{
-      name: 'Test license',
-      path: 'LICENSE',
-    }],
-    notices: [{
-      name: 'Third-party notices',
-      path: 'THIRD_PARTY_NOTICES.md',
-    }],
+    licenses: [{ name: 'Test license', path: 'LICENSE' }],
+    notices: [{ name: 'Third-party notices', path: 'THIRD_PARTY_NOTICES.md' }],
   }
 }
 
-function customModel() {
-  return {
-    schemaVersion: 1,
-    id: 'third-party.test-model',
-    name: 'Test Model',
-    engineId: 'third-party.test-engine',
-    format: 'test-checkpoint',
-    file: 'model.bin',
-    sha256: '0'.repeat(64),
-    sizeBytes: 3,
-    inputSchema: 'test-input-v1',
-    outputSchema: 'decision-v1',
+function createPackage(root, manifest = customEngine(), withExecutable = true) {
+  writeJson(path.join(root, 'engine.json'), manifest)
+  if (withExecutable) {
+    const executablePath = path.join(root, 'runtime', 'test-engine.exe')
+    fs.mkdirSync(path.dirname(executablePath), { recursive: true })
+    fs.writeFileSync(executablePath, 'mock executable')
   }
+  fs.writeFileSync(path.join(root, 'LICENSE'), 'test license')
+  fs.writeFileSync(path.join(root, 'THIRD_PARTY_NOTICES.md'), 'test notices')
 }
 
 function testEmptyPublicCatalog() {
@@ -80,58 +53,26 @@ function testEmptyPublicCatalog() {
     resourceDir: projectRoot,
   })
   assert.deepEqual(catalog.engines, [])
-  assert.deepEqual(catalog.models, [])
   assert.deepEqual(catalog.diagnostics, [])
+  assert.equal('models' in publicEngineCatalog(catalog), false)
 }
 
 function testPortablePackagesAndDuplicatePrecedence() {
-  const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mjai-engine-registry-'))
+  const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-engine-registry-'))
   try {
-    writeJson(
-      path.join(portableDir, 'engines', 'test', 'engine.json'),
-      customEngine(),
-    )
-    const executablePath = path.join(
-      portableDir,
-      'engines',
-      'test',
-      'runtime',
-      'test-engine.exe',
-    )
-    fs.mkdirSync(path.dirname(executablePath), { recursive: true })
-    fs.writeFileSync(executablePath, 'mock executable')
-    fs.writeFileSync(path.join(portableDir, 'engines', 'test', 'LICENSE'), 'test license')
-    fs.writeFileSync(
-      path.join(portableDir, 'engines', 'test', 'THIRD_PARTY_NOTICES.md'),
-      'test notices',
-    )
-    writeJson(
-      path.join(portableDir, 'engines', 'z-duplicate', 'engine.json'),
-      customEngine(),
-    )
-    const modelRoot = path.join(portableDir, 'engines', 'test')
-    writeJson(path.join(modelRoot, 'model.json'), customModel())
-    fs.writeFileSync(path.join(modelRoot, 'model.bin'), 'abc')
-
-    const catalog = discoverEnginePackages({
-      appDir: projectRoot,
-      portableDir,
-      resourceDir: projectRoot,
-    })
-    const custom = catalog.models.find((model) => model.id === 'third-party.test-model')
-    assert.equal(custom.compatible, true)
-    assert.equal(custom.builtIn, false)
+    createPackage(path.join(portableDir, 'engines', 'test'))
+    writeJson(path.join(portableDir, 'engines', 'z-duplicate', 'engine.json'), customEngine())
+    const catalog = discoverEnginePackages({ appDir: projectRoot, portableDir, resourceDir: projectRoot })
     assert.ok(catalog.diagnostics.some((item) => item.code === 'engine-id-duplicate'))
-    const publicCatalog = publicEngineCatalog(catalog)
-    const launch = publicCatalog.engines.find(
-      (engine) => engine.id === 'third-party.test-engine',
-    ).launch
-    assert.equal(launch.cwd, path.join(portableDir, 'engines', 'test'))
-    assert.equal(launch.arguments[0], '--stdio')
-    assert.ok(path.isAbsolute(launch.executable))
-    const publicEngine = publicCatalog.engines.find(
+    const publicEngine = publicEngineCatalog(catalog).engines.find(
       (engine) => engine.id === 'third-party.test-engine',
     )
+    assert.equal(publicEngine.launch.cwd, path.join(portableDir, 'engines', 'test'))
+    assert.equal(publicEngine.launch.arguments[0], '--stdio')
+    assert.ok(path.isAbsolute(publicEngine.launch.executable))
+    assert.deepEqual(publicEngine.protocol, {
+      name: 'riichi-engine-protocol', major: 2, minor: 0,
+    })
     assert.deepEqual(publicEngine.licenses, [{ name: 'Test license', available: true }])
     assert.deepEqual(publicEngine.notices, [{ name: 'Third-party notices', available: true }])
   } finally {
@@ -140,60 +81,29 @@ function testPortablePackagesAndDuplicatePrecedence() {
 }
 
 function testMissingExecutableMakesPackageUnavailable() {
-  const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mjai-engine-registry-'))
+  const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-engine-registry-'))
   try {
-    writeJson(
-      path.join(portableDir, 'engines', 'test', 'engine.json'),
-      customEngine(),
-    )
-    const modelRoot = path.join(portableDir, 'engines', 'test')
-    writeJson(path.join(modelRoot, 'model.json'), customModel())
-    fs.writeFileSync(path.join(modelRoot, 'model.bin'), 'abc')
-    const catalog = discoverEnginePackages({
-      appDir: projectRoot,
-      portableDir,
-      resourceDir: projectRoot,
-    })
-    assert.equal(
-      catalog.models.find((model) => model.id === 'third-party.test-model').compatible,
-      false,
-    )
-    assert.ok(
-      catalog.diagnostics.some((item) => item.code === 'engine-executable-missing'),
-    )
-    assert.equal(
-      publicEngineCatalog(catalog).engines.find(
-        (engine) => engine.id === 'third-party.test-engine',
-      ).launch,
-      null,
-    )
+    createPackage(path.join(portableDir, 'engines', 'test'), customEngine(), false)
+    const catalog = discoverEnginePackages({ appDir: projectRoot, portableDir, resourceDir: projectRoot })
+    assert.ok(catalog.diagnostics.some((item) => item.code === 'engine-executable-missing'))
+    assert.equal(publicEngineCatalog(catalog).engines[0].launch, null)
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })
   }
 }
 
 function testExternalEngineRootsFromEnvironment() {
-  const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mjai-external-engine-'))
+  const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-external-engine-'))
   try {
-    writeJson(path.join(externalRoot, 'engine.json'), customEngine())
-    const executablePath = path.join(externalRoot, 'runtime', 'test-engine.exe')
-    fs.mkdirSync(path.dirname(executablePath), { recursive: true })
-    fs.writeFileSync(executablePath, 'mock executable')
-    fs.writeFileSync(path.join(externalRoot, 'LICENSE'), 'test license')
-    fs.writeFileSync(path.join(externalRoot, 'THIRD_PARTY_NOTICES.md'), 'test notices')
-    writeJson(path.join(externalRoot, 'model.json'), customModel())
-    fs.writeFileSync(path.join(externalRoot, 'model.bin'), 'abc')
-
+    createPackage(externalRoot)
     const catalog = discoverEnginePackages({
       appDir: projectRoot,
       portableDir: projectRoot,
       resourceDir: projectRoot,
       env: { MJAI_ENGINE_ROOTS: externalRoot },
     })
-
     assert.equal(catalog.engines[0].id, 'third-party.test-engine')
     assert.equal(catalog.engines[0].builtIn, false)
-    assert.equal(catalog.models[0].compatible, true)
   } finally {
     fs.rmSync(externalRoot, { recursive: true, force: true })
   }
@@ -203,14 +113,9 @@ function testUnsafePathsAreRejected() {
   const engine = customEngine()
   engine.entrypoints['windows-x64'].executable = '../outside.exe'
   assert.ok(validateEngineManifest(engine).some((error) => error.includes('safe relative path')))
-
   const unsafeLicenseEngine = customEngine()
   unsafeLicenseEngine.licenses[0].path = '../LICENSE'
   assert.ok(validateEngineManifest(unsafeLicenseEngine).some((error) => error.includes('licenses entry path')))
-
-  const model = customModel()
-  model.file = 'C:/outside.bin'
-  assert.ok(validateModelMetadata(model).some((error) => error.includes('safe relative path')))
 }
 
 testEmptyPublicCatalog()

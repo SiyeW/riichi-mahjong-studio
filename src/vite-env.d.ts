@@ -7,36 +7,15 @@ interface TrainerSettings {
     builtInRuntimeLabel: string
     builtInModelLabel: string
     opponentAnalysisInputModes: Array<'public' | 'full-information'>
-    engineCatalog: {
-      schemaVersion: number
-      engines: Array<{
+      engineCatalog: {
+        schemaVersion: number
+        engines: Array<{
         id: string
         name: string
         version: string
-        builtIn: boolean
-        enginePath: string
-        kinds: Array<'decision' | 'opponent-analysis'>
-        capabilities: Record<string, unknown>
-        modelFormats: Array<{
-          id?: string
-          extensions?: string[]
-          inputSchema?: string
-          outputSchema?: string
-        }>
-        optionsSchema: {
-          type?: string
-          properties?: Record<string, {
-            type?: 'string' | 'number' | 'integer' | 'boolean'
-            enum?: Array<string | number | boolean>
-            default?: unknown
-            minimum?: number
-            maximum?: number
-            'x-ui'?: {
-              label?: string
-              control?: string
-            }
-          }>
-        }
+          builtIn: boolean
+          enginePath: string
+          protocol: { name: string; major: number; minor: number }
         licenses: Array<{ name: string; available: boolean }>
         notices: Array<{ name: string; available: boolean }>
         sourceUrl: string
@@ -45,19 +24,6 @@ interface TrainerSettings {
           arguments: string[]
           cwd: string
         } | null
-      }>
-      models: Array<{
-        id: string
-        name: string
-        engineId: string
-        format: string
-        builtIn: boolean
-        compatible: boolean
-        runtimePath: string
-        sha256: string
-        inputSchema: string
-        outputSchema: string
-        opponentInputModes: Array<'public' | 'full-information'>
       }>
       diagnostics: Array<{
         severity: 'error' | 'warning'
@@ -113,18 +79,15 @@ interface TrainerEngineProfile {
   name: string
   engineId: string
   enginePath: string
-  modelId: string
-  modelPath: string
   builtIn: boolean
   autoName?: boolean
   available: boolean
   unavailableReason?: string
   engineVersion?: string
-  modelFormat?: string
-  modelSha256?: string
   engineCommand?: string[]
   engineCwd?: string
-  inputModes?: Array<'public' | 'full-information'>
+  weights: Array<{ slotId: string; format: string; path: string }>
+  device: string
   options: {
     botVersion?: 'v3' | 'v4'
     temperature?: number
@@ -138,15 +101,25 @@ interface TrainerEngineDescription {
     id: string
     name: string
     version: string
-    kinds: Array<'decision' | 'opponent-analysis'>
-    modelFormats?: Array<{
-      id?: string
-      extensions?: string[]
-      inputSchema?: string
-      outputSchema?: string
-    }>
   }
-  capabilities: Record<string, unknown>
+  outputContracts: Array<{
+    id: string
+    version: number
+    representations?: string[]
+    supportsRevealedHands?: boolean
+    metrics?: Array<Record<string, unknown>>
+  }>
+  weightSlots: Array<{
+    id: string
+    title: string | Record<string, string>
+    formats: Array<{ id: string; extensions?: string[] }>
+    requiredForOutputs?: Array<{ id: string; version: number }>
+  }>
+  devices: Array<{
+    type: string
+    title?: string | Record<string, string>
+  }>
+  runtimeCapabilities: Record<string, boolean>
   optionsSchema: {
     type?: string
     properties?: Record<string, {
@@ -162,16 +135,15 @@ interface TrainerEngineDescription {
 
 interface TrainerEngineSettings {
   schemaVersion: number
-  decisionProfiles: TrainerEngineProfile[]
-  opponentAnalysisProfiles: TrainerEngineProfile[]
-  selectedDecisionProfileId: string
-  selectedOpponentAnalysisProfileId: string
+  profiles: TrainerEngineProfile[]
+  outputAssignments: Record<'action-recommendation' | 'opponent-shanten' | 'opponent-deal-in-probability', string>
 }
 
 type TrainerModelActivityState = 'idle' | 'loading' | 'running' | 'error'
 
 interface TrainerModelRuntimeState {
   profileId: string
+  profileIds?: string[]
   ready: boolean
   unloaded: boolean
 }
@@ -610,18 +582,19 @@ interface Window {
     saveSettings: (settings: Partial<TrainerSettings>) => Promise<TrainerSettings>
     describeEngine: (profile: {
       engineId?: string
+      engineVersion?: string
       enginePath: string
-      kind: 'decision' | 'opponent-analysis'
+      engineCommand?: string[]
+      engineCwd?: string
     }) => Promise<TrainerEngineDescription>
     chooseEngineFile: () => Promise<string>
     chooseEngineWeight: () => Promise<string>
     activateEngine: (payload: {
-      kind: 'decision' | 'opponent'
       profileId: string
       engines: TrainerEngineSettings
     }) => Promise<TrainerSettings>
     unloadEngine: (payload: {
-      kind: 'decision' | 'opponent'
+      profileId: string
     }) => Promise<TrainerStatusSnapshot>
     getStatus: () => Promise<TrainerStatusSnapshot>
     getGameView: () => Promise<TrainerEnvironmentResponse>

@@ -11,35 +11,29 @@ from decision_adapter import analyze_discard_choices, choose_ai_action
 
 class ExternalDecisionEngineTest(unittest.TestCase):
     def test_generic_contract_counts_shared_probability_once(self):
-        fingerprint = "sha256:" + ("b" * 64)
-        DecisionEngineGateway._validate_generic_result(  # pylint: disable=protected-access
+        result = DecisionEngineGateway._validate_generic_result(  # pylint: disable=protected-access
             {
-                "sessionId": "decision:seat-0:recommendation",
-                "positionId": "node-1",
-                "historyDigest": "sha256:test",
-                "engineFingerprint": fingerprint,
-                "bestCandidateId": "dahai:1m:tsumo",
-                "choices": [
-                    {
-                        "candidateId": "dahai:1m",
-                        "scoreGroupId": "dahai:1m",
-                        "rawValue": 1.25,
-                        "probability": 1.0,
+                "outputs": [{
+                    "id": "action-recommendation",
+                    "version": 1,
+                    "data": {
+                        "bestCandidateId": "dahai:1m:tsumo",
+                        "candidates": [
+                            {
+                                "candidateId": "dahai:1m",
+                                "metrics": {"q-value": 1.25, "policy": 1.0},
+                            },
+                            {
+                                "candidateId": "dahai:1m:tsumo",
+                                "metrics": {"q-value": 1.25, "policy": 1.0},
+                            },
+                        ],
                     },
-                    {
-                        "candidateId": "dahai:1m:tsumo",
-                        "scoreGroupId": "dahai:1m",
-                        "rawValue": 1.25,
-                        "probability": 1.0,
-                    },
-                ],
+                }],
             },
             {"dahai:1m", "dahai:1m:tsumo"},
-            "decision:seat-0:recommendation",
-            "node-1",
-            "sha256:test",
-            fingerprint,
         )
+        self.assertEqual(result["choices"][0]["probability"], 1.0)
 
     def test_generic_decision_contract_scores_host_candidates(self):
         script = textwrap.dedent(
@@ -47,7 +41,6 @@ class ExternalDecisionEngineTest(unittest.TestCase):
             import json
             import sys
 
-            fingerprint = "sha256:" + ("b" * 64)
             for line in sys.stdin:
                 request = json.loads(line)
                 method = request["method"]
@@ -56,44 +49,72 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                     result = {
                         "protocol": {
                             "name": "riichi-engine-protocol",
-                            "major": 1,
+                            "major": 2,
                             "minor": 0,
                         },
                         "engine": {
                             "id": "third-party.generic-decision",
                             "name": "Generic decision",
                             "version": "1.0.0",
-                            "kinds": ["decision"],
                         },
-                        "capabilities": {
+                        "outputContracts": [{
+                            "id": "action-recommendation",
+                            "version": 1,
+                            "metrics": [
+                                {"id": "q-value", "title": {"default": "Q value"}, "format": "number", "preferredDirection": "higher"},
+                                {"id": "policy", "title": {"default": "Policy"}, "format": "percentage", "preferredDirection": "higher"},
+                            ],
+                        }],
+                        "weightSlots": [{
+                            "id": "model",
+                            "title": {"default": "Model weights"},
+                            "formats": [{"id": "generic-model", "extensions": [".bin"]}],
+                            "requiredForOutputs": [{"id": "action-recommendation", "version": 1}],
+                        }],
+                        "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
+                        "runtimeCapabilities": {
                             "multipleSessions": True,
                             "incrementalHistory": True,
+                            "concurrentRequests": False,
+                            "cancellation": False,
                         },
+                        "optionsSchema": {"type": "object"},
                     }
                 elif method == "engine.initialize":
                     result = {
-                        "state": "ready",
-                        "engineId": "third-party.generic-decision",
-                        "engineVersion": "1.0.0",
-                        "outputSchema": "decision-v1",
-                        "fingerprint": fingerprint,
+                        "outputs": [{
+                            "id": "action-recommendation",
+                            "version": 1,
+                            "metrics": [
+                                {"id": "q-value", "title": {"default": "Q value"}, "format": "number", "preferredDirection": "higher"},
+                                {"id": "policy", "title": {"default": "Policy"}, "format": "percentage", "preferredDirection": "higher"},
+                            ],
+                            "primaryMetricId": "q-value",
+                        }],
+                        "device": {"type": "cpu"},
+                        "effectiveOptions": params.get("options") or {},
                     }
-                elif method == "decision.analyze":
-                    candidates = params["candidates"]
+                elif method == "analysis.run":
+                    candidates = params["outputs"][0]["parameters"]["candidates"]
                     result = {
-                        "sessionId": params["sessionId"],
-                        "positionId": params["positionId"],
-                        "historyDigest": params["historyDigest"],
-                        "engineFingerprint": fingerprint,
-                        "bestCandidateId": candidates[-1]["candidateId"],
-                        "choices": [
-                            {
-                                "candidateId": candidate["candidateId"],
-                                "rawValue": float(index),
-                                "probability": 0.25 if index == 0 else 0.75,
-                            }
-                            for index, candidate in enumerate(candidates)
-                        ],
+                        "outputs": [{
+                            "id": "action-recommendation",
+                            "version": 1,
+                            "data": {
+                                "bestCandidateId": candidates[-1]["candidateId"],
+                                "candidates": [
+                                    {
+                                        "candidateId": candidate["candidateId"],
+                                        "metrics": {
+                                            "q-value": float(index),
+                                            "policy": 0.25 if index == 0 else 0.75,
+                                        },
+                                    }
+                                    for index, candidate in enumerate(candidates)
+                                ],
+                            },
+                        }],
+                        "timing": {"totalMs": 1.0},
                     }
                 else:
                     result = {"ok": True}

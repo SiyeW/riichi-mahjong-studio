@@ -1210,10 +1210,6 @@
           <button class="floating-panel-close" aria-label="关闭引擎管理" @click="closeEngineWindow">&times;</button>
         </div>
       </div>
-      <div class="engine-kind-tabs">
-        <button :class="{ active: engineManagerKind === 'decision' }" @click="engineManagerKind = 'decision'">决策引擎</button>
-        <button :class="{ active: engineManagerKind === 'opponent' }" @click="engineManagerKind = 'opponent'">读牌引擎</button>
-      </div>
       <div class="engine-manager-body">
         <div class="engine-profile-column">
           <div
@@ -1242,7 +1238,7 @@
             <button
               :class="{ danger: deleteEngineConfirmationId === activeEngineProfile?.id }"
               @click="deleteEngineProfile"
-              :disabled="!activeEngineProfile || activeEngineProfile.builtIn || activeEngineProfile.id === configuredEngineProfileId"
+              :disabled="!activeEngineProfile || activeEngineProfile.builtIn || profileAssignedOutputs(activeEngineProfile).length > 0"
             >
               {{ deleteEngineConfirmationId === activeEngineProfile?.id ? '确认删除' : '删除' }}
             </button>
@@ -1268,12 +1264,44 @@
             </div>
           </div>
           <div class="engine-weight-field">
-            <span>权重文件</span>
-            <div>
-              <input :value="activeEngineProfile.modelPath" :disabled="profileConfigurationLocked(activeEngineProfile)" readonly type="text" placeholder="选择权重文件" />
-              <button :disabled="activeEngineProfile.builtIn || !activeEngineProfile.enginePath || profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineWeight">选择</button>
+            <span>输出</span>
+            <div class="engine-output-options">
+              <label v-for="output in activeSupportedOutputs" :key="output.id">
+                <input
+                  type="checkbox"
+                  :checked="settingsDraft.engines.outputAssignments[output.id] === activeEngineProfile.id"
+                  :disabled="profileConfigurationLocked(activeEngineProfile)"
+                  @change="setEngineOutputAssignment(output.id, $event)"
+                />
+                <span>{{ output.label }}</span>
+              </label>
+              <small v-if="activeEngineProfile.enginePath && !activeSupportedOutputs.length && !describingEngineId">主程序无法使用这个引擎声明的输出。</small>
             </div>
           </div>
+          <div
+            v-for="slot in activeEngineWeightSlots"
+            :key="slot.id"
+            class="engine-weight-field"
+            :class="{ inactive: !weightSlotIsActive(slot, activeEngineProfile) }"
+          >
+            <span>{{ localizedEngineText(slot.title, slot.id) }}</span>
+            <div>
+              <input :value="engineWeight(activeEngineProfile, slot.id)?.path || ''" :disabled="profileConfigurationLocked(activeEngineProfile)" readonly type="text" placeholder="选择权重文件" />
+              <button :disabled="activeEngineProfile.builtIn || !activeEngineProfile.enginePath || profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineWeight(slot.id)">选择</button>
+            </div>
+          </div>
+          <label v-if="activeEngineDevices.length">
+            <span>运行设备</span>
+            <select
+              :value="activeEngineProfile.device"
+              :disabled="profileConfigurationLocked(activeEngineProfile)"
+              @change="setEngineDevice"
+            >
+              <option v-for="device in activeEngineDevices" :key="device.type" :value="device.type">
+                {{ localizedEngineText(device.title, device.type) }}
+              </option>
+            </select>
+          </label>
           <div
             v-if="activeCatalogEngine && (activeCatalogEngine.licenses.length || activeCatalogEngine.notices.length)"
             class="engine-legal-field"
@@ -1580,9 +1608,8 @@ const settings = reactive<TrainerSettings>({
     builtInModelLabel: '',
     opponentAnalysisInputModes: ['public'],
     engineCatalog: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       engines: [],
-      models: [],
       diagnostics: [],
     },
     soundPackCatalog: {
@@ -1614,11 +1641,13 @@ const settings = reactive<TrainerSettings>({
     soundPackId: '',
   },
   engines: {
-    schemaVersion: 3,
-    decisionProfiles: [],
-    opponentAnalysisProfiles: [],
-    selectedDecisionProfileId: '',
-    selectedOpponentAnalysisProfileId: '',
+    schemaVersion: 2,
+    profiles: [],
+    outputAssignments: {
+      'action-recommendation': '',
+      'opponent-shanten': '',
+      'opponent-deal-in-probability': '',
+    },
   },
 })
 const reduceMotionEnabled = computed(() => Boolean(settings.display.reduceMotion))
@@ -1716,21 +1745,22 @@ function toggleShantenWindow() {
   showShantenWindow.value = !showShantenWindow.value
   if (showShantenWindow.value) focusFloatingPanel('shanten')
 }
-type EngineManagerKind = 'decision' | 'opponent'
-const engineManagerKind = ref<EngineManagerKind>('decision')
+type EngineRuntimeKind = 'decision' | 'opponent'
+type SupportedEngineOutputId = 'action-recommendation' | 'opponent-shanten' | 'opponent-deal-in-probability'
+const SUPPORTED_ENGINE_OUTPUTS: Array<{ id: SupportedEngineOutputId; version: number; label: string }> = [
+  { id: 'action-recommendation', version: 1, label: '动作推荐' },
+  { id: 'opponent-shanten', version: 1, label: '向听预测' },
+  { id: 'opponent-deal-in-probability', version: 1, label: '铳率预测' },
+]
 const engineSaveMessage = ref('')
 const loadingEngineProfileId = ref('')
-const loadingEngineKind = ref<EngineManagerKind | null>(null)
 const unloadingEngineProfileId = ref('')
 const deleteEngineConfirmationId = ref('')
 const DELETE_CONFIRMATION_TIMEOUT_MS = 3000
 let deleteEngineConfirmationTimer: number | null = null
 const describingEngineId = ref('')
-const editingEngineProfileIds = reactive({ decision: '', opponent: '' })
-const runtimeEngineProfiles = reactive<{
-  decision: TrainerEngineProfile | null
-  opponent: TrainerEngineProfile | null
-}>({ decision: null, opponent: null })
+const editingEngineProfileId = ref('')
+const runtimeEngineProfiles = reactive<Record<string, TrainerEngineProfile>>({})
 const engineDescriptions = reactive<Record<string, TrainerEngineDescription>>({})
 const engineDescribeErrors = reactive<Record<string, string>>({})
 const engineLoadErrors = reactive<Record<string, string>>({})
@@ -1741,18 +1771,9 @@ let engineAutosaveTimer: number | null = null
 let engineAutosavePromise: Promise<boolean> | null = null
 let suppressEngineAutosave = false
 let engineAutosaveEnabled = false
-const activeEngineProfiles = computed(() => (
-  engineManagerKind.value === 'decision'
-    ? settingsDraft.engines.decisionProfiles
-    : settingsDraft.engines.opponentAnalysisProfiles
-))
-const configuredEngineProfileId = computed(() => (
-  engineManagerKind.value === 'decision'
-    ? settingsDraft.engines.selectedDecisionProfileId
-    : settingsDraft.engines.selectedOpponentAnalysisProfileId
-))
+const activeEngineProfiles = computed(() => settingsDraft.engines.profiles)
 const activeEngineProfile = computed(() => (
-  activeEngineProfiles.value.find((profile) => profile.id === editingEngineProfileIds[engineManagerKind.value])
+  activeEngineProfiles.value.find((profile) => profile.id === editingEngineProfileId.value)
   || activeEngineProfiles.value[0]
   || null
 ))
@@ -1765,9 +1786,19 @@ const activeCatalogEngine = computed(() => (
     (engine) => engine.id === activeEngineProfile.value?.engineId,
   ) || null
 ))
+const activeEngineDescription = computed(() => (
+  engineDescriptions[engineDescriptionKey(activeEngineProfile.value)] || null
+))
+const activeSupportedOutputs = computed(() => {
+  const contracts = activeEngineDescription.value?.outputContracts || []
+  return SUPPORTED_ENGINE_OUTPUTS.filter((supported) => contracts.some((contract) => (
+    contract.id === supported.id && contract.version === supported.version
+  )))
+})
+const activeEngineWeightSlots = computed(() => activeEngineDescription.value?.weightSlots || [])
+const activeEngineDevices = computed(() => activeEngineDescription.value?.devices || [])
 const activeEngineOptionEntries = computed(() => {
-  const runtimeSchema = engineDescriptions[engineDescriptionKey(activeEngineProfile.value)]?.optionsSchema
-  const properties = runtimeSchema?.properties || activeCatalogEngine.value?.optionsSchema?.properties || {}
+  const properties = activeEngineDescription.value?.optionsSchema?.properties || {}
   return Object.entries(properties)
     .filter(([key]) => key !== 'device')
     .map(([key, schema]) => ({
@@ -1792,12 +1823,9 @@ function openEngineWindow() {
   showEngineWindow.value = true
   engineSaveMessage.value = ''
   deleteEngineConfirmationId.value = ''
-  editingEngineProfileIds.decision = settingsDraft.engines.selectedDecisionProfileId
-    || settingsDraft.engines.decisionProfiles[0]?.id
-    || ''
-  editingEngineProfileIds.opponent = settingsDraft.engines.selectedOpponentAnalysisProfileId
-    || settingsDraft.engines.opponentAnalysisProfiles[0]?.id
-    || ''
+  if (!settingsDraft.engines.profiles.some((profile) => profile.id === editingEngineProfileId.value)) {
+    editingEngineProfileId.value = settingsDraft.engines.profiles[0]?.id || ''
+  }
   void describeEngineProfile(activeEngineProfile.value)
   focusFloatingPanel('engine')
 }
@@ -1808,21 +1836,11 @@ function closeEngineWindow() {
 }
 
 function selectEngineProfile(profileId: string) {
-  editingEngineProfileIds[engineManagerKind.value] = profileId
+  editingEngineProfileId.value = profileId
   deleteEngineConfirmationId.value = ''
   const profile = activeEngineProfiles.value.find((item) => item.id === profileId) || null
   void describeEngineProfile(profile)
 }
-
-watch(engineManagerKind, () => {
-  deleteEngineConfirmationId.value = ''
-  if (!editingEngineProfileIds[engineManagerKind.value]) {
-    editingEngineProfileIds[engineManagerKind.value] = configuredEngineProfileId.value
-      || activeEngineProfiles.value[0]?.id
-      || ''
-  }
-  void describeEngineProfile(activeEngineProfile.value)
-})
 
 watch(deleteEngineConfirmationId, (profileId) => {
   if (deleteEngineConfirmationTimer !== null) {
@@ -1850,50 +1868,26 @@ function engineDescriptionKey(profile: TrainerEngineProfile | null): string {
 
 async function describeEngineProfile(
   profile: TrainerEngineProfile | null,
-  kind: EngineManagerKind = engineManagerKind.value,
 ) {
   const key = engineDescriptionKey(profile)
   if (!profile?.enginePath || engineDescriptions[key]) return
-  const catalogEngine = catalogEngineForProfile(profile)
-  if (catalogEngine) {
-    engineDescriptions[key] = {
-      protocol: { name: 'riichi-engine-protocol', major: 1 },
-      engine: {
-        id: catalogEngine.id,
-        name: catalogEngine.name,
-        version: catalogEngine.version,
-        kinds: catalogEngine.kinds,
-        modelFormats: catalogEngine.modelFormats,
-      },
-      capabilities: catalogEngine.capabilities,
-      optionsSchema: catalogEngine.optionsSchema,
-    }
-    if (!profileConfigurationLocked(profile, kind)) {
-      profile.engineId = catalogEngine.id
-      profile.engineVersion = catalogEngine.version
-    }
-    return
-  }
   if (!window.trainerAPI?.describeEngine) return
   describingEngineId.value = key
   delete engineDescribeErrors[key]
   try {
     const description = await window.trainerAPI.describeEngine({
       engineId: profile.engineId || undefined,
+      engineVersion: profile.engineVersion || undefined,
       enginePath: profile.enginePath,
-      kind: kind === 'decision' ? 'decision' : 'opponent-analysis',
+      engineCommand: profile.engineCommand,
+      engineCwd: profile.engineCwd,
     })
     engineDescriptions[key] = description
-    if (profileConfigurationLocked(profile, kind)) return
+    if (profileConfigurationLocked(profile)) return
     profile.engineId = description.engine.id
     profile.engineVersion = description.engine.version
-    if (kind === 'opponent' && !profile.builtIn) {
-      const modes = description.capabilities?.opponentInputModes
-      if (Array.isArray(modes)) {
-        profile.inputModes = modes.filter((mode): mode is 'public' | 'full-information' => (
-          mode === 'public' || mode === 'full-information'
-        ))
-      }
+    if (!profile.device || !description.devices.some((device) => device.type === profile.device)) {
+      profile.device = description.devices[0]?.type || ''
     }
   } catch (error) {
     engineDescribeErrors[key] = error instanceof Error ? error.message : String(error)
@@ -1902,25 +1896,17 @@ async function describeEngineProfile(
   }
 }
 
-function runtimeEngineError(kind: EngineManagerKind): string {
+function runtimeEngineError(kind: EngineRuntimeKind): string {
   if (kind === 'opponent') {
     return String(status.modelActivity?.errors?.opponentAnalysis || '')
   }
   return (status.modelActivity?.errors?.decision || []).find(Boolean) || ''
 }
 
-function activeRuntimeEngineError(): string {
-  return runtimeEngineError(engineManagerKind.value)
-}
-
-function runtimeEngineState(kind: EngineManagerKind): TrainerModelRuntimeState {
+function runtimeEngineState(kind: EngineRuntimeKind): TrainerModelRuntimeState {
   return kind === 'opponent'
     ? status.modelRuntime.opponentAnalysis
     : status.modelRuntime.decision
-}
-
-function activeRuntimeEngineState(): TrainerModelRuntimeState {
-  return runtimeEngineState(engineManagerKind.value)
 }
 
 function runtimeFields(profile: TrainerEngineProfile): string {
@@ -1930,46 +1916,40 @@ function runtimeFields(profile: TrainerEngineProfile): string {
     enginePath: profile.enginePath,
     engineCommand: profile.engineCommand || [],
     engineCwd: profile.engineCwd || '',
-    modelId: profile.modelId,
-    modelFormat: profile.modelFormat,
-    modelSha256: profile.modelSha256 || '',
-    modelPath: profile.modelPath,
-    inputModes: profile.inputModes || [],
+    weights: profile.weights || [],
+    device: profile.device || '',
     options: profile.options || {},
   })
 }
 
 function captureRuntimeEngineProfile(
-  kind: 'decision' | 'opponent',
+  kind: EngineRuntimeKind,
   engines: TrainerEngineSettings,
 ) {
-  const profileId = kind === 'decision'
-    ? engines.selectedDecisionProfileId
-    : engines.selectedOpponentAnalysisProfileId
-  const profiles = kind === 'decision'
-    ? engines.decisionProfiles
-    : engines.opponentAnalysisProfiles
-  const profile = profiles.find((item) => item.id === profileId) || null
-  runtimeEngineProfiles[kind] = profile
-    ? JSON.parse(JSON.stringify(profile)) as TrainerEngineProfile
-    : null
+  const outputIds: SupportedEngineOutputId[] = kind === 'decision'
+    ? ['action-recommendation']
+    : ['opponent-shanten', 'opponent-deal-in-probability']
+  for (const outputId of outputIds) {
+    const profileId = engines.outputAssignments[outputId]
+    const profile = engines.profiles.find((item) => item.id === profileId)
+    if (profile) {
+      runtimeEngineProfiles[profile.id] = JSON.parse(JSON.stringify(profile)) as TrainerEngineProfile
+    }
+  }
 }
 
 function markConfiguredEngineStarting(
-  kind: 'decision' | 'opponent',
+  kind: EngineRuntimeKind,
   engines: TrainerEngineSettings,
 ) {
   const runtime = runtimeEngineState(kind)
   if (runtime.ready || runtime.unloaded || runtimeEngineError(kind)) return
 
-  const profileId = kind === 'decision'
-    ? engines.selectedDecisionProfileId
-    : engines.selectedOpponentAnalysisProfileId
-  const profiles = kind === 'decision'
-    ? engines.decisionProfiles
-    : engines.opponentAnalysisProfiles
-  const profile = profiles.find((item) => item.id === profileId)
-  if (!profile?.enginePath || !profile.modelPath) return
+  const outputId = kind === 'decision' ? 'action-recommendation' : 'opponent-shanten'
+  const profileId = engines.outputAssignments[outputId]
+    || (kind === 'opponent' ? engines.outputAssignments['opponent-deal-in-probability'] : '')
+  const profile = engines.profiles.find((item) => item.id === profileId)
+  if (!profile?.enginePath || !(profile.weights || []).every((weight) => weight.path)) return
   if (runtime.profileId && runtime.profileId !== profileId) return
 
   Object.assign(runtime, {
@@ -1984,82 +1964,91 @@ function markConfiguredEngineStarting(
   }
 }
 
-function runtimeProfileChanged(
-  profile: TrainerEngineProfile,
-  kind: EngineManagerKind = engineManagerKind.value,
-): boolean {
-  const runtimeProfile = runtimeEngineProfiles[kind]
+function runtimeProfileChanged(profile: TrainerEngineProfile, kind: EngineRuntimeKind): boolean {
+  void kind
+  const runtimeProfile = runtimeEngineProfiles[profile.id]
   return !runtimeProfile
     || profile.id !== runtimeProfile.id
     || runtimeFields(profile) !== runtimeFields(runtimeProfile)
 }
 
-function profileMatchesRuntime(
-  profile: TrainerEngineProfile,
-  kind: EngineManagerKind = engineManagerKind.value,
-): boolean {
-  return runtimeEngineState(kind).profileId === profile.id
+function profileMatchesRuntime(profile: TrainerEngineProfile, kind: EngineRuntimeKind): boolean {
+  const runtime = runtimeEngineState(kind)
+  return (runtime.profileId === profile.id || runtime.profileIds?.includes(profile.id) === true)
     && !runtimeProfileChanged(profile, kind)
 }
 
-function profileIsLoaded(
-  profile: TrainerEngineProfile,
-  kind: EngineManagerKind = engineManagerKind.value,
-): boolean {
-  return profileMatchesRuntime(profile, kind) && runtimeEngineState(kind).ready
+function profileRuntimeKinds(profile: TrainerEngineProfile): EngineRuntimeKind[] {
+  const outputs = profileAssignedOutputs(profile)
+  const runtimeGroups: EngineRuntimeKind[] = []
+  if (outputs.includes('action-recommendation')) runtimeGroups.push('decision')
+  if (outputs.some((output) => output !== 'action-recommendation')) runtimeGroups.push('opponent')
+  return runtimeGroups
 }
 
-function profileIsLoading(
-  profile: TrainerEngineProfile,
-  kind: EngineManagerKind = engineManagerKind.value,
-): boolean {
-  const runtime = runtimeEngineState(kind)
-  return (profile.id === loadingEngineProfileId.value && kind === loadingEngineKind.value)
-    || (profileMatchesRuntime(profile, kind)
+function profileIsLoaded(profile: TrainerEngineProfile): boolean {
+  const runtimeGroups = profileRuntimeKinds(profile)
+  return runtimeGroups.length > 0 && runtimeGroups.every((kind) => (
+    profileMatchesRuntime(profile, kind) && runtimeEngineState(kind).ready
+  ))
+}
+
+function profileIsLoading(profile: TrainerEngineProfile): boolean {
+  if (profile.id === loadingEngineProfileId.value) return true
+  return profileRuntimeKinds(profile).some((kind) => {
+    const runtime = runtimeEngineState(kind)
+    return profileMatchesRuntime(profile, kind)
       && !runtime.ready
       && !runtime.unloaded
-      && !runtimeEngineError(kind))
+      && !runtimeEngineError(kind)
+  })
 }
 
-function profileConfigurationLocked(
-  profile: TrainerEngineProfile,
-  kind: EngineManagerKind = engineManagerKind.value,
-): boolean {
-  return profileIsLoaded(profile, kind) || profileIsLoading(profile, kind)
+function profileConfigurationLocked(profile: TrainerEngineProfile): boolean {
+  return profileIsLoaded(profile) || profileIsLoading(profile)
 }
 
 function engineProfileClasses(profile: TrainerEngineProfile) {
-  const matchesRuntime = profileMatchesRuntime(profile)
-  const loaded = matchesRuntime && activeRuntimeEngineState().ready
+  const runtimeGroups = profileRuntimeKinds(profile)
+  const loaded = profileIsLoaded(profile)
+  const matchesRuntime = runtimeGroups.some((kind) => profileMatchesRuntime(profile, kind))
   return {
     selected: profile.id === activeEngineProfile.value?.id,
     loaded,
     loading: profileIsLoading(profile),
-    unloaded: matchesRuntime && activeRuntimeEngineState().unloaded,
+    unloaded: matchesRuntime && runtimeGroups.every((kind) => runtimeEngineState(kind).unloaded),
     error: Boolean(engineLoadErrors[profile.id])
-      || (matchesRuntime && Boolean(activeRuntimeEngineError())),
-    unavailable: !profile.enginePath || !profile.modelPath,
+      || runtimeGroups.some((kind) => profileMatchesRuntime(profile, kind) && Boolean(runtimeEngineError(kind))),
+    unavailable: !profile.enginePath || profileAssignedOutputs(profile).length === 0,
   }
 }
 
 function engineProfileSubtitle(profile: TrainerEngineProfile): string {
-  if (profile.id === loadingEngineProfileId.value && engineManagerKind.value === loadingEngineKind.value) return '正在加载'
+  if (profile.id === loadingEngineProfileId.value) return '正在加载'
   if (engineLoadErrors[profile.id]) return '加载失败'
-  if (!profileMatchesRuntime(profile)) return ''
-  if (activeRuntimeEngineState().unloaded) return '未加载'
-  if (activeRuntimeEngineError()) return '加载失败'
-  if (!activeRuntimeEngineState().ready) return '正在加载'
+  const runtimeGroups = profileRuntimeKinds(profile)
+  if (!runtimeGroups.some((kind) => profileMatchesRuntime(profile, kind))) return ''
+  if (runtimeGroups.some((kind) => runtimeEngineError(kind))) return '加载失败'
+  if (runtimeGroups.every((kind) => runtimeEngineState(kind).unloaded)) return '未加载'
+  if (!profileIsLoaded(profile)) return '正在加载'
   return '已加载'
 }
 
-const engineFooterMessage = computed(() => activeRuntimeEngineError() || engineSaveMessage.value)
+const engineFooterMessage = computed(() => {
+  const profile = activeEngineProfile.value
+  const runtimeError = profile
+    ? profileRuntimeKinds(profile).map(runtimeEngineError).find(Boolean)
+    : ''
+  return runtimeError || engineSaveMessage.value
+})
 
 function shouldShowEngineActionButton(profile: TrainerEngineProfile): boolean {
   return profileIsLoaded(profile)
     || (
       !profileIsLoading(profile)
-      && Boolean(profile.enginePath && profile.modelPath)
-      && (!profileMatchesRuntime(profile) || !activeRuntimeEngineState().ready)
+      && Boolean(profile.enginePath && profileAssignedOutputs(profile).length)
+      && activeRequiredWeightsReady(profile)
+      && !profileIsLoaded(profile)
     )
 }
 
@@ -2095,7 +2084,7 @@ function duplicateEngineProfile() {
 function deleteEngineProfile() {
   const profile = activeEngineProfile.value
   const index = activeEngineProfileIndex.value
-  if (!profile || profile.builtIn || profile.id === configuredEngineProfileId.value || index < 0) return
+  if (!profile || profile.builtIn || profileAssignedOutputs(profile).length > 0 || index < 0) return
   if (deleteEngineConfirmationId.value !== profile.id) {
     deleteEngineConfirmationId.value = profile.id
     return
@@ -2112,11 +2101,11 @@ function addEngineProfile() {
     name: '',
     engineId: '',
     enginePath: '',
-    modelId: '',
-    modelPath: '',
     builtIn: false,
     available: false,
     autoName: true,
+    weights: [],
+    device: '',
     options: {},
   }
   activeEngineProfiles.value.push(profile)
@@ -2131,8 +2120,10 @@ function suggestedEngineProfileName(profile: TrainerEngineProfile): string {
   const engineName = engineDescriptions[engineDescriptionKey(profile)]?.engine.name
     || catalogEngineForProfile(profile)?.name
     || fileNameFromPath(profile.enginePath).replace(/\.[^.]+$/, '')
-  const weightName = fileNameFromPath(profile.modelPath).replace(/\.[^.]+$/, '')
-  return [engineName, weightName].filter(Boolean).join(' + ')
+  const weightNames = (profile.weights || [])
+    .map((weight) => fileNameFromPath(weight.path).replace(/\.[^.]+$/, ''))
+    .filter(Boolean)
+  return [engineName, ...weightNames].filter(Boolean).join(' + ')
 }
 
 function refreshAutomaticEngineName(profile: TrainerEngineProfile) {
@@ -2152,58 +2143,88 @@ function setEngineProfileName(event: Event) {
 
 async function chooseEngineFile() {
   const profile = activeEngineProfile.value
-  const kind = engineManagerKind.value
-  if (!profile || profile.builtIn || profileConfigurationLocked(profile, kind) || !window.trainerAPI?.chooseEngineFile) return
+  if (!profile || profile.builtIn || profileConfigurationLocked(profile) || !window.trainerAPI?.chooseEngineFile) return
   const selectedPath = await window.trainerAPI.chooseEngineFile()
-  if (!selectedPath || profileConfigurationLocked(profile, kind)) return
+  if (!selectedPath || profileConfigurationLocked(profile)) return
   profile.enginePath = selectedPath
+  profile.engineCommand = [selectedPath]
+  profile.engineCwd = ''
   profile.engineId = ''
   profile.engineVersion = ''
-  profile.modelId = ''
-  profile.modelFormat = ''
-  profile.modelSha256 = ''
-  profile.modelPath = ''
+  profile.weights = []
+  profile.device = ''
   profile.options = {}
   profile.available = false
   delete engineLoadErrors[profile.id]
   refreshAutomaticEngineName(profile)
-  await describeEngineProfile(profile, kind)
+  await describeEngineProfile(profile)
   refreshAutomaticEngineName(profile)
 }
 
-async function chooseEngineWeight() {
+async function chooseEngineWeight(slotId: string) {
   const profile = activeEngineProfile.value
-  const kind = engineManagerKind.value
-  if (!profile || profile.builtIn || profileConfigurationLocked(profile, kind) || !window.trainerAPI?.chooseEngineWeight) return
+  if (!profile || profile.builtIn || profileConfigurationLocked(profile) || !window.trainerAPI?.chooseEngineWeight) return
   const selectedPath = await window.trainerAPI.chooseEngineWeight()
-  if (!selectedPath || profileConfigurationLocked(profile, kind)) return
-  const catalogModel = settings.runtime?.engineCatalog?.models.find((model) => (
-    model.engineId === profile.engineId
-    && model.runtimePath.toLowerCase() === selectedPath.toLowerCase()
-  ))
-  const engine = catalogEngineForProfile(profile)
-  const description = engineDescriptions[engineDescriptionKey(profile)]
+  if (!selectedPath || profileConfigurationLocked(profile)) return
+  const slot = activeEngineWeightSlots.value.find((item) => item.id === slotId)
+  if (!slot) return
   const extension = selectedPath.match(/\.[^.\\/]+$/)?.[0]?.toLowerCase() || ''
-  const modelFormats = description?.engine.modelFormats || engine?.modelFormats || []
-  const format = modelFormats.find((item) => (
+  const format = slot.formats.find((item) => (
     Array.isArray(item.extensions)
     && item.extensions.map((value) => String(value).toLowerCase()).includes(extension)
-  )) || modelFormats[0]
-  profile.modelPath = selectedPath
-  profile.modelId = catalogModel?.id || `model.user.${Date.now().toString(36)}`
-  profile.modelFormat = catalogModel?.format || String(format?.id || '')
-  profile.modelSha256 = catalogModel?.sha256 || ''
-  const runtimeInputModes = description?.capabilities?.opponentInputModes
-  profile.inputModes = catalogModel?.opponentInputModes?.length
-    ? [...catalogModel.opponentInputModes]
-    : (Array.isArray(runtimeInputModes)
-      ? runtimeInputModes.filter((mode): mode is 'public' | 'full-information' => (
-        mode === 'public' || mode === 'full-information'
-      ))
-      : ['public'])
+  )) || slot.formats[0]
+  const weights = profile.weights || (profile.weights = [])
+  const next = { slotId, format: String(format?.id || ''), path: selectedPath }
+  const index = weights.findIndex((weight) => weight.slotId === slotId)
+  if (index >= 0) weights.splice(index, 1, next)
+  else weights.push(next)
   profile.available = true
   delete engineLoadErrors[profile.id]
   refreshAutomaticEngineName(profile)
+}
+
+function localizedEngineText(value: string | Record<string, string> | undefined, fallback: string): string {
+  if (typeof value === 'string') return value
+  return value?.['zh-CN'] || value?.default || fallback
+}
+
+function profileAssignedOutputs(profile: TrainerEngineProfile): SupportedEngineOutputId[] {
+  return SUPPORTED_ENGINE_OUTPUTS
+    .map((output) => output.id)
+    .filter((outputId) => settingsDraft.engines.outputAssignments[outputId] === profile.id)
+}
+
+function setEngineOutputAssignment(outputId: SupportedEngineOutputId, event: Event) {
+  const profile = activeEngineProfile.value
+  if (!profile || profileConfigurationLocked(profile)) return
+  const checked = (event.target as HTMLInputElement).checked
+  settingsDraft.engines.outputAssignments[outputId] = checked ? profile.id : ''
+}
+
+function engineWeight(profile: TrainerEngineProfile, slotId: string) {
+  return (profile.weights || []).find((weight) => weight.slotId === slotId)
+}
+
+function weightSlotIsActive(slot: TrainerEngineDescription['weightSlots'][number], profile: TrainerEngineProfile): boolean {
+  const required = slot.requiredForOutputs || []
+  if (!required.length) return true
+  const assigned = new Set(profileAssignedOutputs(profile))
+  return required.some((output) => output.version === 1 && assigned.has(output.id as SupportedEngineOutputId))
+}
+
+function activeRequiredWeightsReady(profile: TrainerEngineProfile): boolean {
+  return activeEngineWeightSlots.value
+    .filter((slot) => weightSlotIsActive(slot, profile))
+    .every((slot) => {
+      const weight = engineWeight(profile, slot.id)
+      return Boolean(weight?.path && weight.format)
+    })
+}
+
+function setEngineDevice(event: Event) {
+  const profile = activeEngineProfile.value
+  if (!profile || profileConfigurationLocked(profile)) return
+  profile.device = (event.target as HTMLSelectElement).value
 }
 
 function formatEngineOptionDefault(value: unknown): string {
@@ -2320,8 +2341,6 @@ async function flushEngineAutosave(): Promise<boolean> {
 
 async function loadEngineProfile(profileId: string) {
   if (!window.trainerAPI?.activateEngine || loadingEngineProfileId.value || unloadingEngineProfileId.value) return
-  const managerKind = engineManagerKind.value
-  loadingEngineKind.value = managerKind
   loadingEngineProfileId.value = profileId
   engineSaveMessage.value = ''
   delete engineLoadErrors[profileId]
@@ -2330,23 +2349,16 @@ async function loadEngineProfile(profileId: string) {
     const activationRevision = engineDraftRevision
     const engines = JSON.parse(JSON.stringify(settingsDraft.engines)) as TrainerEngineSettings
     const loaded = await window.trainerAPI.activateEngine({
-      kind: managerKind,
       profileId,
       engines,
     })
     applySettings(loaded)
     applyStatus(await window.trainerAPI.getStatus())
-    captureRuntimeEngineProfile(managerKind, loaded.engines)
+    captureRuntimeEngineProfile('decision', loaded.engines)
+    captureRuntimeEngineProfile('opponent', loaded.engines)
     engineSavedRevision = Math.max(engineSavedRevision, activationRevision)
     if (engineDraftRevision === activationRevision) {
       replaceEngineDraft(loaded.engines)
-    } else {
-      const selectedKey = managerKind === 'decision'
-        ? 'selectedDecisionProfileId'
-        : 'selectedOpponentAnalysisProfileId'
-      suppressEngineAutosave = true
-      settingsDraft.engines[selectedKey] = loaded.engines[selectedKey]
-      suppressEngineAutosave = false
     }
     engineSaveMessage.value = '引擎已加载。'
   } catch (error) {
@@ -2354,13 +2366,8 @@ async function loadEngineProfile(profileId: string) {
       const failedSettings = await window.trainerAPI.getSettings()
       applySettings(failedSettings)
       applyStatus(await window.trainerAPI.getStatus())
-      captureRuntimeEngineProfile(managerKind, failedSettings.engines)
-      const selectedKey = managerKind === 'decision'
-        ? 'selectedDecisionProfileId'
-        : 'selectedOpponentAnalysisProfileId'
-      suppressEngineAutosave = true
-      settingsDraft.engines[selectedKey] = failedSettings.engines[selectedKey]
-      suppressEngineAutosave = false
+      captureRuntimeEngineProfile('decision', failedSettings.engines)
+      captureRuntimeEngineProfile('opponent', failedSettings.engines)
     } catch {
       // Keep the original load error when status synchronization also fails.
     }
@@ -2368,7 +2375,6 @@ async function loadEngineProfile(profileId: string) {
     engineSaveMessage.value = `加载失败：${engineLoadErrors[profileId]}`
   } finally {
     loadingEngineProfileId.value = ''
-    loadingEngineKind.value = null
     if (engineSavedRevision < engineDraftRevision) scheduleEngineAutosave(0)
   }
 }
@@ -2378,10 +2384,9 @@ async function unloadEngineProfile(profileId: string) {
   if (activeEngineProfile.value?.id !== profileId || !profileIsLoaded(activeEngineProfile.value)) return
   unloadingEngineProfileId.value = profileId
   engineSaveMessage.value = ''
-  const managerKind = engineManagerKind.value
   try {
-    applyStatus(await window.trainerAPI.unloadEngine({ kind: managerKind }))
-    if (managerKind === 'opponent') {
+    applyStatus(await window.trainerAPI.unloadEngine({ profileId }))
+    if (profileAssignedOutputs(activeEngineProfile.value).some((output) => output !== 'action-recommendation')) {
       if (!shantenResultHasRows(gameView.opponentAnalysis)) {
         clearOpponentAnalysisWithoutMotion()
       }
@@ -3014,15 +3019,19 @@ const modelStatusItems = computed(() => {
   const decisionAverage = decisionTimings.length
     ? decisionTimings.reduce((sum, value) => sum + value, 0) / decisionTimings.length
     : 0
-  const decisionName = settings.engines.decisionProfiles.find(
-    (profile) => profile.id === settings.engines.selectedDecisionProfileId,
-  )?.name || '决策引擎（未配置）'
+  const profileName = (outputId: SupportedEngineOutputId) => {
+    const profileId = settings.engines.outputAssignments[outputId]
+    return settings.engines.profiles.find((profile) => profile.id === profileId)?.name || ''
+  }
+  const decisionName = profileName('action-recommendation') || '动作推荐（未配置）'
   const decisionLabel = activeRoles.length
     ? `${decisionName} · ${activeRoles.join('、')}`
     : decisionName
-  const opponentName = settings.engines.opponentAnalysisProfiles.find(
-    (profile) => profile.id === settings.engines.selectedOpponentAnalysisProfileId,
-  )?.name || '对手分析'
+  const opponentNames = [
+    profileName('opponent-shanten'),
+    profileName('opponent-deal-in-probability'),
+  ].filter((name, index, names) => name && names.indexOf(name) === index)
+  const opponentName = opponentNames.join('、') || '对手预测（未配置）'
   return [
     item(
       'decision',

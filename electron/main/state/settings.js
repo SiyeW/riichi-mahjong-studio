@@ -1,9 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const {
-  getSelectedOpponentAnalysisProfile,
-  normalizeEngineSettings,
-} = require('./engine-registry')
+const { normalizeEngineSettings } = require('./engine-registry')
 const {
   discoverEnginePackages,
   publicEngineCatalog,
@@ -104,36 +101,30 @@ function getDefaultSettings(
 
 function buildPortableDefaultSettings() {
   const emptyCatalog = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     engines: [],
-    models: [],
     diagnostics: [],
   }
   const emptySoundPackCatalog = { schemaVersion: 1, packs: [], diagnostics: [] }
   const defaults = getDefaultSettings({}, emptyCatalog, emptySoundPackCatalog)
-  const portableProfile = (profile, kind) => ({
+  const portableProfile = (profile) => ({
     id: profile.id,
     name: profile.name,
+    builtIn: Boolean(profile.builtIn),
+    autoName: profile.autoName !== false,
     enginePath: profile.enginePath,
     engineId: profile.engineId,
-    modelPath: profile.modelPath,
-    modelId: profile.modelId,
-    ...(kind === 'decision'
-      ? { options: { ...profile.options, temperature: profile.options?.temperature ?? 1 } }
-      : { inputModes: [...(profile.inputModes || ['public'])], options: { ...profile.options } }),
+    engineVersion: profile.engineVersion,
+    weights: (profile.weights || []).map((weight) => ({ ...weight })),
+    device: profile.device || '',
+    options: { ...profile.options },
   })
   return {
     ...defaults,
     engines: {
       schemaVersion: defaults.engines.schemaVersion,
-      selectedDecisionProfileId: defaults.engines.selectedDecisionProfileId,
-      selectedOpponentAnalysisProfileId: defaults.engines.selectedOpponentAnalysisProfileId,
-      decisionProfiles: defaults.engines.decisionProfiles.map(
-        (profile) => portableProfile(profile, 'decision'),
-      ),
-      opponentAnalysisProfiles: defaults.engines.opponentAnalysisProfiles.map(
-        (profile) => portableProfile(profile, 'opponent-analysis'),
-      ),
+      profiles: defaults.engines.profiles.map(portableProfile),
+      outputAssignments: { ...defaults.engines.outputAssignments },
     },
   }
 }
@@ -244,7 +235,6 @@ function saveSettings(settings, options = {}) {
 function buildSettings(settings, options = {}) {
   const engineCatalog = discoverEnginePackages(options)
   const soundPackCatalog = discoverSoundPacks(options)
-  const opponentAnalysisProfile = getSelectedOpponentAnalysisProfile(settings.engines)
   return {
     ...settings,
     configPath: getSettingsPath(options),
@@ -252,7 +242,7 @@ function buildSettings(settings, options = {}) {
       releaseMode: Boolean(options.isPackaged),
       builtInRuntimeLabel: '',
       builtInModelLabel: '',
-      opponentAnalysisInputModes: opponentAnalysisProfile?.inputModes || ['public'],
+      opponentAnalysisInputModes: ['public'],
       engineCatalog: publicEngineCatalog(engineCatalog),
       soundPackCatalog: publicSoundPackCatalog(soundPackCatalog),
     },

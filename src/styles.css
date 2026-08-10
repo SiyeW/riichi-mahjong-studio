@@ -3464,13 +3464,6 @@ body {
   overflow: auto;
 }
 
-.engine-kind-tabs {
-  display: flex;
-  gap: calc(0.35rem * var(--shanten-scale));
-  padding: calc(0.55rem * var(--shanten-scale)) 0;
-}
-
-.engine-kind-tabs button,
 .engine-list-actions button,
 .engine-install-row button {
   border: 1px solid rgba(140, 195, 188, 0.2);
@@ -3479,12 +3472,6 @@ body {
   color: var(--text-dim);
   background: rgba(4, 45, 53, 0.7);
   cursor: pointer;
-}
-
-.engine-kind-tabs button.active {
-  color: var(--text-main);
-  border-color: rgba(104, 186, 154, 0.55);
-  background: rgba(23, 122, 70, 0.72);
 }
 
 .engine-manager-body {
@@ -3669,10 +3656,32 @@ body {
   font-size: calc(0.78rem * var(--shanten-scale));
 }
 
+.engine-weight-field.inactive {
+  opacity: 0.48;
+}
+
 .engine-weight-field > div {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: calc(0.3rem * var(--shanten-scale));
+}
+
+.engine-weight-field > .engine-output-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(0.32rem * var(--shanten-scale)) calc(0.8rem * var(--shanten-scale));
+}
+
+.engine-output-options label {
+  display: flex;
+  align-items: center;
+  gap: calc(0.25rem * var(--shanten-scale));
+}
+
+.engine-profile-detail .engine-output-options input {
+  width: auto;
+  height: auto;
+  padding: 0;
 }
 
 .engine-weight-field button {

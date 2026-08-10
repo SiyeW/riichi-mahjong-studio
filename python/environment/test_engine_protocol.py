@@ -10,6 +10,26 @@ from engine_process_client import EngineProcessClient, EngineProcessError
 
 
 class EngineProtocolTest(unittest.TestCase):
+    def test_hello_rejects_duplicate_output_contracts(self):
+        hello = {
+            "engine": {"id": "test.engine", "name": "Test", "version": "1.0.0"},
+            "outputContracts": [
+                {"id": "action-recommendation", "version": 1},
+                {"id": "action-recommendation", "version": 1},
+            ],
+            "weightSlots": [],
+            "devices": [{"type": "cpu"}],
+            "runtimeCapabilities": {
+                "multipleSessions": False,
+                "incrementalHistory": False,
+                "concurrentRequests": False,
+                "cancellation": False,
+            },
+            "optionsSchema": {"type": "object"},
+        }
+        with self.assertRaisesRegex(EngineProcessError, "invalid output contract"):
+            EngineProcessClient._validate_hello(hello)
+
     def test_custom_command_uses_external_json_rpc_engine(self):
         script = textwrap.dedent(
             """
@@ -23,16 +43,24 @@ class EngineProtocolTest(unittest.TestCase):
                     result = {
                         "protocol": {
                             "name": "riichi-engine-protocol",
-                            "major": 1,
+                            "major": 2,
                             "minor": 0,
                         },
                         "engine": {
                             "id": "third-party.mock",
                             "name": "Mock",
                             "version": "1.0.0",
-                            "kinds": ["decision"],
                         },
-                        "capabilities": {},
+                        "outputContracts": [{"id": "action-recommendation", "version": 1, "metrics": []}],
+                        "weightSlots": [],
+                        "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
+                        "runtimeCapabilities": {
+                            "multipleSessions": False,
+                            "incrementalHistory": False,
+                            "concurrentRequests": False,
+                            "cancellation": False,
+                        },
+                        "optionsSchema": {"type": "object"},
                     }
                 elif method == "engine.getStatus":
                     result = {"state": "ready"}
@@ -76,14 +104,22 @@ class EngineProtocolTest(unittest.TestCase):
                 method = request["method"]
                 if method == "engine.hello":
                     result = {
-                        "protocol": {"name": "riichi-engine-protocol", "major": 1, "minor": 0},
+                        "protocol": {"name": "riichi-engine-protocol", "major": 2, "minor": 0},
                         "engine": {
                             "id": "third-party.status",
                             "name": "Status",
                             "version": "1.0.0",
-                            "kinds": ["opponent-analysis"],
                         },
-                        "capabilities": {},
+                        "outputContracts": [{"id": "opponent-shanten", "version": 1}],
+                        "weightSlots": [],
+                        "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
+                        "runtimeCapabilities": {
+                            "multipleSessions": False,
+                            "incrementalHistory": False,
+                            "concurrentRequests": False,
+                            "cancellation": False,
+                        },
+                        "optionsSchema": {"type": "object"},
                     }
                     print(json.dumps({
                         "jsonrpc": "2.0",
@@ -115,7 +151,7 @@ class EngineProtocolTest(unittest.TestCase):
             try:
                 status = client.request("engine.getStatus")
                 self.assertEqual(status["state"], "starting")
-                self.assertEqual(client.hello["protocol"]["major"], 1)
+                self.assertEqual(client.hello["protocol"]["major"], 2)
                 self.assertEqual(client.hello["engine"]["id"], "third-party.status")
                 self.assertTrue(
                     any(
@@ -139,14 +175,22 @@ class EngineProtocolTest(unittest.TestCase):
                         "jsonrpc": "2.0",
                         "id": request.get("id"),
                         "result": {
-                            "protocol": {"name": "riichi-engine-protocol", "major": 1, "minor": 0},
+                            "protocol": {"name": "riichi-engine-protocol", "major": 2, "minor": 0},
                             "engine": {
                                 "id": "third-party.error",
                                 "name": "Error",
                                 "version": "1.0.0",
-                                "kinds": ["decision"],
                             },
-                            "capabilities": {},
+                            "outputContracts": [{"id": "action-recommendation", "version": 1, "metrics": []}],
+                            "weightSlots": [],
+                            "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
+                            "runtimeCapabilities": {
+                                "multipleSessions": False,
+                                "incrementalHistory": False,
+                                "concurrentRequests": False,
+                                "cancellation": False,
+                            },
+                            "optionsSchema": {"type": "object"},
                         },
                     }), flush=True)
                 else:
@@ -154,7 +198,7 @@ class EngineProtocolTest(unittest.TestCase):
                         "jsonrpc": "2.0",
                         "id": request.get("id"),
                         "error": {
-                            "code": -32019,
+                            "code": -32000,
                             "message": "engine is not initialized",
                         },
                     }), flush=True)
@@ -170,8 +214,8 @@ class EngineProtocolTest(unittest.TestCase):
             )
             try:
                 with self.assertRaises(EngineProcessError) as raised:
-                    client.request("decision.analyze", {"events": []})
-                self.assertEqual(raised.exception.code, -32019)
+                    client.request("analysis.run", {"events": []})
+                self.assertEqual(raised.exception.code, -32000)
                 self.assertIn("not initialized", str(raised.exception))
             finally:
                 client.shutdown()
@@ -190,16 +234,24 @@ class EngineProtocolTest(unittest.TestCase):
                     "result": {
                         "protocol": {
                             "name": "riichi-engine-protocol",
-                            "major": 1,
+                            "major": 2,
                             "minor": 0,
                         },
                         "engine": {
                             "id": "third-party.wrong",
                             "name": "Wrong",
                             "version": "1.0.0",
-                            "kinds": ["decision"],
                         },
-                        "capabilities": {},
+                        "outputContracts": [{"id": "action-recommendation", "version": 1, "metrics": []}],
+                        "weightSlots": [],
+                        "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
+                        "runtimeCapabilities": {
+                            "multipleSessions": False,
+                            "incrementalHistory": False,
+                            "concurrentRequests": False,
+                            "cancellation": False,
+                        },
+                        "optionsSchema": {"type": "object"},
                     },
                 }), flush=True)
             """
@@ -236,16 +288,24 @@ class EngineProtocolTest(unittest.TestCase):
                     result = {
                         "protocol": {
                             "name": "riichi-engine-protocol",
-                            "major": 1,
+                            "major": 2,
                             "minor": 0,
                         },
                         "engine": {
                             "id": "third-party.safe-env",
                             "name": "Safe env",
                             "version": "1.0.0",
-                            "kinds": ["decision"],
                         },
-                        "capabilities": {},
+                        "outputContracts": [{"id": "action-recommendation", "version": 1, "metrics": []}],
+                        "weightSlots": [],
+                        "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
+                        "runtimeCapabilities": {
+                            "multipleSessions": False,
+                            "incrementalHistory": False,
+                            "concurrentRequests": False,
+                            "cancellation": False,
+                        },
+                        "optionsSchema": {"type": "object"},
                     }
                 elif method == "engine.getStatus":
                     result = {
@@ -302,16 +362,24 @@ class EngineProtocolTest(unittest.TestCase):
                         "result": {
                             "protocol": {
                                 "name": "riichi-engine-protocol",
-                                "major": 1,
+                                "major": 2,
                                 "minor": 0,
                             },
                             "engine": {
                                 "id": "third-party.crash",
                                 "name": "Crash",
                                 "version": "1.0.0",
-                                "kinds": ["decision"],
                             },
-                            "capabilities": {},
+                            "outputContracts": [{"id": "action-recommendation", "version": 1, "metrics": []}],
+                            "weightSlots": [],
+                            "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
+                            "runtimeCapabilities": {
+                                "multipleSessions": False,
+                                "incrementalHistory": False,
+                                "concurrentRequests": False,
+                                "cancellation": False,
+                            },
+                            "optionsSchema": {"type": "object"},
                         },
                     }), flush=True)
                 else:

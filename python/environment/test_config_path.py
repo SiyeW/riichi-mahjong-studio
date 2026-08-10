@@ -20,7 +20,7 @@ class ConfigPathTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "debug-config.json"
             config_path.write_text(
-                '{"engines":{"selectedDecisionProfileId":"profile.debug"}}',
+                '{"engines":{"schemaVersion":2,"profiles":[],"outputAssignments":{"action-recommendation":"profile.debug"}}}',
                 encoding="utf-8",
             )
             with mock.patch.dict(
@@ -35,7 +35,7 @@ class ConfigPathTest(unittest.TestCase):
                     (config_path.resolve(),),
                 )
                 self.assertEqual(
-                    service.load_project_config()["engines"]["selectedDecisionProfileId"],
+                    service.load_project_config()["engines"]["outputAssignments"]["action-recommendation"],
                     "profile.debug",
                 )
 

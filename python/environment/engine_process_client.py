@@ -14,6 +14,9 @@ from typing import Any, Callable, Optional
 MAX_PROTOCOL_LINE_BYTES = 8 * 1024 * 1024
 MAX_STDERR_LINE_CHARS = 4096
 STDERR_TAIL_LINES = 100
+PROTOCOL = {"name": "riichi-engine-protocol", "major": 2, "minor": 0}
+HOST_ID = "riichi-mahjong-studio"
+HOST_VERSION = "0.4.0-alpha.3"
 
 
 class EngineProcessError(RuntimeError):
@@ -34,12 +37,14 @@ class EngineProcessClient:
         command: Optional[list[str]] = None,
         cwd: Optional[str] = None,
         expected_engine_id: str = "",
+        expected_engine_version: str = "",
     ):
         self._engine_kind = str(engine_kind)
         self._notification_callback = notification_callback
         self._custom_command = [str(part) for part in command] if command else None
         self._custom_cwd = str(cwd) if cwd else None
         self._expected_engine_id = str(expected_engine_id or "")
+        self._expected_engine_version = str(expected_engine_version or "")
         self._lock = threading.RLock()
         self._request_lock = threading.Lock()
         self._write_lock = threading.Lock()
@@ -149,29 +154,130 @@ class EngineProcessClient:
         self._hello = self._request_started(
             "engine.hello",
             {
-                "protocol": {
-                    "name": "riichi-engine-protocol",
-                    "major": 1,
-                    "minor": 0,
-                },
+                "protocol": dict(PROTOCOL),
                 "host": {
-                    "id": "riichi-mahjong-studio",
-                    "version": "0.4.0-alpha.1",
+                    "id": HOST_ID,
+                    "version": HOST_VERSION,
                 },
             },
             timeout=60,
         )
         protocol = self._hello.get("protocol") or {}
-        if protocol.get("name") != "riichi-engine-protocol" or protocol.get("major") != 1:
+        if (
+            protocol.get("name") != PROTOCOL["name"]
+            or protocol.get("major") != PROTOCOL["major"]
+            or protocol.get("minor") != PROTOCOL["minor"]
+        ):
             self._stop_process()
             raise EngineProcessError("engine protocol version is not compatible")
+        try:
+            self._validate_hello(self._hello)
+        except EngineProcessError:
+            self._stop_process()
+            raise
         actual_engine_id = str((self._hello.get("engine") or {}).get("id") or "")
+        actual_engine_version = str((self._hello.get("engine") or {}).get("version") or "")
         if self._expected_engine_id and actual_engine_id != self._expected_engine_id:
             self._stop_process()
             raise EngineProcessError(
                 "engine identity mismatch: "
                 f"expected {self._expected_engine_id}, received {actual_engine_id or '(missing)'}"
             )
+        if self._expected_engine_version and actual_engine_version != self._expected_engine_version:
+            self._stop_process()
+            raise EngineProcessError(
+                "engine version mismatch: "
+                f"expected {self._expected_engine_version}, "
+                f"received {actual_engine_version or '(missing)'}"
+            )
+
+    @staticmethod
+    def _validate_hello(hello: dict[str, Any]) -> None:
+        engine = hello.get("engine")
+        if not isinstance(engine, dict) or any(
+            not isinstance(engine.get(field), str) or not engine.get(field)
+            for field in ("id", "name", "version")
+        ):
+            raise EngineProcessError("engine hello contains an invalid engine identity")
+
+        contracts = hello.get("outputContracts")
+        if not isinstance(contracts, list) or not contracts:
+            raise EngineProcessError("engine hello must declare at least one output contract")
+        contract_keys = set()
+        for contract in contracts:
+            if not isinstance(contract, dict):
+                raise EngineProcessError("engine hello contains an invalid output contract")
+            output_id = contract.get("id")
+            version = contract.get("version")
+            key = (output_id, version)
+            if (
+                not isinstance(output_id, str)
+                or not output_id
+                or isinstance(version, bool)
+                or not isinstance(version, int)
+                or version < 1
+                or key in contract_keys
+            ):
+                raise EngineProcessError("engine hello contains an invalid output contract")
+            contract_keys.add(key)
+
+        slots = hello.get("weightSlots")
+        if not isinstance(slots, list):
+            raise EngineProcessError("engine hello weightSlots must be an array")
+        slot_ids = set()
+        for slot in slots:
+            if not isinstance(slot, dict) or not isinstance(slot.get("id"), str) or not slot["id"]:
+                raise EngineProcessError("engine hello contains an invalid weight slot")
+            if slot["id"] in slot_ids:
+                raise EngineProcessError("engine hello contains duplicate weight slots")
+            slot_ids.add(slot["id"])
+            formats = slot.get("formats")
+            format_ids = [
+                item.get("id")
+                for item in formats or []
+                if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]
+            ]
+            if (
+                not isinstance(formats, list)
+                or not formats
+                or len(format_ids) != len(formats)
+                or len(set(format_ids)) != len(format_ids)
+            ):
+                raise EngineProcessError("engine hello contains invalid weight formats")
+            required = slot.get("requiredForOutputs") or []
+            if not isinstance(required, list) or any(
+                not isinstance(item, dict)
+                or (item.get("id"), item.get("version")) not in contract_keys
+                for item in required
+            ):
+                raise EngineProcessError("engine hello weight slot references an unknown output")
+
+        devices = hello.get("devices")
+        if not isinstance(devices, list) or not devices:
+            raise EngineProcessError("engine hello must declare at least one device")
+        device_types = [
+            item.get("type")
+            for item in devices
+            if isinstance(item, dict) and isinstance(item.get("type"), str) and item["type"]
+        ]
+        if len(device_types) != len(devices) or len(set(device_types)) != len(device_types):
+            raise EngineProcessError("engine hello contains invalid devices")
+
+        capabilities = hello.get("runtimeCapabilities")
+        capability_names = (
+            "multipleSessions",
+            "incrementalHistory",
+            "concurrentRequests",
+            "cancellation",
+        )
+        if not isinstance(capabilities, dict) or any(
+            not isinstance(capabilities.get(name), bool)
+            for name in capability_names
+        ):
+            raise EngineProcessError("engine hello contains invalid runtime capabilities")
+        options_schema = hello.get("optionsSchema")
+        if not isinstance(options_schema, dict) or options_schema.get("type") != "object":
+            raise EngineProcessError("engine hello contains an invalid options schema")
 
     def _read_stdout(self, process: subprocess.Popen[str]) -> None:
         assert process.stdout is not None
@@ -397,26 +503,23 @@ class EngineProcessClient:
 
     def initialize(
         self,
-        profile_id: str,
-        kind: str,
-        model_path: str,
+        enabled_outputs: list[dict[str, Any]],
+        weights: list[dict[str, Any]],
         *,
-        model_id: str = "",
-        model_format: str = "",
-        expected_sha256: str = "",
         device: str = "cpu",
         options: Optional[dict[str, Any]] = None,
         timeout: float = 180.0,
     ) -> dict[str, Any]:
         params = {
-            "profileId": profile_id,
-            "kind": kind,
-            "model": {
-                "id": model_id,
-                "format": model_format,
-                "path": str(Path(model_path).resolve()) if model_path else "",
-                "expectedSha256": str(expected_sha256 or "").lower(),
-            },
+            "enabledOutputs": [dict(output) for output in enabled_outputs],
+            "weights": [
+                {
+                    "slotId": str(weight.get("slotId") or ""),
+                    "format": str(weight.get("format") or ""),
+                    "path": str(Path(str(weight.get("path") or "")).resolve()),
+                }
+                for weight in weights
+            ],
             "device": {"type": device},
             "options": options or {},
         }

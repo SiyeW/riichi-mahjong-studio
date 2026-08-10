@@ -7,8 +7,8 @@
 ### Riichi Mahjong Studio
 
 A desktop application for studying and practicing Riichi Mahjong. It can import
-and export game records, and load third-party engines for decision analysis and
-predictions of opponents' shanten states and tile-specific deal-in risk.
+and export game records, load third-party engines, and assign their outputs to
+decision analysis, opponent shanten prediction, and tile-specific deal-in risk.
 
 Still in early development, with more engine capabilities and protocol
 refinements planned. Feedback, discussion, and code contributions are welcome.
@@ -118,7 +118,7 @@ respective licenses; see
 
 ### 立直麻将研究室
 
-一款用于立直麻将对局研究和对战练习的桌面程序，支持导入、导出外部牌谱，也可以加载第三方引擎进行决策分析，预测对手的向听状态和各牌张的放铳风险。
+一款用于立直麻将对局研究和对战练习的桌面程序，支持导入、导出外部牌谱，也可以加载第三方引擎，并分别使用它们提供的结果进行决策分析、对手向听预测和各牌张的放铳风险预测。
 
 目前仍处于早期开发阶段，引擎协议和支持的功能还会继续完善。欢迎试用、提交 Issue、参与讨论和贡献代码！
 
@@ -214,8 +214,8 @@ npm run package:win
 ### Riichi Mahjong Studio
 
 リーチ麻雀の牌譜検討や対戦練習に使えるデスクトップアプリケーションです。
-外部牌譜のインポートとエクスポートに対応し、サードパーティー製エンジンによる意思決定の
-分析や、対戦相手のシャンテン状態と牌ごとの放銃リスクの予測を行えます。
+外部牌譜のインポートとエクスポートに対応し、サードパーティー製エンジンの出力を
+意思決定の分析、対戦相手のシャンテン状態、牌ごとの放銃リスクの予測に割り当てられます。
 
 現在は初期開発段階です。今後もエンジンプロトコルを整備し、対応機能を増やして
 いく予定です。フィードバック、議論への参加、コードへの貢献を歓迎します。

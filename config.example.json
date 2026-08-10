@@ -26,10 +26,12 @@
     "voice": "female"
   },
   "engines": {
-    "schemaVersion": 1,
-    "selectedDecisionProfileId": "",
-    "selectedOpponentAnalysisProfileId": "",
-    "decisionProfiles": [],
-    "opponentAnalysisProfiles": []
+    "schemaVersion": 2,
+    "profiles": [],
+    "outputAssignments": {
+      "action-recommendation": "",
+      "opponent-shanten": "",
+      "opponent-deal-in-probability": ""
+    }
   }
 }
