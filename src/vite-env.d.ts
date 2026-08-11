@@ -147,6 +147,7 @@ interface TrainerEngineSettings {
   schemaVersion: number
   profiles: TrainerEngineProfile[]
   outputAssignments: Record<'action-recommendation' | 'opponent-shanten' | 'opponent-deal-in-probability', string>
+  loadedProfileIds: string[]
 }
 
 type TrainerModelActivityState = 'idle' | 'loading' | 'running' | 'error'
@@ -629,7 +630,10 @@ interface Window {
     }) => Promise<TrainerSettings>
     unloadEngine: (payload: {
       profileId: string
-    }) => Promise<TrainerStatusSnapshot>
+    }) => Promise<{
+      state: TrainerStatusSnapshot
+      settings: TrainerSettings
+    }>
     getStatus: () => Promise<TrainerStatusSnapshot>
     getRuntimeMetrics: () => Promise<TrainerRuntimeMetrics>
     getGameView: () => Promise<TrainerEnvironmentResponse>

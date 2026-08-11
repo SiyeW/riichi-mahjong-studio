@@ -98,6 +98,7 @@ let startupServicesStarted = false
 let startupRecoveryAttempted = false
 let publishedRecordDirty = false
 let closeRequestSerial = 0
+let runtimeMetricsBackendError = ''
 
 function publishRecordDirty(force = false) {
   const dirty = gameFileStore.isDirty()
@@ -114,14 +115,41 @@ async function collectRuntimeMetrics() {
   try {
     const response = await pythonServices.environmentGateway.getRuntimeMetrics()
     backendMetrics = response?.metrics || null
-  } catch {
+    runtimeMetricsBackendError = ''
+  } catch (error) {
     // The footer remains available while the backend starts or restarts.
+    const message = error instanceof Error ? error.message : String(error)
+    if (message !== runtimeMetricsBackendError) {
+      console.warn(`[runtime-metrics] backend metrics unavailable: ${message}`)
+      runtimeMetricsBackendError = message
+    }
   }
   return buildRuntimeMetrics({
     processMetrics: app.getAppMetrics(),
     backendMetrics,
     systemMemory: process.getSystemMemoryInfo(),
   })
+}
+
+function saveLoadedEngineProfileState(profileId, loaded) {
+  const settings = loadSettings(appOptions)
+  const loadedProfileIds = new Set(settings.engines.loadedProfileIds || [])
+  if (loaded) loadedProfileIds.add(profileId)
+  else loadedProfileIds.delete(profileId)
+  settings.engines.loadedProfileIds = [...loadedProfileIds]
+  saveSettings(settings, appOptions)
+  return settings
+}
+
+async function restoreLoadedEngineProfiles() {
+  const settings = loadSettings(appOptions)
+  for (const profileId of settings.engines.loadedProfileIds || []) {
+    try {
+      await pythonServices.environmentGateway.reloadEngine(profileId)
+    } catch (error) {
+      console.error(`[engine] failed to restore ${profileId}:`, error)
+    }
+  }
 }
 
 function beginRecordTracking({ dirty, nodeId = null }) {
@@ -462,6 +490,7 @@ function startStartupServices() {
   }
   startupServicesStarted = true
   pythonServices.startAll()
+  void restoreLoadedEngineProfiles()
 }
 
 function openMainWindow() {
@@ -588,7 +617,7 @@ function registerIpcHandlers() {
         throw new Error('对手预测未能完成加载')
       }
     }
-    return buildSettings(loadSettings(appOptions), appOptions)
+    return buildSettings(saveLoadedEngineProfileState(profileId, true), appOptions)
   })
 
   ipcMain.handle('engine:unload', async (event, payload) => {
@@ -607,7 +636,11 @@ function registerIpcHandlers() {
     ) {
       state = (await pythonServices.environmentGateway.unloadEngine('opponent-analysis', profileId)).state
     }
-    return state
+    const settings = saveLoadedEngineProfileState(profileId, false)
+    return {
+      state,
+      settings: buildSettings(settings, appOptions),
+    }
   })
 
   ipcMain.handle('status:get', () => sessionStore.getSnapshot())

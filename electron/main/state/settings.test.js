@@ -8,6 +8,7 @@ const { buildPortableDefaultSettings, loadSettings, saveSettings } = require('./
 function testPortableDefaultsHaveNoEngines() {
   const settings = buildPortableDefaultSettings()
   assert.deepEqual(settings.engines.profiles, [])
+  assert.deepEqual(settings.engines.loadedProfileIds, [])
   assert.equal(settings.engines.outputAssignments['action-recommendation'], '')
   assert.equal(settings.audio.volume, 50)
   assert.equal(settings.audio.soundPackId, '')
@@ -30,11 +31,13 @@ function testUserProfilePersists() {
       options: { temperature: 0.5 },
     })
     settings.engines.outputAssignments['action-recommendation'] = 'profile.example'
+    settings.engines.loadedProfileIds = ['profile.example']
     settings.display.tablePosition = 'right'
     saveSettings(settings, options)
     const reloaded = loadSettings(options)
     assert.equal(reloaded.engines.outputAssignments['action-recommendation'], 'profile.example')
     assert.equal(reloaded.engines.profiles[0].name, 'My engine')
+    assert.deepEqual(reloaded.engines.loadedProfileIds, ['profile.example'])
     assert.equal(reloaded.display.tablePosition, 'right')
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })

@@ -1730,6 +1730,7 @@ const settings = reactive<TrainerSettings>({
   engines: {
     schemaVersion: 2,
     profiles: [],
+    loadedProfileIds: [],
     outputAssignments: {
       'action-recommendation': '',
       'opponent-shanten': '',
@@ -2535,7 +2536,10 @@ async function unloadEngineProfile(profileId: string) {
   unloadingEngineProfileId.value = profileId
   engineSaveMessage.value = ''
   try {
-    applyStatus(await window.trainerAPI.unloadEngine({ profileId }))
+    const unloaded = await window.trainerAPI.unloadEngine({ profileId })
+    applyStatus(unloaded.state)
+    applySettings(unloaded.settings)
+    replaceEngineDraft(unloaded.settings.engines)
     if (profileAssignedOutputs(activeEngineProfile.value).some((output) => output !== 'action-recommendation')) {
       if (!shantenResultHasRows(gameView.opponentAnalysis)) {
         clearOpponentAnalysisWithoutMotion()

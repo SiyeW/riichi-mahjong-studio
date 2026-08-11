@@ -90,6 +90,12 @@ function normalizeAssignments(source, profiles) {
   }))
 }
 
+function normalizeLoadedProfileIds(source, profiles) {
+  if (!Array.isArray(source)) return []
+  const profileIds = new Set(profiles.map((profile) => profile.id))
+  return [...new Set(source.map(String))].filter((profileId) => profileIds.has(profileId))
+}
+
 function normalizeEngineSettings(source = {}, _legacyModels = null, catalog = {}) {
   const settings = isObject(source) ? source : {}
   const profiles = normalizeProfiles(settings.profiles, catalog)
@@ -97,6 +103,7 @@ function normalizeEngineSettings(source = {}, _legacyModels = null, catalog = {}
     schemaVersion: ENGINE_SETTINGS_SCHEMA_VERSION,
     profiles,
     outputAssignments: normalizeAssignments(settings.outputAssignments, profiles),
+    loadedProfileIds: normalizeLoadedProfileIds(settings.loadedProfileIds, profiles),
   }
 }
 
@@ -152,6 +159,7 @@ function buildBuiltInProfiles() {
   return {
     profiles: [],
     outputAssignments: Object.fromEntries(SUPPORTED_OUTPUTS.map((outputId) => [outputId, ''])),
+    loadedProfileIds: [],
   }
 }
 

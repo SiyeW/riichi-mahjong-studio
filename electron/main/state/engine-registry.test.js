@@ -5,6 +5,7 @@ const { buildRuntimeModels, normalizeEngineSettings } = require('./engine-regist
 function testFreshRegistryIsEmpty() {
   const engines = normalizeEngineSettings()
   assert.deepEqual(engines.profiles, [])
+  assert.deepEqual(engines.loadedProfileIds, [])
   assert.deepEqual(engines.outputAssignments, {
     'action-recommendation': '',
     'opponent-shanten': '',
@@ -40,6 +41,7 @@ function testInstalledPackageRefreshesProfileIdentity() {
       'opponent-shanten': '',
       'opponent-deal-in-probability': '',
     },
+    loadedProfileIds: ['profile.example', 'profile.missing', 'profile.example'],
   }, null, catalog)
   const profile = engines.profiles[0]
   assert.equal(profile.available, true)
@@ -48,6 +50,7 @@ function testInstalledPackageRefreshesProfileIdentity() {
   assert.equal(profile.options.temperature, 0)
   assert.deepEqual(profile.engineCommand, ['C:\\engine\\engine.exe', '--jsonl'])
   assert.equal(engines.outputAssignments['action-recommendation'], profile.id)
+  assert.deepEqual(engines.loadedProfileIds, ['profile.example'])
 }
 
 testFreshRegistryIsEmpty()

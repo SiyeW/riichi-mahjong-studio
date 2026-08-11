@@ -129,6 +129,7 @@ function buildPortableDefaultSettings() {
       schemaVersion: defaults.engines.schemaVersion,
       profiles: defaults.engines.profiles.map(portableProfile),
       outputAssignments: { ...defaults.engines.outputAssignments },
+      loadedProfileIds: [...defaults.engines.loadedProfileIds],
     },
   }
 }
