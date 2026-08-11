@@ -7760,7 +7760,7 @@ function recalcTableZoom() {
 
   if (availW > 0 && availH > 0) {
     const zoomByWidth = ((3 * availW) + 16) / 1978
-    const zoomByHeight = ((3 * availH) + 16) / 2188
+    const zoomByHeight = (availH + 7.04) / 720.5099
     nextZoom = Math.max(0.1, Math.min(zoomByWidth, zoomByHeight))
   }
 
