@@ -929,13 +929,19 @@
       </div>
       <div
         class="footer-memory-status"
-        :title="runtimeMemoryDetail"
         :aria-label="runtimeMemoryDetail"
+        aria-describedby="runtime-memory-detail"
         tabindex="0"
       >
         <span>程序内存 {{ formatMemorySize(runtimeMetrics?.applicationBytes) }}</span>
         <span class="footer-memory-separator" aria-hidden="true">·</span>
         <span>系统可用 {{ formatMemorySize(runtimeMetrics?.systemAvailableBytes) }}</span>
+        <div id="runtime-memory-detail" class="footer-memory-tooltip" role="tooltip">
+          <div v-for="row in runtimeMemoryRows" :key="row.label" class="footer-memory-tooltip-row">
+            <span>{{ row.label }}</span>
+            <span>{{ row.value }}</span>
+          </div>
+        </div>
       </div>
     </footer>
 
@@ -2955,19 +2961,23 @@ function formatMemorySize(value: number | null | undefined) {
   return `${Math.round(mebibytes)} MB`
 }
 
-const runtimeMemoryDetail = computed(() => {
+const runtimeMemoryRows = computed(() => {
   const metrics = runtimeMetrics.value
-  if (!metrics) return '正在读取内存信息'
+  if (!metrics) return [{ label: '内存信息', value: '正在读取' }]
   const engineCount = metrics.engineProcessCount === null
     ? ''
     : `（${metrics.engineProcessCount} 个进程）`
   return [
-    `Electron：${formatMemorySize(metrics.electronBytes)}`,
-    `Python 后端：${formatMemorySize(metrics.backendBytes)}`,
-    `引擎及其子进程${engineCount}：${formatMemorySize(metrics.engineBytes)}`,
-    `系统总内存：${formatMemorySize(metrics.systemTotalBytes)}`,
-  ].join('\n')
+    { label: 'Electron', value: formatMemorySize(metrics.electronBytes) },
+    { label: 'Python 后端', value: formatMemorySize(metrics.backendBytes) },
+    { label: `引擎及其子进程${engineCount}`, value: formatMemorySize(metrics.engineBytes) },
+    { label: '系统总内存', value: formatMemorySize(metrics.systemTotalBytes) },
+  ]
 })
+
+const runtimeMemoryDetail = computed(() => (
+  runtimeMemoryRows.value.map((row) => `${row.label}：${row.value}`).join('\n')
+))
 
 async function refreshRuntimeMetrics() {
   if (!window.trainerAPI?.getRuntimeMetrics || runtimeMetricsRequestInFlight) return
