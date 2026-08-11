@@ -3470,6 +3470,8 @@ body {
   --engine-state-loaded-selected-bg: rgba(23, 122, 70, 0.88);
   --engine-state-loading-selected-bg: rgba(117, 75, 18, 0.82);
   --engine-state-error-selected-bg: rgba(105, 26, 24, 0.82);
+  --engine-state-border: rgba(0, 0, 0, 0.28);
+  --engine-state-idle-border: rgba(112, 136, 136, 0.22);
   display: flex;
   flex-direction: column;
   top: calc(4rem * var(--shanten-scale));
@@ -3533,7 +3535,7 @@ body {
   min-width: 0;
   padding: calc(0.32rem * var(--shanten-scale)) calc(0.42rem * var(--shanten-scale));
   overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--engine-state-idle-border);
   border-radius: calc(2px * var(--shanten-scale));
   color: var(--text-dim);
   background: var(--engine-state-idle-bg);
@@ -3636,7 +3638,7 @@ body {
     calc(0.58rem * var(--shanten-scale))
     calc(0.48rem * var(--shanten-scale))
     calc(0.9rem * var(--shanten-scale));
-  border: 1px solid rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--engine-state-idle-border);
   border-radius: calc(2px * var(--shanten-scale));
   color: var(--text-dim);
   background: var(--engine-state-idle-bg);
@@ -3707,6 +3709,18 @@ body {
 
 .engine-profile-item.selected.error {
   background: var(--engine-state-error-selected-bg);
+}
+
+.engine-output-filter.assigned,
+.engine-output-filter.loaded,
+.engine-output-filter.loading,
+.engine-output-filter.selected,
+.engine-profile-item.loaded,
+.engine-profile-item.loading,
+.engine-profile-item.error,
+.engine-profile-item.unloaded,
+.engine-profile-item.selected {
+  border-color: var(--engine-state-border);
 }
 
 .engine-load-button {
