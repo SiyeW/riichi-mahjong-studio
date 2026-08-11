@@ -871,7 +871,7 @@
       <div class="footer-model-status">
         <span class="footer-model-dots">
           <span
-            v-for="item in modelStatusItems"
+            v-for="item in engineStatusItems"
             :key="item.id"
             class="footer-model-dot"
             :class="{ active: item.state === 'running', loading: item.state === 'loading', error: item.state === 'error' }"
@@ -1212,8 +1212,23 @@
       </div>
       <div class="engine-manager-body">
         <div class="engine-profile-column">
+          <div class="engine-output-filters" aria-label="按输出能力筛选引擎">
+            <button
+              v-for="output in SUPPORTED_ENGINE_OUTPUTS"
+              :key="output.id"
+              class="engine-output-filter"
+              :class="{
+                assigned: Boolean(settingsDraft.engines.outputAssignments[output.id]),
+                selected: engineOutputFilter === output.id,
+              }"
+              :aria-pressed="engineOutputFilter === output.id"
+              @click="toggleEngineOutputFilter(output.id)"
+            >
+              {{ output.label }}
+            </button>
+          </div>
           <div
-            v-for="profile in activeEngineProfiles"
+            v-for="profile in filteredEngineProfiles"
             :key="profile.id"
             class="engine-profile-item"
             :class="engineProfileClasses(profile)"
@@ -1266,16 +1281,21 @@
           <div class="engine-weight-field">
             <span>输出</span>
             <div class="engine-output-options">
-              <label v-for="output in activeSupportedOutputs" :key="output.id">
+              <label
+                v-for="output in activeSupportedOutputs"
+                :key="output.id"
+                class="settings-checkbox engine-output-assignment"
+              >
                 <input
                   type="checkbox"
                   :checked="settingsDraft.engines.outputAssignments[output.id] === activeEngineProfile.id"
                   :disabled="profileConfigurationLocked(activeEngineProfile)"
                   @change="setEngineOutputAssignment(output.id, $event)"
                 />
-                <span>{{ output.label }}</span>
+                <span class="settings-checkbox-control" aria-hidden="true"></span>
+                <span class="settings-checkbox-label">{{ output.label }}</span>
               </label>
-              <small v-if="activeEngineProfile.enginePath && !activeSupportedOutputs.length && !describingEngineId">主程序无法使用这个引擎声明的输出。</small>
+              <small v-if="activeEngineProfile.enginePath && !activeSupportedOutputs.length && !describingEngineIds.has(engineDescriptionKey(activeEngineProfile))">主程序无法使用这个引擎声明的输出。</small>
             </div>
           </div>
           <div
@@ -1328,12 +1348,12 @@
                 v-if="activeCatalogEngine.sourceUrl"
                 @click="openExternalLink(activeCatalogEngine.sourceUrl)"
               >
-                获取对应源码
+                查看源码
               </button>
             </div>
           </div>
           <p
-            v-if="activeEngineProfile.enginePath && describingEngineId && describingEngineId === engineDescriptionKey(activeEngineProfile)"
+            v-if="activeEngineProfile.enginePath && describingEngineIds.has(engineDescriptionKey(activeEngineProfile))"
             class="engine-inline-status"
           >
             正在读取引擎参数...
@@ -1758,7 +1778,8 @@ const unloadingEngineProfileId = ref('')
 const deleteEngineConfirmationId = ref('')
 const DELETE_CONFIRMATION_TIMEOUT_MS = 3000
 let deleteEngineConfirmationTimer: number | null = null
-const describingEngineId = ref('')
+const describingEngineIds = reactive(new Set<string>())
+const engineOutputFilter = ref<SupportedEngineOutputId | null>(null)
 const editingEngineProfileId = ref('')
 const runtimeEngineProfiles = reactive<Record<string, TrainerEngineProfile>>({})
 const engineDescriptions = reactive<Record<string, TrainerEngineDescription>>({})
@@ -1772,9 +1793,14 @@ let engineAutosavePromise: Promise<boolean> | null = null
 let suppressEngineAutosave = false
 let engineAutosaveEnabled = false
 const activeEngineProfiles = computed(() => settingsDraft.engines.profiles)
+const filteredEngineProfiles = computed(() => {
+  const outputId = engineOutputFilter.value
+  if (!outputId) return activeEngineProfiles.value
+  return activeEngineProfiles.value.filter((profile) => engineProfileSupportsOutput(profile, outputId))
+})
 const activeEngineProfile = computed(() => (
-  activeEngineProfiles.value.find((profile) => profile.id === editingEngineProfileId.value)
-  || activeEngineProfiles.value[0]
+  filteredEngineProfiles.value.find((profile) => profile.id === editingEngineProfileId.value)
+  || filteredEngineProfiles.value[0]
   || null
 ))
 const activeEngineProfileIndex = computed(() => (
@@ -1826,7 +1852,9 @@ function openEngineWindow() {
   if (!settingsDraft.engines.profiles.some((profile) => profile.id === editingEngineProfileId.value)) {
     editingEngineProfileId.value = settingsDraft.engines.profiles[0]?.id || ''
   }
-  void describeEngineProfile(activeEngineProfile.value)
+  for (const profile of activeEngineProfiles.value) {
+    void describeEngineProfile(profile)
+  }
   focusFloatingPanel('engine')
 }
 
@@ -1840,6 +1868,10 @@ function selectEngineProfile(profileId: string) {
   deleteEngineConfirmationId.value = ''
   const profile = activeEngineProfiles.value.find((item) => item.id === profileId) || null
   void describeEngineProfile(profile)
+}
+
+function toggleEngineOutputFilter(outputId: SupportedEngineOutputId) {
+  engineOutputFilter.value = engineOutputFilter.value === outputId ? null : outputId
 }
 
 watch(deleteEngineConfirmationId, (profileId) => {
@@ -1866,13 +1898,24 @@ function engineDescriptionKey(profile: TrainerEngineProfile | null): string {
   return String(profile?.enginePath || profile?.engineId || '')
 }
 
+function engineProfileSupportsOutput(
+  profile: TrainerEngineProfile,
+  outputId: SupportedEngineOutputId,
+): boolean {
+  const description = engineDescriptions[engineDescriptionKey(profile)]
+  const supported = SUPPORTED_ENGINE_OUTPUTS.find((output) => output.id === outputId)
+  return Boolean(supported && description?.outputContracts.some((contract) => (
+    contract.id === supported.id && contract.version === supported.version
+  )))
+}
+
 async function describeEngineProfile(
   profile: TrainerEngineProfile | null,
 ) {
   const key = engineDescriptionKey(profile)
-  if (!profile?.enginePath || engineDescriptions[key]) return
+  if (!profile?.enginePath || engineDescriptions[key] || describingEngineIds.has(key)) return
   if (!window.trainerAPI?.describeEngine) return
-  describingEngineId.value = key
+  describingEngineIds.add(key)
   delete engineDescribeErrors[key]
   try {
     const description = await window.trainerAPI.describeEngine({
@@ -1894,7 +1937,7 @@ async function describeEngineProfile(
   } catch (error) {
     engineDescribeErrors[key] = error instanceof Error ? error.message : String(error)
   } finally {
-    if (describingEngineId.value === key) describingEngineId.value = ''
+    describingEngineIds.delete(key)
   }
 }
 
@@ -2112,6 +2155,7 @@ function deleteEngineProfile() {
 }
 
 function addEngineProfile() {
+  engineOutputFilter.value = null
   const profile: TrainerEngineProfile = {
     id: `profile.user.${Date.now().toString(36)}`,
     name: '',
@@ -2993,35 +3037,13 @@ const opponentAnalysisIsLoading = computed(() => {
   return !hasOpponentAnalysisResult.value
 })
 
-const modelStatusItems = computed(() => {
+const engineStatusItems = computed(() => {
   const controlledSeat = status.controlledSeat
   const decision = (status.modelActivity?.decision || []).map(normalizeModelActivityState)
   const errors = status.modelActivity?.errors
   const performance = status.modelPerformance || {
     decision: [0, 0, 0, 0],
     opponentAnalysis: 0,
-  }
-  const item = (
-    id: string,
-    label: string,
-    stateValue: unknown,
-    averageMs: number,
-    error?: string | null,
-    unloaded = false,
-  ) => {
-    const state = normalizeModelActivityState(stateValue)
-    const timingLabel = Number.isFinite(averageMs) && averageMs > 0
-      ? `${label} · 近10次平均 ${averageMs.toFixed(1)} ms`
-      : label
-    return {
-      id,
-      label: state === 'error' && error
-        ? `${label}：${error}`
-        : unloaded
-          ? `${label} · 未加载`
-          : timingLabel,
-      state,
-    }
   }
   const statePriority: TrainerModelActivityState[] = ['error', 'loading', 'running', 'idle']
   const decisionState = statePriority.find((state) => decision.includes(state)) || 'idle'
@@ -3035,40 +3057,57 @@ const modelStatusItems = computed(() => {
   const decisionAverage = decisionTimings.length
     ? decisionTimings.reduce((sum, value) => sum + value, 0) / decisionTimings.length
     : 0
-  const profileName = (outputId: SupportedEngineOutputId) => {
-    const profileId = settings.engines.outputAssignments[outputId]
-    return settings.engines.profiles.find((profile) => profile.id === profileId)?.name || ''
-  }
-  const decisionName = profileName('action-recommendation') || '动作推荐（未配置）'
-  const decisionLabel = activeRoles.length
-    ? `${decisionName} · ${activeRoles.join('、')}`
-    : decisionName
-  const opponentNames = [
-    profileName('opponent-shanten'),
-    profileName('opponent-deal-in-probability'),
-  ].filter((name, index, names) => name && names.indexOf(name) === index)
-  const opponentName = opponentNames.join('、') || '对手预测（未配置）'
-  return [
-    item(
-      'decision',
-      decisionLabel,
-      decisionState,
-      decisionAverage,
-      decisionErrors.join('；'),
-      status.modelRuntime.decision.unloaded,
-    ),
-    item(
-      'opponent-analysis',
-      opponentName,
-      status.modelActivity?.opponentAnalysis,
-      performance.opponentAnalysis,
-      errors?.opponentAnalysis,
-      status.modelRuntime.opponentAnalysis.unloaded,
-    ),
-  ]
+  return settings.engines.profiles.flatMap((profile) => {
+    const decisionRuntime = profileRuntimeState(profile, 'decision')
+    const opponentRuntime = profileRuntimeState(profile, 'opponent')
+    const kinds = new Set<EngineRuntimeKind>()
+    if (decisionRuntime && !decisionRuntime.unloaded) kinds.add('decision')
+    if (opponentRuntime && !opponentRuntime.unloaded) kinds.add('opponent')
+    if (loadingEngineProfileId.value === profile.id) {
+      for (const kind of profileRuntimeKinds(profile)) kinds.add(kind)
+    }
+    const localError = engineLoadErrors[profile.id] || ''
+    if (!kinds.size && !localError) return []
+
+    const states: TrainerModelActivityState[] = []
+    const timingValues: number[] = []
+    const errorValues: string[] = localError ? [localError] : []
+    if (kinds.has('decision')) {
+      states.push(decisionState)
+      if (decisionAverage > 0) timingValues.push(decisionAverage)
+      errorValues.push(...decisionErrors)
+    }
+    if (kinds.has('opponent')) {
+      states.push(normalizeModelActivityState(status.modelActivity?.opponentAnalysis))
+      if (Number.isFinite(performance.opponentAnalysis) && performance.opponentAnalysis > 0) {
+        timingValues.push(performance.opponentAnalysis)
+      }
+      if (errors?.opponentAnalysis) errorValues.push(String(errors.opponentAnalysis))
+    }
+    if (loadingEngineProfileId.value === profile.id) states.push('loading')
+    if (errorValues.some(Boolean)) states.push('error')
+    const state = statePriority.find((candidate) => states.includes(candidate)) || 'idle'
+    const averageMs = timingValues.length
+      ? timingValues.reduce((sum, value) => sum + value, 0) / timingValues.length
+      : 0
+    const roleLabel = kinds.has('decision') && activeRoles.length
+      ? ` · ${activeRoles.join('、')}`
+      : ''
+    const baseLabel = `${profile.name || '未命名引擎'}${roleLabel}`
+    const uniqueErrors = [...new Set(errorValues.filter(Boolean))]
+    return [{
+      id: profile.id,
+      label: state === 'error' && uniqueErrors.length
+        ? `${baseLabel}：${uniqueErrors.join('；')}`
+        : averageMs > 0
+          ? `${baseLabel} · 近10次平均 ${averageMs.toFixed(1)} ms`
+          : baseLabel,
+      state,
+    }]
+  })
 })
 const hoveredModelStatusLabel = computed(() => (
-  modelStatusItems.value.find((item) => item.id === hoveredModelStatusId.value)?.label || ''
+  engineStatusItems.value.find((item) => item.id === hoveredModelStatusId.value)?.label || ''
 ))
 const quickThinkingDragValue = ref<number | null>(null)
 const quickVolumeDragValue = ref<number | null>(null)

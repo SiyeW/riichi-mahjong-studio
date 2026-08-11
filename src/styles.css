@@ -3489,6 +3489,45 @@ body {
   min-width: 0;
 }
 
+.engine-output-filters {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(0.24rem * var(--shanten-scale));
+  padding-bottom: calc(0.38rem * var(--shanten-scale));
+  border-bottom: 1px solid rgba(140, 195, 188, 0.12);
+}
+
+.engine-output-filter {
+  min-width: 0;
+  padding: calc(0.28rem * var(--shanten-scale)) calc(0.3rem * var(--shanten-scale));
+  overflow: hidden;
+  border: 1px solid rgba(137, 158, 158, 0.24);
+  border-radius: calc(2px * var(--shanten-scale));
+  color: rgba(184, 199, 197, 0.62);
+  background: rgba(48, 62, 64, 0.42);
+  font-size: calc(0.7rem * var(--shanten-scale));
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.engine-output-filter.assigned {
+  border-color: rgba(104, 186, 154, 0.46);
+  color: rgba(238, 251, 247, 0.94);
+  background: rgba(23, 105, 70, 0.7);
+}
+
+.engine-output-filter.selected {
+  border-color: rgba(220, 240, 235, 0.82);
+  box-shadow: 0 0 0 1px rgba(220, 240, 235, 0.18);
+}
+
+.engine-output-filter:hover {
+  color: var(--text-main);
+  border-color: rgba(190, 222, 216, 0.54);
+}
+
 .engine-legal-field {
   display: grid;
   gap: calc(0.26rem * var(--shanten-scale));
@@ -3627,7 +3666,7 @@ body {
 
 .engine-add-button,
 .engine-weight-field button,
-.engine-profile-detail input,
+.engine-profile-detail input:not([type="checkbox"]),
 .engine-profile-detail select {
   min-width: 0;
   width: 100%;
@@ -3669,19 +3708,25 @@ body {
 .engine-weight-field > .engine-output-options {
   display: flex;
   flex-wrap: wrap;
-  gap: calc(0.32rem * var(--shanten-scale)) calc(0.8rem * var(--shanten-scale));
+  gap: calc(0.2rem * var(--shanten-scale)) calc(0.45rem * var(--shanten-scale));
 }
 
-.engine-output-options label {
-  display: flex;
-  align-items: center;
-  gap: calc(0.25rem * var(--shanten-scale));
+.engine-output-assignment.settings-checkbox {
+  min-height: auto;
+  padding: calc(0.18rem * var(--shanten-scale)) calc(0.24rem * var(--shanten-scale));
+  border: none;
+  background: transparent;
+  gap: calc(0.34rem * var(--shanten-scale)) !important;
 }
 
-.engine-profile-detail .engine-output-options input {
-  width: auto;
-  height: auto;
-  padding: 0;
+.engine-output-assignment .settings-checkbox-control {
+  width: calc(0.95rem * var(--shanten-scale));
+  height: calc(0.95rem * var(--shanten-scale));
+}
+
+.engine-output-assignment .settings-checkbox-label {
+  color: var(--text-dim);
+  font-size: calc(0.78rem * var(--shanten-scale));
 }
 
 .engine-weight-field button {
@@ -3689,7 +3734,7 @@ body {
 }
 
 .engine-weight-field button:disabled,
-.engine-profile-detail input:disabled,
+.engine-profile-detail input:not([type="checkbox"]):disabled,
 .engine-profile-detail select:disabled {
   opacity: 0.55;
   cursor: default;
