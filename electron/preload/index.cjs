@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('trainerAPI', {
   activateEngine: (payload) => ipcRenderer.invoke('engine:activate', payload),
   unloadEngine: (payload) => ipcRenderer.invoke('engine:unload', payload),
   getStatus: () => ipcRenderer.invoke('status:get'),
+  getRuntimeMetrics: () => ipcRenderer.invoke('system:runtime-metrics'),
   getRecordDirty: () => ipcRenderer.invoke('record:dirty-get'),
   getGameView: () => ipcRenderer.invoke('game:view'),
   createGame: () => ipcRenderer.invoke('game:create'),

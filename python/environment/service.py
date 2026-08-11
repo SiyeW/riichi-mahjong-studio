@@ -12,6 +12,8 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import combinations, product
 from pathlib import Path
 
+import psutil
+
 from decision_adapter import analyze_action_choices, analyze_discard_choices, choose_ai_action, get_and_reset_ai_thinking_time_s, get_latest_mjai_debug, get_response_ms_by_seat, set_thinking_time_bounds, to_relative_model_path
 from decision_engine_gateway import DecisionEngineGateway
 from opponent_gateway import OpponentAnalysisGateway
@@ -91,6 +93,7 @@ _PLAY_PREFETCH_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_PREWARM_EXECUTOR = ThreadPoolExecutor(max_workers=2)
 _COMMAND_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _STATUS_EXECUTOR = ThreadPoolExecutor(max_workers=1)
+_METRICS_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_INSPECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_RELOAD_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _BG_TASKS = {}
@@ -6270,6 +6273,47 @@ def build_status_response(request_id):
     }
 
 
+def _private_memory_bytes(process):
+    try:
+        memory = process.memory_full_info()
+        value = getattr(memory, "uss", None)
+        if value is not None:
+            return max(0, int(value))
+    except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+        pass
+
+    try:
+        return max(0, int(process.memory_info().rss))
+    except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+        return 0
+
+
+def build_runtime_memory_metrics():
+    root = psutil.Process(os.getpid())
+    backend_private_bytes = _private_memory_bytes(root)
+    engine_private_bytes = 0
+    engine_process_count = 0
+    seen = {root.pid}
+    try:
+        descendants = root.children(recursive=True)
+    except (psutil.AccessDenied, psutil.NoSuchProcess):
+        descendants = []
+    for process in descendants:
+        if process.pid in seen:
+            continue
+        seen.add(process.pid)
+        private_bytes = _private_memory_bytes(process)
+        if private_bytes <= 0:
+            continue
+        engine_private_bytes += private_bytes
+        engine_process_count += 1
+    return {
+        "backendPrivateBytes": backend_private_bytes,
+        "enginePrivateBytes": engine_private_bytes,
+        "engineProcessCount": engine_process_count,
+    }
+
+
 def draw_one(snapshot, seat):
     sync_snapshot_state(snapshot)
     return draw_tile(snapshot, seat, source="wall")
@@ -9633,6 +9677,13 @@ def process_command_request(request_id, command, payload, *, lightweight_status=
     try:
         if lightweight_status:
             response = build_status_response(request_id)
+        elif command == "get_runtime_metrics":
+            response = {
+                "request_id": request_id,
+                "command": command,
+                "metrics": build_runtime_memory_metrics(),
+                "timestamp": now_iso(),
+            }
         elif command == "describe_engine":
             response = {
                 "request_id": request_id,
@@ -9696,6 +9747,9 @@ def main():
             payload = data.get("payload") or {}
             if command == "get_status":
                 executor = _STATUS_EXECUTOR
+            elif command == "get_runtime_metrics":
+                # Sampling process memory must not queue behind game commands.
+                executor = _METRICS_EXECUTOR
             elif command == "describe_engine":
                 # Engine startup may import a large runtime. Keep it away from
                 # frame navigation and other latency-sensitive game commands.

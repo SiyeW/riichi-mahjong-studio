@@ -101,6 +101,24 @@ $NumpyDestination = Join-Path $TargetRoot (Join-Path 'backend' "numpy-$NumpyVers
 New-Item -ItemType Directory -Path $NumpyDestination -Force | Out-Null
 Copy-Item -Path (Join-Path $NumpyLicenses '*') -Destination $NumpyDestination -Recurse
 
+$PsutilMetadata = Get-ChildItem -LiteralPath (Join-Path $EnvironmentRoot 'Lib\site-packages') `
+    -Directory -Filter 'psutil-*.dist-info' | Select-Object -First 1
+if (-not $PsutilMetadata) {
+    throw 'Cannot find psutil package metadata.'
+}
+$PsutilPackage = Get-Content -Raw -LiteralPath (Join-Path $PsutilMetadata.FullName 'METADATA')
+$PsutilVersion = ([regex]::Match($PsutilPackage, '(?m)^Version:\s*(.+)$')).Groups[1].Value.Trim()
+$PsutilLicense = @(
+    (Join-Path $PsutilMetadata.FullName 'licenses\LICENSE'),
+    (Join-Path $PsutilMetadata.FullName 'LICENSE')
+) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if (-not $PsutilLicense) {
+    throw 'Cannot find psutil license text.'
+}
+$PsutilDestination = Join-Path $TargetRoot (Join-Path 'backend' "psutil-$PsutilVersion")
+New-Item -ItemType Directory -Path $PsutilDestination -Force | Out-Null
+Copy-Item -LiteralPath $PsutilLicense -Destination $PsutilDestination
+
 $PyInstallerMetadata = Get-ChildItem -LiteralPath (Join-Path $EnvironmentRoot 'Lib\site-packages') `
     -Directory -Filter 'pyinstaller-*.dist-info' | Select-Object -First 1
 if (-not $PyInstallerMetadata) {
@@ -143,6 +161,7 @@ foreach ($Package in ($NativePackages | Sort-Object Name)) {
     $Readme.Add("| $($Package.Name) | $($Package.Version) | $($Package.License) |")
 }
 $Readme.Add("| numpy | $NumpyVersion | See included license collection |")
+$Readme.Add("| psutil | $PsutilVersion | BSD-3-Clause |")
 $Readme.Add("| PyInstaller bootloader | $PyInstallerVersion | GPL-2.0-or-later with Bootloader Exception |")
 $Readme.Add('')
 $Readme.Add('The corresponding license texts are stored below this directory.')

@@ -927,6 +927,16 @@
         </span>
         <span class="footer-model-label">{{ hoveredModelStatusLabel }}</span>
       </div>
+      <div
+        class="footer-memory-status"
+        :title="runtimeMemoryDetail"
+        :aria-label="runtimeMemoryDetail"
+        tabindex="0"
+      >
+        <span>程序内存 {{ formatMemorySize(runtimeMetrics?.applicationBytes) }}</span>
+        <span class="footer-memory-separator" aria-hidden="true">·</span>
+        <span>系统可用 {{ formatMemorySize(runtimeMetrics?.systemAvailableBytes) }}</span>
+      </div>
     </footer>
 
     <div v-if="showMortalImportPanel" class="settings-modal-backdrop">
@@ -2927,6 +2937,45 @@ const status = reactive<TrainerStatusSnapshot>({
     timelineReady: 0,
   },
 })
+const runtimeMetrics = ref<TrainerRuntimeMetrics | null>(null)
+let runtimeMetricsTimer: number | null = null
+let runtimeMetricsRequestInFlight = false
+
+function formatMemorySize(value: number | null | undefined) {
+  if (value === null || value === undefined) return '—'
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes) || bytes < 0) return '—'
+  const gibibytes = bytes / (1024 ** 3)
+  if (gibibytes >= 1) return `${gibibytes.toFixed(gibibytes < 10 ? 2 : 1)} GB`
+  const mebibytes = bytes / (1024 ** 2)
+  return `${Math.round(mebibytes)} MB`
+}
+
+const runtimeMemoryDetail = computed(() => {
+  const metrics = runtimeMetrics.value
+  if (!metrics) return '正在读取内存信息'
+  const engineCount = metrics.engineProcessCount === null
+    ? ''
+    : `（${metrics.engineProcessCount} 个进程）`
+  return [
+    `Electron：${formatMemorySize(metrics.electronBytes)}`,
+    `Python 后端：${formatMemorySize(metrics.backendBytes)}`,
+    `引擎及其子进程${engineCount}：${formatMemorySize(metrics.engineBytes)}`,
+    `系统总内存：${formatMemorySize(metrics.systemTotalBytes)}`,
+  ].join('\n')
+})
+
+async function refreshRuntimeMetrics() {
+  if (!window.trainerAPI?.getRuntimeMetrics || runtimeMetricsRequestInFlight) return
+  runtimeMetricsRequestInFlight = true
+  try {
+    runtimeMetrics.value = await window.trainerAPI.getRuntimeMetrics()
+  } catch {
+    // Keep the last successful sample while the backend or application is restarting.
+  } finally {
+    runtimeMetricsRequestInFlight = false
+  }
+}
 const showTsumogiriTone = computed(() => (
   status.mode !== 'play' || settings.display.showTsumogiriInPlay !== false
 ))
@@ -8098,6 +8147,10 @@ onMounted(() => {
   if (autoAnalysisCanvasEl.value) autoAnalysisResizeObserver.observe(autoAnalysisCanvasEl.value)
   scheduleAutoAnalysisCanvasDraw()
   scheduleTableZoomRecalc()
+  void refreshRuntimeMetrics()
+  runtimeMetricsTimer = window.setInterval(() => {
+    void refreshRuntimeMetrics()
+  }, 2000)
   void prepareRendererForDisplay()
   if (window.trainerAPI?.onPythonEvent) {
     unsubscribePythonEvents = window.trainerAPI.onPythonEvent(handlePythonEvent)
@@ -8137,6 +8190,10 @@ onBeforeUnmount(() => {
   clearAutoAdvanceTimer()
   cancelPendingWheelNavigation()
   clearActionAnnouncementTimer()
+  if (runtimeMetricsTimer !== null) {
+    window.clearInterval(runtimeMetricsTimer)
+    runtimeMetricsTimer = null
+  }
   window.removeEventListener('resize', handleWindowResize)
   window.removeEventListener('resize', updateTreeViewport)
   window.removeEventListener('keydown', onKeyDown)

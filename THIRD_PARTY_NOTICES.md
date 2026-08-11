@@ -2,7 +2,8 @@
 
 This file lists material copied into the Riichi Mahjong Studio source tree.
 Packages installed through npm are additionally identified by `package-lock.json`
-and retain their respective upstream licenses.
+and Python packages are identified by `requirements-release.txt`; these packages
+retain their respective upstream licenses.
 
 Binary distributions also include a generated `THIRD_PARTY_LICENSES` directory
 containing the license texts and versions of the packaged runtime dependencies.

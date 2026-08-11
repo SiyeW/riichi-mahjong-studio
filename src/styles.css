@@ -2684,8 +2684,9 @@ body {
 
 .footer-model-status {
   display: flex;
+  flex: 1 1 auto;
   align-items: center;
-  min-width: calc(11rem * var(--chrome-scale));
+  min-width: 0;
   gap: calc(0.58rem * var(--chrome-scale));
 }
 
@@ -2738,8 +2739,32 @@ body {
 
 .footer-model-label {
   min-width: calc(6rem * var(--chrome-scale));
+  overflow: hidden;
+  text-overflow: ellipsis;
   line-height: 1;
   white-space: nowrap;
+}
+
+.footer-memory-status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  margin-left: auto;
+  gap: calc(0.5rem * var(--chrome-scale));
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
+  outline: none;
+}
+
+.footer-memory-status:focus-visible {
+  color: var(--text-main);
+}
+
+.footer-memory-separator {
+  color: rgba(213, 232, 228, 0.34);
 }
 
 .settings-modal-backdrop {

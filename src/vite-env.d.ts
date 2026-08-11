@@ -207,6 +207,19 @@ interface TrainerStatusSnapshot {
   autoAnalysis: TrainerAutoAnalysisStatus
 }
 
+interface TrainerRuntimeMetrics {
+  applicationBytes: number | null
+  electronBytes: number
+  backendBytes: number | null
+  engineBytes: number | null
+  backendAvailable: boolean
+  electronProcessCount: number
+  engineProcessCount: number | null
+  systemAvailableBytes: number
+  systemTotalBytes: number
+  sampledAt: number
+}
+
 interface TrainerAction {
   id: string
   candidateId?: string
@@ -618,6 +631,7 @@ interface Window {
       profileId: string
     }) => Promise<TrainerStatusSnapshot>
     getStatus: () => Promise<TrainerStatusSnapshot>
+    getRuntimeMetrics: () => Promise<TrainerRuntimeMetrics>
     getGameView: () => Promise<TrainerEnvironmentResponse>
     createGame: () => Promise<TrainerStatusSnapshot>
     closeGame: () => Promise<TrainerEnvironmentResponse>

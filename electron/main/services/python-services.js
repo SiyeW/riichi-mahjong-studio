@@ -46,6 +46,9 @@ function createPythonServices(options = {}) {
       getStatus() {
         return environmentService.sendRequest('get_status', {}, 30_000)
       },
+      getRuntimeMetrics() {
+        return environmentService.sendRequest('get_runtime_metrics', {}, 5_000)
+      },
       getGameView() {
         return environmentService.sendRequest('get_game_view')
       },

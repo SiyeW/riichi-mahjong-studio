@@ -13,6 +13,7 @@ const {
   shell,
 } = require('electron')
 const { createPythonServices } = require('./services/python-services')
+const { buildRuntimeMetrics } = require('./runtime-metrics')
 const { buildSettings, loadSettings, saveSettings } = require('./state/settings')
 const { discoverEnginePackages } = require('./state/engine-package-registry')
 const { discoverSoundPacks, resolveSoundPackFile } = require('./state/sound-pack-registry')
@@ -106,6 +107,21 @@ function publishRecordDirty(force = false) {
     mainWindow.webContents.send('record:dirty-changed', dirty)
   }
   return dirty
+}
+
+async function collectRuntimeMetrics() {
+  let backendMetrics = null
+  try {
+    const response = await pythonServices.environmentGateway.getRuntimeMetrics()
+    backendMetrics = response?.metrics || null
+  } catch {
+    // The footer remains available while the backend starts or restarts.
+  }
+  return buildRuntimeMetrics({
+    processMetrics: app.getAppMetrics(),
+    backendMetrics,
+    systemMemory: process.getSystemMemoryInfo(),
+  })
 }
 
 function beginRecordTracking({ dirty, nodeId = null }) {
@@ -595,6 +611,7 @@ function registerIpcHandlers() {
   })
 
   ipcMain.handle('status:get', () => sessionStore.getSnapshot())
+  ipcMain.handle('system:runtime-metrics', () => collectRuntimeMetrics())
   ipcMain.handle('game:view', async () => {
     const response = await pythonServices.environmentGateway.getGameView()
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
