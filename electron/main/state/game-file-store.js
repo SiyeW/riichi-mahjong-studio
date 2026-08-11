@@ -114,7 +114,9 @@ function createGameFileStore(baseDir) {
     },
     writeRecoverySourcePath(sourcePath = '') {
       const sessionPath = recoverySessionPath()
-      const normalized = path.isAbsolute(sourcePath) && !pathsEqual(sourcePath, recoveryPath())
+      const normalized = typeof sourcePath === 'string'
+        && path.isAbsolute(sourcePath)
+        && !pathsEqual(sourcePath, recoveryPath())
         ? path.resolve(sourcePath)
         : ''
       if (!normalized) {

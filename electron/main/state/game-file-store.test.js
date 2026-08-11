@@ -60,6 +60,9 @@ function testRecoverySourcePathUsesLocalSessionMetadata() {
     assert.equal(store.readRecoverySourcePath(), sourcePath)
     assert.equal(store.writeRecoverySourcePath('relative.mjtrain'), '')
     assert.equal(store.readRecoverySourcePath(), '')
+    assert.equal(store.writeRecoverySourcePath(sourcePath), sourcePath)
+    assert.equal(store.writeRecoverySourcePath(null), '')
+    assert.equal(store.readRecoverySourcePath(), '')
   } finally {
     fs.rmSync(baseDir, { recursive: true, force: true })
   }
