@@ -13,6 +13,7 @@ $BundleRoot = Join-Path $ArtifactsRoot $BundleName
 $ArchivePath = Join-Path $ArtifactsRoot "$BundleName.zip"
 $ChecksumPath = Join-Path $ArtifactsRoot 'SHA256SUMS.txt'
 $ReleaseNotesPath = Join-Path $ArtifactsRoot 'RELEASE_NOTES.md'
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Assert-ProjectPath {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -48,7 +49,8 @@ $Checksum = ([System.BitConverter]::ToString($ChecksumBytes) -replace '-', '').T
 Set-Content -LiteralPath $ChecksumPath -Value "$Checksum  $([System.IO.Path]::GetFileName($ArchivePath))" `
     -Encoding ascii
 
-$Changelog = Get-Content -Raw -LiteralPath (Join-Path $ProjectRoot 'CHANGELOG.md')
+$ChangelogPath = Join-Path $ProjectRoot 'CHANGELOG.md'
+$Changelog = [System.IO.File]::ReadAllText($ChangelogPath, $Utf8NoBom)
 $EscapedVersion = [regex]::Escape($Version)
 $Match = [regex]::Match(
     $Changelog,
@@ -65,7 +67,8 @@ $ReleaseNotes = @(
     ''
     $Match.Groups['body'].Value.Trim()
 )
-Set-Content -LiteralPath $ReleaseNotesPath -Value $ReleaseNotes -Encoding utf8
+$ReleaseNotesText = ($ReleaseNotes -join [Environment]::NewLine) + [Environment]::NewLine
+[System.IO.File]::WriteAllText($ReleaseNotesPath, $ReleaseNotesText, $Utf8NoBom)
 
 Write-Host "Prepared release archive: $ArchivePath"
 Write-Host "SHA-256: $Checksum"
