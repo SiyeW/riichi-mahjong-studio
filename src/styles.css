@@ -3823,6 +3823,10 @@ body {
   gap: calc(0.34rem * var(--shanten-scale)) !important;
 }
 
+.engine-output-assignment:has(input:disabled) {
+  cursor: default;
+}
+
 .engine-output-assignment .settings-checkbox-control {
   width: calc(0.95rem * var(--shanten-scale));
   height: calc(0.95rem * var(--shanten-scale));
