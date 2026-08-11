@@ -1,106 +1,6 @@
-[English](#english) | [中文](#%E4%B8%AD%E6%96%87) | [日本語](#%E6%97%A5%E6%9C%AC%E8%AA%9E)
+### [中文](#%E4%B8%AD%E6%96%87) | [日本語](#%E6%97%A5%E6%9C%AC%E8%AA%9E) | [English](#english)
 
----
-
-## English
-
-### Riichi Mahjong Studio
-
-A desktop application for studying and practicing Riichi Mahjong. It can import
-and export game records, load third-party engines, and assign their outputs to
-decision analysis, opponent shanten prediction, and tile-specific deal-in risk.
-
-Still in early development, with more engine capabilities and protocol
-refinements planned. Feedback, discussion, and code contributions are welcome.
-
-Engines and model weights are distributed separately. Install a compatible
-engine package and any model it requires to use the corresponding analysis
-features. Source code for the companion opponent-analysis engine is available in
-[`riichi-opponent-analysis`](https://github.com/SiyeW/riichi-opponent-analysis);
-trained model weights are not included.
-
-Engine communication and package formats are defined in
-[`riichi-engine-protocol`](https://github.com/SiyeW/riichi-engine-protocol).
-Third-party engine development is welcome.
-
-### Development
-
-#### Requirements
-
-- Node.js 22 or newer
-- Miniconda, Miniforge, or another Conda-compatible environment manager
-- Windows PowerShell for Windows packaging
-
-#### Install the Node.js dependencies
-
-```powershell
-npm ci
-```
-
-#### Create the Python backend environment
-
-Backend development and packaging use a project-local environment:
-
-```powershell
-.\setup-environment.ps1
-```
-
-The development launcher uses `.conda-backend` automatically. To override it,
-set `MJAI_BACKEND_PYTHON` in `.vscode/launch.local.env`.
-
-#### Run the application
-
-```powershell
-npm run dev
-```
-
-Starts Vite and Electron together. Engines, models, game records, logs, and
-runtime configuration created during development are ignored by Git.
-
-#### Run the checks
-
-```powershell
-npm run type-check
-npm run build
-$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-  Select-Object -ExpandProperty FullName
-node --test $tests
-$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
-Remove-Item Env:PYTHONPATH
-```
-
-#### Debug with VS Code
-
-Copy `.vscode/launch.local.env.example` to `.vscode/launch.local.env`, select
-`RMS: Debug`, and press F5.
-
-### Build the Windows application
-
-Build the Python backend only:
-
-```powershell
-npm run build:backend:win
-```
-
-Output: `release/backend/environment-service/`
-
-Build the complete unpacked Windows application:
-
-```powershell
-npm run package:win
-```
-
-Output: `release/electron/`
-
-The package includes the backend, application license, and third-party notices,
-but not engine runtimes, model weights, game records, or local configuration.
-
-### License
-
-Licensed under the Apache License 2.0. Third-party code and assets retain their
-respective licenses; see
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+![Riichi Mahjong Studio main window](docs/images/riichi-mahjong-studio-main-window.png)
 
 ---
 
@@ -291,3 +191,105 @@ npm run package:win
 Apache License 2.0 で提供されます。第三者のコードと素材には、それぞれの
 ライセンス条件が適用されます。詳しくは
 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) を参照してください。
+
+---
+
+## English
+
+### Riichi Mahjong Studio
+
+A desktop application for studying and practicing Riichi Mahjong. It can import
+and export game records, load third-party engines, and assign their outputs to
+decision analysis, opponent shanten prediction, and tile-specific deal-in risk.
+
+Still in early development, with more engine capabilities and protocol
+refinements planned. Feedback, discussion, and code contributions are welcome.
+
+Engines and model weights are distributed separately. Install a compatible
+engine package and any model it requires to use the corresponding analysis
+features. Source code for the companion opponent-analysis engine is available in
+[`riichi-opponent-analysis`](https://github.com/SiyeW/riichi-opponent-analysis);
+trained model weights are not included.
+
+Engine communication and package formats are defined in
+[`riichi-engine-protocol`](https://github.com/SiyeW/riichi-engine-protocol).
+Third-party engine development is welcome.
+
+### Development
+
+#### Requirements
+
+- Node.js 22 or newer
+- Miniconda, Miniforge, or another Conda-compatible environment manager
+- Windows PowerShell for Windows packaging
+
+#### Install the Node.js dependencies
+
+```powershell
+npm ci
+```
+
+#### Create the Python backend environment
+
+Backend development and packaging use a project-local environment:
+
+```powershell
+.\setup-environment.ps1
+```
+
+The development launcher uses `.conda-backend` automatically. To override it,
+set `MJAI_BACKEND_PYTHON` in `.vscode/launch.local.env`.
+
+#### Run the application
+
+```powershell
+npm run dev
+```
+
+Starts Vite and Electron together. Engines, models, game records, logs, and
+runtime configuration created during development are ignored by Git.
+
+#### Run the checks
+
+```powershell
+npm run type-check
+npm run build
+$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
+  Select-Object -ExpandProperty FullName
+node --test $tests
+$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
+.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
+Remove-Item Env:PYTHONPATH
+```
+
+#### Debug with VS Code
+
+Copy `.vscode/launch.local.env.example` to `.vscode/launch.local.env`, select
+`RMS: Debug`, and press F5.
+
+### Build the Windows application
+
+Build the Python backend only:
+
+```powershell
+npm run build:backend:win
+```
+
+Output: `release/backend/environment-service/`
+
+Build the complete unpacked Windows application:
+
+```powershell
+npm run package:win
+```
+
+Output: `release/electron/`
+
+The package includes the backend, application license, and third-party notices,
+but not engine runtimes, model weights, game records, or local configuration.
+
+### License
+
+Licensed under the Apache License 2.0. Third-party code and assets retain their
+respective licenses; see
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
