@@ -159,6 +159,7 @@ class MortalReportImportTests(unittest.TestCase):
         self.assertEqual(reaction["reactionEntries"][0]["variant"], "none")
         self.assertEqual(reaction["reactionEntries"][0]["probability"], 0.8)
         self.assertEqual(reaction["reactionEntries"][0]["metrics"]["policy"], 0.8)
+        self.assertEqual(reaction["recommendationMetricId"], "policy")
         self.assertEqual(discard["bestAction"]["pai"], "2m")
         self.assertEqual(discard["discardEntries"][0]["value"], 0.4)
         self.assertEqual(discard["discardEntries"][1]["tsumogiri"], True)

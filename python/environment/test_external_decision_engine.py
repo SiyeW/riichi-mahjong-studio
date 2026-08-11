@@ -10,7 +10,7 @@ from decision_adapter import analyze_discard_choices, choose_ai_action
 
 
 class ExternalDecisionEngineTest(unittest.TestCase):
-    def test_generic_contract_counts_shared_probability_once(self):
+    def test_generic_contract_uses_declared_recommendation_metric(self):
         result = DecisionEngineGateway._validate_generic_result(  # pylint: disable=protected-access
             {
                 "outputs": [{
@@ -21,11 +21,11 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                         "candidates": [
                             {
                                 "candidateId": "dahai:1m",
-                                "metrics": {"q-value": 1.25, "policy": 1.0},
+                                "metrics": {"q-value": 1.25, "recommendation-strength": 1.0},
                             },
                             {
                                 "candidateId": "dahai:1m:tsumo",
-                                "metrics": {"q-value": 1.25, "policy": 1.0},
+                                "metrics": {"q-value": 1.25, "recommendation-strength": 1.0},
                             },
                         ],
                     },
@@ -34,9 +34,10 @@ class ExternalDecisionEngineTest(unittest.TestCase):
             {"dahai:1m", "dahai:1m:tsumo"},
             [
                 {"id": "q-value", "format": "number"},
-                {"id": "policy", "format": "percentage"},
+                {"id": "recommendation-strength", "format": "percentage"},
             ],
             "q-value",
+            "recommendation-strength",
         )
         self.assertEqual(result["choices"][0]["probability"], 1.0)
 
@@ -67,7 +68,7 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                             "version": 1,
                             "metrics": [
                                 {"id": "q-value", "title": {"default": "Q value"}, "format": "number", "preferredDirection": "higher"},
-                                {"id": "policy", "title": {"default": "Policy"}, "format": "percentage", "preferredDirection": "higher"},
+                                {"id": "recommendation-strength", "title": {"default": "Recommendation strength"}, "format": "percentage", "preferredDirection": "higher"},
                                 {"id": "expected-placement", "title": {"default": "Expected placement"}, "format": "number", "fractionDigits": 2, "preferredDirection": "lower"},
                             ],
                         }],
@@ -93,10 +94,11 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                             "version": 1,
                             "metrics": [
                                 {"id": "q-value", "title": {"default": "Q value"}, "format": "number", "preferredDirection": "higher"},
-                                {"id": "policy", "title": {"default": "Policy"}, "format": "percentage", "preferredDirection": "higher"},
+                                {"id": "recommendation-strength", "title": {"default": "Recommendation strength"}, "format": "percentage", "preferredDirection": "higher"},
                                 {"id": "expected-placement", "title": {"default": "Expected placement"}, "format": "number", "fractionDigits": 2, "preferredDirection": "lower"},
                             ],
                             "primaryMetricId": "q-value",
+                            "recommendationMetricId": "recommendation-strength",
                         }],
                         "device": {"type": "cpu"},
                         "effectiveOptions": params.get("options") or {},
@@ -114,7 +116,7 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                                         "candidateId": candidate["candidateId"],
                                         "metrics": {
                                             "q-value": float(index),
-                                            "policy": 0.25 if index == 0 else 0.75,
+                                            "recommendation-strength": 0.25 if index == 0 else 0.75,
                                             "expected-placement": 2.75 if index == 0 else 2.25,
                                         },
                                     }
@@ -208,8 +210,9 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                 self.assertEqual(analysis["discardEntries"][1]["bar"], 0.75)
                 self.assertEqual(
                     [metric["id"] for metric in analysis["metricDefinitions"]],
-                    ["q-value", "policy", "expected-placement"],
+                    ["q-value", "recommendation-strength", "expected-placement"],
                 )
+                self.assertEqual(analysis["recommendationMetricId"], "recommendation-strength")
                 self.assertEqual(
                     analysis["discardEntries"][1]["metrics"]["expected-placement"],
                     2.25,

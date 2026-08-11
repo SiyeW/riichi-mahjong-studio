@@ -446,6 +446,7 @@ interface TrainerGameView {
     bestAction?: Record<string, unknown> | null
     metricDefinitions?: TrainerDecisionMetricDefinition[]
     primaryMetricId?: string
+    recommendationMetricId?: string
     discardEntries: Array<{
       candidateId?: string
       scoreGroupId?: string

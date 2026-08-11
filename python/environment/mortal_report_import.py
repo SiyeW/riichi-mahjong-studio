@@ -704,6 +704,7 @@ def _build_review_analysis(entry: Dict[str, Any], snapshot: Dict[str, Any], cont
         "bestAction": expected,
         "metricDefinitions": copy.deepcopy(_REVIEW_METRIC_DEFINITIONS),
         "primaryMetricId": "q-value",
+        "recommendationMetricId": "policy",
     }
     if reaction:
         result["mode"] = "reaction"

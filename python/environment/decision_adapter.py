@@ -818,6 +818,7 @@ def analyze_discard_choices(
             "bestAction": best_action,
             "metricDefinitions": copy.deepcopy(response.get("metricDefinitions") or []),
             "primaryMetricId": str(response.get("primaryMetricId") or ""),
+            "recommendationMetricId": str(response.get("recommendationMetricId") or ""),
             "discardEntries": discard_entries,
             "specialEntries": special_entries,
         }
@@ -995,6 +996,7 @@ def analyze_action_choices(
             "bestAction": best_action,
             "metricDefinitions": copy.deepcopy(response.get("metricDefinitions") or []),
             "primaryMetricId": str(response.get("primaryMetricId") or ""),
+            "recommendationMetricId": str(response.get("recommendationMetricId") or ""),
             "reactionEntries": reaction_entries,
         }
     event_hash = (

@@ -15,7 +15,7 @@ from decision_adapter import to_relative_model_path
 
 
 class DecisionEngineGateway:
-    _RESULT_SEMANTICS_VERSION = "action-recommendation-host-v3"
+    _RESULT_SEMANTICS_VERSION = "action-recommendation-host-v4"
     _OUTPUT = {"id": "action-recommendation", "version": 1}
 
     def __init__(self) -> None:
@@ -34,6 +34,7 @@ class DecisionEngineGateway:
         self._actual_device = ""
         self._action_metrics: List[Dict[str, Any]] = []
         self._primary_metric_id = ""
+        self._recommendation_metric_id = ""
         self._engine_kind = "decision"
         self._engine_command: Optional[List[str]] = None
         self._engine_cwd: Optional[str] = None
@@ -167,6 +168,7 @@ class DecisionEngineGateway:
         self._actual_device = ""
         self._action_metrics = []
         self._primary_metric_id = ""
+        self._recommendation_metric_id = ""
         self._model_hash_cache = None
         with self._lock:
             self._response_times.clear()
@@ -247,6 +249,7 @@ class DecisionEngineGateway:
         metrics = initialized_output.get("metrics")
         self._action_metrics = [dict(item) for item in metrics] if isinstance(metrics, list) else []
         self._primary_metric_id = str(initialized_output.get("primaryMetricId") or "")
+        self._recommendation_metric_id = str(initialized_output.get("recommendationMetricId") or "")
         metric_ids = [str(metric.get("id") or "") for metric in self._action_metrics]
         if any(not metric_id for metric_id in metric_ids) or len(set(metric_ids)) != len(metric_ids):
             raise RuntimeError("decision engine initialized invalid metric declarations")
@@ -285,6 +288,18 @@ class DecisionEngineGateway:
                     raise RuntimeError(f"decision engine changed initialized metric {metric_id}")
         if self._primary_metric_id and self._primary_metric_id not in metric_ids:
             raise RuntimeError("decision engine initialized an unknown primaryMetricId")
+        if self._recommendation_metric_id:
+            recommendation_metric = next((
+                metric
+                for metric in self._action_metrics
+                if metric.get("id") == self._recommendation_metric_id
+            ), None)
+            if (
+                recommendation_metric is None
+                or recommendation_metric.get("format") != "percentage"
+                or recommendation_metric.get("preferredDirection") != "higher"
+            ):
+                raise RuntimeError("decision engine initialized an invalid recommendationMetricId")
         self._effective_options = dict(result.get("effectiveOptions") or {})
         self._actual_device = str((result.get("device") or {}).get("type") or selected_device)
         self._last_fingerprint = ""
@@ -300,6 +315,7 @@ class DecisionEngineGateway:
         candidate_ids: set[str],
         metric_definitions: List[Dict[str, Any]],
         primary_metric_id: str,
+        recommendation_metric_id: str,
     ) -> Dict[str, Any]:
         outputs = result.get("outputs")
         if not isinstance(outputs, list) or len(outputs) != 1:
@@ -370,7 +386,7 @@ class DecisionEngineGateway:
                 ):
                     raise RuntimeError(f"decision engine returned invalid percentage metric {metric_id}")
             raw_value = metrics.get(primary_metric_id) if primary_metric_id else None
-            probability = metrics.get("policy")
+            probability = metrics.get(recommendation_metric_id) if recommendation_metric_id else None
             choices.append({
                 "candidateId": candidate_id,
                 "scoreGroupId": candidate_id,
@@ -443,11 +459,13 @@ class DecisionEngineGateway:
                 candidate_ids,
                 self._action_metrics,
                 self._primary_metric_id,
+                self._recommendation_metric_id,
             )
             normalized["engineFingerprint"] = self._last_fingerprint
             normalized["engineId"] = self._engine_id
             normalized["metricDefinitions"] = [dict(metric) for metric in self._action_metrics]
             normalized["primaryMetricId"] = self._primary_metric_id
+            normalized["recommendationMetricId"] = self._recommendation_metric_id
             timing = result.get("timing")
             elapsed_ms = (
                 float(timing.get("totalMs"))
@@ -545,6 +563,8 @@ class DecisionEngineGateway:
                 }
                 for metric in self._action_metrics
             ],
+            "primaryMetricId": self._primary_metric_id,
+            "recommendationMetricId": self._recommendation_metric_id,
             "resultSemanticsVersion": self._RESULT_SEMANTICS_VERSION,
         }
         encoded = json.dumps(
