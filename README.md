@@ -96,16 +96,6 @@ Output: `release/electron/`
 The package includes the backend, application license, and third-party notices,
 but not engine runtimes, model weights, game records, or local configuration.
 
-### Local configuration
-
-Copy `config.example.json` to `config.json` if local configuration is needed.
-Local settings and installed engines do not affect tracked source or packaged
-output.
-
-### Terminology
-
-See [`docs/terminology.md`](docs/terminology.md).
-
 ### License
 
 Licensed under the Apache License 2.0. Third-party code and assets retain their
@@ -194,14 +184,6 @@ npm run package:win
 输出目录：`release/electron/`
 
 打包内容包括主程序后端、许可证和第三方声明，不包括引擎运行时、模型权重、牌局存档和本地配置。
-
-### 本地配置
-
-如需本地配置，可将 `config.example.json` 复制为 `config.json`。调整本地设置或安装本地引擎不会影响仓库代码和打包结果。
-
-### 术语表
-
-详见 [`docs/terminology.md`](docs/terminology.md)。
 
 ### 许可证
 
@@ -303,16 +285,6 @@ npm run package:win
 
 パッケージにはバックエンド、アプリケーションのライセンス、第三者通知が含まれます。
 エンジンランタイム、モデルの重み、対局記録、ローカル設定は含まれません。
-
-### ローカル設定
-
-ローカル設定が必要な場合は、`config.example.json` を `config.json` にコピー
-してください。ローカル設定の変更やローカルエンジンの導入が、リポジトリの
-コードやパッケージの出力に影響することはありません。
-
-### 用語集
-
-詳しくは [`docs/terminology.md`](docs/terminology.md) を参照してください。
 
 ### ライセンス
 
