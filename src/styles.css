@@ -3709,14 +3709,6 @@ body {
   background: var(--engine-state-error-selected-bg);
 }
 
-.engine-profile-item.unavailable {
-  opacity: 0.5;
-}
-
-.engine-profile-item.selected.unavailable {
-  opacity: 1;
-}
-
 .engine-load-button {
   grid-column: 2;
   grid-row: 1 / span 2;
