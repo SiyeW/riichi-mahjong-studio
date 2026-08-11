@@ -3457,11 +3457,16 @@ body {
 
 .engine-window {
   --engine-control-height: calc(2rem * var(--shanten-scale));
+  display: flex;
+  flex-direction: column;
   top: calc(4rem * var(--shanten-scale));
   right: calc(1.25rem * var(--shanten-scale));
   width: min(calc(48rem * var(--shanten-scale)), 94vw);
-  max-height: 88vh;
-  overflow: auto;
+  height: min(
+    calc(30rem * var(--shanten-scale)),
+    calc(100vh - var(--footer-min-h) - 5rem * var(--shanten-scale))
+  );
+  overflow: hidden;
 }
 
 .engine-list-actions button,
@@ -3476,9 +3481,11 @@ body {
 
 .engine-manager-body {
   display: grid;
+  flex: 1 1 auto;
   grid-template-columns: minmax(calc(13rem * var(--shanten-scale)), 0.8fr) minmax(calc(20rem * var(--shanten-scale)), 1.35fr);
   gap: calc(0.7rem * var(--shanten-scale));
-  min-height: calc(19rem * var(--shanten-scale));
+  min-height: 0;
+  overflow: hidden;
 }
 
 .engine-profile-column,
@@ -3487,6 +3494,12 @@ body {
   flex-direction: column;
   gap: calc(0.38rem * var(--shanten-scale));
   min-width: 0;
+}
+
+.engine-profile-detail {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .engine-output-filters {
@@ -3502,11 +3515,11 @@ body {
   min-width: 0;
   padding: calc(0.32rem * var(--shanten-scale)) calc(0.42rem * var(--shanten-scale));
   overflow: hidden;
-  border: 1px solid rgba(137, 158, 158, 0.24);
+  border: 1px solid rgba(0, 0, 0, 0.28);
   border-radius: calc(2px * var(--shanten-scale));
   color: rgba(184, 199, 197, 0.62);
   background: rgba(48, 62, 64, 0.42);
-  font-size: calc(0.7rem * var(--shanten-scale));
+  font-size: calc(0.82rem * var(--shanten-scale));
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3514,7 +3527,6 @@ body {
 }
 
 .engine-output-filter.assigned {
-  border-color: rgba(160, 179, 178, 0.34);
   color: rgba(216, 226, 224, 0.82);
   background: rgba(61, 75, 77, 0.62);
 }
@@ -3531,7 +3543,6 @@ body {
 }
 
 .engine-output-filter.loaded {
-  border-color: rgba(104, 201, 163, 0.62);
   color: rgba(238, 255, 249, 0.96);
   background: rgba(23, 105, 70, 0.76);
 }
@@ -3541,7 +3552,6 @@ body {
 }
 
 .engine-output-filter.loading {
-  border-color: rgba(223, 169, 76, 0.58);
   color: rgba(255, 240, 208, 0.9);
   background: rgba(117, 75, 18, 0.5);
 }
@@ -3551,10 +3561,8 @@ body {
 }
 
 .engine-output-filter.selected {
-  border-color: rgba(0, 0, 0, 0.32);
   color: var(--text-main);
   background: rgba(8, 80, 94, 0.96);
-  font-weight: 700;
 }
 
 .engine-output-filter.selected::before {
@@ -3577,7 +3585,7 @@ body {
 
 .engine-output-filter:hover {
   color: var(--text-main);
-  border-color: rgba(190, 222, 216, 0.54);
+  filter: brightness(1.08);
 }
 
 .engine-legal-field {
@@ -3605,8 +3613,12 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: calc(0.12rem * var(--shanten-scale));
   width: 100%;
-  padding: calc(0.48rem * var(--shanten-scale)) calc(0.58rem * var(--shanten-scale));
-  border: 1px solid rgba(140, 195, 188, 0.14);
+  padding:
+    calc(0.48rem * var(--shanten-scale))
+    calc(0.58rem * var(--shanten-scale))
+    calc(0.48rem * var(--shanten-scale))
+    calc(0.9rem * var(--shanten-scale));
+  border: 1px solid rgba(0, 0, 0, 0.28);
   border-radius: calc(2px * var(--shanten-scale));
   color: var(--text-dim);
   background: rgba(0, 27, 32, 0.34);
@@ -3620,7 +3632,6 @@ body {
   bottom: calc(0.28rem * var(--shanten-scale));
   left: calc(0.18rem * var(--shanten-scale));
   width: calc(0.22rem * var(--shanten-scale));
-  border-radius: calc(0.12rem * var(--shanten-scale));
   background: transparent;
   content: '';
 }
@@ -3638,39 +3649,30 @@ body {
 }
 
 .engine-profile-item.loaded {
-  border-color: rgba(104, 186, 154, 0.5);
   color: var(--text-main);
   background: rgba(23, 105, 70, 0.42);
 }
 
 .engine-profile-item.loading {
-  border-color: rgba(223, 169, 76, 0.72);
   background: rgba(117, 75, 18, 0.46);
 }
 
 .engine-profile-item.error {
-  border-color: rgba(206, 80, 70, 0.75);
   background: rgba(105, 26, 24, 0.48);
 }
 
 .engine-profile-item.unloaded {
-  border-color: rgba(137, 158, 158, 0.28);
   color: var(--text-dim);
   background: rgba(57, 72, 74, 0.42);
 }
 
 .engine-profile-item.selected {
-  border-color: rgba(0, 0, 0, 0.32);
   color: var(--text-main);
   background: rgba(8, 80, 94, 0.94);
 }
 
 .engine-profile-item.selected::before {
   background: rgba(181, 221, 214, 0.82);
-}
-
-.engine-profile-item.selected > span {
-  font-weight: 700;
 }
 
 .engine-profile-item.selected.loaded {
