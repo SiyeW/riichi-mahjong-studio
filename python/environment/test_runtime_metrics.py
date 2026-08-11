@@ -26,6 +26,11 @@ class FakeProcess:
 
 
 class RuntimeMemoryMetricTests(unittest.TestCase):
+    def test_missing_psutil_only_disables_runtime_metrics(self):
+        with mock.patch.object(service, "psutil", None):
+            with self.assertRaisesRegex(RuntimeError, "require psutil"):
+                service.build_runtime_memory_metrics()
+
     def test_backend_and_descendant_private_memory_are_separated(self):
         first_engine = FakeProcess(11, 200)
         second_engine = FakeProcess(12, 300, deny_full_info=True)

@@ -12,7 +12,10 @@ from concurrent.futures import ThreadPoolExecutor
 from itertools import combinations, product
 from pathlib import Path
 
-import psutil
+try:
+    import psutil
+except ModuleNotFoundError:
+    psutil = None
 
 from decision_adapter import analyze_action_choices, analyze_discard_choices, choose_ai_action, get_and_reset_ai_thinking_time_s, get_latest_mjai_debug, get_response_ms_by_seat, set_thinking_time_bounds, to_relative_model_path
 from decision_engine_gateway import DecisionEngineGateway
@@ -6274,6 +6277,8 @@ def build_status_response(request_id):
 
 
 def _private_memory_bytes(process):
+    if psutil is None:
+        return 0
     try:
         memory = process.memory_full_info()
         value = getattr(memory, "uss", None)
@@ -6289,6 +6294,8 @@ def _private_memory_bytes(process):
 
 
 def build_runtime_memory_metrics():
+    if psutil is None:
+        raise RuntimeError("Runtime memory metrics require psutil.")
     root = psutil.Process(os.getpid())
     backend_private_bytes = _private_memory_bytes(root)
     engine_private_bytes = 0
