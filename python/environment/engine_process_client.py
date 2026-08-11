@@ -266,7 +266,6 @@ class EngineProcessClient:
         capabilities = hello.get("runtimeCapabilities")
         capability_names = (
             "multipleSessions",
-            "incrementalHistory",
             "concurrentRequests",
             "cancellation",
         )

@@ -81,7 +81,6 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                         "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
                         "runtimeCapabilities": {
                             "multipleSessions": True,
-                            "incrementalHistory": True,
                             "concurrentRequests": False,
                             "cancellation": False,
                         },

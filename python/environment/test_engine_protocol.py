@@ -21,7 +21,6 @@ class EngineProtocolTest(unittest.TestCase):
             "devices": [{"type": "cpu"}],
             "runtimeCapabilities": {
                 "multipleSessions": False,
-                "incrementalHistory": False,
                 "concurrentRequests": False,
                 "cancellation": False,
             },
@@ -56,7 +55,6 @@ class EngineProtocolTest(unittest.TestCase):
                         "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
                         "runtimeCapabilities": {
                             "multipleSessions": False,
-                            "incrementalHistory": False,
                             "concurrentRequests": False,
                             "cancellation": False,
                         },
@@ -115,7 +113,6 @@ class EngineProtocolTest(unittest.TestCase):
                         "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
                         "runtimeCapabilities": {
                             "multipleSessions": False,
-                            "incrementalHistory": False,
                             "concurrentRequests": False,
                             "cancellation": False,
                         },
@@ -186,7 +183,6 @@ class EngineProtocolTest(unittest.TestCase):
                             "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
                             "runtimeCapabilities": {
                                 "multipleSessions": False,
-                                "incrementalHistory": False,
                                 "concurrentRequests": False,
                                 "cancellation": False,
                             },
@@ -247,7 +243,6 @@ class EngineProtocolTest(unittest.TestCase):
                         "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
                         "runtimeCapabilities": {
                             "multipleSessions": False,
-                            "incrementalHistory": False,
                             "concurrentRequests": False,
                             "cancellation": False,
                         },
@@ -301,7 +296,6 @@ class EngineProtocolTest(unittest.TestCase):
                         "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
                         "runtimeCapabilities": {
                             "multipleSessions": False,
-                            "incrementalHistory": False,
                             "concurrentRequests": False,
                             "cancellation": False,
                         },
@@ -375,7 +369,6 @@ class EngineProtocolTest(unittest.TestCase):
                             "devices": [{"type": "cpu", "title": {"default": "CPU"}}],
                             "runtimeCapabilities": {
                                 "multipleSessions": False,
-                                "incrementalHistory": False,
                                 "concurrentRequests": False,
                                 "cancellation": False,
                             },
