@@ -548,6 +548,7 @@ interface TrainerGameView {
     mainLeafNodeId: string
     currentRoundRootId?: string | null
     revision?: number
+    viewSeat?: number
     compact?: boolean
     nodes?: TrainerTreeNode[] | Record<string, TrainerTreeNode>
     rounds?: TrainerRoundSummary[]

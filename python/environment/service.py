@@ -5432,9 +5432,64 @@ def start_auto_analysis():
     return get_auto_analysis_status()
 
 
+def tree_node_is_visible_to_seat(node, seat):
+    if node.get("type") != "decision" and not (node.get("action") or {}).get("decisionOnly"):
+        return True
+    try:
+        actor = normalize_seat((node.get("action") or {}).get("actor"))
+    except (TypeError, ValueError):
+        return False
+    return actor == normalize_seat(seat)
+
+
+def resolve_visible_tree_cursor(game, node_id, seat):
+    nodes = game.get("nodes") or {}
+    node = nodes.get(node_id)
+    if not isinstance(node, dict) or tree_node_is_visible_to_seat(node, seat):
+        return node_id
+
+    visited = set()
+    cursor_id = node_id
+    while cursor_id in nodes and cursor_id not in visited:
+        visited.add(cursor_id)
+        cursor = nodes[cursor_id]
+        main_child_id = cursor.get("mainChildId")
+        if main_child_id not in nodes:
+            break
+        if tree_node_is_visible_to_seat(nodes[main_child_id], seat):
+            return main_child_id
+        cursor_id = main_child_id
+
+    cursor_id = node.get("parentId")
+    while cursor_id in nodes and cursor_id not in visited:
+        visited.add(cursor_id)
+        cursor = nodes[cursor_id]
+        if tree_node_is_visible_to_seat(cursor, seat):
+            return cursor_id
+        cursor_id = cursor.get("parentId")
+    return node_id
+
+
+def normalize_current_tree_cursor(game, seat):
+    current_node_id = game.get("currentNodeId")
+    visible_node_id = resolve_visible_tree_cursor(game, current_node_id, seat)
+    if visible_node_id != current_node_id:
+        game["currentNodeId"] = visible_node_id
+        game["pendingReview"] = None
+    return game.get("currentNodeId")
+
+
 def build_tree_view(game, current_node_id):
     round_root_cache = {}
     round_depth_cache = {}
+    projected_parent_cache = {}
+    projected_children_cache = {}
+    projected_main_child_cache = {}
+    controlled_seat = STATE["controlledSeat"]
+
+    def is_visible(node_id):
+        node = game["nodes"].get(node_id)
+        return isinstance(node, dict) and tree_node_is_visible_to_seat(node, controlled_seat)
 
     def resolve_is_decision(node):
         cached = node.get("isDecision")
@@ -5499,13 +5554,74 @@ def build_tree_view(game, current_node_id):
             round_root_cache[path_node_id] = round_root_id
         return round_root_id
 
+    def resolve_projected_parent_id(node_id):
+        if node_id in projected_parent_cache:
+            return projected_parent_cache[node_id]
+        parent_id = game["nodes"][node_id].get("parentId")
+        visited = set()
+        while parent_id in game["nodes"] and parent_id not in visited:
+            visited.add(parent_id)
+            if is_visible(parent_id):
+                projected_parent_cache[node_id] = parent_id
+                return parent_id
+            parent_id = game["nodes"][parent_id].get("parentId")
+        projected_parent_cache[node_id] = parent_id
+        return parent_id
+
+    def resolve_projected_children(node_id):
+        if node_id in projected_children_cache:
+            return projected_children_cache[node_id][:]
+        result = []
+        seen = set()
+
+        def collect(child_id, path):
+            if child_id not in game["nodes"] or child_id in path:
+                return
+            if is_visible(child_id):
+                if child_id not in seen:
+                    seen.add(child_id)
+                    result.append(child_id)
+                return
+            child = game["nodes"][child_id]
+            next_path = path | {child_id}
+            for grandchild_id in child.get("children", []):
+                collect(grandchild_id, next_path)
+
+        for child_id in game["nodes"][node_id].get("children", []):
+            collect(child_id, {node_id})
+        projected_children_cache[node_id] = result[:]
+        return result
+
+    def resolve_projected_main_child_id(node_id):
+        if node_id in projected_main_child_cache:
+            return projected_main_child_cache[node_id]
+        child_id = game["nodes"][node_id].get("mainChildId")
+        visited = {node_id}
+        while child_id in game["nodes"] and child_id not in visited:
+            visited.add(child_id)
+            if is_visible(child_id):
+                projected_main_child_cache[node_id] = child_id
+                return child_id
+            child_id = game["nodes"][child_id].get("mainChildId")
+        projected_main_child_cache[node_id] = None
+        return None
+
     def resolve_round_depth(node_id):
         if node_id in round_depth_cache:
             return round_depth_cache[node_id]
         round_root_id = resolve_round_root_id(node_id)
-        node = game["nodes"][node_id]
-        round_root_node = game["nodes"][round_root_id]
-        round_depth = int(node["depth"]) - int(round_root_node["depth"]) + 1
+        if node_id == round_root_id:
+            round_depth = 1
+        else:
+            parent_id = resolve_projected_parent_id(node_id)
+            if (
+                parent_id in game["nodes"]
+                and game["nodes"][parent_id].get("type") != "root"
+                and resolve_round_root_id(parent_id) == round_root_id
+            ):
+                round_depth = resolve_round_depth(parent_id) + 1
+            else:
+                round_depth = 1
         round_depth_cache[node_id] = round_depth
         return round_depth
 
@@ -5524,7 +5640,7 @@ def build_tree_view(game, current_node_id):
         round_root_id = resolve_round_root_id(node_id)
         if round_root_id == node_id:
             round_root_ids.append(node_id)
-        if round_root_id != current_round_root_id:
+        if round_root_id != current_round_root_id or not is_visible(node_id):
             continue
         snapshot = node["snapshot"]
         round_depth = resolve_round_depth(node_id)
@@ -5537,9 +5653,9 @@ def build_tree_view(game, current_node_id):
         nodes.append(
             {
                 "id": node_id,
-                "parentId": node["parentId"],
-                "children": node["children"][:],
-                "mainChildId": node["mainChildId"],
+                "parentId": resolve_projected_parent_id(node_id),
+                "children": resolve_projected_children(node_id),
+                "mainChildId": resolve_projected_main_child_id(node_id),
                 "depth": node["depth"],
                 "roundDepth": round_depth,
                 "roundRootId": round_root_id,
@@ -5645,6 +5761,7 @@ def build_tree_view(game, current_node_id):
         "mainLeafNodeId": game["mainLeafNodeId"],
         "currentRoundRootId": current_round_root_id,
         "revision": int(game.get("treeRevision", 0)),
+        "viewSeat": controlled_seat,
         "compact": False,
         "nodes": nodes,
         "rounds": [round_summary_cache[round_root_id] for round_root_id in round_root_ids],
@@ -5658,6 +5775,7 @@ def build_tree_cursor_view(game, current_node_id):
         "mainLeafNodeId": game["mainLeafNodeId"],
         "currentRoundRootId": resolve_round_root_id_for_node(game, current_node_id),
         "revision": int(game.get("treeRevision", 0)),
+        "viewSeat": int(STATE["controlledSeat"]),
         "compact": True,
     }
 
@@ -5964,7 +6082,7 @@ def build_view_payload(compact_tree=False):
 
     game = STATE["game"]
     metadata = game.get("metadata") or {}
-    current_node_id = game["currentNodeId"]
+    current_node_id = normalize_current_tree_cursor(game, STATE["controlledSeat"])
     current_node = game["nodes"][current_node_id]
     snapshot = current_node["snapshot"]
     sync_snapshot_state(snapshot)
@@ -6087,6 +6205,7 @@ def load_game_record(record):
     STATE["controlledSeat"] = normalize_seat(state.get("controlledSeat", 0))
     STATE["pendingSeatSwitch"] = None
     STATE["visibleHands"] = bool(state.get("visibleHands"))
+    normalize_current_tree_cursor(STATE["game"], STATE["controlledSeat"])
     backfill_cached_child_comparisons(STATE["game"])
     if STATE["mode"] == "research":
         request_current_shanten_prediction()
@@ -9315,9 +9434,11 @@ def handle_command(request_id, command, payload):
             STATE["pendingSeatSwitch"] = seat
             if STATE["gameLoaded"] and STATE["mode"] == "play":
                 advance_to_next_user_turn(STATE["game"])
+                normalize_current_tree_cursor(STATE["game"], STATE["controlledSeat"])
             elif STATE["mode"] != "play":
                 apply_pending_seat_switch_if_ready(get_current_snapshot() if STATE["gameLoaded"] else {})
                 if STATE["gameLoaded"]:
+                    normalize_current_tree_cursor(STATE["game"], STATE["controlledSeat"])
                     request_current_shanten_prediction(get_current_snapshot())
             elif STATE["gameLoaded"]:
                 start_play_prefetch()

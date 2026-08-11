@@ -131,6 +131,64 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         self.assertEqual(game["nodes"][second_id]["action"]["actor"], 2)
         self.assertEqual(game["nodes"][draw_id]["action"]["type"], "tsumo")
 
+    def test_tree_view_only_shows_decisions_owned_by_the_controlled_seat(self):
+        game, discard_id = reaction_game(second_responder=True)
+        service.STATE["game"] = game
+        with mock.patch.object(service, "can_resolve_hora_reaction", return_value=False):
+            service._advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
+
+        first_id = game["nodes"][discard_id]["mainChildId"]
+        second_id = game["nodes"][first_id]["mainChildId"]
+        draw_id = game["nodes"][second_id]["mainChildId"]
+
+        service.STATE["controlledSeat"] = 1
+        first_view = service.build_tree_view(game, draw_id)
+        first_nodes = {node["id"]: node for node in first_view["nodes"]}
+        self.assertIn(first_id, first_nodes)
+        self.assertNotIn(second_id, first_nodes)
+        self.assertEqual(first_nodes[first_id]["mainChildId"], draw_id)
+        self.assertEqual(first_nodes[first_id]["children"], [draw_id])
+        self.assertEqual(first_nodes[draw_id]["parentId"], first_id)
+        self.assertEqual(first_nodes[draw_id]["roundDepth"], 3)
+
+        service.STATE["controlledSeat"] = 2
+        second_view = service.build_tree_view(game, draw_id)
+        second_nodes = {node["id"]: node for node in second_view["nodes"]}
+        self.assertNotIn(first_id, second_nodes)
+        self.assertIn(second_id, second_nodes)
+        self.assertEqual(second_nodes[discard_id]["mainChildId"], second_id)
+        self.assertEqual(second_nodes[second_id]["parentId"], discard_id)
+        self.assertEqual(second_nodes[draw_id]["parentId"], second_id)
+        self.assertEqual(second_nodes[draw_id]["roundDepth"], 3)
+
+        service.STATE["controlledSeat"] = 0
+        observer_view = service.build_tree_view(game, draw_id)
+        observer_nodes = {node["id"]: node for node in observer_view["nodes"]}
+        self.assertNotIn(first_id, observer_nodes)
+        self.assertNotIn(second_id, observer_nodes)
+        self.assertEqual(observer_nodes[discard_id]["mainChildId"], draw_id)
+        self.assertEqual(observer_nodes[discard_id]["children"], [draw_id])
+        self.assertEqual(observer_nodes[draw_id]["parentId"], discard_id)
+        self.assertEqual(observer_nodes[draw_id]["roundDepth"], 2)
+
+    def test_hidden_decision_cursor_moves_forward_to_a_visible_node(self):
+        game, discard_id = reaction_game(second_responder=True)
+        service.STATE["game"] = game
+        with mock.patch.object(service, "can_resolve_hora_reaction", return_value=False):
+            service._advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
+
+        first_id = game["nodes"][discard_id]["mainChildId"]
+        second_id = game["nodes"][first_id]["mainChildId"]
+        draw_id = game["nodes"][second_id]["mainChildId"]
+
+        game["currentNodeId"] = first_id
+        self.assertEqual(service.normalize_current_tree_cursor(game, 2), second_id)
+        self.assertEqual(game["currentNodeId"], second_id)
+
+        game["currentNodeId"] = first_id
+        self.assertEqual(service.normalize_current_tree_cursor(game, 0), draw_id)
+        self.assertEqual(game["currentNodeId"], draw_id)
+
     def test_reaction_analysis_attaches_to_the_pass_decision(self):
         game, discard_id = reaction_game()
         service.STATE["game"] = game
@@ -204,6 +262,14 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         self.assertEqual(game["nodes"][pon_id]["type"], "action")
         self.assertEqual(game["nodes"][pon_id]["action"]["type"], "pon")
         self.assertEqual(game["nodes"][pon_id]["action"]["actor"], 2)
+
+        service.STATE["controlledSeat"] = 0
+        observer_view = service.build_tree_view(game, pon_id)
+        observer_nodes = {node["id"]: node for node in observer_view["nodes"]}
+        self.assertNotIn(pass_id, observer_nodes)
+        self.assertIn(pon_id, observer_nodes)
+        self.assertEqual(observer_nodes[discard_id]["mainChildId"], pon_id)
+        self.assertEqual(observer_nodes[pon_id]["parentId"], discard_id)
 
     def test_kan_reaction_pass_is_recorded_before_rinshan_draw(self):
         game = service.create_empty_game(515151)

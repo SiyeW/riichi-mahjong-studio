@@ -6593,11 +6593,13 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
     && treeNodeCount(currentTree) === treeNodeCount(nextTree)
     && nextTree?.revision !== undefined
     && nextTree.revision === currentTree?.revision
+    && nextTree.viewSeat === currentTree?.viewSeat
     && nextTree.currentRoundRootId === currentTree?.currentRoundRootId
   if (!isNewGame && currentTree && nextTree?.compact) {
     currentTree.currentNodeId = nextTree.currentNodeId
     currentTree.mainLeafNodeId = nextTree.mainLeafNodeId
     currentTree.currentRoundRootId = nextTree.currentRoundRootId
+    currentTree.viewSeat = nextTree.viewSeat
     // A compact response has no nodes. Keep the content revision unchanged so
     // the next full response cannot mistake a stale tree for an up-to-date one.
   } else if (canReuseFullTree && currentTree && nextTree) {
