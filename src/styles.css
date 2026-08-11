@@ -3256,7 +3256,7 @@ body {
   z-index: 1000;
   background: linear-gradient(180deg, #084752 0%, #063943 100%);
   border: 1px solid rgba(140, 195, 188, 0.22);
-  border-radius: calc(8px * var(--shanten-scale));
+  border-radius: calc(5px * var(--shanten-scale));
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.38);
   --shanten-inline-padding: calc(0.6rem * var(--shanten-scale));
   padding: var(--shanten-inline-padding);
