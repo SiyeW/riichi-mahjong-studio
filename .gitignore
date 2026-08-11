@@ -1,9 +1,13 @@
 node_modules/
 dist/
-build/
 release/
 .mjai-runtime/
 .vscode/launch.local.env
+
+.env
+.env.*
+!.env.example
+!.env.*.example
 
 config.json
 records/
