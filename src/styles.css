@@ -3457,6 +3457,10 @@ body {
 
 .engine-window {
   --engine-control-height: calc(2rem * var(--shanten-scale));
+  --engine-font-title: calc(1rem * var(--shanten-scale));
+  --engine-font-body: calc(0.875rem * var(--shanten-scale));
+  --engine-font-label: calc(0.8125rem * var(--shanten-scale));
+  --engine-font-caption: calc(0.75rem * var(--shanten-scale));
   display: flex;
   flex-direction: column;
   top: calc(4rem * var(--shanten-scale));
@@ -3469,6 +3473,10 @@ body {
   overflow: hidden;
 }
 
+.engine-window .floating-panel-header {
+  font-size: var(--engine-font-title);
+}
+
 .engine-list-actions button,
 .engine-install-row button {
   border: 1px solid rgba(140, 195, 188, 0.2);
@@ -3476,6 +3484,7 @@ body {
   padding: calc(0.28rem * var(--shanten-scale)) calc(0.55rem * var(--shanten-scale));
   color: var(--text-dim);
   background: rgba(4, 45, 53, 0.7);
+  font-size: var(--engine-font-label);
   cursor: pointer;
 }
 
@@ -3519,7 +3528,7 @@ body {
   border-radius: calc(2px * var(--shanten-scale));
   color: rgba(184, 199, 197, 0.62);
   background: rgba(48, 62, 64, 0.42);
-  font-size: calc(0.82rem * var(--shanten-scale));
+  font-size: var(--engine-font-body);
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3562,7 +3571,7 @@ body {
 
 .engine-output-filter.selected {
   color: var(--text-main);
-  background: rgba(8, 80, 94, 0.96);
+  background: rgba(82, 98, 100, 0.9);
 }
 
 .engine-output-filter.selected::before {
@@ -3571,7 +3580,7 @@ body {
   bottom: 0;
   left: calc(0.24rem * var(--shanten-scale));
   height: calc(3px * var(--shanten-scale));
-  background: rgba(181, 221, 214, 0.7);
+  background: var(--text-main);
   content: '';
 }
 
@@ -3595,7 +3604,7 @@ body {
 
 .engine-legal-field > span {
   color: var(--text-dim);
-  font-size: calc(0.78rem * var(--shanten-scale));
+  font-size: var(--engine-font-label);
 }
 
 .engine-legal-actions {
@@ -3604,7 +3613,7 @@ body {
 
 .engine-legal-actions button {
   padding: calc(0.3rem * var(--shanten-scale)) calc(0.48rem * var(--shanten-scale));
-  font-size: calc(0.74rem * var(--shanten-scale));
+  font-size: var(--engine-font-label);
 }
 
 .engine-profile-item {
@@ -3641,10 +3650,14 @@ body {
   grid-column: 1;
 }
 
+.engine-profile-item > span {
+  font-size: var(--engine-font-body);
+}
+
 .engine-profile-item small {
   overflow: hidden;
   color: var(--text-muted);
-  font-size: calc(0.72rem * var(--shanten-scale));
+  font-size: var(--engine-font-label);
   text-overflow: ellipsis;
 }
 
@@ -3668,11 +3681,11 @@ body {
 
 .engine-profile-item.selected {
   color: var(--text-main);
-  background: rgba(8, 80, 94, 0.94);
+  background: rgba(76, 92, 94, 0.82);
 }
 
 .engine-profile-item.selected::before {
-  background: rgba(181, 221, 214, 0.82);
+  background: var(--text-main);
 }
 
 .engine-profile-item.selected.loaded {
@@ -3704,6 +3717,7 @@ body {
   border-radius: calc(2px * var(--shanten-scale));
   color: var(--text-main);
   background: rgba(30, 116, 78, 0.92);
+  font-size: var(--engine-font-label);
   cursor: pointer;
   opacity: 0;
   transition: opacity var(--ui-motion-duration) var(--ui-motion-easing);
@@ -3757,7 +3771,7 @@ body {
   border-radius: calc(2px * var(--shanten-scale));
   color: #153237;
   background: rgba(255, 255, 255, 0.95);
-  font-size: calc(0.86rem * var(--shanten-scale));
+  font-size: var(--engine-font-body);
 }
 
 .engine-add-button,
@@ -3773,7 +3787,7 @@ body {
   display: grid;
   gap: calc(0.14rem * var(--shanten-scale));
   color: var(--text-dim);
-  font-size: calc(0.78rem * var(--shanten-scale));
+  font-size: var(--engine-font-label);
 }
 
 .engine-weight-field.inactive {
@@ -3807,7 +3821,7 @@ body {
 
 .engine-output-assignment .settings-checkbox-label {
   color: var(--text-dim);
-  font-size: calc(0.78rem * var(--shanten-scale));
+  font-size: var(--engine-font-label);
 }
 
 .engine-weight-field button {
@@ -3824,7 +3838,7 @@ body {
 .engine-inline-status {
   margin: 0;
   color: var(--text-muted);
-  font-size: calc(0.75rem * var(--shanten-scale));
+  font-size: var(--engine-font-caption);
 }
 
 .engine-profile-detail .engine-option-checkbox {
@@ -3842,14 +3856,14 @@ body {
   display: grid;
   gap: calc(0.14rem * var(--shanten-scale));
   color: var(--text-dim);
-  font-size: calc(0.78rem * var(--shanten-scale));
+  font-size: var(--engine-font-label);
 }
 
 .engine-diagnostic,
 .engine-save-message {
   margin: calc(0.45rem * var(--shanten-scale)) 0 0;
   color: #e5c780;
-  font-size: calc(0.76rem * var(--shanten-scale));
+  font-size: var(--engine-font-caption);
 }
 
 .engine-save-message {
