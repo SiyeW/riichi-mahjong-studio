@@ -8,86 +8,58 @@
 
 ### 立直麻将研究室
 
-一款用于立直麻将对局研究和对战练习的桌面程序，支持导入、导出外部牌谱，也可以加载第三方引擎，并分别使用它们提供的结果进行决策分析、对手向听预测和各牌张的放铳风险预测。
+一款用于立直麻将牌谱研究和对局练习的桌面程序，可加载兼容 [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) 协议的外部引擎。
 
-目前仍处于早期开发阶段，引擎协议和支持的功能还会继续完善。欢迎试用、提交 Issue、参与讨论和贡献代码！
+### 主要功能
 
-引擎和模型权重需要另行安装。我们制作的对手分析引擎源码位于 [`riichi-opponent-analysis`](https://github.com/SiyeW/riichi-opponent-analysis) 仓库，其中暂不提供训练完成的模型权重。
+- 可以在对局模式中与引擎练习，实时获取引擎指导
+- 可以在研究模式中回看牌局、建立分支并记录评注
+- 可以导入 [Mortal 在线分析](https://mjai.ekyu.moe/zh-cn.html)报告和[天凤自定义牌谱](https://tenhou.net/6/)
+- 可以打开和保存 `.mjtrain` 存档，与他人分享牌局
+- 可以自由安装外部引擎，分析决策、对手向听、牌张放铳率等信息
+- 可以自由安装外部音效包
 
-引擎通信协议和程序包格式在 [`riichi-engine-protocol`](https://github.com/SiyeW/riichi-engine-protocol) 仓库中维护。欢迎开发兼容的第三方引擎！
+### 获取与启动
 
-### 开发环境
+前往 [Releases](https://github.com/SiyeW/riichi-mahjong-studio/releases) 下载最新的预览版，解压后运行 `Riichi Mahjong Studio.exe`。
 
-#### 前置要求
+### 基本使用
 
-- Node.js 22 或更高版本
-- Miniconda、Miniforge 或其他兼容 Conda 的环境管理工具
-- Windows PowerShell，用于 Windows 打包
+- **新建牌局：** 点击“新建”，从一副随机生成的完整牌山开始练习。对局中的其他玩家由引擎控制。
+- **打开存档：** 点击“打开”，选择此前保存的 `.mjtrain` 文件。
+- **导入牌谱：** 点击“导入”，粘贴 [Mortal 在线分析](https://mjai.ekyu.moe/zh-cn.html)报告地址，或[天凤自定义牌谱](https://tenhou.net/6/)的地址或内容。导入后可以随机重建未知牌山并进入对局模式。
+- **研究牌局：** 在研究模式中在牌局分支、节点间跳转，也可以为节点添加评注。
+- **保存存档：** 使用“保存”或“另存为”将当前牌局及其分支写入 `.mjtrain` 存档。
 
-#### 安装 Node.js 依赖
+### 外部引擎与音效
 
-```powershell
-npm ci
-```
+#### 配置引擎
 
-#### 创建 Python 后端环境
+浏览和整理牌谱不需要安装引擎。对局练习、决策分析等功能需要配置拥有相应能力的引擎及其权重文件。
 
-后端开发和打包使用项目目录内的独立环境：
+1. 准备兼容 [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) 协议的引擎程序及其所需的模型权重。
+2. 打开“引擎”，点击“添加引擎”，选择引擎的可执行文件或 Python 入口。
+3. 等待主程序读取引擎声明，然后选择由该引擎提供的输出。一个引擎可以承担多种输出。
+4. 按界面提示选择模型权重、运行设备并调整引擎参数。
+5. 点击“加载”。引擎加载后，其输出便可用于相应的分析界面或对局流程。
+6. 需要修改已经加载的引擎时，请先将其卸载。
 
-```powershell
-.\setup-environment.ps1
-```
+#### 配置音效
 
-开发启动器会自动使用 `.conda-backend`。如需使用其他兼容的 Python 可执行文件，请在 `.vscode/launch.local.env` 中设置 `MJAI_BACKEND_PYTHON`。
+将兼容的音效包完整解压到主程序旁的 `sound-packs` 目录（没有该目录时可自行新建），重新启动程序，然后在“设置 → 音效 → 音效包”中选择。
 
-#### 启动程序
+### 开发
 
-```powershell
-npm run dev
-```
+目前仍处于开发阶段，功能尚未完备，界面和操作仍可能调整。未来将开发多语言界面和跨平台版本。
 
-该命令会同时启动 Vite 开发服务器和 Electron 主程序。开发时安装或生成的引擎、模型、牌局存档、日志和运行时配置均不受 Git 跟踪。
+欢迎试用、提交 [Issue](https://github.com/SiyeW/riichi-mahjong-studio/issues) 或参与开发。主程序的构建、调试和测试方法请见 [开发文档](docs/development.md)。第三方引擎协议请见 [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)，自定义音效包的制作方法请见 [音效包文档](docs/sound-packs.md)。更多问题欢迎联系。
 
-#### 运行检查
+### 相关项目与许可证
 
-```powershell
-npm run type-check
-npm run build
-$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-  Select-Object -ExpandProperty FullName
-node --test $tests
-$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
-Remove-Item Env:PYTHONPATH
-```
+- [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)：引擎通信协议和程序包格式
+- [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis)：对手分析引擎源码。训练完成的模型权重将在相关权利和许可证全部确认后提供
 
-#### 使用 VS Code 调试
-
-将 `.vscode/launch.local.env.example` 复制为 `.vscode/launch.local.env`，然后选择 `RMS: Debug` 并按 F5。
-
-### 构建 Windows 应用程序
-
-只构建 Python 后端：
-
-```powershell
-npm run build:backend:win
-```
-
-输出目录：`release/backend/environment-service/`
-
-构建完整的 Windows 免安装目录版：
-
-```powershell
-npm run package:win
-```
-
-输出目录：`release/electron/`
-
-打包内容包括主程序后端、许可证和第三方声明，不包括引擎运行时、模型权重、牌局存档和本地配置。
-
-### 许可证
-
-采用 Apache License 2.0。第三方代码和素材适用各自的许可条款，详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+主程序采用 [Apache License 2.0](LICENSE)。第三方代码和素材适用各自的许可条款，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
 ---
 
@@ -95,102 +67,58 @@ npm run package:win
 
 ### Riichi Mahjong Studio
 
-リーチ麻雀の牌譜検討や対戦練習に使えるデスクトップアプリケーションです。
-外部牌譜のインポートとエクスポートに対応し、サードパーティー製エンジンの出力を
-意思決定の分析、対戦相手のシャンテン状態、牌ごとの放銃リスクの予測に割り当てられます。
+リーチ麻雀の牌譜検討と対局練習に使えるデスクトップアプリケーションで、[riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) に対応する外部エンジンを読み込めます。今後は日本語を含む多言語インターフェースを開発する予定です。
 
-現在は初期開発段階です。今後もエンジンプロトコルを整備し、対応機能を増やして
-いく予定です。フィードバック、議論への参加、コードへの貢献を歓迎します。
+### 主な機能
 
-エンジンとモデルの重みは別途インストールしてください。対戦相手分析エンジンの
-ソースコードは
-[`riichi-opponent-analysis`](https://github.com/SiyeW/riichi-opponent-analysis)
-で公開しています。学習済みの重みは現在、付属していません。
+- 対局モードでエンジンを相手に練習し、リアルタイムで助言を受けられます
+- 検討モードで対局を振り返り、分岐を作成してコメントを記録できます
+- [Mortal オンライン解析](https://mjai.ekyu.moe/zh-cn.html)レポートと[天鳳カスタム牌譜](https://tenhou.net/6/)をインポートできます
+- `.mjtrain` 形式の牌譜を開いて保存し、他の人と対局を共有できます
+- 外部エンジンを自由に導入し、行動選択、対戦相手のシャンテン状態、各牌の放銃率などを解析できます
+- 外部効果音パックを自由に導入できます
 
-エンジン通信プロトコルとパッケージ形式は、
-[`riichi-engine-protocol`](https://github.com/SiyeW/riichi-engine-protocol)
-で管理しています。互換性のあるサードパーティー製エンジンの開発も歓迎します。
+### 入手と起動
 
-### 開発環境
+[Releases](https://github.com/SiyeW/riichi-mahjong-studio/releases) から最新のプレビュー版をダウンロードし、展開後に `Riichi Mahjong Studio.exe` を起動します。
 
-#### 必要条件
+### 基本的な使い方
 
-- Node.js 22 以降
-- Miniconda、Miniforge、または Conda 互換の環境管理ツール
-- Windows パッケージ作成用の Windows PowerShell
+- **新しい対局：** 「新建」をクリックすると、ランダムに生成された完全な牌山から練習を始めます。他のプレイヤーはエンジンが操作します。
+- **牌譜を開く：** 「打开」をクリックし、保存済みの `.mjtrain` ファイルを選択します。
+- **牌譜をインポート：** 「导入」をクリックし、[Mortal オンライン解析](https://mjai.ekyu.moe/zh-cn.html)レポートの URL、または[天鳳カスタム牌譜](https://tenhou.net/6/)の URL や内容を貼り付けます。インポート後は、未確定部分の牌山をランダムに再構築して対局モードへ移ることもできます。
+- **牌譜を検討：** 検討モードでは対局の分岐やノードを行き来し、ノードにコメントを付けることもできます。
+- **牌譜を保存：** 「保存」または「另存为」を使用し、現在の対局と分岐を `.mjtrain` 形式で保存します。
 
-#### Node.js 依存関係のインストール
+### 外部エンジンと効果音
 
-```powershell
-npm ci
-```
+#### エンジンの設定
 
-#### Python バックエンド環境の作成
+牌譜の閲覧と整理にはエンジンを必要としません。対局練習や打牌解析などの機能には、必要な能力を持つエンジンとその重みファイルを設定してください。
 
-バックエンドの開発とパッケージ作成には、プロジェクト内の専用環境を使用します。
+1. [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) に対応するエンジンプログラムと、必要なモデルの重みを用意します。
+2. 「引擎」を開き、「添加引擎」をクリックして、実行ファイルまたは Python エントリーポイントを選択します。
+3. エンジン情報の読み込み後、そのエンジンに割り当てる出力を選択します。1 つのエンジンに複数の出力を割り当てることもできます。
+4. 画面の指示に従ってモデルの重み、実行デバイス、エンジン固有の設定を指定します。
+5. 「加载」をクリックします。読み込みが完了すると、対応する解析画面や対局処理で出力が使用されます。
+6. 読み込み済みのエンジンを変更する場合は、先に読み込みを解除してください。
 
-```powershell
-.\setup-environment.ps1
-```
+#### 効果音の設定
 
-開発ランチャーは `.conda-backend` を自動的に使用します。別の互換 Python
-実行ファイルを使用する場合は、`.vscode/launch.local.env` に
-`MJAI_BACKEND_PYTHON` を設定してください。
+対応する効果音パックを、アプリケーションと同じ場所にある `sound-packs` フォルダーへ構成を保ったまま展開します。フォルダーがない場合は作成してください。アプリケーションを再起動し、「设置 → 音效 → 音效包」から選択します。
 
-#### アプリケーションの起動
+### 開発
 
-```powershell
-npm run dev
-```
+現在も開発段階にあり、未完成の機能があります。画面や操作も今後変更される可能性があります。クロスプラットフォーム版も開発する予定です。
 
-Vite 開発サーバーと Electron アプリケーションが同時に起動します。開発中に導入
-または作成したエンジン、モデル、対局記録、ログ、実行時設定は Git の追跡対象外
-です。
+ぜひお試しいただき、[Issue](https://github.com/SiyeW/riichi-mahjong-studio/issues) の投稿や開発への参加もご検討ください。アプリケーション本体のビルド、デバッグ、テストについては [開発者向けドキュメント](docs/development.md) を参照してください。サードパーティー製エンジンのプロトコルについては [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)、カスタム効果音パックの制作方法については [効果音パックのドキュメント](docs/sound-packs.md) を参照してください。ご不明な点があれば、お気軽にお問い合わせください。
 
-#### チェックの実行
+### 関連プロジェクトとライセンス
 
-```powershell
-npm run type-check
-npm run build
-$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-  Select-Object -ExpandProperty FullName
-node --test $tests
-$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
-Remove-Item Env:PYTHONPATH
-```
+- [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)：エンジン通信プロトコルとパッケージ形式
+- [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis)：対戦相手解析エンジンのソースコード。学習済みのモデルの重みは、関連する権利とライセンスをすべて確認した後に提供する予定です
 
-#### VS Code でのデバッグ
-
-`.vscode/launch.local.env.example` を `.vscode/launch.local.env` にコピーし、
-`RMS: Debug` を選択して F5 を押します。
-
-### Windows アプリケーションのビルド
-
-Python バックエンドだけをビルドする場合：
-
-```powershell
-npm run build:backend:win
-```
-
-出力先：`release/backend/environment-service/`
-
-展開済みの Windows アプリケーション全体をビルドする場合：
-
-```powershell
-npm run package:win
-```
-
-出力先：`release/electron/`
-
-パッケージにはバックエンド、アプリケーションのライセンス、第三者通知が含まれます。
-エンジンランタイム、モデルの重み、対局記録、ローカル設定は含まれません。
-
-### ライセンス
-
-Apache License 2.0 で提供されます。第三者のコードと素材には、それぞれの
-ライセンス条件が適用されます。詳しくは
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) を参照してください。
+本体は [Apache License 2.0](LICENSE) で提供されます。第三者のコードと素材にはそれぞれのライセンス条件が適用されます。詳しくは [第三者通知](THIRD_PARTY_NOTICES.md) を参照してください。
 
 ---
 
@@ -198,98 +126,55 @@ Apache License 2.0 で提供されます。第三者のコードと素材には�
 
 ### Riichi Mahjong Studio
 
-A desktop application for studying and practicing Riichi Mahjong. It can import
-and export game records, load third-party engines, and assign their outputs to
-decision analysis, opponent shanten prediction, and tile-specific deal-in risk.
+A desktop application for studying game records and practicing Riichi Mahjong. It can load external engines compatible with [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol). A multilingual interface, including English, is planned.
 
-Still in early development, with more engine capabilities and protocol
-refinements planned. Feedback, discussion, and code contributions are welcome.
+### Main features
 
-Engines and model weights are distributed separately. Install a compatible
-engine package and any model it requires to use the corresponding analysis
-features. Source code for the companion opponent-analysis engine is available in
-[`riichi-opponent-analysis`](https://github.com/SiyeW/riichi-opponent-analysis);
-trained model weights are not included.
+- Practice against engines in play mode with real-time guidance
+- Review games, create branches, and record comments in research mode
+- Import [Mortal online analysis](https://mjai.ekyu.moe/zh-cn.html) reports and [Tenhou custom game records](https://tenhou.net/6/)
+- Open and save `.mjtrain` records to share games with others
+- Install external engines of your choice to analyze decisions, opponent shanten, tile-specific deal-in probability, and more
+- Install external sound packs of your choice
 
-Engine communication and package formats are defined in
-[`riichi-engine-protocol`](https://github.com/SiyeW/riichi-engine-protocol).
-Third-party engine development is welcome.
+### Download and launch
+
+Visit [Releases](https://github.com/SiyeW/riichi-mahjong-studio/releases) to download the latest preview build, extract it, and run `Riichi Mahjong Studio.exe`.
+
+### Basic use
+
+- **Create a game:** Select “新建” to start from a randomly generated complete wall. The other players are controlled by engines.
+- **Open a record:** Select “打开” and choose a saved `.mjtrain` file.
+- **Import a record:** Select “导入” and paste a [Mortal online analysis](https://mjai.ekyu.moe/zh-cn.html) report URL or the URL or content of a [Tenhou custom game record](https://tenhou.net/6/). After importing, the unknown wall can be reconstructed at random so that the game can be continued in play mode.
+- **Study a game:** In research mode, move between game branches and nodes, and add comments to individual nodes.
+- **Save a record:** Use “保存” or “另存为” to write the current game and its branches to a `.mjtrain` record.
+
+### External engines and sound
+
+#### Configure an engine
+
+No engine is required to browse and organize game records. Practice games, decision analysis, and similar features require an engine with the corresponding capabilities and its weight files.
+
+1. Prepare an engine compatible with [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) and any model weights it requires.
+2. Open “引擎,” select “添加引擎,” and choose the engine executable or Python entry point.
+3. Wait for the application to read the engine declaration, then select the outputs that the engine should provide. One engine may provide multiple outputs.
+4. Select the requested model weights and runtime device, and adjust any engine-specific options.
+5. Select “加载.” Once loaded, the engine output is available to the corresponding analysis view or game process.
+6. Unload a running engine before changing its configuration.
+
+#### Configure sound
+
+Extract a compatible sound pack, without changing its internal structure, into the `sound-packs` directory beside the application. Create the directory if it does not exist. Restart the application, then select the pack under “设置 → 音效 → 音效包.”
 
 ### Development
 
-#### Requirements
+The project is still under development. Some features are incomplete, and the interface and workflows may change. Cross-platform versions are planned.
 
-- Node.js 22 or newer
-- Miniconda, Miniforge, or another Conda-compatible environment manager
-- Windows PowerShell for Windows packaging
+You are welcome to try the application, submit an [issue](https://github.com/SiyeW/riichi-mahjong-studio/issues), or contribute to its development. For instructions on building, debugging, and testing the main application, see the [development documentation](docs/development.md). For the third-party engine protocol, see [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol). For instructions on creating custom sound packs, see the [sound pack documentation](docs/sound-packs.md). Questions are welcome.
 
-#### Install the Node.js dependencies
+### Related projects and licenses
 
-```powershell
-npm ci
-```
+- [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol): engine communication protocol and package format
+- [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis): source code for the opponent-analysis engine; trained model weights will be provided after all related rights and licenses have been confirmed
 
-#### Create the Python backend environment
-
-Backend development and packaging use a project-local environment:
-
-```powershell
-.\setup-environment.ps1
-```
-
-The development launcher uses `.conda-backend` automatically. To override it,
-set `MJAI_BACKEND_PYTHON` in `.vscode/launch.local.env`.
-
-#### Run the application
-
-```powershell
-npm run dev
-```
-
-Starts Vite and Electron together. Engines, models, game records, logs, and
-runtime configuration created during development are ignored by Git.
-
-#### Run the checks
-
-```powershell
-npm run type-check
-npm run build
-$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-  Select-Object -ExpandProperty FullName
-node --test $tests
-$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
-Remove-Item Env:PYTHONPATH
-```
-
-#### Debug with VS Code
-
-Copy `.vscode/launch.local.env.example` to `.vscode/launch.local.env`, select
-`RMS: Debug`, and press F5.
-
-### Build the Windows application
-
-Build the Python backend only:
-
-```powershell
-npm run build:backend:win
-```
-
-Output: `release/backend/environment-service/`
-
-Build the complete unpacked Windows application:
-
-```powershell
-npm run package:win
-```
-
-Output: `release/electron/`
-
-The package includes the backend, application license, and third-party notices,
-but not engine runtimes, model weights, game records, or local configuration.
-
-### License
-
-Licensed under the Apache License 2.0. Third-party code and assets retain their
-respective licenses; see
-[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+The application is licensed under the [Apache License 2.0](LICENSE). Third-party code and assets retain their respective licenses; see the [third-party notices](THIRD_PARTY_NOTICES.md).
