@@ -1219,6 +1219,8 @@
               class="engine-output-filter"
               :class="{
                 assigned: Boolean(settingsDraft.engines.outputAssignments[output.id]),
+                loaded: engineOutputAssignmentIsLoaded(output.id),
+                loading: engineOutputAssignmentIsLoading(output.id),
                 selected: engineOutputFilter === output.id,
               }"
               :aria-pressed="engineOutputFilter === output.id"
@@ -1907,6 +1909,28 @@ function engineProfileSupportsOutput(
   return Boolean(supported && description?.outputContracts.some((contract) => (
     contract.id === supported.id && contract.version === supported.version
   )))
+}
+
+function engineOutputAssignmentProfile(outputId: SupportedEngineOutputId): TrainerEngineProfile | null {
+  const profileId = settingsDraft.engines.outputAssignments[outputId]
+  return activeEngineProfiles.value.find((profile) => profile.id === profileId) || null
+}
+
+function engineOutputRuntimeKind(outputId: SupportedEngineOutputId): EngineRuntimeKind {
+  return outputId === 'action-recommendation' ? 'decision' : 'opponent'
+}
+
+function engineOutputAssignmentIsLoaded(outputId: SupportedEngineOutputId): boolean {
+  const profile = engineOutputAssignmentProfile(outputId)
+  return Boolean(profile && profileRuntimeState(profile, engineOutputRuntimeKind(outputId))?.ready)
+}
+
+function engineOutputAssignmentIsLoading(outputId: SupportedEngineOutputId): boolean {
+  const profile = engineOutputAssignmentProfile(outputId)
+  if (!profile || engineOutputAssignmentIsLoaded(outputId)) return false
+  if (loadingEngineProfileId.value === profile.id) return true
+  const runtime = profileRuntimeState(profile, engineOutputRuntimeKind(outputId))
+  return Boolean(runtime && !runtime.ready && !runtime.unloaded)
 }
 
 async function describeEngineProfile(
