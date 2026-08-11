@@ -59,7 +59,7 @@
 ### 相关项目与许可证
 
 - [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)：引擎通信协议和程序包格式
-- [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis)：对手分析引擎源码。训练完成的模型权重将在相关权利和许可证全部确认后提供
+- [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis)：一款与本程序兼容的对手分析引擎，提供对手向听预测和牌张铳率预测的输出。训练完成的模型权重将在相关权利和许可证全部确认后提供
 
 主程序采用 [Apache License 2.0](LICENSE)。第三方代码和素材适用各自的许可条款，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
@@ -122,7 +122,7 @@
 ### 関連プロジェクトとライセンス
 
 - [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)：エンジン通信プロトコルとパッケージ形式
-- [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis)：対戦相手解析エンジンのソースコード。学習済みのモデルの重みは、関連する権利とライセンスをすべて確認した後に提供する予定です
+- [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis)：本アプリケーションと互換性のある対戦相手解析エンジンで、対戦相手のシャンテン予測と牌ごとの放銃率予測を出力します。学習済みのモデルの重みは、関連する権利とライセンスをすべて確認した後に提供する予定です
 
 本体は [Apache License 2.0](LICENSE) で提供されます。第三者のコードと素材にはそれぞれのライセンス条件が適用されます。詳しくは [第三者通知](THIRD_PARTY_NOTICES.md) を参照してください。
 
@@ -185,7 +185,7 @@ You are welcome to try the application, submit an [issue](https://github.com/Siy
 ### Related projects and licenses
 
 - [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol): engine communication protocol and package format
-- [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis): source code for the opponent-analysis engine; trained model weights will be provided after all related rights and licenses have been confirmed
+- [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis): an opponent-analysis engine compatible with this application, providing opponent shanten predictions and tile-specific deal-in probability predictions; trained model weights will be provided after all related rights and licenses have been confirmed
 
 The application is licensed under the [Apache License 2.0](LICENSE). Third-party code and assets retain their respective licenses; see the [third-party notices](THIRD_PARTY_NOTICES.md).
 
