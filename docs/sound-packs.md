@@ -1,5 +1,7 @@
 ### [中文](#%E4%B8%AD%E6%96%87) | [日本語](#%E6%97%A5%E6%9C%AC%E8%AA%9E) | [English](#english)
 
+<div lang="zh-CN">
+
 ## 中文
 
 ### 自定义音效包
@@ -96,7 +98,11 @@ Windows 下使用分号分隔多个目录。添加或修改音效包后需要重
 
 建议在音效包中附带 `LICENSE` 或相应的第三方声明，并写明音频来源、作者和许可证。清单本身不会代替这些文件。
 
+</div>
+
 ---
+
+<div lang="ja">
 
 ## 日本語
 
@@ -194,7 +200,11 @@ Windows では、複数のディレクトリをセミコロンで区切ります
 
 効果音パックには `LICENSE` または第三者通知を添付し、音声の出典、作者、ライセンスを記載することを推奨します。マニフェストはこれらの文書の代わりにはなりません。
 
+</div>
+
 ---
+
+<div lang="en">
 
 ## English
 
@@ -291,3 +301,5 @@ On Windows, separate multiple directories with semicolons. Restart the applicati
 Distribute only audio that you have the necessary rights to use or that is explicitly licensed for redistribution. When using third-party audio, follow all applicable requirements for attribution, modification notices, share-alike terms, or other conditions.
 
 Including a `LICENSE` file or appropriate third-party notices with the sound pack is recommended. Identify the source, creator, and license of the audio. The manifest does not replace these documents.
+
+</div>

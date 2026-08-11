@@ -1,5 +1,7 @@
 ### [中文](#%E4%B8%AD%E6%96%87) | [日本語](#%E6%97%A5%E6%9C%AC%E8%AA%9E) | [English](#english)
 
+<div lang="zh-CN">
+
 ## 中文
 
 ### 开发环境
@@ -73,7 +75,11 @@ npm run package:win
 
 引擎通信和程序包格式由 [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) 定义。
 
+</div>
+
 ---
+
+<div lang="ja">
 
 ## 日本語
 
@@ -148,7 +154,11 @@ npm run package:win
 
 エンジン通信とパッケージ形式は [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) で定義されています。
 
+</div>
+
 ---
+
+<div lang="en">
 
 ## English
 
@@ -222,3 +232,5 @@ Output: `release/electron/`
 The package includes the backend, application license, and third-party notices, but not engine runtimes, model weights, game records, or local configuration.
 
 Engine communication and package formats are defined by [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol).
+
+</div>

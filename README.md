@@ -4,6 +4,8 @@
 
 ---
 
+<div lang="zh-CN">
+
 ## 中文
 
 ### 立直麻将研究室
@@ -61,7 +63,11 @@
 
 主程序采用 [Apache License 2.0](LICENSE)。第三方代码和素材适用各自的许可条款，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
+</div>
+
 ---
+
+<div lang="ja">
 
 ## 日本語
 
@@ -120,7 +126,11 @@
 
 本体は [Apache License 2.0](LICENSE) で提供されます。第三者のコードと素材にはそれぞれのライセンス条件が適用されます。詳しくは [第三者通知](THIRD_PARTY_NOTICES.md) を参照してください。
 
+</div>
+
 ---
+
+<div lang="en">
 
 ## English
 
@@ -178,3 +188,5 @@ You are welcome to try the application, submit an [issue](https://github.com/Siy
 - [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis): source code for the opponent-analysis engine; trained model weights will be provided after all related rights and licenses have been confirmed
 
 The application is licensed under the [Apache License 2.0](LICENSE). Third-party code and assets retain their respective licenses; see the [third-party notices](THIRD_PARTY_NOTICES.md).
+
+</div>
