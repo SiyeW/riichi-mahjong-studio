@@ -3461,6 +3461,15 @@ body {
   --engine-font-body: calc(0.875rem * var(--shanten-scale));
   --engine-font-label: calc(0.8125rem * var(--shanten-scale));
   --engine-font-caption: calc(0.75rem * var(--shanten-scale));
+  --engine-state-idle-bg: rgba(0, 27, 32, 0.34);
+  --engine-state-unloaded-bg: rgba(57, 72, 74, 0.42);
+  --engine-state-loaded-bg: rgba(23, 105, 70, 0.42);
+  --engine-state-loading-bg: rgba(117, 75, 18, 0.46);
+  --engine-state-error-bg: rgba(105, 26, 24, 0.48);
+  --engine-state-selected-bg: rgba(76, 92, 94, 0.82);
+  --engine-state-loaded-selected-bg: rgba(23, 122, 70, 0.88);
+  --engine-state-loading-selected-bg: rgba(117, 75, 18, 0.82);
+  --engine-state-error-selected-bg: rgba(105, 26, 24, 0.82);
   display: flex;
   flex-direction: column;
   top: calc(4rem * var(--shanten-scale));
@@ -3526,8 +3535,8 @@ body {
   overflow: hidden;
   border: 1px solid rgba(0, 0, 0, 0.28);
   border-radius: calc(2px * var(--shanten-scale));
-  color: rgba(184, 199, 197, 0.62);
-  background: rgba(48, 62, 64, 0.42);
+  color: var(--text-dim);
+  background: var(--engine-state-idle-bg);
   font-size: var(--engine-font-body);
   line-height: 1.2;
   text-overflow: ellipsis;
@@ -3536,8 +3545,8 @@ body {
 }
 
 .engine-output-filter.assigned {
-  color: rgba(216, 226, 224, 0.82);
-  background: rgba(61, 75, 77, 0.62);
+  color: var(--text-dim);
+  background: var(--engine-state-unloaded-bg);
 }
 
 .engine-output-filter.assigned::after {
@@ -3552,8 +3561,8 @@ body {
 }
 
 .engine-output-filter.loaded {
-  color: rgba(238, 255, 249, 0.96);
-  background: rgba(23, 105, 70, 0.76);
+  color: var(--text-main);
+  background: var(--engine-state-loaded-bg);
 }
 
 .engine-output-filter.loaded::after {
@@ -3561,8 +3570,8 @@ body {
 }
 
 .engine-output-filter.loading {
-  color: rgba(255, 240, 208, 0.9);
-  background: rgba(117, 75, 18, 0.5);
+  color: var(--text-dim);
+  background: var(--engine-state-loading-bg);
 }
 
 .engine-output-filter.loading::after {
@@ -3571,7 +3580,7 @@ body {
 
 .engine-output-filter.selected {
   color: var(--text-main);
-  background: rgba(82, 98, 100, 0.9);
+  background: var(--engine-state-selected-bg);
 }
 
 .engine-output-filter.selected::before {
@@ -3585,11 +3594,11 @@ body {
 }
 
 .engine-output-filter.loaded.selected {
-  background: rgba(23, 122, 70, 0.92);
+  background: var(--engine-state-loaded-selected-bg);
 }
 
 .engine-output-filter.loading.selected {
-  background: rgba(117, 75, 18, 0.82);
+  background: var(--engine-state-loading-selected-bg);
 }
 
 .engine-output-filter:hover {
@@ -3630,7 +3639,7 @@ body {
   border: 1px solid rgba(0, 0, 0, 0.28);
   border-radius: calc(2px * var(--shanten-scale));
   color: var(--text-dim);
-  background: rgba(0, 27, 32, 0.34);
+  background: var(--engine-state-idle-bg);
   text-align: left;
   cursor: pointer;
 }
@@ -3663,25 +3672,25 @@ body {
 
 .engine-profile-item.loaded {
   color: var(--text-main);
-  background: rgba(23, 105, 70, 0.42);
+  background: var(--engine-state-loaded-bg);
 }
 
 .engine-profile-item.loading {
-  background: rgba(117, 75, 18, 0.46);
+  background: var(--engine-state-loading-bg);
 }
 
 .engine-profile-item.error {
-  background: rgba(105, 26, 24, 0.48);
+  background: var(--engine-state-error-bg);
 }
 
 .engine-profile-item.unloaded {
   color: var(--text-dim);
-  background: rgba(57, 72, 74, 0.42);
+  background: var(--engine-state-unloaded-bg);
 }
 
 .engine-profile-item.selected {
   color: var(--text-main);
-  background: rgba(76, 92, 94, 0.82);
+  background: var(--engine-state-selected-bg);
 }
 
 .engine-profile-item.selected::before {
@@ -3689,15 +3698,15 @@ body {
 }
 
 .engine-profile-item.selected.loaded {
-  background: rgba(23, 122, 70, 0.88);
+  background: var(--engine-state-loaded-selected-bg);
 }
 
 .engine-profile-item.selected.loading {
-  background: rgba(117, 75, 18, 0.82);
+  background: var(--engine-state-loading-selected-bg);
 }
 
 .engine-profile-item.selected.error {
-  background: rgba(105, 26, 24, 0.82);
+  background: var(--engine-state-error-selected-bg);
 }
 
 .engine-profile-item.unavailable {
