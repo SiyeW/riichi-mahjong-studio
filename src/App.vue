@@ -4954,7 +4954,10 @@ const nextMoveHints = computed<NextMoveHint[]>(() => {
         pai: action.pai,
         tsumogiri: Boolean(action.tsumogiri),
       })
-    } else if (typeof action.type === 'string') {
+    } else if (
+      typeof action.type === 'string'
+      && Number(action.actor) === status.controlledSeat
+    ) {
       hints.push({
         type: 'special',
         childNodeId: childId,

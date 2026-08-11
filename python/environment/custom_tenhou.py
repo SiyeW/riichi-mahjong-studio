@@ -621,6 +621,8 @@ def _export_round(group: List[Dict[str, Any]]) -> List[Any]:
     pending_reach = [False, False, False, False]
     exported_pons: List[Dict[str, Dict[str, Any]]] = [{}, {}, {}, {}]
     for node in group:
+        if node.get("type") == "decision":
+            continue
         action = node.get("action") or {}
         action_type = action.get("type")
         actor = int(action.get("actor", 0)) if action.get("actor") is not None else 0

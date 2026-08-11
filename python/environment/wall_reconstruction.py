@@ -135,7 +135,7 @@ def _build_round_wall(
     ura_markers: List[str] = []
 
     for node in group:
-        action = node.get("action") or {}
+        action = {} if node.get("type") == "decision" else (node.get("action") or {})
         action_type = str(action.get("type") or "")
         if action_type in KAN_ACTIONS:
             pending_rinshan = True

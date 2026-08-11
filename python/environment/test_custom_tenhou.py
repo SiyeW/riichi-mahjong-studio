@@ -124,6 +124,38 @@ class CustomTenhouTests(unittest.TestCase):
         decode_custom_tenhou_log(mortal)
         decode_custom_tenhou_log(naga)
 
+    def test_export_ignores_decision_only_nodes(self):
+        source = make_document([make_round(round_index=0, honba=0)])
+        game, _ = build_custom_tenhou_game(source, "game_test", "2026-08-02T00:00:00Z")
+        game["currentNodeId"] = game["mainLeafNodeId"]
+        baseline = export_custom_tenhou(game)["mortal"]
+        parent_id = game["rootNodeId"]
+        child_id = game["nodes"][parent_id]["mainChildId"]
+        decision_id = "n_decision_test"
+        parent_snapshot = copy.deepcopy(game["nodes"][parent_id]["snapshot"])
+        game["nodes"][decision_id] = {
+            "id": decision_id,
+            "type": "decision",
+            "parentId": parent_id,
+            "children": [child_id],
+            "mainChildId": child_id,
+            "action": {
+                "type": "none",
+                "actor": 1,
+                "variant": "none",
+                "decisionOnly": True,
+            },
+            "actor": 1,
+            "snapshot": parent_snapshot,
+            "analysisCache": {},
+            "depth": 1,
+        }
+        game["nodes"][parent_id]["children"] = [decision_id]
+        game["nodes"][parent_id]["mainChildId"] = decision_id
+        game["nodes"][child_id]["parentId"] = decision_id
+
+        self.assertEqual(export_custom_tenhou(game)["mortal"], baseline)
+
     def test_rejects_three_player_rule(self):
         document = make_document([make_round()])
         document["rule"]["disp"] = "3-Player South"
