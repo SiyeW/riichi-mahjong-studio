@@ -144,6 +144,10 @@ type TrainerModelActivityState = 'idle' | 'loading' | 'running' | 'error'
 interface TrainerModelRuntimeState {
   profileId: string
   profileIds?: string[]
+  profiles?: Record<string, {
+    ready: boolean
+    unloaded: boolean
+  }>
   ready: boolean
   unloaded: boolean
 }

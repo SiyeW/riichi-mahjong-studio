@@ -43,7 +43,7 @@ class DecisionEngineGateway:
         self._activity_state = "idle"
         self._activity_error: Optional[str] = None
         self._error_latched = False
-        self._unloaded = False
+        self._unloaded = True
         self._activity_callback: Optional[
             Callable[[int, str, Optional[str]], None]
         ] = None
@@ -169,7 +169,7 @@ class DecisionEngineGateway:
         with self._lock:
             self._response_times.clear()
             self._error_latched = False
-            self._unloaded = False
+            self._unloaded = True
         self._set_activity(self._active_seat, "idle")
 
     def _initialize(self, model_path: str, timeout: float) -> Dict[str, Any]:

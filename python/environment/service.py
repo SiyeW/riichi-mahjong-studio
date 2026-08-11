@@ -88,14 +88,11 @@ DECISION_ANALYSIS_GATEWAY = DECISION_ENGINE_GATEWAY
 SHANTEN_GATEWAY = OpponentAnalysisGateway()
 _BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _PLAY_PREFETCH_EXECUTOR = ThreadPoolExecutor(max_workers=1)
-_PREWARM_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_PREWARM_EXECUTOR = ThreadPoolExecutor(max_workers=2)
 _COMMAND_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _STATUS_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_INSPECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_RELOAD_EXECUTOR = ThreadPoolExecutor(max_workers=1)
-_PREWARM_LOCK = threading.Lock()
-_PREWARM_FUTURE = None
 _BG_TASKS = {}
 _BG_COMPLETED = set()
 _DECISION_CACHE_EPOCH = 0
@@ -152,7 +149,8 @@ def debug_flow(message):
         print(message, file=sys.stderr)
 
 
-def prewarm_runtime():
+def prewarm_runtime(profile_id=""):
+    requested_profile_id = str(profile_id or "")
     teaching_model_path = get_teaching_model_path()
     warmed = {
         "teachingAnalysis": False,
@@ -161,6 +159,18 @@ def prewarm_runtime():
         "opponentAnalysis": False,
     }
     errors = {}
+    decision_profile_id = str(
+        DECISION_ENGINE_GATEWAY.runtime_status().get("profileId") or ""
+    )
+    opponent_profile_ids = set(
+        SHANTEN_GATEWAY.runtime_status().get("profileIds") or []
+    )
+    prewarm_decision = bool(decision_profile_id) and (
+        not requested_profile_id or decision_profile_id == requested_profile_id
+    )
+    prewarm_opponent = bool(opponent_profile_ids) and (
+        not requested_profile_id or requested_profile_id in opponent_profile_ids
+    )
 
     def _prewarm_decision():
         if not DECISION_ENGINE_GATEWAY.runtime_status().get("profileId"):
@@ -186,7 +196,7 @@ def prewarm_runtime():
         if not SHANTEN_GATEWAY.runtime_status().get("profileId"):
             return False, None
         try:
-            ready = SHANTEN_GATEWAY.prewarm()
+            ready = SHANTEN_GATEWAY.prewarm(requested_profile_id or None)
             error = (
                 None
                 if ready
@@ -201,10 +211,22 @@ def prewarm_runtime():
                 SHANTEN_GATEWAY.activity_error(),
             )
 
-    decision_future = _ENGINE_PREWARM_EXECUTOR.submit(_prewarm_decision)
-    opponent_future = _ENGINE_PREWARM_EXECUTOR.submit(_prewarm_opponent_analysis)
-    decision_ready, decision_error = decision_future.result()
-    opponent_ready, opponent_error = opponent_future.result()
+    decision_future = (
+        _ENGINE_PREWARM_EXECUTOR.submit(_prewarm_decision)
+        if prewarm_decision
+        else None
+    )
+    opponent_future = (
+        _ENGINE_PREWARM_EXECUTOR.submit(_prewarm_opponent_analysis)
+        if prewarm_opponent
+        else None
+    )
+    decision_ready, decision_error = (
+        decision_future.result() if decision_future else (False, None)
+    )
+    opponent_ready, opponent_error = (
+        opponent_future.result() if opponent_future else (False, None)
+    )
 
     warmed["teachingAnalysis"] = decision_ready
     warmed["teachingPlay"] = decision_ready
@@ -219,28 +241,6 @@ def prewarm_runtime():
         "device": DECISION_POOL.device_str,
         "errors": errors,
     }
-
-
-def get_or_start_prewarm_status():
-    global _PREWARM_FUTURE
-    with _PREWARM_LOCK:
-        if _PREWARM_FUTURE is None:
-            _PREWARM_FUTURE = _PREWARM_EXECUTOR.submit(prewarm_runtime)
-        future = _PREWARM_FUTURE
-
-    if not future.done():
-        return {"running": True, "warmed": None, "device": DECISION_POOL.device_str}
-
-    try:
-        result = future.result()
-        return {"running": False, **result}
-    except Exception as error:
-        return {
-            "running": False,
-            "warmed": None,
-            "device": DECISION_POOL.device_str,
-            "error": str(error),
-        }
 
 def _load_json_file(path):
     if not path.exists():
@@ -1762,20 +1762,33 @@ def apply_runtime_engine_config(config=None, *, invalidate=False):
     return source_changed
 
 
-def reload_runtime_engines(kind=None):
+def reload_runtime_engines(profile_id):
+    requested_profile_id = str(profile_id or "")
+    if not requested_profile_id:
+        raise ValueError("engine profile id is required")
     apply_runtime_engine_config(load_project_config(), invalidate=True)
-    if kind == "decision":
+    matched = False
+    if (
+        str(DECISION_ENGINE_GATEWAY.runtime_status().get("profileId") or "")
+        == requested_profile_id
+    ):
         DECISION_ENGINE_GATEWAY.prepare_reload()
-    elif kind == "opponent-analysis":
-        SHANTEN_GATEWAY.prepare_reload()
-    else:
-        DECISION_ENGINE_GATEWAY.prepare_reload()
-        SHANTEN_GATEWAY.prepare_reload()
-    return prewarm_runtime()
+        matched = True
+    if requested_profile_id in set(
+        SHANTEN_GATEWAY.runtime_status().get("profileIds") or []
+    ):
+        SHANTEN_GATEWAY.prepare_reload(requested_profile_id)
+        matched = True
+    if not matched:
+        raise ValueError("engine profile is not assigned to a supported output")
+    return prewarm_runtime(requested_profile_id)
 
 
-def unload_runtime_engine(kind):
+def unload_runtime_engine(kind, profile_id):
     normalized_kind = str(kind or "")
+    requested_profile_id = str(profile_id or "")
+    if not requested_profile_id:
+        raise ValueError("engine profile id is required")
     with _STATE_LOCK:
         cancel_auto_analysis("分析引擎已卸载")
         cancel_play_prefetch()
@@ -1784,9 +1797,18 @@ def unload_runtime_engine(kind):
             active_game.get("gameId") if isinstance(active_game, dict) else None
         )
     if normalized_kind == "decision":
+        if (
+            str(DECISION_ENGINE_GATEWAY.runtime_status().get("profileId") or "")
+            != requested_profile_id
+        ):
+            raise ValueError("engine profile is not assigned to action recommendation")
         DECISION_ENGINE_GATEWAY.unload()
     elif normalized_kind == "opponent-analysis":
-        SHANTEN_GATEWAY.unload()
+        if requested_profile_id not in set(
+            SHANTEN_GATEWAY.runtime_status().get("profileIds") or []
+        ):
+            raise ValueError("engine profile is not assigned to opponent analysis")
+        SHANTEN_GATEWAY.unload(requested_profile_id)
     else:
         raise ValueError("unknown engine kind")
     return build_state_payload(consume_thinking_time=False)
@@ -8878,15 +8900,6 @@ def handle_command(request_id, command, payload):
             auto_analysis = cancel_auto_analysis()
             return build_response(request_id, command, {"autoAnalysis": auto_analysis})
 
-        if command == "prewarm_runtime":
-            return build_response(
-                request_id,
-                command,
-                {
-                    "prewarm": get_or_start_prewarm_status(),
-                },
-            )
-
         if command == "describe_engine":
             return build_response(
                 request_id,
@@ -9183,7 +9196,9 @@ def process_command_request(request_id, command, payload, *, lightweight_status=
                 "timestamp": now_iso(),
             }
         elif command == "reload_engines":
-            result = reload_runtime_engines(str((payload or {}).get("kind") or ""))
+            result = reload_runtime_engines(
+                str((payload or {}).get("profileId") or "")
+            )
             with _STATE_LOCK:
                 response = build_response(
                     request_id,
@@ -9194,7 +9209,10 @@ def process_command_request(request_id, command, payload, *, lightweight_status=
             response = {
                 "request_id": request_id,
                 "command": command,
-                "state": unload_runtime_engine((payload or {}).get("kind")),
+                "state": unload_runtime_engine(
+                    (payload or {}).get("kind"),
+                    (payload or {}).get("profileId"),
+                ),
                 "timestamp": now_iso(),
             }
         else:

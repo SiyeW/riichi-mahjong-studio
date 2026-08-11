@@ -1975,9 +1975,21 @@ function runtimeProfileChanged(profile: TrainerEngineProfile, kind: EngineRuntim
 }
 
 function profileMatchesRuntime(profile: TrainerEngineProfile, kind: EngineRuntimeKind): boolean {
+  return profileRuntimeState(profile, kind) !== null
+}
+
+function profileRuntimeState(
+  profile: TrainerEngineProfile,
+  kind: EngineRuntimeKind,
+): { ready: boolean; unloaded: boolean } | null {
   const runtime = runtimeEngineState(kind)
-  return (runtime.profileId === profile.id || runtime.profileIds?.includes(profile.id) === true)
-    && !runtimeProfileChanged(profile, kind)
+  if (runtimeProfileChanged(profile, kind)) return null
+  const specific = runtime.profiles?.[profile.id]
+  if (specific) return specific
+  if (runtime.profileId === profile.id || runtime.profileIds?.includes(profile.id) === true) {
+    return runtime
+  }
+  return null
 }
 
 function profileRuntimeKinds(profile: TrainerEngineProfile): EngineRuntimeKind[] {
@@ -1991,15 +2003,15 @@ function profileRuntimeKinds(profile: TrainerEngineProfile): EngineRuntimeKind[]
 function profileIsLoaded(profile: TrainerEngineProfile): boolean {
   const runtimeGroups = profileRuntimeKinds(profile)
   return runtimeGroups.length > 0 && runtimeGroups.every((kind) => (
-    profileMatchesRuntime(profile, kind) && runtimeEngineState(kind).ready
+    profileRuntimeState(profile, kind)?.ready === true
   ))
 }
 
 function profileIsLoading(profile: TrainerEngineProfile): boolean {
   if (profile.id === loadingEngineProfileId.value) return true
   return profileRuntimeKinds(profile).some((kind) => {
-    const runtime = runtimeEngineState(kind)
-    return profileMatchesRuntime(profile, kind)
+    const runtime = profileRuntimeState(profile, kind)
+    return runtime !== null
       && !runtime.ready
       && !runtime.unloaded
       && !runtimeEngineError(kind)
@@ -2018,7 +2030,9 @@ function engineProfileClasses(profile: TrainerEngineProfile) {
     selected: profile.id === activeEngineProfile.value?.id,
     loaded,
     loading: profileIsLoading(profile),
-    unloaded: matchesRuntime && runtimeGroups.every((kind) => runtimeEngineState(kind).unloaded),
+    unloaded: matchesRuntime && runtimeGroups.every((kind) => (
+      profileRuntimeState(profile, kind)?.unloaded === true
+    )),
     error: Boolean(engineLoadErrors[profile.id])
       || runtimeGroups.some((kind) => profileMatchesRuntime(profile, kind) && Boolean(runtimeEngineError(kind))),
     unavailable: !profile.enginePath || profileAssignedOutputs(profile).length === 0,
@@ -2031,7 +2045,7 @@ function engineProfileSubtitle(profile: TrainerEngineProfile): string {
   const runtimeGroups = profileRuntimeKinds(profile)
   if (!runtimeGroups.some((kind) => profileMatchesRuntime(profile, kind))) return ''
   if (runtimeGroups.some((kind) => runtimeEngineError(kind))) return '加载失败'
-  if (runtimeGroups.every((kind) => runtimeEngineState(kind).unloaded)) return '未加载'
+  if (runtimeGroups.every((kind) => profileRuntimeState(profile, kind)?.unloaded === true)) return '未加载'
   if (!profileIsLoaded(profile)) return '正在加载'
   return '已加载'
 }

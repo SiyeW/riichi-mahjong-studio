@@ -52,17 +52,14 @@ function createPythonServices(options = {}) {
       exportGameRecord() {
         return environmentService.sendRequest('export_game_record')
       },
-      prewarmRuntime() {
-        return environmentService.sendRequest('prewarm_runtime')
-      },
       describeEngine(profile) {
         return environmentService.sendRequest('describe_engine', profile, 30_000)
       },
-      reloadEngines(kind) {
-        return environmentService.sendRequest('reload_engines', { kind }, 180_000)
+      reloadEngine(profileId) {
+        return environmentService.sendRequest('reload_engines', { profileId }, 180_000)
       },
-      unloadEngine(kind) {
-        return environmentService.sendRequest('unload_engine', { kind }, 30_000)
+      unloadEngine(kind, profileId) {
+        return environmentService.sendRequest('unload_engine', { kind, profileId }, 30_000)
       },
       importGameRecord(record) {
         return environmentService.sendRequest('import_game_record', { record })

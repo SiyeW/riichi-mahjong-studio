@@ -5,6 +5,95 @@ from shanten_gateway import ShantenPredictorGateway, TILE34_NAMES
 
 
 class OpponentOutputCompositionTest(unittest.TestCase):
+    class _FakeGateway:
+        def __init__(self, profile_id):
+            self.profile_id = profile_id
+            self.ready = False
+            self.unloaded = True
+            self.prewarm_calls = 0
+            self.prepare_calls = 0
+            self.unload_calls = 0
+
+        def runtime_status(self):
+            return {
+                "profileId": self.profile_id,
+                "ready": self.ready,
+                "unloaded": self.unloaded,
+            }
+
+        def prepare_reload(self):
+            self.prepare_calls += 1
+            self.unloaded = False
+
+        def prewarm(self):
+            self.prewarm_calls += 1
+            self.ready = True
+            return True
+
+        def unload(self):
+            self.unload_calls += 1
+            self.ready = False
+            self.unloaded = True
+
+        def accepts_requests(self):
+            return self.ready and not self.unloaded
+
+        def get_latest(self):
+            return {
+                "predictions": {"opponents": {self.profile_id: [1.0]}, "ron_wait": {}},
+                "ground_truth": {"opponents": {}, "ron_wait": {}},
+                "status": "ready" if self.ready else "unloaded",
+            }
+
+        def cache_identity(self):
+            return self.profile_id
+
+    def test_profile_lifecycle_only_touches_the_selected_gateway(self):
+        first = self._FakeGateway("profile.first")
+        second = self._FakeGateway("profile.second")
+        gateway = object.__new__(OpponentAnalysisGateway)
+        gateway._active = [first, second]
+
+        gateway.prepare_reload("profile.first")
+        self.assertTrue(gateway.prewarm("profile.first"))
+        gateway.unload("profile.first")
+
+        self.assertEqual(first.prepare_calls, 1)
+        self.assertEqual(first.prewarm_calls, 1)
+        self.assertEqual(first.unload_calls, 1)
+        self.assertEqual(second.prepare_calls, 0)
+        self.assertEqual(second.prewarm_calls, 0)
+        self.assertEqual(second.unload_calls, 0)
+
+    def test_runtime_status_keeps_profile_states_separate(self):
+        first = self._FakeGateway("profile.first")
+        second = self._FakeGateway("profile.second")
+        first.ready = True
+        first.unloaded = False
+        gateway = object.__new__(OpponentAnalysisGateway)
+        gateway._active = [first, second]
+
+        status = gateway.runtime_status()
+
+        self.assertTrue(status["profiles"]["profile.first"]["ready"])
+        self.assertFalse(status["profiles"]["profile.first"]["unloaded"])
+        self.assertFalse(status["profiles"]["profile.second"]["ready"])
+        self.assertTrue(status["profiles"]["profile.second"]["unloaded"])
+
+    def test_unloaded_profiles_do_not_affect_available_results(self):
+        first = self._FakeGateway("profile.first")
+        second = self._FakeGateway("profile.second")
+        first.ready = True
+        first.unloaded = False
+        gateway = object.__new__(OpponentAnalysisGateway)
+        gateway._active = [first, second]
+
+        latest = gateway.get_latest()
+
+        self.assertEqual(latest["status"], "ready")
+        self.assertIn("profile.first", latest["predictions"]["opponents"])
+        self.assertNotIn("profile.second", latest["predictions"]["opponents"])
+
     def test_shanten_contract_can_be_consumed_without_deal_in_output(self):
         gateway = ShantenPredictorGateway(enabled_outputs=["opponent-shanten"])
         try:

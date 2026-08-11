@@ -79,7 +79,7 @@ class ShantenPredictorGateway:
         self._activity_state = "idle"
         self._activity_error: Optional[str] = None
         self._error_latched = False
-        self._unloaded = False
+        self._unloaded = True
         self._response_times: list[float] = []
         self._last_response_ms = 0.0
         self._latest: Dict[str, Any] = {"opponents": {}, "status": "loading"}
@@ -320,7 +320,7 @@ class ShantenPredictorGateway:
         self._model_ready = False
         with self._activity_lock:
             self._error_latched = False
-            self._unloaded = False
+            self._unloaded = True
         self._set_activity("idle")
 
     def _requested_output_contracts(self) -> list[Dict[str, Any]]:

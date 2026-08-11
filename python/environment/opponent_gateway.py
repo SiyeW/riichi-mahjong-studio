@@ -70,6 +70,22 @@ class OpponentAnalysisGateway:
             self._secondary.unload()
         self._active = active
 
+    def _gateways_for_profile(
+        self,
+        profile_id: Optional[str] = None,
+    ) -> list[ShantenPredictorGateway]:
+        requested = str(profile_id or "")
+        if not requested:
+            return list(self._active)
+        return [
+            gateway
+            for gateway in self._active
+            if str(gateway.runtime_status().get("profileId") or "") == requested
+        ]
+
+    def _request_gateways(self) -> list[ShantenPredictorGateway]:
+        return [gateway for gateway in self._active if gateway.accepts_requests()]
+
     @staticmethod
     def _merge_results(results: list[Dict[str, Any]]) -> Dict[str, Any]:
         if not results:
@@ -113,10 +129,11 @@ class OpponentAnalysisGateway:
 
     def _combined_callback(
         self,
+        gateways: list[ShantenPredictorGateway],
         callback: Optional[Callable[[Dict[str, Any]], None]],
     ) -> list[Callable[[Dict[str, Any]], None]]:
-        if not callable(callback) or len(self._active) <= 1:
-            return [callback] * len(self._active)
+        if not callable(callback) or len(gateways) <= 1:
+            return [callback] * len(gateways)
         lock = threading.Lock()
         results: list[Dict[str, Any]] = []
 
@@ -124,48 +141,58 @@ class OpponentAnalysisGateway:
             ready = None
             with lock:
                 results.append(copy.deepcopy(result))
-                if len(results) == len(self._active):
+                if len(results) == len(gateways):
                     ready = self._merge_results(results)
             if ready is not None:
                 callback(ready)
 
-        return [collect] * len(self._active)
+        return [collect] * len(gateways)
 
     def request_predict(self, *args, on_complete=None, **kwargs) -> None:
-        callbacks = self._combined_callback(on_complete)
-        for gateway, callback in zip(self._active, callbacks):
+        gateways = self._request_gateways()
+        callbacks = self._combined_callback(gateways, on_complete)
+        for gateway, callback in zip(gateways, callbacks):
             gateway.request_predict(*args, on_complete=callback, **kwargs)
 
     def request_background_predict(self, *args, on_complete=None, **kwargs) -> bool:
-        callbacks = self._combined_callback(on_complete)
+        gateways = self._request_gateways()
+        callbacks = self._combined_callback(gateways, on_complete)
         accepted = False
-        for gateway, callback in zip(self._active, callbacks):
+        for gateway, callback in zip(gateways, callbacks):
             child_accepted = gateway.request_background_predict(
                 *args,
                 on_complete=callback,
                 **kwargs,
             )
-            if not child_accepted and callable(callback) and len(self._active) > 1:
+            if not child_accepted and callable(callback) and len(gateways) > 1:
                 callback(gateway.get_latest())
             accepted = child_accepted or accepted
         return accepted
 
     def get_latest(self) -> Dict[str, Any]:
-        return self._merge_results([gateway.get_latest() for gateway in self._active])
+        return self._merge_results([
+            gateway.get_latest()
+            for gateway in self._request_gateways()
+        ])
 
-    def prewarm(self) -> bool:
-        return bool(self._active) and all(gateway.prewarm() for gateway in self._active)
+    def prewarm(self, profile_id: Optional[str] = None) -> bool:
+        gateways = self._gateways_for_profile(profile_id)
+        return bool(gateways) and all(gateway.prewarm() for gateway in gateways)
 
     def cache_identity(self) -> str:
-        identities = [gateway.cache_identity() for gateway in self._active]
+        identities = [
+            gateway.cache_identity()
+            for gateway in self._request_gateways()
+        ]
         encoded = json.dumps(identities, separators=(",", ":")).encode()
         return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
     def supported_input_modes(self) -> tuple[str, ...]:
-        if not self._active:
+        gateways = self._request_gateways()
+        if not gateways:
             return ("public",)
-        modes = set(self._active[0].supported_input_modes())
-        for gateway in self._active[1:]:
+        modes = set(gateways[0].supported_input_modes())
+        for gateway in gateways[1:]:
             modes.intersection_update(gateway.supported_input_modes())
         return tuple(mode for mode in ("public", "full-information") if mode in modes)
 
@@ -200,15 +227,24 @@ class OpponentAnalysisGateway:
     def runtime_status(self) -> Dict[str, Any]:
         statuses = [gateway.runtime_status() for gateway in self._active]
         profile_ids = [str(status.get("profileId") or "") for status in statuses]
+        profiles = {
+            str(status.get("profileId") or ""): {
+                "ready": bool(status.get("ready")),
+                "unloaded": bool(status.get("unloaded")),
+            }
+            for status in statuses
+            if status.get("profileId")
+        }
         return {
             "profileId": "+".join(dict.fromkeys(value for value in profile_ids if value)),
             "profileIds": list(dict.fromkeys(value for value in profile_ids if value)),
+            "profiles": profiles,
             "ready": bool(statuses) and all(status.get("ready") for status in statuses),
             "unloaded": not statuses or all(status.get("unloaded") for status in statuses),
         }
 
     def accepts_requests(self) -> bool:
-        return bool(self._active) and all(gateway.accepts_requests() for gateway in self._active)
+        return any(gateway.accepts_requests() for gateway in self._active)
 
     def has_request(self, context: Dict[str, Any]) -> bool:
         return any(gateway.has_request(context) for gateway in self._active)
@@ -217,12 +253,12 @@ class OpponentAnalysisGateway:
         for gateway in self._active:
             gateway.set_latest_context(context)
 
-    def prepare_reload(self) -> None:
-        for gateway in self._active:
+    def prepare_reload(self, profile_id: Optional[str] = None) -> None:
+        for gateway in self._gateways_for_profile(profile_id):
             gateway.prepare_reload()
 
-    def unload(self) -> None:
-        for gateway in self._active:
+    def unload(self, profile_id: Optional[str] = None) -> None:
+        for gateway in self._gateways_for_profile(profile_id):
             gateway.unload()
 
     def cancel_pending(self) -> None:

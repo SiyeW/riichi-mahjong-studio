@@ -143,6 +143,7 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                 engine_command=[sys.executable, str(script_path)],
                 engine_cwd=directory,
             )
+            gateway.prepare_reload()
             try:
                 result = gateway.analyze_candidates(
                     0,

@@ -93,7 +93,6 @@ const sessionStore = createSessionStore(pythonServices.environmentGateway)
 const gameFileStore = createGameFileStore(portableRoot)
 gameFileStore.ensureDefaultDirectory()
 let mainWindow = null
-let startupPrewarmStarted = false
 let startupServicesStarted = false
 let startupRecoveryAttempted = false
 let publishedRecordDirty = false
@@ -447,32 +446,6 @@ function startStartupServices() {
   }
   startupServicesStarted = true
   pythonServices.startAll()
-  prewarmStartupRuntime()
-}
-
-function prewarmStartupRuntime() {
-  if (startupPrewarmStarted) {
-    return
-  }
-  startupPrewarmStarted = true
-  const waitForPrewarm = async () => {
-    const deadline = Date.now() + 120_000
-    while (Date.now() < deadline) {
-      const response = await pythonServices.environmentGateway.prewarmRuntime()
-      if (!response?.prewarm?.running) {
-        if (response?.prewarm?.error) {
-          throw new Error(response.prewarm.error)
-        }
-        return response
-      }
-      await new Promise((resolve) => setTimeout(resolve, 250))
-    }
-    throw new Error('runtime prewarm timed out after 120 seconds')
-  }
-  void waitForPrewarm()
-    .catch((error) => {
-      console.warn('[startup] runtime prewarm failed, continuing without blocking window show', error)
-    })
 }
 
 function openMainWindow() {
@@ -582,7 +555,7 @@ function registerIpcHandlers() {
     if (!assignedOutputs.length) throw new Error('尚未给这个引擎分配输出')
     const attempted = { ...previous, engines }
     saveSettings(attempted, appOptions)
-    const response = await pythonServices.environmentGateway.reloadEngines('')
+    const response = await pythonServices.environmentGateway.reloadEngine(profileId)
     if (assignedOutputs.includes('action-recommendation')) {
       if (response?.reload?.errors?.decision) {
         throw new Error(String(response.reload.errors.decision))
@@ -610,13 +583,13 @@ function registerIpcHandlers() {
       .map(([outputId]) => outputId)
     let state = null
     if (assignedOutputs.includes('action-recommendation')) {
-      state = (await pythonServices.environmentGateway.unloadEngine('decision')).state
+      state = (await pythonServices.environmentGateway.unloadEngine('decision', profileId)).state
     }
     if (
       assignedOutputs.includes('opponent-shanten')
       || assignedOutputs.includes('opponent-deal-in-probability')
     ) {
-      state = (await pythonServices.environmentGateway.unloadEngine('opponent-analysis')).state
+      state = (await pythonServices.environmentGateway.unloadEngine('opponent-analysis', profileId)).state
     }
     return state
   })
