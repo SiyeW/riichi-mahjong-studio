@@ -111,7 +111,10 @@
         <div
           ref="tableStageEl"
           class="table-stage"
-          :class="{ 'tile-artwork-pending': !tileArtworkReady }"
+          :class="[
+            { 'tile-artwork-pending': !tileArtworkReady },
+            `table-position-${tablePosition}`,
+          ]"
           :aria-busy="!tileArtworkReady"
           @wheel.prevent="onTableWheel"
           @contextmenu.prevent="onTableContextMenu"
@@ -995,6 +998,14 @@
               <option value="killerducky">killerducky</option>
             </select>
           </label>
+          <label>
+            <span>牌桌位置</span>
+            <select v-model="settingsDraft.display.tablePosition">
+              <option value="center">居中</option>
+              <option value="left">靠左</option>
+              <option value="right">靠右</option>
+            </select>
+          </label>
           <label class="settings-checkbox">
             <input v-model="settingsDraft.display.reduceMotion" type="checkbox" />
             <span class="settings-checkbox-control" aria-hidden="true"></span>
@@ -1628,6 +1639,7 @@ import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 
 const seats = [0, 1, 2, 3]
 type ColorSchemeId = TrainerSettings['display']['colorScheme']
+type TablePosition = TrainerSettings['display']['tablePosition']
 
 const DEFAULT_SHANTEN_COLORS = [
   '#4CAF50',
@@ -1658,6 +1670,10 @@ const COLOR_SCHEMES: Record<ColorSchemeId, {
 
 function normalizeColorScheme(value: unknown): ColorSchemeId {
   return value === 'killerducky' ? 'killerducky' : 'default'
+}
+
+function normalizeTablePosition(value: unknown): TablePosition {
+  return value === 'left' || value === 'right' ? value : 'center'
 }
 
 const settings = reactive<TrainerSettings>({
@@ -1692,6 +1708,7 @@ const settings = reactive<TrainerSettings>({
     reduceMotion: false,
     uiScale: 1,
     showTsumogiriInPlay: true,
+    tablePosition: 'center',
   },
   records: {
     saveRecoveryOnExit: true,
@@ -1728,6 +1745,7 @@ function normalizeUiScale(value: unknown): number {
 }
 
 const uiScale = computed(() => normalizeUiScale(settings.display.uiScale))
+const tablePosition = computed(() => normalizeTablePosition(settings.display.tablePosition))
 
 watchEffect(() => {
   document.documentElement.classList.toggle('reduce-motion', reduceMotionEnabled.value)
@@ -6026,6 +6044,7 @@ function applySettings(nextSettings: TrainerSettings) {
     colorScheme: normalizeColorScheme(nextSettings.display?.colorScheme),
     uiScale: normalizeUiScale(nextSettings.display?.uiScale),
     showTsumogiriInPlay: nextSettings.display?.showTsumogiriInPlay !== false,
+    tablePosition: normalizeTablePosition(nextSettings.display?.tablePosition),
   })
   Object.assign(settings.records, nextSettings.records || {})
   Object.assign(settings.audio, nextSettings.audio)
@@ -6969,6 +6988,7 @@ async function saveSettingsPanel() {
   if (!window.trainerAPI) return
   settingsDraft.display.colorScheme = normalizeColorScheme(settingsDraft.display.colorScheme)
   settingsDraft.display.uiScale = normalizeUiScale(settingsDraft.display.uiScale)
+  settingsDraft.display.tablePosition = normalizeTablePosition(settingsDraft.display.tablePosition)
   settingsDraft.training.mistakeThreshold = Math.max(
     0,
     Math.min(1, Number(settingsDraft.training.mistakeThreshold) || 0),

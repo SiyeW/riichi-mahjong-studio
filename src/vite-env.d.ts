@@ -63,6 +63,7 @@ interface TrainerSettings {
     reduceMotion: boolean
     uiScale: number
     showTsumogiriInPlay: boolean
+    tablePosition: 'left' | 'center' | 'right'
   }
   records: {
     saveRecoveryOnExit: boolean

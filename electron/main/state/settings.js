@@ -23,6 +23,7 @@ const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
   reduceMotion: false,
   uiScale: 1,
   showTsumogiriInPlay: true,
+  tablePosition: 'center',
 })
 const DEFAULT_RECORD_SETTINGS = Object.freeze({ saveRecoveryOnExit: true })
 const DEFAULT_AUDIO_SETTINGS = Object.freeze({ volume: 50, soundPackId: '' })
@@ -56,6 +57,9 @@ function normalizeDisplaySettings(display = {}) {
   return {
     ...display,
     colorScheme: display.colorScheme === 'killerducky' ? 'killerducky' : 'default',
+    tablePosition: ['left', 'center', 'right'].includes(display.tablePosition)
+      ? display.tablePosition
+      : DEFAULT_DISPLAY_SETTINGS.tablePosition,
   }
 }
 

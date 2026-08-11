@@ -11,6 +11,7 @@ function testPortableDefaultsHaveNoEngines() {
   assert.equal(settings.engines.outputAssignments['action-recommendation'], '')
   assert.equal(settings.audio.volume, 50)
   assert.equal(settings.audio.soundPackId, '')
+  assert.equal(settings.display.tablePosition, 'center')
   assert.equal('voice' in settings.audio, false)
 }
 
@@ -29,10 +30,25 @@ function testUserProfilePersists() {
       options: { temperature: 0.5 },
     })
     settings.engines.outputAssignments['action-recommendation'] = 'profile.example'
+    settings.display.tablePosition = 'right'
     saveSettings(settings, options)
     const reloaded = loadSettings(options)
     assert.equal(reloaded.engines.outputAssignments['action-recommendation'], 'profile.example')
     assert.equal(reloaded.engines.profiles[0].name, 'My engine')
+    assert.equal(reloaded.display.tablePosition, 'right')
+  } finally {
+    fs.rmSync(portableDir, { recursive: true, force: true })
+  }
+}
+
+function testInvalidTablePositionUsesCenter() {
+  const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'riichi-studio-display-settings-'))
+  const options = { appDir: portableDir, portableDir, resourceDir: portableDir }
+  try {
+    fs.writeFileSync(path.join(portableDir, 'config.json'), JSON.stringify({
+      display: { tablePosition: 'diagonal' },
+    }))
+    assert.equal(loadSettings(options).display.tablePosition, 'center')
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })
   }
@@ -68,4 +84,5 @@ function testSoundPackSelectionPersistsOnlyWhileAvailable() {
 testPortableDefaultsHaveNoEngines()
 testUserProfilePersists()
 testSoundPackSelectionPersistsOnlyWhileAvailable()
+testInvalidTablePositionUsesCenter()
 console.log('settings tests passed')

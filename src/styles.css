@@ -302,6 +302,14 @@ body {
   padding: calc(0.5em * var(--chrome-scale));
 }
 
+.table-stage.table-position-left {
+  justify-content: flex-start;
+}
+
+.table-stage.table-position-right {
+  justify-content: flex-end;
+}
+
 .shell.tile-artwork-pending .grid-main,
 .shell.tile-artwork-pending .analysis-table-scroll {
   visibility: hidden;
