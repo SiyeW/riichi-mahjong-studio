@@ -994,7 +994,7 @@
             <span class="settings-checkbox-control" aria-hidden="true"></span>
             <span class="settings-checkbox-copy">
               <span class="settings-checkbox-label">退出时保留未保存的内容</span>
-              <span class="settings-checkbox-description">关闭时覆盖保存未保存修改，并在下次启动时自动继续；始终只保留一份恢复存档。</span>
+              <span class="settings-checkbox-description">如果有未保存的修改，则下次启动时将从关闭的位置继续。</span>
             </span>
           </label>
         </div>
