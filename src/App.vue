@@ -1004,7 +1004,7 @@
     <section
       v-if="roundMapOverlayOpen"
       class="analysis-float-panel round-map-window"
-      :style="{ '--shanten-scale': uiScale, zIndex: floatingPanelZ.roundMap }"
+      :style="{ '--floating-panel-scale': uiScale, zIndex: floatingPanelZ.roundMap }"
       @mousedown="focusFloatingPanel('roundMap')"
       @focusin="focusFloatingPanel('roundMap')"
     >
@@ -1108,7 +1108,7 @@
     <section
       v-if="showWallView"
       class="analysis-float-panel wall-window"
-      :style="{ '--shanten-scale': uiScale, zIndex: floatingPanelZ.wall }"
+      :style="{ '--floating-panel-scale': uiScale, zIndex: floatingPanelZ.wall }"
       @mousedown="focusFloatingPanel('wall')"
       @focusin="focusFloatingPanel('wall')"
     >
@@ -1172,7 +1172,7 @@
     <section
       v-if="showCustomTenhouExport"
       class="analysis-float-panel custom-tenhou-export-window"
-      :style="{ '--shanten-scale': uiScale, zIndex: floatingPanelZ.customExport }"
+      :style="{ '--floating-panel-scale': uiScale, zIndex: floatingPanelZ.customExport }"
       @mousedown="focusFloatingPanel('customExport')"
       @focusin="focusFloatingPanel('customExport')"
     >
@@ -1200,7 +1200,7 @@
     <section
       v-if="showEngineWindow"
       class="analysis-float-panel engine-window"
-      :style="{ '--shanten-scale': uiScale, zIndex: floatingPanelZ.engine }"
+      :style="{ '--floating-panel-scale': uiScale, zIndex: floatingPanelZ.engine }"
       @mousedown="focusFloatingPanel('engine')"
       @focusin="focusFloatingPanel('engine')"
     >
@@ -1500,7 +1500,7 @@
     class="analysis-float-panel shanten-window"
     :class="{ 'reset-without-motion': suppressOpponentAnalysisTransitions }"
     :style="[
-      { '--shanten-scale': uiScale, zIndex: floatingPanelZ.shanten },
+      { '--floating-panel-scale': uiScale, zIndex: floatingPanelZ.shanten },
       colorSchemeCssVariables,
     ]"
     @mousedown="focusFloatingPanel('shanten')"
