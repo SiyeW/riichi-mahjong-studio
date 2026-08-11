@@ -1879,7 +1879,9 @@ async function describeEngineProfile(
       engineId: profile.engineId || undefined,
       engineVersion: profile.engineVersion || undefined,
       enginePath: profile.enginePath,
-      engineCommand: profile.engineCommand,
+      engineCommand: Array.isArray(profile.engineCommand)
+        ? profile.engineCommand.map(String)
+        : [],
       engineCwd: profile.engineCwd,
     })
     engineDescriptions[key] = description

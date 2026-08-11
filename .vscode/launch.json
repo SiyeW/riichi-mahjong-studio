@@ -34,6 +34,8 @@
       "port": 9222,
       "webRoot": "${workspaceFolder}",
       "timeout": 30000,
+      "urlFilter": "http://127.0.0.1:5173/*",
+      "preLaunchTask": "RMS: Wait for Renderer Debug Target",
       "sourceMaps": true
     }
   ],
