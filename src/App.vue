@@ -817,49 +817,87 @@
             <p v-if="!effectiveDecisionRecommendationsEnabled" class="empty-copy">引擎推荐已隐藏</p>
             <p v-else-if="!showTrainingRecommendations" class="empty-copy">—</p>
             <p v-else-if="gameView.analysis?.error" class="empty-copy">{{ gameView.analysis.error }}</p>
-            <div v-else-if="mergedAnalysisEntries.length" class="analysis-list">
-            <div v-for="entry in mergedAnalysisEntries" :key="entry._key" class="analysis-row" :class="{ best: analysisEntryIsBest(entry) }">
-              <template v-if="entry._kind === 'discard'">
-                <span class="analysis-tile-cell">
-                  <img class="tileImg mini-tile-img" :src="tileImageSrc(entry.pai)" :alt="tileFaceLabel(entry.pai)" />
-                  <span v-if="discardVariantLabel(entry)" class="analysis-discard-kind">{{ discardVariantLabel(entry) }}</span>
-                </span>
-              </template>
-              <template v-else>
-                <span class="analysis-label-cell">
-                  <span>{{ resolveSpecialAnalysisLabel(entry) }}</span>
-                  <span v-if="analysisActionDisplayTiles(entry).length" class="analysis-action-tiles">
-                    <img
-                      v-for="(tile, index) in analysisActionDisplayTiles(entry)"
-                      :key="`special-analysis-${entry._key}-${index}`"
-                      class="tileImg mini-tile-img"
-                      :src="tileImageSrc(tile)"
-                      :alt="tileFaceLabel(tile)"
-                    />
-                  </span>
-                </span>
-              </template>
-              <span class="analysis-value-cell">{{ (entry.value ?? 0).toFixed(3) }}</span>
-              <span class="analysis-value-cell analysis-q-cell">{{ formatQPercent(entry.probability) }}</span>
+            <div v-else-if="mergedAnalysisEntries.length" class="analysis-table-scroll">
+              <table class="analysis-table">
+                <thead>
+                  <tr>
+                    <th scope="col" class="analysis-action-heading">动作</th>
+                    <th
+                      v-for="metric in decisionMetricDefinitions"
+                      :key="metric.id"
+                      scope="col"
+                      class="analysis-metric-heading"
+                      :title="localizedEngineText(metric.description, '')"
+                    >
+                      {{ localizedEngineText(metric.title, metric.id) }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="entry in mergedAnalysisEntries" :key="entry._key" class="analysis-row" :class="{ best: analysisEntryIsBest(entry) }">
+                    <td class="analysis-action-cell">
+                      <span v-if="entry._kind === 'discard'" class="analysis-tile-cell">
+                        <img class="tileImg mini-tile-img" :src="tileImageSrc(entry.pai)" :alt="tileFaceLabel(entry.pai)" />
+                        <span v-if="discardVariantLabel(entry)" class="analysis-discard-kind">{{ discardVariantLabel(entry) }}</span>
+                      </span>
+                      <span v-else class="analysis-label-cell">
+                        <span>{{ resolveSpecialAnalysisLabel(entry) }}</span>
+                        <span v-if="analysisActionDisplayTiles(entry).length" class="analysis-action-tiles">
+                          <img
+                            v-for="(tile, index) in analysisActionDisplayTiles(entry)"
+                            :key="`special-analysis-${entry._key}-${index}`"
+                            class="tileImg mini-tile-img"
+                            :src="tileImageSrc(tile)"
+                            :alt="tileFaceLabel(tile)"
+                          />
+                        </span>
+                      </span>
+                    </td>
+                    <td v-for="metric in decisionMetricDefinitions" :key="metric.id" class="analysis-metric-cell">
+                      {{ formatDecisionMetric(entry.metrics?.[metric.id], metric) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            </div>
-            <div v-else-if="gameView.analysis?.reactionEntries?.length" class="analysis-list">
-            <div v-for="entry in gameView.analysis?.reactionEntries || []" :key="entry.candidateId || entry.variant" class="analysis-row" :class="{ best: analysisEntryIsBest(entry) }">
-              <span class="analysis-label-cell">
-                <span>{{ resolveReactionAnalysisLabel(entry) }}</span>
-                <span v-if="analysisActionDisplayTiles(entry).length" class="analysis-action-tiles">
-                  <img
-                    v-for="(tile, index) in analysisActionDisplayTiles(entry)"
-                    :key="`reaction-analysis-${entry.candidateId || entry.variant}-${index}`"
-                    class="tileImg mini-tile-img"
-                    :src="tileImageSrc(tile)"
-                    :alt="tileFaceLabel(tile)"
-                  />
-                </span>
-              </span>
-              <span class="analysis-value-cell">{{ entry.value.toFixed(3) }}</span>
-              <span class="analysis-value-cell analysis-q-cell">{{ formatQPercent(entry.probability) }}</span>
-            </div>
+            <div v-else-if="gameView.analysis?.reactionEntries?.length" class="analysis-table-scroll">
+              <table class="analysis-table">
+                <thead>
+                  <tr>
+                    <th scope="col" class="analysis-action-heading">动作</th>
+                    <th
+                      v-for="metric in decisionMetricDefinitions"
+                      :key="metric.id"
+                      scope="col"
+                      class="analysis-metric-heading"
+                      :title="localizedEngineText(metric.description, '')"
+                    >
+                      {{ localizedEngineText(metric.title, metric.id) }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="entry in gameView.analysis?.reactionEntries || []" :key="entry.candidateId || entry.variant" class="analysis-row" :class="{ best: analysisEntryIsBest(entry) }">
+                    <td class="analysis-action-cell">
+                      <span class="analysis-label-cell">
+                        <span>{{ resolveReactionAnalysisLabel(entry) }}</span>
+                        <span v-if="analysisActionDisplayTiles(entry).length" class="analysis-action-tiles">
+                          <img
+                            v-for="(tile, index) in analysisActionDisplayTiles(entry)"
+                            :key="`reaction-analysis-${entry.candidateId || entry.variant}-${index}`"
+                            class="tileImg mini-tile-img"
+                            :src="tileImageSrc(tile)"
+                            :alt="tileFaceLabel(tile)"
+                          />
+                        </span>
+                      </span>
+                    </td>
+                    <td v-for="metric in decisionMetricDefinitions" :key="metric.id" class="analysis-metric-cell">
+                      {{ formatDecisionMetric(entry.metrics?.[metric.id], metric) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
             <p v-else class="empty-copy">—</p>
           </template>
@@ -5872,6 +5910,10 @@ function analysisActionDisplayTiles(entry: { type?: string; pai?: string; consum
   return []
 }
 
+const decisionMetricDefinitions = computed<TrainerDecisionMetricDefinition[]>(() => (
+  gameView.analysis?.metricDefinitions || []
+))
+
 const mergedAnalysisEntries = computed(() => {
   const discardEntries = gameView.analysis?.discardEntries || []
   const specialEntries = gameView.analysis?.specialEntries || []
@@ -5887,7 +5929,14 @@ const mergedAnalysisEntries = computed(() => {
       _key: `s:${e.candidateId || e.variant || e.type}`,
     })),
   ]
-  all.sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+  const primaryMetric = decisionMetricDefinitions.value.find((metric) => (
+    metric.id === gameView.analysis?.primaryMetricId
+  ))
+  if (primaryMetric?.preferredDirection === 'lower') {
+    all.sort((a, b) => (a.value ?? 0) - (b.value ?? 0))
+  } else if (primaryMetric?.preferredDirection === 'higher' || !primaryMetric) {
+    all.sort((a, b) => (b.value ?? 0) - (a.value ?? 0))
+  }
   return all
 })
 
@@ -5902,9 +5951,28 @@ function discardVariantLabel(entry: { pai: string; tsumogiri?: boolean }): strin
   return entry.tsumogiri ? '（摸切）' : '（手切）'
 }
 
-function formatQPercent(value: number | undefined): string {
-  if (value == null || !isFinite(value)) return '—'
-  return `${(value * 100).toFixed(2)}%`
+function formatDecisionMetric(
+  value: number | null | undefined,
+  metric: TrainerDecisionMetricDefinition,
+): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  const displayedValue = metric.format === 'percentage' ? value * 100 : value
+  const fractionDigits = Number.isInteger(metric.fractionDigits)
+    && Number(metric.fractionDigits) >= 0
+    && Number(metric.fractionDigits) <= 12
+    ? Number(metric.fractionDigits)
+    : null
+  const text = fractionDigits === null
+    ? new Intl.NumberFormat('en-US', {
+        useGrouping: metric.format === 'points',
+        maximumSignificantDigits: 15,
+      }).format(displayedValue)
+    : new Intl.NumberFormat('en-US', {
+        useGrouping: metric.format === 'points',
+        minimumFractionDigits: fractionDigits,
+        maximumFractionDigits: fractionDigits,
+      }).format(displayedValue)
+  return metric.format === 'percentage' ? `${text}%` : text
 }
 
 const recommendationBarMax = computed(() => {

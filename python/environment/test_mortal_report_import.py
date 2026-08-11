@@ -152,8 +152,13 @@ class MortalReportImportTests(unittest.TestCase):
         reaction = next(value for value in attached.values() if value.get("mode") == "reaction")
         discard = next(value for value in attached.values() if value.get("discardEntries"))
         self.assertEqual(reaction["model"], "Mortal 官方分析")
+        self.assertEqual(
+            [(metric["title"]["zh-CN"], metric["fractionDigits"]) for metric in reaction["metricDefinitions"]],
+            [("Q 值", 3), ("P 值", 2)],
+        )
         self.assertEqual(reaction["reactionEntries"][0]["variant"], "none")
         self.assertEqual(reaction["reactionEntries"][0]["probability"], 0.8)
+        self.assertEqual(reaction["reactionEntries"][0]["metrics"]["policy"], 0.8)
         self.assertEqual(discard["bestAction"]["pai"], "2m")
         self.assertEqual(discard["discardEntries"][0]["value"], 0.4)
         self.assertEqual(discard["discardEntries"][1]["tsumogiri"], True)

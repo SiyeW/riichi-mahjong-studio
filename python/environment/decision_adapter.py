@@ -614,9 +614,16 @@ def _generic_scored_actions(
             "metrics": copy.deepcopy(choice.get("metrics") or {}),
             "isBest": candidate_id == str(result.get("bestCandidateId") or ""),
         })
+    primary_metric_id = str(result.get("primaryMetricId") or "")
+    metric_definitions = result.get("metricDefinitions") or []
+    primary_definition = next((
+        metric
+        for metric in metric_definitions
+        if isinstance(metric, dict) and str(metric.get("id") or "") == primary_metric_id
+    ), {})
     ranked_values = sorted(
         {item["value"] for item in scored if item["hasValue"]},
-        reverse=True,
+        reverse=str(primary_definition.get("preferredDirection") or "higher") != "lower",
     )
     ranks = {value: index + 1 for index, value in enumerate(ranked_values)}
     for item in scored:
@@ -806,9 +813,11 @@ def analyze_discard_choices(
         return {
             "model": str(response.get("engineId") or "decision-engine"),
             "engineFingerprint": str(response.get("engineFingerprint") or ""),
-            "hostPostprocessorVersion": "decision-analysis-v1",
+            "hostPostprocessorVersion": "decision-analysis-v2",
             "seat": seat,
             "bestAction": best_action,
+            "metricDefinitions": copy.deepcopy(response.get("metricDefinitions") or []),
+            "primaryMetricId": str(response.get("primaryMetricId") or ""),
             "discardEntries": discard_entries,
             "specialEntries": special_entries,
         }
@@ -935,7 +944,7 @@ def analyze_discard_choices(
     return {
         "model": str(response.get("engineId") or "decision-engine"),
         "engineFingerprint": str(response.get("engineFingerprint") or ""),
-        "hostPostprocessorVersion": "decision-analysis-v1",
+        "hostPostprocessorVersion": "decision-analysis-v2",
         "seat": seat,
         "bestAction": best_action,
         "discardEntries": discard_entries,
@@ -981,9 +990,11 @@ def analyze_action_choices(
             "mode": "reaction",
             "model": str(response.get("engineId") or "decision-engine"),
             "engineFingerprint": str(response.get("engineFingerprint") or ""),
-            "hostPostprocessorVersion": "decision-analysis-v1",
+            "hostPostprocessorVersion": "decision-analysis-v2",
             "seat": seat,
             "bestAction": best_action,
+            "metricDefinitions": copy.deepcopy(response.get("metricDefinitions") or []),
+            "primaryMetricId": str(response.get("primaryMetricId") or ""),
             "reactionEntries": reaction_entries,
         }
     event_hash = (
@@ -1013,7 +1024,7 @@ def analyze_action_choices(
             "mode": "reaction",
             "model": str(response.get("engineId") or "decision-engine"),
             "engineFingerprint": str(response.get("engineFingerprint") or ""),
-            "hostPostprocessorVersion": "decision-analysis-v1",
+            "hostPostprocessorVersion": "decision-analysis-v2",
             "seat": seat,
             "bestAction": {"type": "none", "actor": seat},
             "reactionEntries": [],
@@ -1047,7 +1058,7 @@ def analyze_action_choices(
         "mode": "reaction",
         "model": str(response.get("engineId") or "decision-engine"),
         "engineFingerprint": str(response.get("engineFingerprint") or ""),
-        "hostPostprocessorVersion": "decision-analysis-v1",
+        "hostPostprocessorVersion": "decision-analysis-v2",
         "seat": seat,
         "bestAction": best_action,
         "reactionEntries": reaction_entries,

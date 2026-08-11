@@ -95,6 +95,15 @@ interface TrainerEngineProfile {
   }
 }
 
+interface TrainerDecisionMetricDefinition {
+  id: string
+  title: string | Record<string, string>
+  description?: string | Record<string, string>
+  format: 'number' | 'percentage' | 'points'
+  preferredDirection: 'higher' | 'lower' | 'none'
+  fractionDigits?: number
+}
+
 interface TrainerEngineDescription {
   protocol: { name: string; major: number; minor?: number }
   engine: {
@@ -107,7 +116,7 @@ interface TrainerEngineDescription {
     version: number
     representations?: string[]
     supportsRevealedHands?: boolean
-    metrics?: Array<Record<string, unknown>>
+    metrics?: TrainerDecisionMetricDefinition[]
   }>
   weightSlots: Array<{
     id: string
@@ -435,6 +444,8 @@ interface TrainerGameView {
     seat: number
     mode?: string
     bestAction?: Record<string, unknown> | null
+    metricDefinitions?: TrainerDecisionMetricDefinition[]
+    primaryMetricId?: string
     discardEntries: Array<{
       candidateId?: string
       scoreGroupId?: string
@@ -445,6 +456,7 @@ interface TrainerGameView {
       rank?: number
       bar?: number
       isBest?: boolean
+      metrics?: Record<string, number | null>
     }>
     specialEntries?: Array<{
       candidateId?: string
@@ -459,6 +471,7 @@ interface TrainerGameView {
       rank?: number
       bar?: number
       isBest?: boolean
+      metrics?: Record<string, number | null>
     }>
     reactionEntries?: Array<{
       candidateId?: string
@@ -473,6 +486,7 @@ interface TrainerGameView {
       rank?: number
       bar?: number
       isBest?: boolean
+      metrics?: Record<string, number | null>
     }>
     error?: string
   } | null

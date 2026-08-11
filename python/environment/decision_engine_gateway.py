@@ -15,7 +15,7 @@ from decision_adapter import to_relative_model_path
 
 
 class DecisionEngineGateway:
-    _RESULT_SEMANTICS_VERSION = "action-recommendation-host-v2"
+    _RESULT_SEMANTICS_VERSION = "action-recommendation-host-v3"
     _OUTPUT = {"id": "action-recommendation", "version": 1}
 
     def __init__(self) -> None:
@@ -33,6 +33,7 @@ class DecisionEngineGateway:
         self._effective_options: Dict[str, Any] = {}
         self._actual_device = ""
         self._action_metrics: List[Dict[str, Any]] = []
+        self._primary_metric_id = ""
         self._engine_kind = "decision"
         self._engine_command: Optional[List[str]] = None
         self._engine_cwd: Optional[str] = None
@@ -165,6 +166,7 @@ class DecisionEngineGateway:
         self._effective_options = {}
         self._actual_device = ""
         self._action_metrics = []
+        self._primary_metric_id = ""
         self._model_hash_cache = None
         with self._lock:
             self._response_times.clear()
@@ -244,6 +246,45 @@ class DecisionEngineGateway:
             raise RuntimeError("engine did not initialize action-recommendation version 1")
         metrics = initialized_output.get("metrics")
         self._action_metrics = [dict(item) for item in metrics] if isinstance(metrics, list) else []
+        self._primary_metric_id = str(initialized_output.get("primaryMetricId") or "")
+        metric_ids = [str(metric.get("id") or "") for metric in self._action_metrics]
+        if any(not metric_id for metric_id in metric_ids) or len(set(metric_ids)) != len(metric_ids):
+            raise RuntimeError("decision engine initialized invalid metric declarations")
+        hello_metrics = {
+            str(metric.get("id") or ""): metric
+            for metric in action_contract.get("metrics") or []
+            if isinstance(metric, dict)
+        }
+        for metric in self._action_metrics:
+            metric_id = str(metric.get("id") or "")
+            fraction_digits = metric.get("fractionDigits")
+            if (
+                metric_id not in hello_metrics
+                or metric.get("format") not in ("number", "percentage", "points")
+                or metric.get("preferredDirection") not in ("higher", "lower", "none")
+                or not isinstance(metric.get("title"), dict)
+                or (
+                    fraction_digits is not None
+                    and (
+                        isinstance(fraction_digits, bool)
+                        or not isinstance(fraction_digits, int)
+                        or not 0 <= fraction_digits <= 12
+                    )
+                )
+            ):
+                raise RuntimeError(f"decision engine initialized invalid metric {metric_id}")
+            declared = hello_metrics[metric_id]
+            for key in (
+                "title",
+                "description",
+                "format",
+                "preferredDirection",
+                "fractionDigits",
+            ):
+                if declared.get(key) != metric.get(key):
+                    raise RuntimeError(f"decision engine changed initialized metric {metric_id}")
+        if self._primary_metric_id and self._primary_metric_id not in metric_ids:
+            raise RuntimeError("decision engine initialized an unknown primaryMetricId")
         self._effective_options = dict(result.get("effectiveOptions") or {})
         self._actual_device = str((result.get("device") or {}).get("type") or selected_device)
         self._last_fingerprint = ""
@@ -257,6 +298,8 @@ class DecisionEngineGateway:
     def _validate_generic_result(
         result: Dict[str, Any],
         candidate_ids: set[str],
+        metric_definitions: List[Dict[str, Any]],
+        primary_metric_id: str,
     ) -> Dict[str, Any]:
         outputs = result.get("outputs")
         if not isinstance(outputs, list) or len(outputs) != 1:
@@ -273,8 +316,15 @@ class DecisionEngineGateway:
         best_id = str(data.get("bestCandidateId") or "")
         if best_id not in candidate_ids:
             raise RuntimeError("decision engine returned an unknown bestCandidateId")
+        metric_ids = [str(metric.get("id") or "") for metric in metric_definitions]
+        metric_formats = {
+            str(metric.get("id") or ""): str(metric.get("format") or "")
+            for metric in metric_definitions
+        }
         candidates = data.get("candidates")
-        if candidates is None:
+        if not metric_ids:
+            if candidates is not None:
+                raise RuntimeError("decision engine returned candidates without declared metrics")
             return {
                 "bestCandidateId": best_id,
                 "choices": [
@@ -288,6 +338,8 @@ class DecisionEngineGateway:
                     for candidate_id in sorted(candidate_ids)
                 ],
             }
+        if candidates is None:
+            raise RuntimeError("decision engine omitted candidates for declared metrics")
         if not isinstance(candidates, list) or len(candidates) != len(candidate_ids):
             raise RuntimeError("decision engine must cover every legal candidate")
         seen: set[str] = set()
@@ -302,6 +354,8 @@ class DecisionEngineGateway:
             metrics = candidate.get("metrics")
             if not isinstance(metrics, dict):
                 raise RuntimeError("decision engine candidate metrics must be an object")
+            if set(metrics) != set(metric_ids):
+                raise RuntimeError("decision engine candidate metrics do not match initialized metrics")
             for metric_id, value in metrics.items():
                 if value is not None and (
                     isinstance(value, bool)
@@ -309,10 +363,14 @@ class DecisionEngineGateway:
                     or not math.isfinite(float(value))
                 ):
                     raise RuntimeError(f"decision engine returned invalid metric {metric_id}")
-            raw_value = metrics.get("q-value")
+                if (
+                    value is not None
+                    and metric_formats.get(metric_id) == "percentage"
+                    and not 0 <= float(value) <= 1
+                ):
+                    raise RuntimeError(f"decision engine returned invalid percentage metric {metric_id}")
+            raw_value = metrics.get(primary_metric_id) if primary_metric_id else None
             probability = metrics.get("policy")
-            if probability is not None and not 0 <= float(probability) <= 1:
-                raise RuntimeError("decision engine returned an invalid policy metric")
             choices.append({
                 "candidateId": candidate_id,
                 "scoreGroupId": candidate_id,
@@ -383,9 +441,13 @@ class DecisionEngineGateway:
             normalized = self._validate_generic_result(
                 result,
                 candidate_ids,
+                self._action_metrics,
+                self._primary_metric_id,
             )
             normalized["engineFingerprint"] = self._last_fingerprint
             normalized["engineId"] = self._engine_id
+            normalized["metricDefinitions"] = [dict(metric) for metric in self._action_metrics]
+            normalized["primaryMetricId"] = self._primary_metric_id
             timing = result.get("timing")
             elapsed_ms = (
                 float(timing.get("totalMs"))
@@ -472,7 +534,14 @@ class DecisionEngineGateway:
             "metrics": [
                 {
                     key: metric.get(key)
-                    for key in ("id", "format", "preferredDirection")
+                    for key in (
+                        "id",
+                        "title",
+                        "description",
+                        "format",
+                        "preferredDirection",
+                        "fractionDigits",
+                    )
                 }
                 for metric in self._action_metrics
             ],

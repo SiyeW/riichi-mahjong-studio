@@ -822,7 +822,7 @@ def _serialize_game_record_from_parts(game_copy, state_copy):
 
 _SHANTEN_CACHE_VERSION = 4
 _DECISION_CACHE_VERSION = 3
-_DECISION_POSTPROCESSOR_VERSION = "decision-analysis-v1"
+_DECISION_POSTPROCESSOR_VERSION = "decision-analysis-v2"
 _SHANTEN_CACHE_FIELD = "opponentAnalysisCache"
 _ANALYSIS_SOURCES_FIELD = "analysisSources"
 _ANALYSIS_SOURCE_SCHEMA_VERSION = 2

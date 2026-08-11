@@ -11,6 +11,22 @@ from typing import Any, Dict, List
 _WINDS = {"E": 0, "S": 1, "W": 2, "N": 3}
 _READ_ONLY_REASON_CODE = "missing-complete-wall"
 OFFICIAL_MORTAL_REPORT_SOURCE_ID = "official-mortal-report"
+_REVIEW_METRIC_DEFINITIONS = [
+    {
+        "id": "q-value",
+        "title": {"default": "Q value", "zh-CN": "Q 值"},
+        "format": "number",
+        "preferredDirection": "higher",
+        "fractionDigits": 3,
+    },
+    {
+        "id": "policy",
+        "title": {"default": "P value", "zh-CN": "P 值"},
+        "format": "percentage",
+        "preferredDirection": "higher",
+        "fractionDigits": 2,
+    },
+]
 _SUPPORTED_EVENTS = {
     "tsumo",
     "dahai",
@@ -664,13 +680,14 @@ def _build_review_analysis(entry: Dict[str, Any], snapshot: Dict[str, Any], cont
             "label": _review_action_label(action),
             "value": value,
             "probability": probability,
+            "metrics": {"q-value": value, "policy": probability},
             "isBest": _review_action_signature(action) == expected_signature,
         })
     if not scored:
         return None
     if expected is None:
         expected = copy.deepcopy(max(scored, key=lambda item: float(item["probability"])))
-        for key in ("label", "value", "probability", "isBest"):
+        for key in ("label", "value", "probability", "metrics", "isBest"):
             expected.pop(key, None)
         expected_signature = _review_action_signature(expected)
         for item in scored:
@@ -685,6 +702,8 @@ def _build_review_analysis(entry: Dict[str, Any], snapshot: Dict[str, Any], cont
         "model": "Mortal 官方分析",
         "seat": controlled_seat,
         "bestAction": expected,
+        "metricDefinitions": copy.deepcopy(_REVIEW_METRIC_DEFINITIONS),
+        "primaryMetricId": "q-value",
     }
     if reaction:
         result["mode"] = "reaction"

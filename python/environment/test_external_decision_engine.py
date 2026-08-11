@@ -32,6 +32,11 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                 }],
             },
             {"dahai:1m", "dahai:1m:tsumo"},
+            [
+                {"id": "q-value", "format": "number"},
+                {"id": "policy", "format": "percentage"},
+            ],
+            "q-value",
         )
         self.assertEqual(result["choices"][0]["probability"], 1.0)
 
@@ -63,6 +68,7 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                             "metrics": [
                                 {"id": "q-value", "title": {"default": "Q value"}, "format": "number", "preferredDirection": "higher"},
                                 {"id": "policy", "title": {"default": "Policy"}, "format": "percentage", "preferredDirection": "higher"},
+                                {"id": "expected-placement", "title": {"default": "Expected placement"}, "format": "number", "fractionDigits": 2, "preferredDirection": "lower"},
                             ],
                         }],
                         "weightSlots": [{
@@ -88,6 +94,7 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                             "metrics": [
                                 {"id": "q-value", "title": {"default": "Q value"}, "format": "number", "preferredDirection": "higher"},
                                 {"id": "policy", "title": {"default": "Policy"}, "format": "percentage", "preferredDirection": "higher"},
+                                {"id": "expected-placement", "title": {"default": "Expected placement"}, "format": "number", "fractionDigits": 2, "preferredDirection": "lower"},
                             ],
                             "primaryMetricId": "q-value",
                         }],
@@ -108,6 +115,7 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                                         "metrics": {
                                             "q-value": float(index),
                                             "policy": 0.25 if index == 0 else 0.75,
+                                            "expected-placement": 2.75 if index == 0 else 2.25,
                                         },
                                     }
                                     for index, candidate in enumerate(candidates)
@@ -198,6 +206,14 @@ class ExternalDecisionEngineTest(unittest.TestCase):
                 )
                 self.assertEqual(analysis["bestAction"]["pai"], "2m")
                 self.assertEqual(analysis["discardEntries"][1]["bar"], 0.75)
+                self.assertEqual(
+                    [metric["id"] for metric in analysis["metricDefinitions"]],
+                    ["q-value", "policy", "expected-placement"],
+                )
+                self.assertEqual(
+                    analysis["discardEntries"][1]["metrics"]["expected-placement"],
+                    2.25,
+                )
                 action = choose_ai_action(
                     gateway,
                     {},
