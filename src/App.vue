@@ -1197,33 +1197,15 @@
       </div>
     </section>
 
-    <section
+    <CustomTenhouExportPanel
       v-if="showCustomTenhouExport"
-      class="analysis-float-panel custom-tenhou-export-window"
-      :style="{ '--floating-panel-scale': uiScale, zIndex: floatingPanelZ.customExport }"
-      @mousedown="focusFloatingPanel('customExport')"
-      @focusin="focusFloatingPanel('customExport')"
-    >
-      <div class="floating-panel-header" @mousedown="startDragFloatingPanel">
-        <span>导出自定义牌谱</span>
-        <div class="floating-panel-header-actions">
-          <button class="floating-panel-close" aria-label="关闭导出" @click="showCustomTenhouExport = false">&times;</button>
-        </div>
-      </div>
-      <p v-if="customTenhouExportLoading" class="custom-tenhou-export-state">正在生成……</p>
-      <p v-else-if="customTenhouExportError" class="custom-tenhou-export-state is-error">{{ customTenhouExportError }}</p>
-      <div v-else class="custom-tenhou-export-fields">
-        <label v-for="field in customTenhouExportFields" :key="field.key">
-          <span class="custom-tenhou-export-label">
-            <strong>{{ field.label }}</strong>
-            <button class="floating-panel-action" @click="copyCustomTenhouExport(field.key)">
-              {{ customTenhouCopiedKey === field.key ? '已复制' : '复制' }}
-            </button>
-          </span>
-          <textarea :value="field.value" readonly spellcheck="false"></textarea>
-        </label>
-      </div>
-    </section>
+      :scale="uiScale"
+      :z-index="floatingPanelZ.customExport"
+      :refresh-key="customTenhouExportRefreshKey"
+      @close="showCustomTenhouExport = false"
+      @focus="focusFloatingPanel('customExport')"
+      @start-drag="startDragFloatingPanel"
+    />
 
     <section
       v-if="showEngineWindow"
@@ -1556,6 +1538,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
 import AboutDialog from './components/AboutDialog.vue'
+import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import ShantenPieChart from './components/ShantenPieChart.vue'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
@@ -1694,18 +1677,7 @@ const showEngineWindow = ref(false)
 const showAboutPanel = ref(false)
 const showRecordImportPanel = ref(false)
 const showCustomTenhouExport = ref(false)
-const customTenhouExportLoading = ref(false)
-const customTenhouExportError = ref('')
-const customTenhouExport = reactive({ tenhou: '', mortal: '', naga: '' })
-const customTenhouCopiedKey = ref('')
-let customTenhouExportGeneration = 0
-let customTenhouCopiedTimer: number | null = null
-let customTenhouRefreshTimer: number | null = null
-const customTenhouExportFields = computed(() => [
-  { key: 'tenhou' as const, label: '天凤格式（当前分支的当前小局）', value: customTenhouExport.tenhou },
-  { key: 'mortal' as const, label: 'Mortal 格式（当前分支的完整对局）', value: customTenhouExport.mortal },
-  { key: 'naga' as const, label: 'NAGA 格式（当前分支的完整对局）', value: customTenhouExport.naga },
-])
+const customTenhouExportRefreshKey = ref(0)
 const showWallView = ref(false)
 const wallTiles = ref<Array<{ index: number; tile: string; status: string }>>([])
 const wallLoading = ref(false)
@@ -6585,7 +6557,7 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
     schedulePendingDiscardFlight(nextPendingDiscard.actor)
   }
   if (showWallView.value) void refreshWallView()
-  scheduleCustomTenhouExportRefresh()
+  if (showCustomTenhouExport.value) customTenhouExportRefreshKey.value += 1
 }
 
 function cloneSettingsDraftFromCurrent() {
@@ -6781,51 +6753,10 @@ async function handleRecordImported(result: TrainerRecordImportResult) {
   }
 }
 
-async function refreshCustomTenhouExport(showInitialLoading = false) {
-  if (!showCustomTenhouExport.value || !window.trainerAPI?.exportCustomTenhou || !gameView.currentNodeId) return
-  const generation = ++customTenhouExportGeneration
-  if (showInitialLoading) customTenhouExportLoading.value = true
-  customTenhouExportError.value = ''
-  try {
-    const result = await window.trainerAPI.exportCustomTenhou()
-    if (generation !== customTenhouExportGeneration || !showCustomTenhouExport.value) return
-    customTenhouExport.tenhou = result.tenhou || ''
-    customTenhouExport.mortal = result.mortal || ''
-    customTenhouExport.naga = result.naga || ''
-  } catch (error) {
-    if (generation !== customTenhouExportGeneration) return
-    customTenhouExportError.value = error instanceof Error ? error.message : '生成自定义牌谱失败。'
-  } finally {
-    if (generation === customTenhouExportGeneration) customTenhouExportLoading.value = false
-  }
-}
-
-function scheduleCustomTenhouExportRefresh() {
-  if (!showCustomTenhouExport.value) return
-  if (customTenhouRefreshTimer !== null) window.clearTimeout(customTenhouRefreshTimer)
-  customTenhouRefreshTimer = window.setTimeout(() => {
-    customTenhouRefreshTimer = null
-    void refreshCustomTenhouExport()
-  }, 120)
-}
-
 function openCustomTenhouExport() {
   if (!gameView.currentNodeId) return
   showCustomTenhouExport.value = true
   focusFloatingPanel('customExport')
-  void refreshCustomTenhouExport(true)
-}
-
-async function copyCustomTenhouExport(key: 'tenhou' | 'mortal' | 'naga') {
-  const value = customTenhouExport[key]
-  if (!value || !window.trainerAPI?.writeClipboardText) return
-  await window.trainerAPI.writeClipboardText(value)
-  customTenhouCopiedKey.value = key
-  if (customTenhouCopiedTimer !== null) window.clearTimeout(customTenhouCopiedTimer)
-  customTenhouCopiedTimer = window.setTimeout(() => {
-    customTenhouCopiedKey.value = ''
-    customTenhouCopiedTimer = null
-  }, 3000)
 }
 
 async function saveGame() {
@@ -8063,12 +7994,6 @@ onBeforeUnmount(() => {
   }
   if (deleteNodeConfirmationTimer !== null) {
     window.clearTimeout(deleteNodeConfirmationTimer)
-  }
-  if (customTenhouCopiedTimer !== null) {
-    window.clearTimeout(customTenhouCopiedTimer)
-  }
-  if (customTenhouRefreshTimer !== null) {
-    window.clearTimeout(customTenhouRefreshTimer)
   }
   cancelPendingDiscardFlight()
   cancelPendingDiscardReturnFlight()
