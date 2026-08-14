@@ -3,6 +3,7 @@ import unittest
 from collections import deque
 from unittest import mock
 
+import play_prefetch_runtime
 import service
 
 
@@ -19,7 +20,7 @@ class PlayPrefetchTest(unittest.TestCase):
 
     def tearDown(self):
         service.cancel_play_prefetch()
-        service._PLAY_PREFETCH_LOCAL.game = None
+        service.PLAY_PREFETCH_RUNTIME.local.game = None
 
     def _install_context(self, draft_game):
         game = service.STATE["game"]
@@ -41,8 +42,8 @@ class PlayPrefetchTest(unittest.TestCase):
             "finished": False,
             "error": None,
         }
-        service._PLAY_PREFETCH_CONTEXT = context
-        service._PLAY_PREFETCH_GENERATION = context["generation"]
+        service.PLAY_PREFETCH_RUNTIME.context = context
+        service.PLAY_PREFETCH_RUNTIME.generation = context["generation"]
         return context
 
     def test_play_discard_defers_reaction_models(self):
@@ -263,7 +264,7 @@ class PlayPrefetchTest(unittest.TestCase):
         game = service.STATE["game"]
         base_node_id = game["currentNodeId"]
         original_node_ids = set(game["nodes"])
-        draft_game = service._create_play_prefetch_draft(game)
+        draft_game = play_prefetch_runtime.create_draft(game)
         context = self._install_context(draft_game)
 
         def fake_advance(target_game):
@@ -303,7 +304,7 @@ class PlayPrefetchTest(unittest.TestCase):
 
     def test_state_divergence_rejects_prefetched_step(self):
         game = service.STATE["game"]
-        draft_game = service._create_play_prefetch_draft(game)
+        draft_game = play_prefetch_runtime.create_draft(game)
         context = self._install_context(draft_game)
         base_node_id = game["currentNodeId"]
         before_snapshot = copy.deepcopy(game["nodes"][base_node_id]["snapshot"])
@@ -326,7 +327,7 @@ class PlayPrefetchTest(unittest.TestCase):
 
     def test_waiting_prefetch_does_not_advance_real_game(self):
         game = service.STATE["game"]
-        draft_game = service._create_play_prefetch_draft(game)
+        draft_game = play_prefetch_runtime.create_draft(game)
         self._install_context(draft_game)
         before = copy.deepcopy(game)
 
@@ -354,7 +355,7 @@ class PlayPrefetchTest(unittest.TestCase):
     def test_prefetch_failure_notifies_the_current_committed_node(self):
         game = service.STATE["game"]
         base_node_id = game["currentNodeId"]
-        draft_game = service._create_play_prefetch_draft(game)
+        draft_game = play_prefetch_runtime.create_draft(game)
         context = self._install_context(draft_game)
 
         with mock.patch.object(service, "emit") as emit:
@@ -413,7 +414,7 @@ class PlayPrefetchTest(unittest.TestCase):
             ),
         ):
             service.start_play_prefetch()
-            context = service._PLAY_PREFETCH_CONTEXT
+            context = service.PLAY_PREFETCH_RUNTIME.context
             self.assertIsNotNone(context)
             service._run_play_prefetch(context["generation"])
 
