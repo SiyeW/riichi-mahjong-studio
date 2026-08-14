@@ -66,8 +66,6 @@ if (-not $Match.Success) {
 }
 
 $ReleaseNotes = @(
-    "# Riichi Mahjong Studio $Version"
-    ''
     $BuildDescription
     ''
     $Match.Groups['body'].Value.Trim()
