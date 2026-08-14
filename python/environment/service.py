@@ -16,6 +16,7 @@ try:
 except ModuleNotFoundError:
     psutil = None
 
+import auto_analysis_plan
 import game_tree
 from action_recommendation_adapter import (
     analyze_action_choices,
@@ -3429,29 +3430,6 @@ def _invalidate_auto_analysis_timeline():
         _AUTO_ANALYSIS_TIMELINE["states"] = []
 
 
-def _auto_analysis_timeline_start_node(game, round_root_map):
-    nodes = game.get("nodes", {})
-    roots = {
-        root_id
-        for node_id, root_id in round_root_map.items()
-        if nodes.get(node_id, {}).get("type") != "root"
-    }
-    if not roots:
-        return game.get("currentNodeId")
-
-    def sort_key(node_id):
-        node = nodes.get(node_id) or {}
-        snapshot = node.get("snapshot") or {}
-        return (
-            int(node.get("depth", 0)),
-            int(snapshot.get("roundIndex", 0)),
-            int(snapshot.get("honba", 0)),
-            str(node_id),
-        )
-
-    return min(roots, key=sort_key)
-
-
 def _ensure_auto_analysis_timeline_locked(game, seat, model_path):
     signature = (
         id(game),
@@ -3464,8 +3442,8 @@ def _ensure_auto_analysis_timeline_locked(game, seat, model_path):
     if _AUTO_ANALYSIS_TIMELINE.get("signature") == signature:
         return
 
-    round_root_map = _auto_round_root_map(game)
-    start_node_id = _auto_analysis_timeline_start_node(game, round_root_map)
+    round_root_map = auto_analysis_plan.build_round_root_map(game)
+    start_node_id = auto_analysis_plan.timeline_start_node(game, round_root_map)
     items = _build_auto_analysis_plan(
         game,
         seat,
@@ -3555,125 +3533,6 @@ def _auto_decision_cache_key(seat, snapshot, model_path):
     )
 
 
-def _auto_round_root_map(game):
-    nodes = game.get("nodes", {})
-    root_map = {}
-    for node_id, node in sorted(
-        nodes.items(),
-        key=lambda item: (int(item[1].get("depth", 0)), item[0]),
-    ):
-        parent_id = node.get("parentId")
-        parent = nodes.get(parent_id) if parent_id else None
-        if node.get("type") == "root" or not isinstance(parent, dict) or parent.get("type") == "root":
-            root_map[node_id] = node_id
-            continue
-        snapshot = node.get("snapshot") or {}
-        parent_snapshot = parent.get("snapshot") or {}
-        same_round = (
-            int(snapshot.get("roundIndex", 0)) == int(parent_snapshot.get("roundIndex", -1))
-            and int(snapshot.get("honba", 0)) == int(parent_snapshot.get("honba", -1))
-        )
-        root_map[node_id] = root_map.get(parent_id, parent_id) if same_round else node_id
-    return root_map
-
-
-def _auto_round_order(game, current_node_id, round_root_map):
-    nodes = game.get("nodes", {})
-    roots = {
-        round_root_id
-        for node_id, round_root_id in round_root_map.items()
-        if nodes.get(node_id, {}).get("type") != "root"
-    }
-    current_root_id = round_root_map.get(current_node_id)
-    if current_root_id not in roots:
-        return sorted(roots, key=lambda node_id: (int(nodes[node_id].get("depth", 0)), node_id))
-
-    forward = {root_id: set() for root_id in roots}
-    backward = {root_id: set() for root_id in roots}
-    main_forward = {}
-    for node_id, node in nodes.items():
-        if node.get("type") == "root":
-            continue
-        source_root = round_root_map.get(node_id)
-        for child_id in node.get("children", []):
-            target_root = round_root_map.get(child_id)
-            if not source_root or not target_root or source_root == target_root:
-                continue
-            forward.setdefault(source_root, set()).add(target_root)
-            backward.setdefault(target_root, set()).add(source_root)
-
-    for root_id in roots:
-        cursor_id = root_id
-        visited = set()
-        while cursor_id and cursor_id not in visited:
-            visited.add(cursor_id)
-            cursor = nodes.get(cursor_id) or {}
-            main_child_id = cursor.get("mainChildId")
-            if not main_child_id:
-                break
-            target_root = round_root_map.get(main_child_id)
-            if target_root != root_id:
-                if target_root:
-                    main_forward[root_id] = target_root
-                break
-            cursor_id = main_child_id
-
-    order = []
-    seen = set()
-    queue = deque([current_root_id])
-    while queue:
-        root_id = queue.popleft()
-        if root_id in seen or root_id not in roots:
-            continue
-        seen.add(root_id)
-        order.append(root_id)
-        next_ids = []
-        main_next = main_forward.get(root_id)
-        if main_next:
-            next_ids.append(main_next)
-        next_ids.extend(sorted(
-            backward.get(root_id, set()),
-            key=lambda node_id: (int(nodes[node_id].get("depth", 0)), node_id),
-            reverse=True,
-        ))
-        next_ids.extend(sorted(
-            forward.get(root_id, set()) - ({main_next} if main_next else set()),
-            key=lambda node_id: (int(nodes[node_id].get("depth", 0)), node_id),
-        ))
-        queue.extend(node_id for node_id in next_ids if node_id not in seen)
-
-    order.extend(sorted(
-        roots - seen,
-        key=lambda node_id: (int(nodes[node_id].get("depth", 0)), node_id),
-    ))
-    return order
-
-
-def _auto_round_node_order(game, round_root_id, round_root_map):
-    nodes = game.get("nodes", {})
-    ordered = []
-    seen = set()
-    stack = [round_root_id]
-    while stack:
-        node_id = stack.pop()
-        if node_id in seen or round_root_map.get(node_id) != round_root_id:
-            continue
-        node = nodes.get(node_id)
-        if not isinstance(node, dict) or node.get("type") == "root":
-            continue
-        seen.add(node_id)
-        ordered.append(node_id)
-        children = [
-            child_id
-            for child_id in node.get("children", [])
-            if round_root_map.get(child_id) == round_root_id
-        ]
-        main_child_id = node.get("mainChildId")
-        children.sort(key=lambda child_id: (child_id != main_child_id, child_id))
-        stack.extend(reversed(children))
-    return ordered
-
-
 def _build_auto_analysis_plan(
     game,
     seat,
@@ -3683,8 +3542,8 @@ def _build_auto_analysis_plan(
     round_root_map=None,
 ):
     if round_root_map is None:
-        round_root_map = _auto_round_root_map(game)
-    round_order = _auto_round_order(
+        round_root_map = auto_analysis_plan.build_round_root_map(game)
+    round_order = auto_analysis_plan.order_rounds(
         game,
         game.get("currentNodeId") if start_node_id is None else start_node_id,
         round_root_map,
@@ -3694,7 +3553,7 @@ def _build_auto_analysis_plan(
     decision_source = _current_decision_analysis_source(model_path)
     items = []
     for round_root_id in round_order:
-        for node_id in _auto_round_node_order(game, round_root_id, round_root_map):
+        for node_id in auto_analysis_plan.order_round_nodes(game, round_root_id, round_root_map):
             node = game["nodes"][node_id]
             snapshot = node.get("snapshot") or {}
             sync_snapshot_state(snapshot)
@@ -3723,21 +3582,6 @@ def _build_auto_analysis_plan(
                 "cached": isinstance(opponent_result, dict) and opponent_result.get("status") == "ready",
             })
     return items
-
-
-def _auto_item_key(item):
-    return (item.get("kind"), item.get("nodeId"), item.get("cacheKey"))
-
-
-def _auto_item_is_cached(game, item):
-    node = game.get("nodes", {}).get(item.get("nodeId"))
-    if not isinstance(node, dict):
-        return True
-    if item.get("kind") == "decision":
-        result = (node.get("analysisCache") or {}).get(item.get("cacheKey"))
-        return isinstance(result, dict) and not result.get("error")
-    result = (node.get(OPPONENT_ANALYSIS_CACHE_FIELD) or {}).get(item.get("cacheKey"))
-    return isinstance(result, dict) and result.get("status") == "ready"
 
 
 def _auto_analysis_kind_enabled(kind):
@@ -3873,7 +3717,7 @@ def _complete_auto_analysis_item(generation, item, result=None, error=None):
         if not isinstance(context, dict) or context.get("generation") != generation:
             return
         _AUTO_ANALYSIS_FUTURE = None
-        context["attempted"].add(_auto_item_key(item))
+        context["attempted"].add(auto_analysis_plan.item_key(item))
         _AUTO_ANALYSIS_STATE["completed"] += 1
         if success:
             _AUTO_ANALYSIS_STATE["analyzed"] += 1
@@ -3932,9 +3776,9 @@ def _on_auto_opponent_analysis_complete(generation, item, result):
 
 def _extend_auto_analysis_plan(context):
     items = _build_auto_analysis_plan(context["game"], context["seat"], context["modelPath"])
-    new_items = [item for item in items if _auto_item_key(item) not in context["known"]]
+    new_items = [item for item in items if auto_analysis_plan.item_key(item) not in context["known"]]
     for item in new_items:
-        context["known"].add(_auto_item_key(item))
+        context["known"].add(auto_analysis_plan.item_key(item))
         _AUTO_ANALYSIS_STATE["total"] += 1
         if item["cached"]:
             _AUTO_ANALYSIS_STATE["completed"] += 1
@@ -3943,22 +3787,6 @@ def _extend_auto_analysis_plan(context):
             context["pending"].append(item)
     context["treeRevision"] = int(context["game"].get("treeRevision", 0))
     return bool(new_items)
-
-
-def _auto_analysis_navigation_rank(game, start_node_id):
-    round_root_map = _auto_round_root_map(game)
-    ordered_node_ids = []
-    for round_root_id in _auto_round_order(game, start_node_id, round_root_map):
-        ordered_node_ids.extend(
-            _auto_round_node_order(game, round_root_id, round_root_map)
-        )
-    if start_node_id in ordered_node_ids:
-        ordered_node_ids.remove(start_node_id)
-        ordered_node_ids.insert(0, start_node_id)
-    return {
-        node_id: index
-        for index, node_id in enumerate(ordered_node_ids)
-    }
 
 
 def reprioritize_auto_analysis_from_node(game, start_node_id, expected_serial=None):
@@ -3982,7 +3810,7 @@ def reprioritize_auto_analysis_from_node(game, start_node_id, expected_serial=No
 
     # Topology traversal can be expensive for large branched records. Keep it
     # outside the lock used by status and navigation responses.
-    navigation_rank = _auto_analysis_navigation_rank(game, start_node_id)
+    navigation_rank = auto_analysis_plan.navigation_rank(game, start_node_id)
 
     with _AUTO_ANALYSIS_LOCK:
         context = _AUTO_ANALYSIS_CONTEXT
@@ -3998,11 +3826,11 @@ def reprioritize_auto_analysis_from_node(game, start_node_id, expected_serial=No
 
         pending = []
         for item in context["pending"]:
-            item_key = _auto_item_key(item)
+            item_key = auto_analysis_plan.item_key(item)
             if item_key in context["attempted"]:
                 changed = True
                 continue
-            if _auto_item_is_cached(game, item):
+            if auto_analysis_plan.item_is_cached(game, item):
                 context["attempted"].add(item_key)
                 _AUTO_ANALYSIS_STATE["completed"] += 1
                 _AUTO_ANALYSIS_STATE["cached"] += 1
@@ -4023,9 +3851,9 @@ def reprioritize_auto_analysis_from_node(game, start_node_id, expected_serial=No
             ),
         )
         next_pending = deque(item for _index, item in reordered)
-        if [_auto_item_key(item) for item in next_pending] != [
-            _auto_item_key(item) for item in context["pending"]
-            if _auto_item_key(item) not in context["attempted"]
+        if [auto_analysis_plan.item_key(item) for item in next_pending] != [
+            auto_analysis_plan.item_key(item) for item in context["pending"]
+            if auto_analysis_plan.item_key(item) not in context["attempted"]
         ]:
             changed = True
         context["pending"] = next_pending
@@ -4101,8 +3929,8 @@ def _schedule_next_auto_analysis_item(generation):
                 game = context["game"]
                 while context["pending"]:
                     item = context["pending"].popleft()
-                    if _auto_item_is_cached(game, item):
-                        context["attempted"].add(_auto_item_key(item))
+                    if auto_analysis_plan.item_is_cached(game, item):
+                        context["attempted"].add(auto_analysis_plan.item_key(item))
                         _AUTO_ANALYSIS_STATE["completed"] += 1
                         _AUTO_ANALYSIS_STATE["cached"] += 1
                         continue
@@ -4268,7 +4096,7 @@ def start_auto_analysis():
             "seat": seat,
             "modelPath": model_path,
             "pending": pending,
-            "known": {_auto_item_key(item) for item in items},
+            "known": {auto_analysis_plan.item_key(item) for item in items},
             "attempted": set(),
             "treeRevision": int(game.get("treeRevision", 0)),
         }

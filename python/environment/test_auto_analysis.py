@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import auto_analysis_plan
 import service
 
 
@@ -69,9 +70,9 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         }
         game = {"nodes": nodes, "currentNodeId": "b"}
 
-        root_map = service._auto_round_root_map(game)
-        self.assertEqual(service._auto_round_node_order(game, "b", root_map), ["b", "x", "y"])
-        self.assertEqual(service._auto_round_order(game, "b", root_map), ["b", "c", "a", "d"])
+        root_map = auto_analysis_plan.build_round_root_map(game)
+        self.assertEqual(auto_analysis_plan.order_round_nodes(game, "b", root_map), ["b", "x", "y"])
+        self.assertEqual(auto_analysis_plan.order_rounds(game, "b", root_map), ["b", "c", "a", "d"])
 
     def test_non_decision_node_still_requires_opponent_analysis(self):
         game = service.create_empty_game(222222)
@@ -491,7 +492,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "seat": 0,
             "modelPath": "test",
             "pending": deque([item]),
-            "known": {service._auto_item_key(item)},
+            "known": {auto_analysis_plan.item_key(item)},
             "attempted": set(),
             "treeRevision": int(game["treeRevision"]),
         }
@@ -630,7 +631,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "seat": 0,
             "modelPath": "test",
             "pending": pending,
-            "known": {service._auto_item_key(item) for item in pending},
+            "known": {auto_analysis_plan.item_key(item) for item in pending},
             "attempted": set(),
             "treeRevision": int(game["treeRevision"]),
         }
@@ -687,7 +688,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "seat": 0,
             "modelPath": "test",
             "pending": pending,
-            "known": {service._auto_item_key(item) for item in pending},
+            "known": {auto_analysis_plan.item_key(item) for item in pending},
             "attempted": set(),
             "treeRevision": int(game["treeRevision"]),
         }

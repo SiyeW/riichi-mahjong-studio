@@ -3,6 +3,7 @@ import unittest
 from unittest import mock
 
 import analysis_cache
+import auto_analysis_plan
 import service
 
 
@@ -369,9 +370,9 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "cacheKey": current_key,
         }
 
-        self.assertFalse(service._auto_item_is_cached(game, item))
+        self.assertFalse(auto_analysis_plan.item_is_cached(game, item))
         node["analysisCache"][current_key] = {"error": None}
-        self.assertTrue(service._auto_item_is_cached(game, item))
+        self.assertTrue(auto_analysis_plan.item_is_cached(game, item))
 
 
 if __name__ == "__main__":
