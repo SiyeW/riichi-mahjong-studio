@@ -16,7 +16,7 @@ MAX_STDERR_LINE_CHARS = 4096
 STDERR_TAIL_LINES = 100
 PROTOCOL = {"name": "riichi-engine-protocol", "major": 2, "minor": 0}
 HOST_ID = "riichi-mahjong-studio"
-HOST_VERSION = "0.4.0-rc.1"
+HOST_VERSION = "0.4.0"
 
 
 class EngineProcessError(RuntimeError):
