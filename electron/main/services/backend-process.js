@@ -6,7 +6,7 @@ function stringifyProtocolMessage(payload) {
   ))
 }
 
-function createPythonService({
+function createBackendProcess({
   name,
   pythonExecutable,
   scriptPath,
@@ -226,4 +226,4 @@ function createPythonService({
   }
 }
 
-module.exports = { createPythonService }
+module.exports = { createBackendProcess }

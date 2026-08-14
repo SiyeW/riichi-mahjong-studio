@@ -12,7 +12,7 @@ const {
   protocol,
   shell,
 } = require('electron')
-const { createPythonServices } = require('./services/python-services')
+const { createEnvironmentService } = require('./services/environment-service')
 const { buildRuntimeMetrics } = require('./runtime-metrics')
 const { buildSettings, loadSettings, saveSettings } = require('./state/settings')
 const { discoverEnginePackages } = require('./state/engine-package-registry')
@@ -89,8 +89,8 @@ async function openLocalDocument(filePath) {
   return true
 }
 
-const pythonServices = createPythonServices(appOptions)
-const sessionStore = createSessionStore(pythonServices.environmentGateway)
+const environmentBackend = createEnvironmentService(appOptions)
+const sessionStore = createSessionStore(environmentBackend.environmentGateway)
 const gameFileStore = createGameFileStore(portableRoot)
 gameFileStore.ensureDefaultDirectory()
 let mainWindow = null
@@ -113,7 +113,7 @@ function publishRecordDirty(force = false) {
 async function collectRuntimeMetrics() {
   let backendMetrics = null
   try {
-    const response = await pythonServices.environmentGateway.getRuntimeMetrics()
+    const response = await environmentBackend.environmentGateway.getRuntimeMetrics()
     backendMetrics = response?.metrics || null
     runtimeMetricsBackendError = ''
   } catch (error) {
@@ -145,7 +145,7 @@ async function restoreLoadedEngineProfiles() {
   const settings = loadSettings(appOptions)
   for (const profileId of settings.engines.loadedProfileIds || []) {
     try {
-      await pythonServices.environmentGateway.reloadEngine(profileId)
+      await environmentBackend.environmentGateway.reloadEngine(profileId)
     } catch (error) {
       console.error(`[engine] failed to restore ${profileId}:`, error)
     }
@@ -181,7 +181,7 @@ async function writeCurrentGameRecord(targetPath, options = {}) {
     rememberPath = true,
   } = options
   const exportedRevision = gameFileStore.getRevision()
-  const response = await pythonServices.environmentGateway.exportGameRecord()
+  const response = await environmentBackend.environmentGateway.exportGameRecord()
   const record = prepareGameRecordForWrite(response.record, {
     appVersion: app.getVersion(),
     recovery,
@@ -245,7 +245,7 @@ async function saveGame() {
 
 async function importGameRecordFile(filePath) {
   const record = decodeGameRecord(fs.readFileSync(filePath))
-  const response = await pythonServices.environmentGateway.importGameRecord(record)
+  const response = await environmentBackend.environmentGateway.importGameRecord(record)
   const isNativeRecord = path.extname(filePath).toLowerCase() === '.mjtrain'
   const managedRecoveryRecord = gameFileStore.isRecoveryPath(filePath)
   const recoveryRecord = managedRecoveryRecord || isRecoveryGameRecord(record)
@@ -489,7 +489,7 @@ function startStartupServices() {
     return
   }
   startupServicesStarted = true
-  pythonServices.startAll()
+  environmentBackend.startAll()
   void restoreLoadedEngineProfiles()
 }
 
@@ -542,7 +542,7 @@ function registerIpcHandlers() {
         : (enginePath ? [enginePath] : []),
       engineCwd: String(profile?.engineCwd || '') || (enginePath ? path.dirname(enginePath) : ''),
     }
-    const response = await pythonServices.environmentGateway.describeEngine(request)
+    const response = await environmentBackend.environmentGateway.describeEngine(request)
     return response.description
   })
 
@@ -600,7 +600,7 @@ function registerIpcHandlers() {
     if (!assignedOutputs.length) throw new Error('尚未给这个引擎分配输出')
     const attempted = { ...previous, engines }
     saveSettings(attempted, appOptions)
-    const response = await pythonServices.environmentGateway.reloadEngine(profileId)
+    const response = await environmentBackend.environmentGateway.reloadEngine(profileId)
     if (assignedOutputs.includes('action-recommendation')) {
       if (response?.reload?.errors?.decision) {
         throw new Error(String(response.reload.errors.decision))
@@ -628,13 +628,13 @@ function registerIpcHandlers() {
       .map(([outputId]) => outputId)
     let state = null
     if (assignedOutputs.includes('action-recommendation')) {
-      state = (await pythonServices.environmentGateway.unloadEngine('decision', profileId)).state
+      state = (await environmentBackend.environmentGateway.unloadEngine('decision', profileId)).state
     }
     if (
       assignedOutputs.includes('opponent-shanten')
       || assignedOutputs.includes('opponent-deal-in-probability')
     ) {
-      state = (await pythonServices.environmentGateway.unloadEngine('opponent-analysis', profileId)).state
+      state = (await environmentBackend.environmentGateway.unloadEngine('opponent-analysis', profileId)).state
     }
     const settings = saveLoadedEngineProfileState(profileId, false)
     return {
@@ -646,7 +646,7 @@ function registerIpcHandlers() {
   ipcMain.handle('status:get', () => sessionStore.getSnapshot())
   ipcMain.handle('system:runtime-metrics', () => collectRuntimeMetrics())
   ipcMain.handle('game:view', async () => {
-    const response = await pythonServices.environmentGateway.getGameView()
+    const response = await environmentBackend.environmentGateway.getGameView()
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     return response
   })
@@ -657,13 +657,13 @@ function registerIpcHandlers() {
     return response
   })
   ipcMain.handle('game:close', async () => {
-    const response = await pythonServices.environmentGateway.closeGame()
+    const response = await environmentBackend.environmentGateway.closeGame()
     gameFileStore.closeRecord()
     publishRecordDirty(true)
     return response
   })
   ipcMain.handle('game:advance', async () => {
-    const response = await pythonServices.environmentGateway.advanceGame()
+    const response = await environmentBackend.environmentGateway.advanceGame()
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     if (response.playPrefetch?.committed !== false) {
       markRecordDirty()
@@ -671,55 +671,55 @@ function registerIpcHandlers() {
     return response
   })
   ipcMain.handle('game:confirm-review', async () => {
-    const response = await pythonServices.environmentGateway.confirmPendingReview()
+    const response = await environmentBackend.environmentGateway.confirmPendingReview()
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     markRecordDirty()
     return response
   })
   ipcMain.handle('game:submit-action', async (event, action) => {
-    const response = await pythonServices.environmentGateway.submitUserAction(action)
+    const response = await environmentBackend.environmentGateway.submitUserAction(action)
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     markRecordDirty()
     return response
   })
   ipcMain.handle('game:jump-to-node', async (event, nodeId, treeRevision) => {
-    const response = await pythonServices.environmentGateway.jumpToNode(nodeId, treeRevision)
+    const response = await environmentBackend.environmentGateway.jumpToNode(nodeId, treeRevision)
     gameFileStore.markCurrentNode(response.view?.currentNodeId)
     publishRecordDirty()
     return response
   })
   ipcMain.handle('game:set-main-branch', async (event, nodeId) => {
-    const response = await pythonServices.environmentGateway.setMainBranch(nodeId)
+    const response = await environmentBackend.environmentGateway.setMainBranch(nodeId)
     markRecordDirty()
     return response
   })
   ipcMain.handle('game:set-node-comment', async (event, nodeId, comment) => {
-    const response = await pythonServices.environmentGateway.setNodeComment(nodeId, comment)
+    const response = await environmentBackend.environmentGateway.setNodeComment(nodeId, comment)
     if (response.changed) markRecordDirty()
     return response
   })
   ipcMain.handle('game:delete-node', async (event, nodeId) => {
-    const response = await pythonServices.environmentGateway.deleteNode(nodeId)
+    const response = await environmentBackend.environmentGateway.deleteNode(nodeId)
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     markRecordDirty()
     return response
   })
   ipcMain.handle('backend:restart', async () => {
-    return pythonServices.environmentGateway.restartBackend()
+    return environmentBackend.environmentGateway.restartBackend()
   })
-  ipcMain.handle('game:wall-view', () => pythonServices.environmentGateway.getWallView())
+  ipcMain.handle('game:wall-view', () => environmentBackend.environmentGateway.getWallView())
   ipcMain.handle('game:reconstruct-walls', async (event, seed) => {
-    const response = await pythonServices.environmentGateway.reconstructWalls(seed)
+    const response = await environmentBackend.environmentGateway.reconstructWalls(seed)
     markRecordDirty()
     return response
   })
   ipcMain.handle('game:import-wall', async (event, tiles) => {
-    const response = await pythonServices.environmentGateway.importWall(tiles)
+    const response = await environmentBackend.environmentGateway.importWall(tiles)
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     markRecordDirty()
     return response
   })
-  ipcMain.handle('debug:latest-mjai', () => pythonServices.environmentGateway.getLatestMjaiDebug())
+  ipcMain.handle('debug:latest-mjai', () => environmentBackend.environmentGateway.getLatestMjaiDebug())
   ipcMain.handle('clipboard:read-text', () => clipboard.readText())
   ipcMain.handle('clipboard:write-text', (event, text) => {
     clipboard.writeText(String(text || ''))
@@ -766,7 +766,7 @@ function registerIpcHandlers() {
     const request = typeof payload === 'string' ? { input: payload } : (payload || {})
     const originalInput = String(request.input || '').trim()
     const { report, sourceUrl } = await downloadMortalReport(originalInput)
-    const response = await pythonServices.environmentGateway.importMortalReport(report, sourceUrl, {
+    const response = await environmentBackend.environmentGateway.importMortalReport(report, sourceUrl, {
       sourceImportUrl: originalInput,
       reconstructWalls: Boolean(request.reconstructWalls),
       seed: request.seed,
@@ -787,7 +787,7 @@ function registerIpcHandlers() {
   })
   ipcMain.handle('game:import-custom-tenhou', async (event, payload) => {
     const request = typeof payload === 'string' ? { input: payload } : (payload || {})
-    const response = await pythonServices.environmentGateway.importCustomTenhou(request.input, {
+    const response = await environmentBackend.environmentGateway.importCustomTenhou(request.input, {
       reconstructWalls: Boolean(request.reconstructWalls),
       seed: request.seed,
     })
@@ -804,7 +804,7 @@ function registerIpcHandlers() {
     }
   })
   ipcMain.handle('game:export-custom-tenhou', async () => {
-    const response = await pythonServices.environmentGateway.exportCustomTenhou()
+    const response = await environmentBackend.environmentGateway.exportCustomTenhou()
     return response.customTenhou
   })
   ipcMain.handle('mode:set', async (event, mode) => {
@@ -822,11 +822,11 @@ function registerIpcHandlers() {
     markRecordDirty()
     return response
   })
-  ipcMain.handle('analysis:visibility', (event, visibility) => pythonServices.environmentGateway.setAnalysisVisibility(visibility))
-  ipcMain.handle('game:shanten', () => pythonServices.environmentGateway.getShanten())
-  ipcMain.handle('debug:shanten-mjai', () => pythonServices.environmentGateway.getShantenMjai())
+  ipcMain.handle('analysis:visibility', (event, visibility) => environmentBackend.environmentGateway.setAnalysisVisibility(visibility))
+  ipcMain.handle('game:shanten', () => environmentBackend.environmentGateway.getShanten())
+  ipcMain.handle('debug:shanten-mjai', () => environmentBackend.environmentGateway.getShantenMjai())
   ipcMain.handle('debug:clear-analysis-caches', async () => {
-    const response = await pythonServices.environmentGateway.clearAnalysisCaches()
+    const response = await environmentBackend.environmentGateway.clearAnalysisCaches()
     const cleared = response.cleared || {}
     if (
       Number(cleared.mortalEntries || 0) > 0
@@ -838,13 +838,13 @@ function registerIpcHandlers() {
     }
     return response
   })
-  ipcMain.handle('analysis:auto-start', () => pythonServices.environmentGateway.startAutoAnalysis())
-  ipcMain.handle('analysis:auto-cancel', () => pythonServices.environmentGateway.cancelAutoAnalysis())
+  ipcMain.handle('analysis:auto-start', () => environmentBackend.environmentGateway.startAutoAnalysis())
+  ipcMain.handle('analysis:auto-cancel', () => environmentBackend.environmentGateway.cancelAutoAnalysis())
 }
 
 app.whenReady().then(() => {
   registerSoundProtocol()
-  pythonServices.environmentService.onEvent((event) => {
+  environmentBackend.backendProcess.onEvent((event) => {
     if (event.type === 'record_changed') {
       markRecordDirty()
     }
@@ -869,5 +869,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  pythonServices.stopAll()
+  environmentBackend.stopAll()
 })

@@ -1,6 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const { createPythonService } = require('./python-service')
+const { createBackendProcess } = require('./backend-process')
 const { migrateSettings } = require('../state/settings')
 
 function resolveDevelopmentPython(resourceRoot, env = process.env) {
@@ -21,14 +21,14 @@ function resolveBundledBackend(resourceDir) {
   return exePath
 }
 
-function createPythonServices(options = {}) {
+function createEnvironmentService(options = {}) {
   // Persist schema migrations before Python reads config.json for prewarming.
   const settings = migrateSettings(options)
   const resourceRoot = options.resourceDir || options.appDir || process.cwd()
   const bundledBackend = resolveBundledBackend(resourceRoot)
   const useBundledBackend = Boolean(options.isPackaged)
 
-  const environmentService = createPythonService({
+  const environmentService = createBackendProcess({
     name: 'environment',
     pythonExecutable: useBundledBackend
       ? bundledBackend
@@ -41,7 +41,7 @@ function createPythonServices(options = {}) {
   })
 
   return {
-    environmentService,
+    backendProcess: environmentService,
     environmentGateway: {
       getStatus() {
         return environmentService.sendRequest('get_status', {}, 30_000)
@@ -166,4 +166,4 @@ function createPythonServices(options = {}) {
   }
 }
 
-module.exports = { createPythonServices, resolveDevelopmentPython }
+module.exports = { createEnvironmentService, resolveDevelopmentPython }

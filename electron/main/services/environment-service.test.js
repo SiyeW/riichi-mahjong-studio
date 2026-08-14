@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { resolveDevelopmentPython } = require('./python-services')
+const { resolveDevelopmentPython } = require('./environment-service')
 
 function testDevelopmentPythonResolution() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mjai-python-runtime-'))
@@ -28,4 +28,4 @@ function testDevelopmentPythonResolution() {
 }
 
 testDevelopmentPythonResolution()
-console.log('python service tests passed')
+console.log('environment service tests passed')

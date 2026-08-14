@@ -60,7 +60,7 @@
             :aria-busy="gameFileOperation === 'open'"
             @click="openGame"
           >打开</button>
-          <button @click="openMortalImportPanel">导入</button>
+          <button @click="openRecordImportPanel">导入</button>
           <button
             :class="{ 'is-pending': gameFileOperation === 'save' }"
             :disabled="!recordDirty || gameFileOperation !== null"
@@ -945,22 +945,22 @@
       </div>
     </footer>
 
-    <div v-if="showMortalImportPanel" class="settings-modal-backdrop">
-      <form class="settings-modal mortal-import-modal" @submit.prevent="importReplay">
+    <div v-if="showRecordImportPanel" class="settings-modal-backdrop">
+      <form class="settings-modal record-import-modal" @submit.prevent="importReplay">
         <div class="settings-modal-header">
           <h2>导入牌谱</h2>
           <div class="settings-modal-actions">
-            <button class="settings-btn-secondary" type="button" :disabled="importingMortalReport" @click="closeMortalImportPanel">关闭</button>
-            <button class="settings-btn-primary" type="submit" :disabled="importingMortalReport || !mortalReportInput.trim()">
-              {{ importingMortalReport ? '正在导入...' : '导入' }}
+            <button class="settings-btn-secondary" type="button" :disabled="importingRecord" @click="closeRecordImportPanel">关闭</button>
+            <button class="settings-btn-primary" type="submit" :disabled="importingRecord || !recordImportInput.trim()">
+              {{ importingRecord ? '正在导入...' : '导入' }}
             </button>
           </div>
         </div>
-        <p class="mortal-import-copy">粘贴 <a href="https://mjai.ekyu.moe/zh-cn.html" @click.prevent="openExternalLink('https://mjai.ekyu.moe/zh-cn.html')">Mortal 分析</a>的 killerducky 报告地址，或<a href="https://tenhou.net/6/" @click.prevent="openExternalLink('https://tenhou.net/6/')">天凤自定义牌谱</a>（支持 Mortal、Naga 式多局牌谱）。</p>
+        <p class="record-import-copy">粘贴 <a href="https://mjai.ekyu.moe/zh-cn.html" @click.prevent="openExternalLink('https://mjai.ekyu.moe/zh-cn.html')">Mortal 分析</a>的 killerducky 报告地址，或<a href="https://tenhou.net/6/" @click.prevent="openExternalLink('https://tenhou.net/6/')">天凤自定义牌谱</a>（支持 Mortal、Naga 式多局牌谱）。</p>
         <label>
           <span>报告地址或自定义牌谱</span>
           <textarea
-            v-model="mortalReportInput"
+            v-model="recordImportInput"
             autocomplete="off"
             spellcheck="false"
             rows="8"
@@ -968,25 +968,25 @@
             autofocus
           ></textarea>
         </label>
-        <label class="settings-checkbox settings-checkbox-with-description mortal-import-wall-option">
-          <input v-model="mortalImportReconstructWalls" type="checkbox" />
+        <label class="settings-checkbox settings-checkbox-with-description record-import-wall-option">
+          <input v-model="recordImportReconstructWalls" type="checkbox" />
           <span class="settings-checkbox-control" aria-hidden="true"></span>
           <span class="settings-checkbox-copy">
             <span class="settings-checkbox-label">重建牌山</span>
             <span class="settings-checkbox-description">按牌谱中的已知牌张还原牌山，并随机补全未出现的剩余牌山。未重建牌山的对局可在牌山面板中重建，重建前仅能只读分析，无法进入对局模式。</span>
           </span>
         </label>
-        <label v-if="mortalImportReconstructWalls">
+        <label v-if="recordImportReconstructWalls">
           <span>对局牌山种子（可选）</span>
           <input
-            v-model.trim="mortalImportSeed"
+            v-model.trim="recordImportSeed"
             type="text"
             inputmode="numeric"
             autocomplete="off"
             placeholder="留空则随机生成"
           />
         </label>
-        <p v-if="mortalImportError" class="mortal-import-error">{{ mortalImportError }}</p>
+        <p v-if="recordImportError" class="record-import-error">{{ recordImportError }}</p>
       </form>
     </div>
 
@@ -1784,12 +1784,12 @@ const uiScaleOptions = computed(() => {
 const showSettingsPanel = ref(false)
 const showEngineWindow = ref(false)
 const showAboutPanel = ref(false)
-const showMortalImportPanel = ref(false)
-const mortalReportInput = ref('')
-const mortalImportError = ref('')
-const importingMortalReport = ref(false)
-const mortalImportReconstructWalls = ref(false)
-const mortalImportSeed = ref('')
+const showRecordImportPanel = ref(false)
+const recordImportInput = ref('')
+const recordImportError = ref('')
+const importingRecord = ref(false)
+const recordImportReconstructWalls = ref(false)
+const recordImportSeed = ref('')
 const showCustomTenhouExport = ref(false)
 const customTenhouExportLoading = ref(false)
 const customTenhouExportError = ref('')
@@ -6864,15 +6864,15 @@ async function openGame() {
   }
 }
 
-function openMortalImportPanel() {
-  mortalImportError.value = ''
-  showMortalImportPanel.value = true
+function openRecordImportPanel() {
+  recordImportError.value = ''
+  showRecordImportPanel.value = true
 }
 
-function closeMortalImportPanel() {
-  if (importingMortalReport.value) return
-  showMortalImportPanel.value = false
-  mortalImportError.value = ''
+function closeRecordImportPanel() {
+  if (importingRecord.value) return
+  showRecordImportPanel.value = false
+  recordImportError.value = ''
 }
 
 function isMortalReportInput(value: string): boolean {
@@ -6880,17 +6880,17 @@ function isMortalReportInput(value: string): boolean {
 }
 
 async function importReplay() {
-  if (!window.trainerAPI || importingMortalReport.value || !mortalReportInput.value.trim()) return
-  importingMortalReport.value = true
-  mortalImportError.value = ''
+  if (!window.trainerAPI || importingRecord.value || !recordImportInput.value.trim()) return
+  importingRecord.value = true
+  recordImportError.value = ''
   try {
     await flushNodeComment()
     const payload = {
-      input: mortalReportInput.value,
-      reconstructWalls: mortalImportReconstructWalls.value,
-      seed: mortalImportSeed.value,
+      input: recordImportInput.value,
+      reconstructWalls: recordImportReconstructWalls.value,
+      seed: recordImportSeed.value,
     }
-    const result = isMortalReportInput(mortalReportInput.value)
+    const result = isMortalReportInput(recordImportInput.value)
       ? await window.trainerAPI.importMortalReport(payload)
       : await window.trainerAPI.importCustomTenhou(payload)
     applyStatus(result.state)
@@ -6898,15 +6898,15 @@ async function importReplay() {
     setRecordPath('')
     recordDirty.value = Boolean(result.recordDirty)
     recoveryRecord.value = false
-    showMortalImportPanel.value = false
+    showRecordImportPanel.value = false
     if (result.reconstruction) {
       await openWallView()
       wallClipboardMessage.value = `已重建 ${result.reconstruction.roundCount} 局的牌山。`
     }
   } catch (error) {
-    mortalImportError.value = error instanceof Error ? error.message : '导入失败。'
+    recordImportError.value = error instanceof Error ? error.message : '导入失败。'
   } finally {
-    importingMortalReport.value = false
+    importingRecord.value = false
   }
 }
 

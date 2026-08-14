@@ -2968,27 +2968,27 @@ body {
   line-height: 1.15;
 }
 
-.mortal-import-modal {
+.record-import-modal {
   width: min(calc(41.25rem * var(--ui-scale)), 92vw);
 }
 
-.mortal-import-copy {
+.record-import-copy {
   margin-bottom: calc(0.75rem * var(--chrome-scale));
   color: var(--text-dim);
   font-size: var(--ui-font-md);
   line-height: 1.55;
 }
 
-.mortal-import-copy a {
+.record-import-copy a {
   color: rgba(197, 243, 233, 0.95);
   text-decoration: none;
 }
 
-.mortal-import-copy a:hover {
+.record-import-copy a:hover {
   text-decoration: underline;
 }
 
-.mortal-import-error {
+.record-import-error {
   margin-top: calc(0.65rem * var(--chrome-scale));
   padding: calc(0.5rem * var(--chrome-scale)) calc(0.6rem * var(--chrome-scale));
   border: 1px solid rgba(225, 114, 95, 0.35);
@@ -3255,7 +3255,7 @@ body {
   min-height: calc(2rem * var(--chrome-scale));
 }
 
-.mortal-import-wall-option {
+.record-import-wall-option {
   margin-top: calc(0.3rem * var(--chrome-scale));
 }
 
