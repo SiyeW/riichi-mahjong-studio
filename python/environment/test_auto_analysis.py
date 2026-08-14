@@ -485,7 +485,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         }
         service.STATE["game"] = game
         service.STATE["gameLoaded"] = True
-        service._AUTO_ANALYSIS_CONTEXT = {
+        service.AUTO_ANALYSIS_RUNTIME.context = {
             "generation": 1,
             "game": game,
             "gameId": game["gameId"],
@@ -496,7 +496,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "attempted": set(),
             "treeRevision": int(game["treeRevision"]),
         }
-        service._AUTO_ANALYSIS_STATE.update({
+        service.AUTO_ANALYSIS_RUNTIME.status.update({
             "status": "running",
             "currentNodeId": None,
             "currentModel": None,
@@ -554,10 +554,10 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         decision_index = next(
             index
-            for index, item in enumerate(service._AUTO_ANALYSIS_TIMELINE["items"])
+            for index, item in enumerate(service.AUTO_ANALYSIS_RUNTIME.timeline["items"])
             if item["kind"] == "decision"
         )
-        decision_item = service._AUTO_ANALYSIS_TIMELINE["items"][decision_index]
+        decision_item = service.AUTO_ANALYSIS_RUNTIME.timeline["items"][decision_index]
         root["analysisCache"][decision_item["cacheKey"]] = {"error": None}
         service._set_auto_analysis_timeline_cached("decision", root_id, True)
         cached = service.get_auto_analysis_status()
@@ -624,7 +624,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             opponent_item(current_id),
             opponent_item(before_id),
         ])
-        service._AUTO_ANALYSIS_CONTEXT = {
+        service.AUTO_ANALYSIS_RUNTIME.context = {
             "generation": 1,
             "game": game,
             "gameId": game["gameId"],
@@ -635,7 +635,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "attempted": set(),
             "treeRevision": int(game["treeRevision"]),
         }
-        service._AUTO_ANALYSIS_STATE.update({
+        service.AUTO_ANALYSIS_RUNTIME.status.update({
             "status": "running",
             "completed": 0,
             "total": len(pending),
@@ -656,7 +656,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         ordered_items = [
             (item["nodeId"], item["kind"])
-            for item in service._AUTO_ANALYSIS_CONTEXT["pending"]
+            for item in service.AUTO_ANALYSIS_RUNTIME.context["pending"]
         ]
         self.assertEqual(
             ordered_items,
@@ -681,7 +681,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             {"kind": "decision", "nodeId": root_id, "cacheKey": "test", "cached": False},
             {"kind": "opponent", "nodeId": root_id, "cacheKey": "test", "cached": False},
         ])
-        service._AUTO_ANALYSIS_CONTEXT = {
+        service.AUTO_ANALYSIS_RUNTIME.context = {
             "generation": 1,
             "game": game,
             "gameId": game["gameId"],
@@ -692,7 +692,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "attempted": set(),
             "treeRevision": int(game["treeRevision"]),
         }
-        service._AUTO_ANALYSIS_STATE["status"] = "running"
+        service.AUTO_ANALYSIS_RUNTIME.status["status"] = "running"
 
         with mock.patch.object(service.threading, "Timer") as timer_type:
             timer = timer_type.return_value
@@ -700,7 +700,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         ordered = [
             (item["nodeId"], item["kind"])
-            for item in service._AUTO_ANALYSIS_CONTEXT["pending"]
+            for item in service.AUTO_ANALYSIS_RUNTIME.context["pending"]
         ]
         self.assertEqual(
             ordered,

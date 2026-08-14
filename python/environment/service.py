@@ -17,6 +17,7 @@ except ModuleNotFoundError:
     psutil = None
 
 import auto_analysis_plan
+from auto_analysis_runtime import AutoAnalysisRuntime
 import game_tree
 from action_recommendation_adapter import (
     analyze_action_choices,
@@ -154,33 +155,7 @@ _LEGAL_ACTIONS_CACHE = {}
 _LEGAL_ACTIONS_CACHE_MAX = 4096
 _MJAI_HASH_MASK = (1 << 64) - 1
 _MJAI_HASH_MULTIPLIER = 1000003
-_AUTO_ANALYSIS_LOCK = threading.RLock()
-_AUTO_ANALYSIS_GENERATION = 0
-_AUTO_ANALYSIS_FUTURE = None
-_AUTO_ANALYSIS_CONTEXT = None
-_AUTO_ANALYSIS_REPRIORITIZE_TIMER = None
-_AUTO_ANALYSIS_REPRIORITIZE_SERIAL = 0
-_AUTO_ANALYSIS_REPRIORITIZE_DELAY_S = 0.12
-_AUTO_ANALYSIS_TIMELINE_STRUCTURE_REVISION = 0
-_AUTO_ANALYSIS_TIMELINE = {
-    "signature": None,
-    "items": [],
-    "index": {},
-    "states": [],
-}
-_AUTO_ANALYSIS_STATE = {
-    "status": "idle",
-    "completed": 0,
-    "total": 0,
-    "cached": 0,
-    "analyzed": 0,
-    "failed": 0,
-    "currentNodeId": None,
-    "currentModel": None,
-    "message": "",
-    "timeline": "",
-    "timelineReady": 0,
-}
+AUTO_ANALYSIS_RUNTIME = AutoAnalysisRuntime()
 DEBUG_FLOW = os.environ.get("MJAI_FLOW_DEBUG", "").lower() in ("1", "true", "yes", "on")
 def debug_flow(message):
     if DEBUG_FLOW:
@@ -2025,8 +2000,8 @@ def reset_runtime_for_game_change():
     cancel_play_prefetch()
     cancel_auto_analysis("牌谱已切换", emit_progress=False, cancel_opponent_analysis=False)
     _invalidate_auto_analysis_timeline()
-    with _AUTO_ANALYSIS_LOCK:
-        _AUTO_ANALYSIS_STATE.update({
+    with AUTO_ANALYSIS_RUNTIME.lock:
+        AUTO_ANALYSIS_RUNTIME.status.update({
             "status": "idle",
             "completed": 0,
             "total": 0,
@@ -3418,28 +3393,21 @@ def ensure_analysis_cached(current_node, snapshot):
 
 
 def _invalidate_auto_analysis_timeline():
-    global _AUTO_ANALYSIS_TIMELINE_STRUCTURE_REVISION
-
     if getattr(_PLAY_PREFETCH_LOCAL, "game", None) is not None:
         return
-    with _AUTO_ANALYSIS_LOCK:
-        _AUTO_ANALYSIS_TIMELINE_STRUCTURE_REVISION += 1
-        _AUTO_ANALYSIS_TIMELINE["signature"] = None
-        _AUTO_ANALYSIS_TIMELINE["items"] = []
-        _AUTO_ANALYSIS_TIMELINE["index"] = {}
-        _AUTO_ANALYSIS_TIMELINE["states"] = []
+    AUTO_ANALYSIS_RUNTIME.invalidate_timeline()
 
 
 def _ensure_auto_analysis_timeline_locked(game, seat, model_path):
     signature = (
         id(game),
-        _AUTO_ANALYSIS_TIMELINE_STRUCTURE_REVISION,
+        AUTO_ANALYSIS_RUNTIME.timeline_structure_revision,
         int(seat),
         str(model_path),
         _current_decision_analysis_source(model_path)["id"],
         _get_opponent_analysis_cache_key(seat),
     )
-    if _AUTO_ANALYSIS_TIMELINE.get("signature") == signature:
+    if AUTO_ANALYSIS_RUNTIME.timeline_matches(signature):
         return
 
     round_root_map = auto_analysis_plan.build_round_root_map(game)
@@ -3451,35 +3419,16 @@ def _ensure_auto_analysis_timeline_locked(game, seat, model_path):
         start_node_id=start_node_id,
         round_root_map=round_root_map,
     )
-    _AUTO_ANALYSIS_TIMELINE["signature"] = signature
-    _AUTO_ANALYSIS_TIMELINE["items"] = items
-    _AUTO_ANALYSIS_TIMELINE["index"] = {
-        (item["kind"], item["nodeId"]): index
-        for index, item in enumerate(items)
-    }
-    _AUTO_ANALYSIS_TIMELINE["states"] = [
-        ("M" if item["cached"] else "m")
-        if item["kind"] == "decision"
-        else ("O" if item["cached"] else "o")
-        for item in items
-    ]
+    AUTO_ANALYSIS_RUNTIME.replace_timeline(signature, items)
 
 
 def _set_auto_analysis_timeline_cached(kind, node_id, cached):
-    with _AUTO_ANALYSIS_LOCK:
-        index = _AUTO_ANALYSIS_TIMELINE["index"].get((kind, node_id))
-        if index is None or index >= len(_AUTO_ANALYSIS_TIMELINE["states"]):
-            return
-        if kind == "decision":
-            _AUTO_ANALYSIS_TIMELINE["states"][index] = "M" if cached else "m"
-        else:
-            _AUTO_ANALYSIS_TIMELINE["states"][index] = "O" if cached else "o"
+    AUTO_ANALYSIS_RUNTIME.set_timeline_cached(kind, node_id, cached)
 
 
 def get_auto_analysis_status(*, include_timeline=True):
     if not include_timeline:
-        with _AUTO_ANALYSIS_LOCK:
-            status = copy.deepcopy(_AUTO_ANALYSIS_STATE)
+        status = AUTO_ANALYSIS_RUNTIME.status_snapshot()
         status["timeline"] = ""
         status["timelineReady"] = 0
         return status
@@ -3489,26 +3438,18 @@ def get_auto_analysis_status(*, include_timeline=True):
         game_loaded = STATE.get("gameLoaded") and isinstance(game, dict)
         seat = int(STATE.get("controlledSeat", 0))
         model_path = get_action_engine_weight_path() if game_loaded else ""
-        with _AUTO_ANALYSIS_LOCK:
-            status = copy.deepcopy(_AUTO_ANALYSIS_STATE)
+        with AUTO_ANALYSIS_RUNTIME.lock:
+            status = AUTO_ANALYSIS_RUNTIME.status_snapshot()
             if not game_loaded:
                 status["timeline"] = ""
                 status["timelineReady"] = 0
                 return status
 
             _ensure_auto_analysis_timeline_locked(game, seat, model_path)
-            active_key = (
+            status["timeline"], status["timelineReady"] = AUTO_ANALYSIS_RUNTIME.timeline_progress(
                 status.get("currentModel"),
                 status.get("currentNodeId"),
             )
-            active_index = _AUTO_ANALYSIS_TIMELINE["index"].get(active_key)
-            chars = list(_AUTO_ANALYSIS_TIMELINE["states"])
-            ready = sum(char in ("M", "O") for char in chars)
-            if active_index is not None and active_index < len(chars):
-                active_item = _AUTO_ANALYSIS_TIMELINE["items"][active_index]
-                chars[active_index] = "r" if active_item["kind"] == "decision" else "s"
-            status["timeline"] = "".join(chars)
-            status["timelineReady"] = ready
             return status
 
 
@@ -3591,17 +3532,17 @@ def _auto_analysis_kind_enabled(kind):
 
 
 def auto_analysis_owns_item(kind, node_id):
-    with _AUTO_ANALYSIS_LOCK:
-        context = _AUTO_ANALYSIS_CONTEXT
+    with AUTO_ANALYSIS_RUNTIME.lock:
+        context = AUTO_ANALYSIS_RUNTIME.context
         if (
             not isinstance(context, dict)
-            or _AUTO_ANALYSIS_STATE.get("status") != "running"
+            or AUTO_ANALYSIS_RUNTIME.status.get("status") != "running"
             or context.get("game") is not STATE.get("game")
         ):
             return False
         if (
-            _AUTO_ANALYSIS_STATE.get("currentModel") == kind
-            and _AUTO_ANALYSIS_STATE.get("currentNodeId") == node_id
+            AUTO_ANALYSIS_RUNTIME.status.get("currentModel") == kind
+            and AUTO_ANALYSIS_RUNTIME.status.get("currentNodeId") == node_id
         ):
             return True
         return any(
@@ -3611,26 +3552,23 @@ def auto_analysis_owns_item(kind, node_id):
 
 
 def cancel_auto_analysis(message="已停止", *, emit_progress=True, cancel_opponent_analysis=True):
-    global _AUTO_ANALYSIS_GENERATION, _AUTO_ANALYSIS_FUTURE, _AUTO_ANALYSIS_CONTEXT
-    global _AUTO_ANALYSIS_REPRIORITIZE_TIMER, _AUTO_ANALYSIS_REPRIORITIZE_SERIAL
-
-    with _AUTO_ANALYSIS_LOCK:
-        was_running = _AUTO_ANALYSIS_STATE.get("status") == "running"
-        _AUTO_ANALYSIS_GENERATION += 1
-        future = _AUTO_ANALYSIS_FUTURE
-        reprioritize_timer = _AUTO_ANALYSIS_REPRIORITIZE_TIMER
-        _AUTO_ANALYSIS_FUTURE = None
-        _AUTO_ANALYSIS_CONTEXT = None
-        _AUTO_ANALYSIS_REPRIORITIZE_TIMER = None
-        _AUTO_ANALYSIS_REPRIORITIZE_SERIAL += 1
+    with AUTO_ANALYSIS_RUNTIME.lock:
+        was_running = AUTO_ANALYSIS_RUNTIME.status.get("status") == "running"
+        AUTO_ANALYSIS_RUNTIME.generation += 1
+        future = AUTO_ANALYSIS_RUNTIME.future
+        reprioritize_timer = AUTO_ANALYSIS_RUNTIME.reprioritize_timer
+        AUTO_ANALYSIS_RUNTIME.future = None
+        AUTO_ANALYSIS_RUNTIME.context = None
+        AUTO_ANALYSIS_RUNTIME.reprioritize_timer = None
+        AUTO_ANALYSIS_RUNTIME.reprioritize_serial += 1
         if was_running:
-            _AUTO_ANALYSIS_STATE.update({
+            AUTO_ANALYSIS_RUNTIME.status.update({
                 "status": "canceled",
                 "currentNodeId": None,
                 "currentModel": None,
                 "message": message,
             })
-        status = copy.deepcopy(_AUTO_ANALYSIS_STATE)
+        status = copy.deepcopy(AUTO_ANALYSIS_RUNTIME.status)
     if future is not None:
         try:
             future.cancel()
@@ -3678,17 +3616,15 @@ def _run_auto_decision_item(game, item, seat, model_path):
 
 
 def _complete_auto_analysis_item(generation, item, result=None, error=None):
-    global _AUTO_ANALYSIS_FUTURE
-
     success = False
     tree_updates = []
     with _STATE_LOCK:
-        with _AUTO_ANALYSIS_LOCK:
-            context = _AUTO_ANALYSIS_CONTEXT
+        with AUTO_ANALYSIS_RUNTIME.lock:
+            context = AUTO_ANALYSIS_RUNTIME.context
             if (
                 not isinstance(context, dict)
                 or context.get("generation") != generation
-                or _AUTO_ANALYSIS_STATE.get("status") != "running"
+                or AUTO_ANALYSIS_RUNTIME.status.get("status") != "running"
             ):
                 return
             game = context["game"]
@@ -3712,21 +3648,21 @@ def _complete_auto_analysis_item(generation, item, result=None, error=None):
             else:
                 success = _cache_opponent_analysis_result(result, require_current=False)
 
-    with _AUTO_ANALYSIS_LOCK:
-        context = _AUTO_ANALYSIS_CONTEXT
+    with AUTO_ANALYSIS_RUNTIME.lock:
+        context = AUTO_ANALYSIS_RUNTIME.context
         if not isinstance(context, dict) or context.get("generation") != generation:
             return
-        _AUTO_ANALYSIS_FUTURE = None
+        AUTO_ANALYSIS_RUNTIME.future = None
         context["attempted"].add(auto_analysis_plan.item_key(item))
-        _AUTO_ANALYSIS_STATE["completed"] += 1
+        AUTO_ANALYSIS_RUNTIME.status["completed"] += 1
         if success:
-            _AUTO_ANALYSIS_STATE["analyzed"] += 1
+            AUTO_ANALYSIS_RUNTIME.status["analyzed"] += 1
         else:
-            _AUTO_ANALYSIS_STATE["failed"] += 1
+            AUTO_ANALYSIS_RUNTIME.status["failed"] += 1
             if error:
-                _AUTO_ANALYSIS_STATE["message"] = str(error)
-        _AUTO_ANALYSIS_STATE["currentNodeId"] = None
-        _AUTO_ANALYSIS_STATE["currentModel"] = None
+                AUTO_ANALYSIS_RUNTIME.status["message"] = str(error)
+        AUTO_ANALYSIS_RUNTIME.status["currentNodeId"] = None
+        AUTO_ANALYSIS_RUNTIME.status["currentModel"] = None
 
     if success:
         if item.get("kind") == "decision":
@@ -3779,10 +3715,10 @@ def _extend_auto_analysis_plan(context):
     new_items = [item for item in items if auto_analysis_plan.item_key(item) not in context["known"]]
     for item in new_items:
         context["known"].add(auto_analysis_plan.item_key(item))
-        _AUTO_ANALYSIS_STATE["total"] += 1
+        AUTO_ANALYSIS_RUNTIME.status["total"] += 1
         if item["cached"]:
-            _AUTO_ANALYSIS_STATE["completed"] += 1
-            _AUTO_ANALYSIS_STATE["cached"] += 1
+            AUTO_ANALYSIS_RUNTIME.status["completed"] += 1
+            AUTO_ANALYSIS_RUNTIME.status["cached"] += 1
         elif _auto_analysis_kind_enabled(item["kind"]):
             context["pending"].append(item)
     context["treeRevision"] = int(context["game"].get("treeRevision", 0))
@@ -3792,15 +3728,15 @@ def _extend_auto_analysis_plan(context):
 def reprioritize_auto_analysis_from_node(game, start_node_id, expected_serial=None):
     changed = False
     cached_updates = False
-    with _AUTO_ANALYSIS_LOCK:
-        context = _AUTO_ANALYSIS_CONTEXT
+    with AUTO_ANALYSIS_RUNTIME.lock:
+        context = AUTO_ANALYSIS_RUNTIME.context
         if (
             not isinstance(context, dict)
-            or _AUTO_ANALYSIS_STATE.get("status") != "running"
+            or AUTO_ANALYSIS_RUNTIME.status.get("status") != "running"
             or context.get("game") is not game
         ):
             return False
-        if expected_serial is not None and expected_serial != _AUTO_ANALYSIS_REPRIORITIZE_SERIAL:
+        if expected_serial is not None and expected_serial != AUTO_ANALYSIS_RUNTIME.reprioritize_serial:
             return False
 
         if context.get("treeRevision") != int(game.get("treeRevision", 0)):
@@ -3812,16 +3748,16 @@ def reprioritize_auto_analysis_from_node(game, start_node_id, expected_serial=No
     # outside the lock used by status and navigation responses.
     navigation_rank = auto_analysis_plan.navigation_rank(game, start_node_id)
 
-    with _AUTO_ANALYSIS_LOCK:
-        context = _AUTO_ANALYSIS_CONTEXT
+    with AUTO_ANALYSIS_RUNTIME.lock:
+        context = AUTO_ANALYSIS_RUNTIME.context
         if (
             not isinstance(context, dict)
             or context.get("generation") != context_generation
             or context.get("game") is not game
-            or _AUTO_ANALYSIS_STATE.get("status") != "running"
+            or AUTO_ANALYSIS_RUNTIME.status.get("status") != "running"
         ):
             return False
-        if expected_serial is not None and expected_serial != _AUTO_ANALYSIS_REPRIORITIZE_SERIAL:
+        if expected_serial is not None and expected_serial != AUTO_ANALYSIS_RUNTIME.reprioritize_serial:
             return False
 
         pending = []
@@ -3832,8 +3768,8 @@ def reprioritize_auto_analysis_from_node(game, start_node_id, expected_serial=No
                 continue
             if auto_analysis_plan.item_is_cached(game, item):
                 context["attempted"].add(item_key)
-                _AUTO_ANALYSIS_STATE["completed"] += 1
-                _AUTO_ANALYSIS_STATE["cached"] += 1
+                AUTO_ANALYSIS_RUNTIME.status["completed"] += 1
+                AUTO_ANALYSIS_RUNTIME.status["cached"] += 1
                 cached_updates = True
                 changed = True
                 continue
@@ -3864,13 +3800,11 @@ def reprioritize_auto_analysis_from_node(game, start_node_id, expected_serial=No
 
 
 def schedule_auto_analysis_reprioritization(game, start_node_id):
-    global _AUTO_ANALYSIS_REPRIORITIZE_TIMER, _AUTO_ANALYSIS_REPRIORITIZE_SERIAL
-
-    with _AUTO_ANALYSIS_LOCK:
-        context = _AUTO_ANALYSIS_CONTEXT
+    with AUTO_ANALYSIS_RUNTIME.lock:
+        context = AUTO_ANALYSIS_RUNTIME.context
         if (
             not isinstance(context, dict)
-            or _AUTO_ANALYSIS_STATE.get("status") != "running"
+            or AUTO_ANALYSIS_RUNTIME.status.get("status") != "running"
             or context.get("game") is not game
         ):
             return False
@@ -3886,25 +3820,24 @@ def schedule_auto_analysis_reprioritization(game, start_node_id):
                 remaining.append(item)
         context["pending"] = deque(focused + remaining)
 
-        previous_timer = _AUTO_ANALYSIS_REPRIORITIZE_TIMER
-        _AUTO_ANALYSIS_REPRIORITIZE_SERIAL += 1
-        serial = _AUTO_ANALYSIS_REPRIORITIZE_SERIAL
+        previous_timer = AUTO_ANALYSIS_RUNTIME.reprioritize_timer
+        AUTO_ANALYSIS_RUNTIME.reprioritize_serial += 1
+        serial = AUTO_ANALYSIS_RUNTIME.reprioritize_serial
 
         def apply_settled_focus():
-            global _AUTO_ANALYSIS_REPRIORITIZE_TIMER
-            with _AUTO_ANALYSIS_LOCK:
-                if serial != _AUTO_ANALYSIS_REPRIORITIZE_SERIAL:
+            with AUTO_ANALYSIS_RUNTIME.lock:
+                if serial != AUTO_ANALYSIS_RUNTIME.reprioritize_serial:
                     return
-                _AUTO_ANALYSIS_REPRIORITIZE_TIMER = None
+                AUTO_ANALYSIS_RUNTIME.reprioritize_timer = None
             reprioritize_auto_analysis_from_node(
                 game,
                 start_node_id,
                 expected_serial=serial,
             )
 
-        timer = threading.Timer(_AUTO_ANALYSIS_REPRIORITIZE_DELAY_S, apply_settled_focus)
+        timer = threading.Timer(AUTO_ANALYSIS_RUNTIME.reprioritize_delay_s, apply_settled_focus)
         timer.daemon = True
-        _AUTO_ANALYSIS_REPRIORITIZE_TIMER = timer
+        AUTO_ANALYSIS_RUNTIME.reprioritize_timer = timer
 
     if previous_timer is not None:
         previous_timer.cancel()
@@ -3913,16 +3846,14 @@ def schedule_auto_analysis_reprioritization(game, start_node_id):
 
 
 def _schedule_next_auto_analysis_item(generation):
-    global _AUTO_ANALYSIS_FUTURE, _AUTO_ANALYSIS_CONTEXT
-
     while True:
         with _STATE_LOCK:
-            with _AUTO_ANALYSIS_LOCK:
-                context = _AUTO_ANALYSIS_CONTEXT
+            with AUTO_ANALYSIS_RUNTIME.lock:
+                context = AUTO_ANALYSIS_RUNTIME.context
                 if (
                     not isinstance(context, dict)
                     or context.get("generation") != generation
-                    or _AUTO_ANALYSIS_STATE.get("status") != "running"
+                    or AUTO_ANALYSIS_RUNTIME.status.get("status") != "running"
                     or STATE.get("game") is not context.get("game")
                 ):
                     return
@@ -3931,13 +3862,13 @@ def _schedule_next_auto_analysis_item(generation):
                     item = context["pending"].popleft()
                     if auto_analysis_plan.item_is_cached(game, item):
                         context["attempted"].add(auto_analysis_plan.item_key(item))
-                        _AUTO_ANALYSIS_STATE["completed"] += 1
-                        _AUTO_ANALYSIS_STATE["cached"] += 1
+                        AUTO_ANALYSIS_RUNTIME.status["completed"] += 1
+                        AUTO_ANALYSIS_RUNTIME.status["cached"] += 1
                         continue
                     if not _auto_analysis_kind_enabled(item["kind"]):
                         continue
-                    _AUTO_ANALYSIS_STATE["currentNodeId"] = item["nodeId"]
-                    _AUTO_ANALYSIS_STATE["currentModel"] = item["kind"]
+                    AUTO_ANALYSIS_RUNTIME.status["currentNodeId"] = item["nodeId"]
+                    AUTO_ANALYSIS_RUNTIME.status["currentModel"] = item["kind"]
                     break
                 else:
                     item = None
@@ -3945,10 +3876,10 @@ def _schedule_next_auto_analysis_item(generation):
                 if item is None:
                     if _extend_auto_analysis_plan(context) and context["pending"]:
                         continue
-                    failed = int(_AUTO_ANALYSIS_STATE["failed"])
-                    completed = int(_AUTO_ANALYSIS_STATE["completed"])
-                    total = int(_AUTO_ANALYSIS_STATE["total"])
-                    _AUTO_ANALYSIS_STATE.update({
+                    failed = int(AUTO_ANALYSIS_RUNTIME.status["failed"])
+                    completed = int(AUTO_ANALYSIS_RUNTIME.status["completed"])
+                    total = int(AUTO_ANALYSIS_RUNTIME.status["total"])
+                    AUTO_ANALYSIS_RUNTIME.status.update({
                         "status": "completed",
                         "currentNodeId": None,
                         "currentModel": None,
@@ -3958,8 +3889,8 @@ def _schedule_next_auto_analysis_item(generation):
                             else "分析完成" if completed == total else "可用模型分析完成"
                         ),
                     })
-                    _AUTO_ANALYSIS_CONTEXT = None
-                    _AUTO_ANALYSIS_FUTURE = None
+                    AUTO_ANALYSIS_RUNTIME.context = None
+                    AUTO_ANALYSIS_RUNTIME.future = None
                     finished = True
                 else:
                     finished = False
@@ -3979,12 +3910,12 @@ def _schedule_next_auto_analysis_item(generation):
                 seat,
                 model_path,
             )
-            with _AUTO_ANALYSIS_LOCK:
+            with AUTO_ANALYSIS_RUNTIME.lock:
                 if (
-                    isinstance(_AUTO_ANALYSIS_CONTEXT, dict)
-                    and _AUTO_ANALYSIS_CONTEXT.get("generation") == generation
+                    isinstance(AUTO_ANALYSIS_RUNTIME.context, dict)
+                    and AUTO_ANALYSIS_RUNTIME.context.get("generation") == generation
                 ):
-                    _AUTO_ANALYSIS_FUTURE = future
+                    AUTO_ANALYSIS_RUNTIME.future = future
             future.add_done_callback(
                 lambda completed_future, g=generation, current_item=item: (
                     _on_auto_decision_complete(g, current_item, completed_future)
@@ -4017,24 +3948,24 @@ def _schedule_next_auto_analysis_item(generation):
                 reveal_all=True,
             )
         except Exception as exc:  # pylint: disable=broad-except
-            with _AUTO_ANALYSIS_LOCK:
-                context = _AUTO_ANALYSIS_CONTEXT
+            with AUTO_ANALYSIS_RUNTIME.lock:
+                context = AUTO_ANALYSIS_RUNTIME.context
                 still_current = (
                     isinstance(context, dict)
                     and context.get("generation") == generation
                     and context.get("game") is game
-                    and _AUTO_ANALYSIS_STATE.get("status") == "running"
+                    and AUTO_ANALYSIS_RUNTIME.status.get("status") == "running"
                 )
             if still_current:
                 _complete_auto_analysis_item(generation, item, error=exc)
             return
-        with _AUTO_ANALYSIS_LOCK:
-            context = _AUTO_ANALYSIS_CONTEXT
+        with AUTO_ANALYSIS_RUNTIME.lock:
+            context = AUTO_ANALYSIS_RUNTIME.context
             still_current = (
                 isinstance(context, dict)
                 and context.get("generation") == generation
                 and context.get("game") is game
-                and _AUTO_ANALYSIS_STATE.get("status") == "running"
+                and AUTO_ANALYSIS_RUNTIME.status.get("status") == "running"
             )
         if not still_current:
             return
@@ -4070,8 +4001,6 @@ def _schedule_next_auto_analysis_item(generation):
 
 
 def start_auto_analysis():
-    global _AUTO_ANALYSIS_GENERATION, _AUTO_ANALYSIS_CONTEXT, _AUTO_ANALYSIS_FUTURE
-
     ensure_game_loaded()
     cancel_auto_analysis(emit_progress=False)
     game = STATE["game"]
@@ -4085,11 +4014,11 @@ def start_auto_analysis():
         if not item["cached"] and _auto_analysis_kind_enabled(item["kind"])
     )
 
-    with _AUTO_ANALYSIS_LOCK:
-        _AUTO_ANALYSIS_GENERATION += 1
-        generation = _AUTO_ANALYSIS_GENERATION
-        _AUTO_ANALYSIS_FUTURE = None
-        _AUTO_ANALYSIS_CONTEXT = {
+    with AUTO_ANALYSIS_RUNTIME.lock:
+        AUTO_ANALYSIS_RUNTIME.generation += 1
+        generation = AUTO_ANALYSIS_RUNTIME.generation
+        AUTO_ANALYSIS_RUNTIME.future = None
+        AUTO_ANALYSIS_RUNTIME.context = {
             "generation": generation,
             "game": game,
             "gameId": game.get("gameId"),
@@ -4100,7 +4029,7 @@ def start_auto_analysis():
             "attempted": set(),
             "treeRevision": int(game.get("treeRevision", 0)),
         }
-        _AUTO_ANALYSIS_STATE.update({
+        AUTO_ANALYSIS_RUNTIME.status.update({
             "status": "running",
             "completed": cached_count,
             "total": len(items),
