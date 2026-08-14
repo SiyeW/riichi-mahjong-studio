@@ -1,6 +1,7 @@
 import copy
 import unittest
 
+import game_tree
 import service
 
 
@@ -167,8 +168,8 @@ class MainBranchPolicyTest(unittest.TestCase):
         for imported_action, live_action in equivalent_pairs:
             with self.subTest(action_type=imported_action["type"]):
                 self.assertEqual(
-                    service._action_identity(imported_action),
-                    service._action_identity(live_action),
+                    game_tree.action_identity(imported_action),
+                    game_tree.action_identity(live_action),
                 )
 
     def test_side_branch_actions_form_one_continuous_local_branch(self):
@@ -227,7 +228,7 @@ class MainBranchPolicyTest(unittest.TestCase):
         game["nodes"][parent_id]["mainChildId"] = None
         game["mainLeafNodeId"] = parent_id
 
-        changed = service.repair_main_branch_links(game)
+        changed = game_tree.repair_main_branch_links(game)
 
         self.assertTrue(changed)
         self.assertEqual(game["nodes"][parent_id]["mainChildId"], first_id)
@@ -245,7 +246,7 @@ class MainBranchPolicyTest(unittest.TestCase):
             "proposedNodeId": proposed_id,
         }
 
-        service.repair_main_branch_links(game)
+        game_tree.repair_main_branch_links(game)
 
         self.assertEqual(game["nodes"][parent_id]["mainChildId"], proposed_id)
         self.assertEqual(game["mainLeafNodeId"], proposed_id)

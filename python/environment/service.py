@@ -16,6 +16,7 @@ try:
 except ModuleNotFoundError:
     psutil = None
 
+import game_tree
 from action_recommendation_adapter import (
     analyze_action_choices,
     analyze_discard_choices,
@@ -1910,7 +1911,7 @@ def reset_current_round_with_full_wall(full_wall):
         game["nodes"].pop(node_id, None)
 
     game["nodes"][new_round_root_id] = new_round_root_node
-    mark_tree_changed(game)
+    game_tree.mark_tree_changed(game)
     _invalidate_auto_analysis_timeline()
     game["currentNodeId"] = new_round_root_id
     promote_path_to_mainline(game, new_round_root_id)
@@ -2220,67 +2221,8 @@ def choose_ai_action_for_snapshot(snapshot, seat, model_path, *, accumulate_thin
     )
 
 
-def mark_tree_changed(game):
-    game["treeRevision"] = int(game.get("treeRevision", 0)) + 1
-
-
-def _action_identity(action):
-    """Return a stable identity key for deduplicating child nodes under the same parent."""
-    t = str(action.get("type") or "")
-    actor = action.get("actor")
-    pai = str(action.get("pai") or "")
-    decision_only = bool(action.get("decisionOnly"))
-    if t == "dahai":
-        tsumogiri = bool(action.get("tsumogiri"))
-        return (decision_only, t, actor, pai, tsumogiri)
-    if t == "hora":
-        return (decision_only, t, actor, action.get("target"), pai)
-    consumed = tuple(sorted(str(tile) for tile in (action.get("consumed") or [])))
-    if t in ("chi", "pon", "daiminkan"):
-        return (decision_only, t, actor, action.get("target"), pai, consumed)
-    if t in ("ankan", "kakan"):
-        return (decision_only, t, actor, pai, consumed)
-    if t in ("reach", "reach_accepted"):
-        return (decision_only, t, actor)
-    if t == "ryukyoku":
-        reason = str(
-            action.get("reason")
-            or action.get("variant")
-            or action.get("reasonLabel")
-            or ""
-        )
-        reason_aliases = {
-            "流局": "exhaustive_draw",
-            "荒牌流局": "exhaustive_draw",
-            "九種九牌": "kyuushu_kyuuhai",
-            "九种九牌": "kyuushu_kyuuhai",
-            "四風連打": "suufon_renda",
-            "四风连打": "suufon_renda",
-            "四槓散了": "suukantsu",
-            "四杠散了": "suukantsu",
-            "四家立直": "suucha_riichi",
-        }
-        return (decision_only, t, reason_aliases.get(reason, reason))
-    if t == "dora":
-        return (decision_only, t, str(action.get("dora_marker") or ""))
-    variant = str(action.get("variant") or "")
-    target = action.get("target")
-    return (decision_only, t, actor, variant, pai, target, consumed)
-
-
 def _refresh_reused_imported_child(game, child_id, action, snapshot):
-    child = game["nodes"].get(child_id)
-    if not child:
-        return
-    child_source = str((child.get("action") or {}).get("source") or "")
-    incoming_source = str((action or {}).get("source") or "")
-    if (
-        child_source == "mortal-report"
-        and incoming_source != "mortal-report"
-        and child.get("snapshot") != snapshot
-    ):
-        child["snapshot"] = copy.deepcopy(snapshot)
-        mark_tree_changed(game)
+    if game_tree.refresh_reused_imported_child(game, child_id, action, snapshot):
         _invalidate_auto_analysis_timeline()
 
 
@@ -2288,33 +2230,16 @@ def create_node(game, parent_id, action, snapshot):
     sync_snapshot_state(snapshot)
     parent = game["nodes"][parent_id]
     is_decision = action_is_meaningful_decision(parent.get("snapshot"), action)
-    for child_id in parent["children"]:
-        child = game["nodes"][child_id]
-        child_action = child.get("action") or {}
-        if child_action == action or _action_identity(child_action) == _action_identity(action):
-            child.setdefault("isDecision", is_decision)
-            _refresh_reused_imported_child(game, child_id, action, snapshot)
-            return child_id
-
-    node_id = f"n_{game['nextNodeIndex']}"
-    game["nextNodeIndex"] += 1
-
-    game["nodes"][node_id] = {
-        "id": node_id,
-        "type": "decision" if action.get("decisionOnly") else "action",
-        "parentId": parent_id,
-        "children": [],
-        "mainChildId": None,
-        "action": action,
-        "actor": action.get("actor"),
-        "isDecision": is_decision,
-        "snapshot": snapshot,
-        "analysisCache": {},
-        "depth": parent["depth"] + 1,
-    }
-    parent["children"].append(node_id)
-    mark_tree_changed(game)
-    _invalidate_auto_analysis_timeline()
+    previous_revision = int(game.get("treeRevision", 0))
+    node_id = game_tree.create_node(
+        game,
+        parent_id,
+        action,
+        snapshot,
+        is_decision=is_decision,
+    )
+    if int(game.get("treeRevision", 0)) != previous_revision:
+        _invalidate_auto_analysis_timeline()
     return node_id
 
 
@@ -2328,96 +2253,31 @@ def _may_promote_mainline(game, force=False):
 
 def attach_mainline(parent_id, child_id, *, force=False):
     game = getattr(_PLAY_PREFETCH_LOCAL, "game", None) or STATE["game"]
-    parent = game["nodes"][parent_id]
-    if not _may_promote_mainline(game, force):
-        existing_id = parent.get("mainChildId")
-        if existing_id is not None and existing_id != child_id:
-            return
-        changed = existing_id != child_id
-        parent["mainChildId"] = child_id
-        if game.get("mainLeafNodeId") == parent_id:
-            game["mainLeafNodeId"] = child_id
-            changed = True
-        if changed:
-            mark_tree_changed(game)
-            _invalidate_auto_analysis_timeline()
-        return
-    if parent.get("mainChildId") != child_id:
-        parent["mainChildId"] = child_id
-        mark_tree_changed(game)
+    if game_tree.attach_main_child(
+        game,
+        parent_id,
+        child_id,
+        replace_existing=_may_promote_mainline(game, force),
+    ):
         _invalidate_auto_analysis_timeline()
-
-
-def find_path_to_root(game, node_id):
-    path = []
-    cursor = node_id
-    while cursor is not None:
-        node = game["nodes"][cursor]
-        path.append(cursor)
-        cursor = node["parentId"]
-    path.reverse()
-    return path
 
 
 def promote_path_to_mainline(game, node_id, *, force=False):
     if not _may_promote_mainline(game, force):
         return
-    path = find_path_to_root(game, node_id)
-    changed = game.get("mainLeafNodeId") != node_id
-    for parent_id, child_id in zip(path[:-1], path[1:]):
-        parent = game["nodes"][parent_id]
-        if parent.get("mainChildId") != child_id:
-            parent["mainChildId"] = child_id
-            changed = True
-    game["mainLeafNodeId"] = node_id
-    if changed:
-        mark_tree_changed(game)
+    if game_tree.promote_path_to_mainline(game, node_id):
         _invalidate_auto_analysis_timeline()
 
 
 def replace_pending_review_main_child(game, parent_id, proposed_id, chosen_id):
-    if proposed_id == chosen_id:
-        return False
-    parent = game["nodes"][parent_id]
-    if parent.get("mainChildId") != proposed_id:
-        return False
-    parent["mainChildId"] = chosen_id
-    if game.get("mainLeafNodeId") == proposed_id:
-        game["mainLeafNodeId"] = chosen_id
-    mark_tree_changed(game)
-    _invalidate_auto_analysis_timeline()
-    return True
-
-
-def repair_main_branch_links(game):
-    nodes = game.get("nodes") or {}
-    pending_review = game.get("pendingReview") or {}
-    review_parent_id = pending_review.get("parentNodeId")
-    review_proposed_id = pending_review.get("proposedNodeId")
-    changed = False
-    for node_id, node in nodes.items():
-        children = [child_id for child_id in node.get("children", []) if child_id in nodes]
-        if node.get("mainChildId") in children:
-            continue
-        if node_id == review_parent_id and review_proposed_id in children:
-            next_main_id = review_proposed_id
-        else:
-            next_main_id = children[0] if children else None
-        if node.get("mainChildId") != next_main_id:
-            node["mainChildId"] = next_main_id
-            changed = True
-
-    cursor_id = game.get("rootNodeId")
-    seen = set()
-    while cursor_id in nodes and cursor_id not in seen:
-        seen.add(cursor_id)
-        next_id = nodes[cursor_id].get("mainChildId")
-        if next_id not in nodes:
-            break
-        cursor_id = next_id
-    if cursor_id in nodes and game.get("mainLeafNodeId") != cursor_id:
-        game["mainLeafNodeId"] = cursor_id
-        changed = True
+    changed = game_tree.replace_pending_review_main_child(
+        game,
+        parent_id,
+        proposed_id,
+        chosen_id,
+    )
+    if changed:
+        _invalidate_auto_analysis_timeline()
     return changed
 
 
@@ -2887,7 +2747,7 @@ def _insert_reaction_decision_chain(game, parent_id, child_id, decisions, source
     nodes[previous_id]["mainChildId"] = child_id
     child["parentId"] = previous_id
     _shift_subtree_depth(game, child_id, len(inserted_ids))
-    mark_tree_changed(game)
+    game_tree.mark_tree_changed(game)
     return len(inserted_ids)
 
 
@@ -5171,7 +5031,7 @@ def load_game_record(record):
     repair_mortal_report_game(game)
     repair_tsumo_action_tiles(game)
     repair_reaction_decision_nodes(game)
-    if repair_main_branch_links(game):
+    if game_tree.repair_main_branch_links(game):
         game["treeRevision"] = int(game.get("treeRevision", 0)) + 1
     migrate_analysis_cache_storage(game)
     static_match_fields = (
@@ -7582,7 +7442,7 @@ def _reuse_or_review_existing_child(
         _refresh_reused_imported_child(game, existing_id, action, next_snapshot)
     if comparison is not None and game["nodes"][existing_id].get("comparison") != comparison:
         game["nodes"][existing_id]["comparison"] = copy.deepcopy(comparison)
-        mark_tree_changed(game)
+        game_tree.mark_tree_changed(game)
     if not force_commit and comparison is not None and should_trigger_review(comparison):
         register_pending_review(game, parent_id, existing_id, comparison)
         game["currentNodeId"] = parent_id
@@ -7594,7 +7454,7 @@ def _reuse_or_review_existing_child(
 
 
 def _find_existing_child(game, parent_id, action):
-    identity = _action_identity(action)
+    identity = game_tree.action_identity(action)
     parent_node = game["nodes"].get(parent_id)
     if not parent_node:
         return None
@@ -7603,7 +7463,7 @@ def _find_existing_child(game, parent_id, action):
         if not child:
             continue
         child_action = child.get("action") or {}
-        if _action_identity(child_action) == identity:
+        if game_tree.action_identity(child_action) == identity:
             return child_id
     return None
 
@@ -8315,7 +8175,7 @@ def delete_node(node_id):
         game["matchState"] = copy.deepcopy(parent_snapshot["matchState"])
         game["matchState"]["matchId"] = game.get("matchId", game.get("gameId", "game"))
 
-    mark_tree_changed(game)
+    game_tree.mark_tree_changed(game)
     _invalidate_auto_analysis_timeline()
     if STATE.get("mode") == "research":
         request_current_opponent_analysis(parent_snapshot)
@@ -8356,7 +8216,7 @@ def clear_loaded_analysis_caches():
     game["pendingReview"] = None
     game[ANALYSIS_SOURCES_FIELD] = {}
     _invalidate_auto_analysis_timeline()
-    mark_tree_changed(game)
+    game_tree.mark_tree_changed(game)
     return {
         "decisionEntries": decision_entries,
         "opponentEntries": opponent_entries,
