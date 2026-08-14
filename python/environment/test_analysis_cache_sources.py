@@ -137,6 +137,40 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         self.assertEqual(opponent["model_path"], "C:\\opponent.onnx")
         self.assertEqual(opponent["engine_options"], {"threads": 2})
 
+    def test_one_profile_produces_one_runtime_for_all_assigned_outputs(self):
+        config = {
+            "engines": {
+                "profiles": [{
+                    "id": "profile.unified",
+                    "engineId": "example.unified",
+                    "enginePath": "C:\\engine.exe",
+                    "weights": [{
+                        "slotId": "model",
+                        "format": "example",
+                        "path": "C:\\model.bin",
+                    }],
+                }],
+                "outputAssignments": {
+                    "action-recommendation": "profile.unified",
+                    "opponent-shanten": "profile.unified",
+                    "opponent-deal-in-probability": "profile.unified",
+                },
+            },
+        }
+
+        specifications = service._engine_runtime_specifications(config)
+
+        self.assertEqual(len(specifications), 1)
+        self.assertEqual(specifications[0]["profile_id"], "profile.unified")
+        self.assertEqual(
+            specifications[0]["enabled_outputs"],
+            [
+                {"id": "action-recommendation", "version": 1},
+                {"id": "opponent-shanten", "version": 1},
+                {"id": "opponent-deal-in-probability", "version": 1},
+            ],
+        )
+
     def test_unrecognized_cache_keys_are_discarded(self):
         game = service.create_empty_game(101010)
         node = game["nodes"][game["currentNodeId"]]

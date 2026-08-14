@@ -1,6 +1,11 @@
 import unittest
+from unittest import mock
 
-from engine_runtime import initialize_engine_client
+from engine_runtime import (
+    EngineProfileRuntime,
+    EngineRuntimeRegistry,
+    initialize_engine_client,
+)
 
 
 class FakeClient:
@@ -15,6 +20,34 @@ class FakeClient:
     def initialize(self, outputs, weights, **options):
         self.initialize_calls.append((outputs, weights, options))
         return self.result
+
+
+class FakeProcessClient:
+    instances = []
+    hello = {}
+    result = {}
+
+    def __init__(self, *_args, **_kwargs):
+        self.initialize_calls = []
+        self.restart_calls = 0
+        self.shutdown_calls = 0
+        FakeProcessClient.instances.append(self)
+
+    def describe(self):
+        return self.hello
+
+    def initialize(self, outputs, weights, **options):
+        self.initialize_calls.append((outputs, weights, options))
+        return self.result
+
+    def request(self, _method, _params, **_options):
+        return {"outputs": []}
+
+    def restart(self):
+        self.restart_calls += 1
+
+    def shutdown(self):
+        self.shutdown_calls += 1
 
 
 class EngineRuntimeTest(unittest.TestCase):
@@ -74,6 +107,57 @@ class EngineRuntimeTest(unittest.TestCase):
                 options={},
                 timeout=90,
             )
+
+    def _runtime_specification(self):
+        return {
+            "profile_id": "profile.example",
+            "engine_id": "example.engine",
+            "engine_version": "1.0.0",
+            "command": ["engine.exe"],
+            "cwd": None,
+            "enabled_outputs": self.outputs,
+            "weights": self.weights,
+            "device_preference": "cuda",
+            "options": {"example": True},
+        }
+
+    def test_profile_runtime_initializes_all_assigned_outputs_once(self):
+        FakeProcessClient.instances = []
+        FakeProcessClient.hello = self.hello
+        FakeProcessClient.result = self.result
+        with mock.patch("engine_runtime.EngineProcessClient", FakeProcessClient):
+            runtime = EngineProfileRuntime(**self._runtime_specification())
+            action = runtime.initialize(
+                [self.outputs[0]],
+                self.weights,
+                device="cuda",
+                options={},
+            )
+            opponent = runtime.initialize(
+                [self.outputs[1]],
+                self.weights,
+                device="cuda",
+                options={},
+            )
+
+        process = FakeProcessClient.instances[0]
+        self.assertEqual(len(process.initialize_calls), 1)
+        self.assertEqual(process.initialize_calls[0][0], self.outputs)
+        self.assertEqual(action["outputs"], [self.result["outputs"][1]])
+        self.assertEqual(opponent["outputs"], [self.result["outputs"][0]])
+
+    def test_registry_reuses_unchanged_profile_runtime(self):
+        FakeProcessClient.instances = []
+        with mock.patch("engine_runtime.EngineProcessClient", FakeProcessClient):
+            registry = EngineRuntimeRegistry()
+            specification = self._runtime_specification()
+            registry.reconcile([specification])
+            first = registry.get("profile.example")
+            registry.reconcile([specification])
+            second = registry.get("profile.example")
+
+        self.assertIs(first, second)
+        self.assertEqual(len(FakeProcessClient.instances), 1)
 
     def test_rejects_missing_or_unexpected_outputs(self):
         client = FakeClient(

@@ -20,6 +20,7 @@ except ModuleNotFoundError:
 from decision_adapter import analyze_action_choices, analyze_discard_choices, choose_ai_action, get_and_reset_ai_thinking_time_s, get_latest_mjai_debug, get_response_ms_by_seat, set_thinking_time_bounds, to_relative_model_path
 from decision_engine_gateway import DecisionEngineGateway
 from engine_assignments import profiles_by_output, resolve_engine_assignments
+from engine_runtime import EngineRuntimeRegistry
 from opponent_gateway import OpponentAnalysisGateway
 from shanten_gateway import get_latest_shanten_mjai
 from mjai_stream import build_mjai_events_from_actions, build_mjai_stream
@@ -92,6 +93,7 @@ DECISION_ENGINE_GATEWAY = DecisionEngineGateway()
 DECISION_POOL = DECISION_ENGINE_GATEWAY
 DECISION_ANALYSIS_GATEWAY = DECISION_ENGINE_GATEWAY
 SHANTEN_GATEWAY = OpponentAnalysisGateway()
+ENGINE_RUNTIME_REGISTRY = EngineRuntimeRegistry()
 _BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _PLAY_PREFETCH_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_PREWARM_EXECUTOR = ThreadPoolExecutor(max_workers=2)
@@ -1491,8 +1493,35 @@ def _gateway_profile(config, output_id):
     }
 
 
+def _engine_runtime_specifications(config):
+    specifications = []
+    for assignment in resolve_engine_assignments(config):
+        output_ids = assignment["outputs"]
+        selected = _gateway_profile(config, output_ids[0]) if output_ids else None
+        if not selected:
+            continue
+        options = dict(selected["engine_options"])
+        device_preference = str(options.pop("device", "auto") or "auto")
+        specifications.append({
+            "profile_id": selected["profile_id"],
+            "engine_id": selected["engine_id"],
+            "engine_version": selected["engine_version"],
+            "command": selected["engine_command"],
+            "cwd": selected["engine_cwd"],
+            "enabled_outputs": [
+                {"id": output_id, "version": 1}
+                for output_id in output_ids
+            ],
+            "weights": selected["weights"],
+            "device_preference": device_preference,
+            "options": options,
+        })
+    return specifications
+
+
 def configure_action_recommendation_engine(config):
     selected = _gateway_profile(config, "action-recommendation") or {}
+    engine_client = ENGINE_RUNTIME_REGISTRY.get(selected.get("profile_id"))
     DECISION_ENGINE_GATEWAY.configure_profile(
         profile_id=str(selected.get("profile_id") or ""),
         engine_id=str(selected.get("engine_id") or ""),
@@ -1505,6 +1534,7 @@ def configure_action_recommendation_engine(config):
         engine_command=selected.get("engine_command") or [],
         engine_cwd=selected.get("engine_cwd"),
         engine_options=selected.get("engine_options") or {},
+        engine_client=engine_client,
     )
 
 
@@ -1513,8 +1543,10 @@ def configure_opponent_prediction_engines(config):
     deal_in = _gateway_profile(config, "opponent-deal-in-probability")
     if shanten:
         shanten["input_modes"] = ["public"]
+        shanten["engine_client"] = ENGINE_RUNTIME_REGISTRY.get(shanten["profile_id"])
     if deal_in:
         deal_in["input_modes"] = ["public"]
+        deal_in["engine_client"] = ENGINE_RUNTIME_REGISTRY.get(deal_in["profile_id"])
     SHANTEN_GATEWAY.configure_profiles(
         shanten,
         deal_in,
@@ -1528,6 +1560,7 @@ def apply_runtime_engine_config(config=None, *, invalidate=False):
 
     with _ENGINE_CONFIG_LOCK:
         config = config if isinstance(config, dict) else load_project_config()
+        ENGINE_RUNTIME_REGISTRY.reconcile(_engine_runtime_specifications(config))
         configure_action_recommendation_engine(config)
         configure_opponent_prediction_engines(config)
 

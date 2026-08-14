@@ -30,7 +30,12 @@ class OpponentAnalysisGateway:
     def _profile_identity(profile: Optional[Dict[str, Any]]) -> str:
         if not isinstance(profile, dict):
             return ""
-        return json.dumps(profile, sort_keys=True, separators=(",", ":"))
+        serializable = {
+            key: value
+            for key, value in profile.items()
+            if key != "engine_client"
+        }
+        return json.dumps(serializable, sort_keys=True, separators=(",", ":"))
 
     def configure_profiles(
         self,

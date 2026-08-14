@@ -210,6 +210,7 @@ class ShantenPredictorGateway:
         engine_options: Optional[Dict[str, Any]] = None,
         enabled_outputs: Optional[list[str]] = None,
         weights: Optional[list[Dict[str, Any]]] = None,
+        engine_client: Optional[Any] = None,
     ) -> None:
         next_model_path = Path(model_path) if model_path else Path("__unconfigured__")
         if not next_model_path.is_absolute():
@@ -280,7 +281,10 @@ class ShantenPredictorGateway:
             self._enabled_outputs,
             json.dumps(self._configured_weights, sort_keys=True, separators=(",", ":")),
         )
-        if next_identity == current_identity:
+        client_changed = (
+            engine_client is not None and self._process_client is not engine_client
+        )
+        if next_identity == current_identity and not client_changed:
             return
         self.cancel_all()
         self._process_client.shutdown()
@@ -306,14 +310,18 @@ class ShantenPredictorGateway:
         self._engine_options = json.loads(options_json)
         self._configured_weights = json.loads(weights_json)
         self._device_preference = configured_device
-        self._process_client = EngineProcessClient(
-            "opponent-analysis",
-            self._on_engine_notification,
-            command=self._engine_command or None,
-            cwd=self._engine_cwd or None,
-            expected_engine_id=self._engine_id,
-            expected_engine_version=self._engine_version,
-        )
+        if engine_client is not None:
+            engine_client.add_notification_listener(self._on_engine_notification)
+            self._process_client = engine_client
+        else:
+            self._process_client = EngineProcessClient(
+                "opponent-analysis",
+                self._on_engine_notification,
+                command=self._engine_command or None,
+                cwd=self._engine_cwd or None,
+                expected_engine_id=self._engine_id,
+                expected_engine_version=self._engine_version,
+            )
         self._model_signature = self._read_model_signature()
         self._engine_fingerprint = ""
         self._effective_options = {}

@@ -73,6 +73,7 @@ class DecisionEngineGateway:
         engine_command: Optional[List[str]] = None,
         engine_cwd: Optional[str] = None,
         engine_options: Optional[Dict[str, Any]] = None,
+        engine_client: Optional[Any] = None,
     ) -> None:
         next_model_path = str(model_path) if model_path else None
         normalized_weights = [
@@ -131,7 +132,8 @@ class DecisionEngineGateway:
             self._configured_model_path or "",
             json.dumps(self._configured_weights, sort_keys=True, separators=(",", ":")),
         )
-        if next_config == current_config:
+        client_changed = engine_client is not None and self._client is not engine_client
+        if next_config == current_config and not client_changed:
             return
         self._client.shutdown()
         (
@@ -155,14 +157,18 @@ class DecisionEngineGateway:
         self._configured_model_path = model_path_value or None
         self._configured_weights = json.loads(weights_json)
         self._external_engine = bool(self._engine_command)
-        self._client = EngineProcessClient(
-            self._engine_kind,
-            self._on_engine_notification,
-            command=self._engine_command,
-            cwd=self._engine_cwd,
-            expected_engine_id=self._engine_id,
-            expected_engine_version=self._engine_version,
-        )
+        if engine_client is not None:
+            engine_client.add_notification_listener(self._on_engine_notification)
+            self._client = engine_client
+        else:
+            self._client = EngineProcessClient(
+                self._engine_kind,
+                self._on_engine_notification,
+                command=self._engine_command,
+                cwd=self._engine_cwd,
+                expected_engine_id=self._engine_id,
+                expected_engine_version=self._engine_version,
+            )
         self._ready_models.clear()
         self._last_fingerprint = ""
         self._effective_options = {}
