@@ -221,6 +221,14 @@ interface TrainerRuntimeMetrics {
   sampledAt: number
 }
 
+interface TrainerRecordImportResult {
+  sourceUrl?: string
+  reconstruction?: { seed: number; roundCount: number } | null
+  state: TrainerStatusSnapshot
+  view: TrainerGameView
+  recordDirty: boolean
+}
+
 interface TrainerAction {
   id: string
   candidateId?: string
@@ -663,23 +671,12 @@ interface Window {
       input: string
       reconstructWalls?: boolean
       seed?: string
-    }) => Promise<{
-      sourceUrl: string
-      reconstruction?: { seed: number; roundCount: number } | null
-      state: TrainerStatusSnapshot
-      view: TrainerGameView
-      recordDirty: boolean
-    }>
+    }) => Promise<TrainerRecordImportResult>
     importCustomTenhou: (payload: {
       input: string
       reconstructWalls?: boolean
       seed?: string
-    }) => Promise<{
-      reconstruction?: { seed: number; roundCount: number } | null
-      state: TrainerStatusSnapshot
-      view: TrainerGameView
-      recordDirty: boolean
-    }>
+    }) => Promise<TrainerRecordImportResult>
     exportCustomTenhou: () => Promise<{
       tenhou: string
       mortal: string
