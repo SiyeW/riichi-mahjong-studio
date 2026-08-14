@@ -5,13 +5,13 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from decision_engine_gateway import DecisionEngineGateway
+from action_recommendation_gateway import ActionRecommendationGateway
 from decision_adapter import analyze_discard_choices, choose_ai_action
 
 
-class ExternalDecisionEngineTest(unittest.TestCase):
+class ActionRecommendationGatewayTest(unittest.TestCase):
     def test_generic_contract_uses_declared_recommendation_metric(self):
-        result = DecisionEngineGateway._validate_generic_result(  # pylint: disable=protected-access
+        result = ActionRecommendationGateway._validate_generic_result(  # pylint: disable=protected-access
             {
                 "outputs": [{
                     "id": "action-recommendation",
@@ -142,7 +142,7 @@ class ExternalDecisionEngineTest(unittest.TestCase):
             model_path = root / "model.bin"
             script_path.write_text(script, encoding="utf-8")
             model_path.write_bytes(b"mock")
-            gateway = DecisionEngineGateway()
+            gateway = ActionRecommendationGateway()
             gateway.configure_profile(
                 profile_id="profile.third-party.generic",
                 engine_id="third-party.generic-decision",

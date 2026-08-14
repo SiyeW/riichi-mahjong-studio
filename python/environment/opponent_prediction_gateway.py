@@ -1,4 +1,4 @@
-"""Generic process gateway for an external opponent-analysis engine."""
+"""Adapt opponent prediction outputs to the host's analysis data."""
 from __future__ import annotations
 
 import copy
@@ -23,19 +23,19 @@ TILE34_NAMES = [
     "E", "S", "W", "N", "P", "F", "C",
 ]
 
-_LATEST_SHANTEN_MJAI: Dict[str, Any] = {}
+_LATEST_OPPONENT_PREDICTION_MJAI: Dict[str, Any] = {}
 _PROBABILITY_TOLERANCE = 1e-4
 _ENGINE_POSTPROCESSOR_VERSION = "opponent-analysis-host-v2"
 _SHANTEN_OUTPUT = {"id": "opponent-shanten", "version": 1}
 _DEAL_IN_OUTPUT = {"id": "opponent-deal-in-probability", "version": 1}
 
 
-def get_latest_shanten_mjai() -> Dict[str, Any]:
-    return dict(_LATEST_SHANTEN_MJAI)
+def get_latest_opponent_prediction_mjai() -> Dict[str, Any]:
+    return dict(_LATEST_OPPONENT_PREDICTION_MJAI)
 
 
-class ShantenPredictorGateway:
-    """Background worker for opponent shanten prediction."""
+class OpponentPredictionGateway:
+    """Run background requests for the assigned opponent prediction outputs."""
 
     def __init__(
         self,
@@ -908,8 +908,8 @@ class ShantenPredictorGateway:
                 events = pending.get("mjai_events")
                 if events is None:
                     events = build_mjai_stream(snapshot, c, reveal_all=False)
-                global _LATEST_SHANTEN_MJAI
-                _LATEST_SHANTEN_MJAI = {
+                global _LATEST_OPPONENT_PREDICTION_MJAI
+                _LATEST_OPPONENT_PREDICTION_MJAI = {
                     "events": events,
                     "seat": c,
                     "visibilityMode": visibility_mode,

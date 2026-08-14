@@ -1,4 +1,4 @@
-"""Process-isolated decision-engine gateway used for teaching and play."""
+"""Adapt action-recommendation output to the host's analysis and play flows."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from engine_runtime import initialize_engine_client
 from decision_adapter import to_relative_model_path
 
 
-class DecisionEngineGateway:
+class ActionRecommendationGateway:
     _RESULT_SEMANTICS_VERSION = "action-recommendation-host-v4"
     _OUTPUT = {"id": "action-recommendation", "version": 1}
 

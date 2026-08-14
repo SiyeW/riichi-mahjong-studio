@@ -286,7 +286,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             with (
                 mock.patch.object(service, "_current_shanten_context", return_value=context),
                 mock.patch.object(
-                    service.SHANTEN_GATEWAY,
+                    service.OPPONENT_PREDICTIONS,
                     "get_latest",
                     return_value={
                         "status": "loading",
@@ -335,7 +335,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             with (
                 mock.patch.object(service, "_current_shanten_context", return_value=context),
                 mock.patch.object(
-                    service.SHANTEN_GATEWAY,
+                    service.OPPONENT_PREDICTIONS,
                     "get_latest",
                     return_value={"status": "idle", "context": {}},
                 ),

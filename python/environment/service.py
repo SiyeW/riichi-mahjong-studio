@@ -18,11 +18,11 @@ except ModuleNotFoundError:
     psutil = None
 
 from decision_adapter import analyze_action_choices, analyze_discard_choices, choose_ai_action, get_and_reset_ai_thinking_time_s, get_latest_mjai_debug, get_response_ms_by_seat, set_thinking_time_bounds, to_relative_model_path
-from decision_engine_gateway import DecisionEngineGateway
+from action_recommendation_gateway import ActionRecommendationGateway
 from engine_assignments import profiles_by_output, resolve_engine_assignments
 from engine_runtime import EngineRuntimeRegistry
-from opponent_gateway import OpponentAnalysisGateway
-from shanten_gateway import get_latest_shanten_mjai
+from opponent_prediction_coordinator import OpponentPredictionCoordinator
+from opponent_prediction_gateway import get_latest_opponent_prediction_mjai
 from mjai_stream import build_mjai_events_from_actions, build_mjai_stream
 from mortal_report_import import attach_mortal_review_cache, build_mortal_report_game, repair_mortal_report_game
 from custom_tenhou import (
@@ -89,10 +89,8 @@ STATE = {
 }
 PROJECT_ROOT = get_project_root()
 PORTABLE_ROOT = Path(os.environ.get("MJAI_TRAINER_PORTABLE_DIR") or PROJECT_ROOT).resolve()
-DECISION_ENGINE_GATEWAY = DecisionEngineGateway()
-DECISION_POOL = DECISION_ENGINE_GATEWAY
-DECISION_ANALYSIS_GATEWAY = DECISION_ENGINE_GATEWAY
-SHANTEN_GATEWAY = OpponentAnalysisGateway()
+ACTION_RECOMMENDATIONS = ActionRecommendationGateway()
+OPPONENT_PREDICTIONS = OpponentPredictionCoordinator()
 ENGINE_RUNTIME_REGISTRY = EngineRuntimeRegistry()
 _BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _PLAY_PREFETCH_EXECUTOR = ThreadPoolExecutor(max_workers=1)
@@ -169,10 +167,10 @@ def prewarm_runtime(profile_id=""):
     }
     errors = {}
     decision_profile_id = str(
-        DECISION_ENGINE_GATEWAY.runtime_status().get("profileId") or ""
+        ACTION_RECOMMENDATIONS.runtime_status().get("profileId") or ""
     )
     opponent_profile_ids = set(
-        SHANTEN_GATEWAY.runtime_status().get("profileIds") or []
+        OPPONENT_PREDICTIONS.runtime_status().get("profileIds") or []
     )
     prewarm_decision = bool(decision_profile_id) and (
         not requested_profile_id or decision_profile_id == requested_profile_id
@@ -182,42 +180,42 @@ def prewarm_runtime(profile_id=""):
     )
 
     def _prewarm_decision():
-        if not DECISION_ENGINE_GATEWAY.runtime_status().get("profileId"):
+        if not ACTION_RECOMMENDATIONS.runtime_status().get("profileId"):
             return False, None
         try:
-            ready = DECISION_ENGINE_GATEWAY.prewarm(0, action_weight_path)
+            ready = ACTION_RECOMMENDATIONS.prewarm(0, action_weight_path)
             error = (
                 None
                 if ready
-                else DECISION_ENGINE_GATEWAY.activity_error() or "决策引擎预热失败"
+                else ACTION_RECOMMENDATIONS.activity_error() or "决策引擎预热失败"
             )
             return ready, error
         except Exception as error:
             return False, str(error)
         finally:
             _emit_decision_activity(
-                DECISION_ENGINE_GATEWAY.active_seat(),
-                DECISION_ENGINE_GATEWAY.activity_state(),
-                DECISION_ENGINE_GATEWAY.activity_error(),
+                ACTION_RECOMMENDATIONS.active_seat(),
+                ACTION_RECOMMENDATIONS.activity_state(),
+                ACTION_RECOMMENDATIONS.activity_error(),
             )
 
     def _prewarm_opponent_analysis():
-        if not SHANTEN_GATEWAY.runtime_status().get("profileId"):
+        if not OPPONENT_PREDICTIONS.runtime_status().get("profileId"):
             return False, None
         try:
-            ready = SHANTEN_GATEWAY.prewarm(requested_profile_id or None)
+            ready = OPPONENT_PREDICTIONS.prewarm(requested_profile_id or None)
             error = (
                 None
                 if ready
-                else SHANTEN_GATEWAY.activity_error() or "对手分析引擎预热失败"
+                else OPPONENT_PREDICTIONS.activity_error() or "对手分析引擎预热失败"
             )
             return ready, error
         except Exception as error:
             return False, str(error)
         finally:
             _emit_shanten_activity(
-                SHANTEN_GATEWAY.activity_state(),
-                SHANTEN_GATEWAY.activity_error(),
+                OPPONENT_PREDICTIONS.activity_state(),
+                OPPONENT_PREDICTIONS.activity_error(),
             )
 
     decision_future = (
@@ -247,7 +245,7 @@ def prewarm_runtime(profile_id=""):
         errors["opponent-analysis"] = opponent_error
     return {
         "warmed": warmed,
-        "device": DECISION_POOL.device_str,
+        "device": ACTION_RECOMMENDATIONS.device_str,
         "errors": errors,
     }
 
@@ -902,7 +900,7 @@ def _build_analysis_source(
 def _current_decision_analysis_source(model_path=None, *, include_display_name=False):
     return _build_analysis_source(
         "decision",
-        DECISION_ENGINE_GATEWAY.cache_identity(model_path),
+        ACTION_RECOMMENDATIONS.cache_identity(model_path),
         _DECISION_POSTPROCESSOR_VERSION,
         "action-recommendation@1",
         display_name=(
@@ -916,7 +914,7 @@ def _current_decision_analysis_source(model_path=None, *, include_display_name=F
 def _current_shanten_analysis_source(*, include_display_name=False):
     return _build_analysis_source(
         "opponent",
-        SHANTEN_GATEWAY.cache_identity(),
+        OPPONENT_PREDICTIONS.cache_identity(),
         None,
         "opponent-shanten@1+opponent-deal-in-probability@1",
         display_name=(
@@ -1169,7 +1167,7 @@ def _build_shanten_cache_key(seat, input_mode):
 
 
 def _get_opponent_analysis_input_mode():
-    supported = set(SHANTEN_GATEWAY.supported_input_modes())
+    supported = set(OPPONENT_PREDICTIONS.supported_input_modes())
     if STATE.get("visibleHands") and "full-information" in supported:
         return "full-information"
     return "public"
@@ -1274,14 +1272,14 @@ def request_current_shanten_prediction(snapshot=None):
         context = _current_shanten_context()
         if context is None:
             return False
-        SHANTEN_GATEWAY.set_latest_context(context)
+        OPPONENT_PREDICTIONS.set_latest_context(context)
         game = STATE["game"]
         node = game["nodes"][context["nodeId"]]
         if context["cacheKey"] in node.get(_SHANTEN_CACHE_FIELD, {}):
             return False
         if play_prefetch_owns_opponent(context["nodeId"]):
             return False
-        if SHANTEN_GATEWAY.has_request(context):
+        if OPPONENT_PREDICTIONS.has_request(context):
             return False
         if auto_analysis_owns_item("opponent", context["nodeId"]):
             return False
@@ -1298,7 +1296,7 @@ def request_current_shanten_prediction(snapshot=None):
             context["seat"],
             reveal_all=True,
         )
-        SHANTEN_GATEWAY.request_predict(
+        OPPONENT_PREDICTIONS.request_predict(
             snapshot if snapshot is not None else node["snapshot"],
             context["seat"],
             STATE["visibleHands"],
@@ -1322,7 +1320,7 @@ def get_current_shanten_analysis():
     if context is None:
         return {"status": "unavailable", "predictions": {}, "ground_truth": {}}
 
-    latest = SHANTEN_GATEWAY.get_latest()
+    latest = OPPONENT_PREDICTIONS.get_latest()
     latest_context = latest.get("context") if isinstance(latest, dict) else None
     if _same_shanten_context(latest_context, context) and latest.get("status") == "ready":
         return latest
@@ -1346,7 +1344,7 @@ def get_current_shanten_analysis():
     request_current_shanten_prediction(node["snapshot"])
     if isinstance(stale, dict):
         return _attach_shanten_context(stale, context)
-    latest = SHANTEN_GATEWAY.get_latest()
+    latest = OPPONENT_PREDICTIONS.get_latest()
     latest_context = latest.get("context") if isinstance(latest, dict) else None
     if _same_shanten_context(latest_context, context):
         return latest
@@ -1522,7 +1520,7 @@ def _engine_runtime_specifications(config):
 def configure_action_recommendation_engine(config):
     selected = _gateway_profile(config, "action-recommendation") or {}
     engine_client = ENGINE_RUNTIME_REGISTRY.get(selected.get("profile_id"))
-    DECISION_ENGINE_GATEWAY.configure_profile(
+    ACTION_RECOMMENDATIONS.configure_profile(
         profile_id=str(selected.get("profile_id") or ""),
         engine_id=str(selected.get("engine_id") or ""),
         engine_version=str(selected.get("engine_version") or ""),
@@ -1547,7 +1545,7 @@ def configure_opponent_prediction_engines(config):
     if deal_in:
         deal_in["input_modes"] = ["public"]
         deal_in["engine_client"] = ENGINE_RUNTIME_REGISTRY.get(deal_in["profile_id"])
-    SHANTEN_GATEWAY.configure_profiles(
+    OPPONENT_PREDICTIONS.configure_profiles(
         shanten,
         deal_in,
     )
@@ -1589,7 +1587,7 @@ def apply_runtime_engine_config(config=None, *, invalidate=False):
             purge_bg_analysis_tasks(
                 active_game.get("gameId") if isinstance(active_game, dict) else None
             )
-            SHANTEN_GATEWAY.cancel_all()
+            OPPONENT_PREDICTIONS.cancel_all()
             _invalidate_auto_analysis_timeline()
     return source_changed
 
@@ -1601,15 +1599,15 @@ def reload_runtime_engines(profile_id):
     apply_runtime_engine_config(load_project_config(), invalidate=True)
     matched = False
     if (
-        str(DECISION_ENGINE_GATEWAY.runtime_status().get("profileId") or "")
+        str(ACTION_RECOMMENDATIONS.runtime_status().get("profileId") or "")
         == requested_profile_id
     ):
-        DECISION_ENGINE_GATEWAY.prepare_reload()
+        ACTION_RECOMMENDATIONS.prepare_reload()
         matched = True
     if requested_profile_id in set(
-        SHANTEN_GATEWAY.runtime_status().get("profileIds") or []
+        OPPONENT_PREDICTIONS.runtime_status().get("profileIds") or []
     ):
-        SHANTEN_GATEWAY.prepare_reload(requested_profile_id)
+        OPPONENT_PREDICTIONS.prepare_reload(requested_profile_id)
         matched = True
     if not matched:
         raise ValueError("engine profile is not assigned to a supported output")
@@ -1630,17 +1628,17 @@ def unload_runtime_engine(kind, profile_id):
         )
     if normalized_kind == "decision":
         if (
-            str(DECISION_ENGINE_GATEWAY.runtime_status().get("profileId") or "")
+            str(ACTION_RECOMMENDATIONS.runtime_status().get("profileId") or "")
             != requested_profile_id
         ):
             raise ValueError("engine profile is not assigned to action recommendation")
-        DECISION_ENGINE_GATEWAY.unload()
+        ACTION_RECOMMENDATIONS.unload()
     elif normalized_kind == "opponent-analysis":
         if requested_profile_id not in set(
-            SHANTEN_GATEWAY.runtime_status().get("profileIds") or []
+            OPPONENT_PREDICTIONS.runtime_status().get("profileIds") or []
         ):
             raise ValueError("engine profile is not assigned to opponent analysis")
-        SHANTEN_GATEWAY.unload(requested_profile_id)
+        OPPONENT_PREDICTIONS.unload(requested_profile_id)
     else:
         raise ValueError("unknown engine kind")
     return build_state_payload(consume_thinking_time=False)
@@ -1676,18 +1674,18 @@ def emit(payload):
 
 def get_decision_response_ms():
     response_times = get_response_ms_by_seat()
-    analysis_ms = DECISION_ANALYSIS_GATEWAY.average_response_ms()
+    analysis_ms = ACTION_RECOMMENDATIONS.average_response_ms()
     if analysis_ms > 0:
         response_times[STATE["controlledSeat"] % 4] = analysis_ms
     return response_times
 
 
 def get_decision_activity():
-    return DECISION_ENGINE_GATEWAY.get_activity()
+    return ACTION_RECOMMENDATIONS.get_activity()
 
 
 def get_decision_activity_errors():
-    return DECISION_ENGINE_GATEWAY.get_activity_errors()
+    return ACTION_RECOMMENDATIONS.get_activity_errors()
 
 
 def _emit_decision_activity(seat, state, error=None):
@@ -1705,7 +1703,7 @@ def _emit_decision_activity(seat, state, error=None):
         "active": effective_state == "running",
         "error": errors[normalized_seat],
         "averageMs": decision_average_ms[normalized_seat],
-        "runtime": DECISION_ENGINE_GATEWAY.runtime_status(),
+        "runtime": ACTION_RECOMMENDATIONS.runtime_status(),
         "timestamp": now_iso(),
     })
 
@@ -1717,14 +1715,14 @@ def _emit_shanten_activity(state, error=None):
         "activityState": str(state),
         "active": state == "running",
         "error": error,
-        "averageMs": SHANTEN_GATEWAY.average_response_ms(),
-        "runtime": SHANTEN_GATEWAY.runtime_status(),
+        "averageMs": OPPONENT_PREDICTIONS.average_response_ms(),
+        "runtime": OPPONENT_PREDICTIONS.runtime_status(),
         "timestamp": now_iso(),
     })
 
 
-DECISION_ENGINE_GATEWAY.set_activity_callback(_emit_decision_activity)
-SHANTEN_GATEWAY.set_activity_callback(_emit_shanten_activity)
+ACTION_RECOMMENDATIONS.set_activity_callback(_emit_decision_activity)
+OPPONENT_PREDICTIONS.set_activity_callback(_emit_shanten_activity)
 
 
 def create_match_state(seed):
@@ -2875,8 +2873,8 @@ def reset_runtime_for_game_change():
     _BG_COMPLETED.clear()
     _MJAI_STREAM_CACHE.clear()
     _LEGAL_ACTIONS_CACHE.clear()
-    SHANTEN_GATEWAY.cancel_all()
-    DECISION_ENGINE_GATEWAY.reset_session()
+    OPPONENT_PREDICTIONS.cancel_all()
+    ACTION_RECOMMENDATIONS.reset_session()
 
 
 def reserve_loaded_game_id(game_id):
@@ -3002,7 +3000,7 @@ def choose_ai_action_for_current_node(snapshot, seat, model_path):
     legal_actions = build_legal_actions(snapshot, controlled_seat=seat)
     if not game or not STATE.get("gameLoaded"):
         return choose_ai_action(
-            DECISION_POOL,
+            ACTION_RECOMMENDATIONS,
             snapshot,
             seat,
             model_path,
@@ -3011,7 +3009,7 @@ def choose_ai_action_for_current_node(snapshot, seat, model_path):
     current_node_id = game.get("currentNodeId")
     if not current_node_id:
         return choose_ai_action(
-            DECISION_POOL,
+            ACTION_RECOMMENDATIONS,
             snapshot,
             seat,
             model_path,
@@ -3019,7 +3017,7 @@ def choose_ai_action_for_current_node(snapshot, seat, model_path):
         )
     bundle = get_cached_mjai_stream_bundle(game, current_node_id, seat)
     return choose_ai_action(
-        DECISION_POOL,
+        ACTION_RECOMMENDATIONS,
         snapshot,
         seat,
         model_path,
@@ -3037,7 +3035,7 @@ def choose_ai_action_for_snapshot(snapshot, seat, model_path, *, accumulate_thin
     mjai_prefix_hashes = _build_mjai_prefix_hashes(mjai_events)
     mjai_events_hash = mjai_prefix_hashes[-1] if mjai_prefix_hashes else 0
     return choose_ai_action(
-        DECISION_POOL,
+        ACTION_RECOMMENDATIONS,
         snapshot,
         seat,
         model_path,
@@ -4041,7 +4039,7 @@ def _submit_background_analysis(current_node, snapshot):
         def _task():
             started_at = time.perf_counter()
             analysis = analyze_discard_choices(
-                DECISION_ANALYSIS_GATEWAY,
+                ACTION_RECOMMENDATIONS,
                 snapshot,
                 seat,
                 model_path,
@@ -4060,7 +4058,7 @@ def _submit_background_analysis(current_node, snapshot):
         def _task():
             started_at = time.perf_counter()
             analysis = analyze_action_choices(
-                DECISION_ANALYSIS_GATEWAY,
+                ACTION_RECOMMENDATIONS,
                 snapshot,
                 seat,
                 model_path,
@@ -4137,7 +4135,7 @@ def _get_or_schedule_analysis(current_node, snapshot, legal_actions):
     if analysis_key in current_node.get("analysisCache", {}):
         return copy.deepcopy(current_node["analysisCache"][analysis_key])
 
-    if not DECISION_ENGINE_GATEWAY.accepts_requests():
+    if not ACTION_RECOMMENDATIONS.accepts_requests():
         return _find_stale_cache_entry(
             STATE.get("game"),
             current_node,
@@ -4274,7 +4272,7 @@ def resolve_analysis_for_current_node(current_node, snapshot, legal_actions):
 
     if snapshot["phase"] in ("draw_or_discard", "discard", "reach_declaration"):
         resolver = lambda: analyze_discard_choices(  # noqa: E731
-            DECISION_ANALYSIS_GATEWAY,
+            ACTION_RECOMMENDATIONS,
             snapshot,
             STATE["controlledSeat"],
             get_action_engine_weight_path(),
@@ -4292,7 +4290,7 @@ def resolve_analysis_for_current_node(current_node, snapshot, legal_actions):
         }
     elif snapshot["phase"] in ("reaction_window", "kan_reaction_window"):
         resolver = lambda: analyze_action_choices(  # noqa: E731
-            DECISION_ANALYSIS_GATEWAY,
+            ACTION_RECOMMENDATIONS,
             snapshot,
             STATE["controlledSeat"],
             get_action_engine_weight_path(),
@@ -4345,7 +4343,7 @@ def ensure_analysis_cached(current_node, snapshot):
     if analysis_key in current_node["analysisCache"]:
         return current_node["analysisCache"][analysis_key]
 
-    if not DECISION_ENGINE_GATEWAY.accepts_requests():
+    if not ACTION_RECOMMENDATIONS.accepts_requests():
         return None
 
     task_key = _get_bg_analysis_task_key(STATE.get("game"), current_node.get("id"), analysis_key)
@@ -4711,8 +4709,8 @@ def _auto_item_is_cached(game, item):
 
 def _auto_analysis_kind_enabled(kind):
     if kind == "decision":
-        return not DECISION_ENGINE_GATEWAY.runtime_status().get("unloaded", False)
-    return not SHANTEN_GATEWAY.runtime_status().get("unloaded", False)
+        return not ACTION_RECOMMENDATIONS.runtime_status().get("unloaded", False)
+    return not OPPONENT_PREDICTIONS.runtime_status().get("unloaded", False)
 
 
 def auto_analysis_owns_item(kind, node_id):
@@ -4764,7 +4762,7 @@ def cancel_auto_analysis(message="已停止", *, emit_progress=True, cancel_shan
     if reprioritize_timer is not None:
         reprioritize_timer.cancel()
     if cancel_shanten:
-        SHANTEN_GATEWAY.cancel_background()
+        OPPONENT_PREDICTIONS.cancel_background()
     if was_running and emit_progress:
         _emit_auto_analysis_progress()
     return status
@@ -4777,7 +4775,7 @@ def _run_auto_decision_item(game, item, seat, model_path):
     legal_actions = build_legal_actions(snapshot, controlled_seat=seat)
     if snapshot.get("phase") in ("draw_or_discard", "discard", "reach_declaration"):
         return analyze_discard_choices(
-            DECISION_ANALYSIS_GATEWAY,
+            ACTION_RECOMMENDATIONS,
             snapshot,
             seat,
             model_path,
@@ -4789,7 +4787,7 @@ def _run_auto_decision_item(game, item, seat, model_path):
             position_id=item["nodeId"],
         )
     return analyze_action_choices(
-        DECISION_ANALYSIS_GATEWAY,
+        ACTION_RECOMMENDATIONS,
         snapshot,
         seat,
         model_path,
@@ -5179,7 +5177,7 @@ def _schedule_next_auto_analysis_item(generation):
             )
         if not still_current:
             return
-        accepted = SHANTEN_GATEWAY.request_background_predict(
+        accepted = OPPONENT_PREDICTIONS.request_background_predict(
             game["nodes"][item["nodeId"]]["snapshot"],
             seat,
             input_mode=input_mode,
@@ -5205,7 +5203,7 @@ def _schedule_next_auto_analysis_item(generation):
         _complete_auto_analysis_item(
             generation,
             item,
-            error=SHANTEN_GATEWAY.activity_error() or "对手分析任务重复",
+            error=OPPONENT_PREDICTIONS.activity_error() or "对手分析任务重复",
         )
         return
 
@@ -6044,12 +6042,12 @@ def build_state_payload(*, consume_thinking_time=True):
         "pendingSeatSwitch": STATE["pendingSeatSwitch"],
         "visibleHands": STATE["visibleHands"],
         "license": copy.deepcopy(STATE.get("license")),
-        "device": DECISION_POOL.device_str,
+        "device": ACTION_RECOMMENDATIONS.device_str,
         "gameLoaded": STATE["gameLoaded"],
         "aiThinkingTimeS": get_and_reset_ai_thinking_time_s() if consume_thinking_time else 0.0,
         "modelPerformance": {
             "decision": get_decision_response_ms(),
-            "opponentAnalysis": SHANTEN_GATEWAY.average_response_ms(),
+            "opponentAnalysis": OPPONENT_PREDICTIONS.average_response_ms(),
         },
         "analysisVisibility": {
             "decisionRecommendations": bool(STATE.get("decisionRecommendationsEnabled", True)),
@@ -6057,15 +6055,15 @@ def build_state_payload(*, consume_thinking_time=True):
         },
         "modelActivity": {
             "decision": get_decision_activity(),
-            "opponentAnalysis": SHANTEN_GATEWAY.activity_state(),
+            "opponentAnalysis": OPPONENT_PREDICTIONS.activity_state(),
             "errors": {
                 "decision": get_decision_activity_errors(),
-                "opponentAnalysis": SHANTEN_GATEWAY.activity_error(),
+                "opponentAnalysis": OPPONENT_PREDICTIONS.activity_error(),
             },
         },
         "modelRuntime": {
-            "decision": DECISION_ENGINE_GATEWAY.runtime_status(),
-            "opponentAnalysis": SHANTEN_GATEWAY.runtime_status(),
+            "decision": ACTION_RECOMMENDATIONS.runtime_status(),
+            "opponentAnalysis": OPPONENT_PREDICTIONS.runtime_status(),
         },
         "autoAnalysis": get_auto_analysis_status(
             include_timeline=STATE.get("mode") == "research"
@@ -8004,7 +8002,7 @@ def _schedule_play_prefetch_opponent(context, draft_node_id):
         "cacheKey": _get_shanten_cache_key(seat),
         "cacheEpoch": _SHANTEN_CACHE_EPOCH,
     }
-    accepted = SHANTEN_GATEWAY.request_background_predict(
+    accepted = OPPONENT_PREDICTIONS.request_background_predict(
         snapshot,
         seat,
         input_mode=input_mode,
@@ -8948,7 +8946,7 @@ def create_game():
     advance_to_next_user_turn(STATE["game"])
 
     _BG_EXECUTOR.submit(
-        DECISION_ENGINE_GATEWAY.prewarm,
+        ACTION_RECOMMENDATIONS.prewarm,
         STATE["controlledSeat"],
         get_action_engine_weight_path(),
     )
@@ -9162,7 +9160,7 @@ def clear_loaded_analysis_caches():
     _DECISION_CACHE_EPOCH += 1
     _SHANTEN_CACHE_EPOCH += 1
     purge_bg_analysis_tasks(game_id)
-    SHANTEN_GATEWAY.cancel_all()
+    OPPONENT_PREDICTIONS.cancel_all()
 
     decision_entries = 0
     opponent_entries = 0
@@ -9292,7 +9290,7 @@ def handle_command(request_id, command, payload):
                 if enabled and STATE.get("gameLoaded"):
                     request_current_shanten_prediction(get_current_snapshot())
                 elif not enabled:
-                    SHANTEN_GATEWAY.cancel_pending()
+                    OPPONENT_PREDICTIONS.cancel_pending()
 
             if STATE.get("mode") == "play" and STATE.get("gameLoaded"):
                 start_play_prefetch()
@@ -9485,7 +9483,7 @@ def handle_command(request_id, command, payload):
             return build_response(request_id, command, get_current_shanten_analysis())
 
         if command == "get_shanten_mjai":
-            return build_response(request_id, command, {"debug": get_latest_shanten_mjai()})
+            return build_response(request_id, command, {"debug": get_latest_opponent_prediction_mjai()})
 
         if command == "clear_analysis_caches":
             cleared = clear_loaded_analysis_caches()

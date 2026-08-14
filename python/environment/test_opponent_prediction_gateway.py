@@ -1,7 +1,7 @@
 import unittest
 
-from opponent_gateway import OpponentAnalysisGateway
-from shanten_gateway import ShantenPredictorGateway, TILE34_NAMES
+from opponent_prediction_coordinator import OpponentPredictionCoordinator
+from opponent_prediction_gateway import OpponentPredictionGateway, TILE34_NAMES
 
 
 class OpponentOutputCompositionTest(unittest.TestCase):
@@ -51,7 +51,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
     def test_profile_lifecycle_only_touches_the_selected_gateway(self):
         first = self._FakeGateway("profile.first")
         second = self._FakeGateway("profile.second")
-        gateway = object.__new__(OpponentAnalysisGateway)
+        gateway = object.__new__(OpponentPredictionCoordinator)
         gateway._active = [first, second]
 
         gateway.prepare_reload("profile.first")
@@ -70,7 +70,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
         second = self._FakeGateway("profile.second")
         first.ready = True
         first.unloaded = False
-        gateway = object.__new__(OpponentAnalysisGateway)
+        gateway = object.__new__(OpponentPredictionCoordinator)
         gateway._active = [first, second]
 
         status = gateway.runtime_status()
@@ -85,7 +85,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
         second = self._FakeGateway("profile.second")
         first.ready = True
         first.unloaded = False
-        gateway = object.__new__(OpponentAnalysisGateway)
+        gateway = object.__new__(OpponentPredictionCoordinator)
         gateway._active = [first, second]
 
         latest = gateway.get_latest()
@@ -95,7 +95,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
         self.assertNotIn("profile.second", latest["predictions"]["opponents"])
 
     def test_shanten_contract_can_be_consumed_without_deal_in_output(self):
-        gateway = ShantenPredictorGateway(enabled_outputs=["opponent-shanten"])
+        gateway = OpponentPredictionGateway(enabled_outputs=["opponent-shanten"])
         try:
             players = gateway._validate_protocol_prediction(
                 {
@@ -126,7 +126,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
             gateway.shutdown()
 
     def test_deal_in_contract_can_be_consumed_without_shanten_output(self):
-        gateway = ShantenPredictorGateway(
+        gateway = OpponentPredictionGateway(
             enabled_outputs=["opponent-deal-in-probability"],
         )
         try:
@@ -155,7 +155,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
             gateway.shutdown()
 
     def test_partial_host_results_merge_without_overwriting_each_other(self):
-        combined = OpponentAnalysisGateway._merge_results([
+        combined = OpponentPredictionCoordinator._merge_results([
             {
                 "predictions": {"opponents": {"shimocha": [1.0]}, "ron_wait": {}},
                 "ground_truth": {"opponents": {}, "ron_wait": {}},

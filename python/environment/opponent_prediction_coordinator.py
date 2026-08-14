@@ -1,4 +1,4 @@
-"""Compose the opponent outputs selected in the host into one analysis source."""
+"""Coordinate and merge the opponent prediction outputs selected by the host."""
 from __future__ import annotations
 
 import copy
@@ -7,20 +7,20 @@ import json
 import threading
 from typing import Any, Callable, Dict, Optional
 
-from shanten_gateway import ShantenPredictorGateway
+from opponent_prediction_gateway import OpponentPredictionGateway
 
 
 SHANTEN_OUTPUT = "opponent-shanten"
 DEAL_IN_OUTPUT = "opponent-deal-in-probability"
 
 
-class OpponentAnalysisGateway:
+class OpponentPredictionCoordinator:
     """Use one engine instance per configured profile and merge its output blocks."""
 
     def __init__(self) -> None:
-        self._primary = ShantenPredictorGateway(enabled_outputs=[SHANTEN_OUTPUT])
-        self._secondary = ShantenPredictorGateway(enabled_outputs=[DEAL_IN_OUTPUT])
-        self._active: list[ShantenPredictorGateway] = []
+        self._primary = OpponentPredictionGateway(enabled_outputs=[SHANTEN_OUTPUT])
+        self._secondary = OpponentPredictionGateway(enabled_outputs=[DEAL_IN_OUTPUT])
+        self._active: list[OpponentPredictionGateway] = []
         self._activity_callback: Optional[Callable[[str, Optional[str]], None]] = None
         self._callback_lock = threading.Lock()
         self._primary.set_activity_callback(self._child_activity_changed)
@@ -56,7 +56,7 @@ class OpponentAnalysisGateway:
             self._active = [self._primary]
             return
 
-        active: list[ShantenPredictorGateway] = []
+        active: list[OpponentPredictionGateway] = []
         if shanten:
             self._primary.configure_profile(
                 **shanten,
@@ -78,7 +78,7 @@ class OpponentAnalysisGateway:
     def _gateways_for_profile(
         self,
         profile_id: Optional[str] = None,
-    ) -> list[ShantenPredictorGateway]:
+    ) -> list[OpponentPredictionGateway]:
         requested = str(profile_id or "")
         if not requested:
             return list(self._active)
@@ -88,7 +88,7 @@ class OpponentAnalysisGateway:
             if str(gateway.runtime_status().get("profileId") or "") == requested
         ]
 
-    def _request_gateways(self) -> list[ShantenPredictorGateway]:
+    def _request_gateways(self) -> list[OpponentPredictionGateway]:
         return [gateway for gateway in self._active if gateway.accepts_requests()]
 
     @staticmethod
@@ -134,7 +134,7 @@ class OpponentAnalysisGateway:
 
     def _combined_callback(
         self,
-        gateways: list[ShantenPredictorGateway],
+        gateways: list[OpponentPredictionGateway],
         callback: Optional[Callable[[Dict[str, Any]], None]],
     ) -> list[Callable[[Dict[str, Any]], None]]:
         if not callable(callback) or len(gateways) <= 1:

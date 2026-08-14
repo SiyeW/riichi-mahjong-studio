@@ -113,7 +113,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         with (
             mock.patch.object(service, "_auto_analysis_kind_enabled", return_value=False),
             mock.patch.object(service._BG_EXECUTOR, "submit") as submit,
-            mock.patch.object(service.SHANTEN_GATEWAY, "request_background_predict") as request,
+            mock.patch.object(service.OPPONENT_PREDICTIONS, "request_background_predict") as request,
         ):
             status = service.start_auto_analysis()
 
@@ -149,7 +149,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
                 side_effect=RuntimeError("模型加载失败"),
             ),
             mock.patch.object(service._BG_EXECUTOR, "submit", side_effect=submit_immediately),
-            mock.patch.object(service.SHANTEN_GATEWAY, "request_background_predict") as request,
+            mock.patch.object(service.OPPONENT_PREDICTIONS, "request_background_predict") as request,
         ):
             status = service.start_auto_analysis()
 
@@ -169,8 +169,8 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         self.assertTrue(service.get_node_legal_actions(game, node["id"]))
         with (
-            mock.patch.object(service.SHANTEN_GATEWAY, "has_request", return_value=False),
-            mock.patch.object(service.SHANTEN_GATEWAY, "request_predict") as request_predict,
+            mock.patch.object(service.OPPONENT_PREDICTIONS, "has_request", return_value=False),
+            mock.patch.object(service.OPPONENT_PREDICTIONS, "request_predict") as request_predict,
             mock.patch.object(service, "auto_analysis_owns_item", return_value=False),
             mock.patch.object(
                 service,
@@ -390,7 +390,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             },
         }
         with mock.patch.object(
-            service.DECISION_ENGINE_GATEWAY,
+            service.ACTION_RECOMMENDATIONS,
             "configure_profile",
         ) as configure:
             service.configure_action_recommendation_engine(config)
@@ -459,7 +459,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             mock.patch.object(service, "_run_auto_decision_item", return_value=decision_result),
             mock.patch.object(service._BG_EXECUTOR, "submit", side_effect=submit_immediately),
             mock.patch.object(
-                service.SHANTEN_GATEWAY,
+                service.OPPONENT_PREDICTIONS,
                 "request_background_predict",
                 side_effect=complete_shanten,
             ),
@@ -513,7 +513,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             mock.patch.object(service, "_auto_analysis_kind_enabled", return_value=True),
             mock.patch.object(service, "get_cached_mjai_stream_bundle", side_effect=prepare_stream),
             mock.patch.object(service, "_emit_auto_analysis_progress"),
-            mock.patch.object(service.SHANTEN_GATEWAY, "request_background_predict", return_value=True),
+            mock.patch.object(service.OPPONENT_PREDICTIONS, "request_background_predict", return_value=True),
         ):
             service._schedule_next_auto_analysis_item(1)
 
