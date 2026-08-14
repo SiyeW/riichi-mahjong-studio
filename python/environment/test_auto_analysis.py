@@ -471,7 +471,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         self.assertGreaterEqual(status["analyzed"], 2)
         node = game["nodes"][game["currentNodeId"]]
         self.assertTrue(node["analysisCache"])
-        self.assertTrue(node[service._SHANTEN_CACHE_FIELD])
+        self.assertTrue(node[service.OPPONENT_ANALYSIS_CACHE_FIELD])
 
     def test_scheduler_prepares_opponent_streams_without_holding_state_lock(self):
         game = service.create_empty_game(343434)

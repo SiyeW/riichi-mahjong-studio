@@ -191,14 +191,14 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         node["analysisCache"] = {
             f"v2::0::discard::{decision_identity}::decision-analysis-v1": decision_result,
         }
-        node[service._SHANTEN_CACHE_FIELD] = {
+        node[service.OPPONENT_ANALYSIS_CACHE_FIELD] = {
             "v3::0::public::best_model.pth:100:123": opponent_result,
         }
 
         service._migrate_analysis_cache_storage(game)
 
         self.assertEqual(node["analysisCache"], {})
-        self.assertEqual(node[service._SHANTEN_CACHE_FIELD], {})
+        self.assertEqual(node[service.OPPONENT_ANALYSIS_CACHE_FIELD], {})
         self.assertEqual(game[service._ANALYSIS_SOURCES_FIELD], {})
 
     def test_stale_result_remains_visible_until_current_result_succeeds(self):
@@ -269,7 +269,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "cacheKey": "o4::0::public::o-current",
             "cacheEpoch": service._SHANTEN_CACHE_EPOCH,
         }
-        node[service._SHANTEN_CACHE_FIELD] = {
+        node[service.OPPONENT_ANALYSIS_CACHE_FIELD] = {
             "o4::0::public::o-previous": {
                 "status": "ready",
                 "predictions": {"opponents": {"kamicha": [1.0]}, "ron_wait": {}},
@@ -318,7 +318,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "cacheKey": "o4::0::public::o-current",
             "cacheEpoch": service._SHANTEN_CACHE_EPOCH,
         }
-        node[service._SHANTEN_CACHE_FIELD] = {
+        node[service.OPPONENT_ANALYSIS_CACHE_FIELD] = {
             "o4::0::public::o-previous": {
                 "status": "ready",
                 "predictions": {"opponents": {"kamicha": [1.0]}, "ron_wait": {}},

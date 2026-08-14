@@ -3,6 +3,7 @@ import random
 import unittest
 from unittest.mock import patch
 
+import game_record_storage
 import service
 from service_helpers import (
     DORA_INDICATOR_POSITIONS,
@@ -38,7 +39,7 @@ class GameRecordFormatTests(unittest.TestCase):
             },
         }
 
-        self.assertTrue(service._migrate_tsumo_node_action_tiles(game))
+        self.assertTrue(game_record_storage.repair_tsumo_action_tiles(game))
         self.assertEqual(game["nodes"]["node"]["action"]["pai"], "3m")
 
     def test_legacy_terminal_nodes_keep_pre_settlement_table_scores(self):
@@ -108,7 +109,7 @@ class GameRecordFormatTests(unittest.TestCase):
         self.assertTrue(game["nodes"]["node"]["action"]["tsumogiri"])
 
     def test_serialized_record_omits_machine_local_runtime_details(self):
-        record = service._serialize_game_record_from_parts(
+        record = game_record_storage.serialize_game_record_parts(
             {"gameId": "test", "nodes": {}},
             {
                 "mode": "research",
@@ -132,7 +133,7 @@ class GameRecordFormatTests(unittest.TestCase):
         )
 
     def test_read_only_state_remains_in_game_metadata_without_a_redundant_record_type(self):
-        record = service._serialize_game_record_from_parts(
+        record = game_record_storage.serialize_game_record_parts(
             {"metadata": {"readOnly": True}, "nodes": {}},
             {
                 "mode": "research",
@@ -157,7 +158,7 @@ class GameRecordFormatTests(unittest.TestCase):
             "source": "local-legal-actions",
         }
 
-        record = service._serialize_game_record_from_parts(
+        record = game_record_storage.serialize_game_record_parts(
             game,
             {
                 "mode": "research",
@@ -220,7 +221,7 @@ class GameRecordFormatTests(unittest.TestCase):
         game = service.create_empty_game(999)
         game["nodes"]["n_root"]["snapshot"]["actionHistory"] = [{"type": "old"}]
         game["nodes"]["n_1"]["snapshot"]["actionHistory"] = [{"type": "start_kyoku"}]
-        record = service._serialize_game_record_from_parts(
+        record = game_record_storage.serialize_game_record_parts(
             game,
             {
                 "mode": "play",
@@ -263,7 +264,7 @@ class GameRecordFormatTests(unittest.TestCase):
                 "b": {"snapshot": snapshot(121, 1)},
             },
         }
-        record = service._serialize_game_record_from_parts(
+        record = game_record_storage.serialize_game_record_parts(
             game,
             {
                 "mode": "research",
@@ -281,7 +282,7 @@ class GameRecordFormatTests(unittest.TestCase):
             self.assertNotIn("wall", node["snapshot"])
             self.assertIn("wallState", node["snapshot"])
 
-        service._hydrate_round_walls_from_record(stored_game)
+        game_record_storage.hydrate_round_walls(stored_game)
         first = stored_game["nodes"]["a"]["snapshot"]
         second = stored_game["nodes"]["b"]["snapshot"]
         self.assertEqual(first["fullWall"], wall)
@@ -308,17 +309,17 @@ class GameRecordFormatTests(unittest.TestCase):
             },
         }
 
-        service._hydrate_round_walls_from_record(game)
+        game_record_storage.hydrate_round_walls(game)
 
         snapshot = game["nodes"]["a"]["snapshot"]
         self.assertEqual(snapshot["doraIndicatorStack"], tuple(
-            legacy_wall[index] for index in service._LEGACY_DORA_INDICATOR_POSITIONS
+            legacy_wall[index] for index in game_record_storage._LEGACY_DORA_INDICATOR_POSITIONS
         ))
         self.assertEqual(snapshot["uraIndicatorStack"], tuple(
-            legacy_wall[index] for index in service._LEGACY_URA_INDICATOR_POSITIONS
+            legacy_wall[index] for index in game_record_storage._LEGACY_URA_INDICATOR_POSITIONS
         ))
         self.assertEqual(snapshot["rinshanWall"], tuple(
-            legacy_wall[index] for index in service._LEGACY_RINSHAN_DRAW_POSITIONS
+            legacy_wall[index] for index in game_record_storage._LEGACY_RINSHAN_DRAW_POSITIONS
         ))
 
     def test_legacy_inline_wall_layout_is_migrated_before_resaving(self):
@@ -326,18 +327,18 @@ class GameRecordFormatTests(unittest.TestCase):
         snapshot = {
             "fullWall": legacy_wall,
             "wall": legacy_wall[:122],
-            "rinshanWall": tuple(legacy_wall[index] for index in service._LEGACY_RINSHAN_DRAW_POSITIONS),
+            "rinshanWall": tuple(legacy_wall[index] for index in game_record_storage._LEGACY_RINSHAN_DRAW_POSITIONS),
             "doraIndicatorStack": tuple(
-                legacy_wall[index] for index in service._LEGACY_DORA_INDICATOR_POSITIONS
+                legacy_wall[index] for index in game_record_storage._LEGACY_DORA_INDICATOR_POSITIONS
             ),
             "uraIndicatorStack": tuple(
-                legacy_wall[index] for index in service._LEGACY_URA_INDICATOR_POSITIONS
+                legacy_wall[index] for index in game_record_storage._LEGACY_URA_INDICATOR_POSITIONS
             ),
             "kyokuState": {"fullWall": legacy_wall},
         }
         game = {"nodes": {"a": {"snapshot": snapshot}}}
 
-        service._hydrate_round_walls_from_record(game)
+        game_record_storage.hydrate_round_walls(game)
 
         converted = snapshot["fullWall"]
         self.assertEqual(
@@ -370,7 +371,7 @@ class GameRecordFormatTests(unittest.TestCase):
                 },
             },
         }
-        record = service._serialize_game_record_from_parts(
+        record = game_record_storage.serialize_game_record_parts(
             game,
             {
                 "mode": "research",
@@ -383,7 +384,7 @@ class GameRecordFormatTests(unittest.TestCase):
         self.assertEqual(snapshot["wallState"], {"incomplete": True, "liveEnd": 122})
         self.assertNotIn("wall", snapshot)
 
-        service._hydrate_round_walls_from_record(record["game"])
+        game_record_storage.hydrate_round_walls(record["game"])
         self.assertEqual(len(snapshot["wall"]), 122)
         self.assertEqual(snapshot["fullWall"], ())
 
@@ -400,7 +401,7 @@ class GameRecordFormatTests(unittest.TestCase):
             snapshot = service.STATE["game"]["nodes"][node_id]["snapshot"]
             self.assertEqual(snapshot["wallOrigin"], "imported")
 
-            record = service._serialize_game_record_from_parts(
+            record = game_record_storage.serialize_game_record_parts(
                 service.STATE["game"],
                 {
                     "mode": "research",

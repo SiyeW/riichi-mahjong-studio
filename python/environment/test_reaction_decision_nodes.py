@@ -2,6 +2,7 @@ import copy
 import unittest
 from unittest import mock
 
+import game_record_storage
 import service
 
 
@@ -427,7 +428,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         with mock.patch.object(service, "can_resolve_hora_reaction", return_value=False):
             service._advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
         pass_id = game["nodes"][discard_id]["mainChildId"]
-        record = service._serialize_game_record_from_parts(
+        record = game_record_storage.serialize_game_record_parts(
             copy.deepcopy(game),
             {
                 "mode": "play",
@@ -437,7 +438,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         )
 
         restored = record["game"]
-        service._hydrate_game_structure_from_record(restored, record["formatVersion"])
+        game_record_storage.hydrate_game_structure(restored, record["formatVersion"])
 
         self.assertEqual(restored["nodes"][pass_id]["type"], "decision")
         self.assertTrue(restored["nodes"][pass_id]["isDecision"])
