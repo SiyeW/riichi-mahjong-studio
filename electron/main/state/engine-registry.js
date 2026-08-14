@@ -107,52 +107,9 @@ function normalizeEngineSettings(source = {}, _legacyModels = null, catalog = {}
   }
 }
 
-function assignedProfile(engineSettings, outputId) {
+function getAssignedProfile(engineSettings, outputId) {
   const profileId = String(engineSettings.outputAssignments?.[outputId] || '')
   return engineSettings.profiles.find((profile) => profile.id === profileId) || null
-}
-
-function modelWeight(profile) {
-  return profile?.weights?.find((weight) => weight.slotId === 'model') || null
-}
-
-function runtimeProfile(profile) {
-  const weight = modelWeight(profile)
-  return {
-    profileId: String(profile?.id || ''),
-    engineId: String(profile?.engineId || ''),
-    engineVersion: String(profile?.engineVersion || ''),
-    enginePath: String(profile?.enginePath || ''),
-    engineCommand: Array.isArray(profile?.engineCommand) ? [...profile.engineCommand] : [],
-    engineCwd: String(profile?.engineCwd || ''),
-    engineOptions: { ...(profile?.options || {}) },
-    modelPath: String(weight?.path || ''),
-    modelId: '',
-    modelFormat: String(weight?.format || ''),
-    modelSha256: '',
-    device: String(profile?.device || ''),
-  }
-}
-
-function buildRuntimeModels(engineSettings) {
-  const decision = assignedProfile(engineSettings, 'action-recommendation')
-  const shanten = assignedProfile(engineSettings, 'opponent-shanten')
-  const dealIn = assignedProfile(engineSettings, 'opponent-deal-in-probability')
-  const decisionModel = runtimeProfile(decision)
-  return {
-    teachingModel: { ...decisionModel },
-    opponentModel: { ...decisionModel },
-    opponentAnalysis: {
-      ...runtimeProfile(shanten || dealIn),
-      inputModes: ['public'],
-    },
-    opponentShanten: runtimeProfile(shanten),
-    opponentDealInProbability: runtimeProfile(dealIn),
-  }
-}
-
-function getAssignedProfile(engineSettings, outputId) {
-  return assignedProfile(engineSettings, outputId)
 }
 
 function buildBuiltInProfiles() {
@@ -170,7 +127,6 @@ function migrateLegacyProfiles(source, _legacyModels, catalog) {
 module.exports = {
   SUPPORTED_OUTPUTS,
   buildBuiltInProfiles,
-  buildRuntimeModels,
   getAssignedProfile,
   migrateLegacyProfiles,
   normalizeEngineSettings,

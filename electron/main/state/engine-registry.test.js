@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 
-const { buildRuntimeModels, normalizeEngineSettings } = require('./engine-registry')
+const { normalizeEngineSettings } = require('./engine-registry')
 
 function testFreshRegistryIsEmpty() {
   const engines = normalizeEngineSettings()
@@ -11,9 +11,6 @@ function testFreshRegistryIsEmpty() {
     'opponent-shanten': '',
     'opponent-deal-in-probability': '',
   })
-  const runtime = buildRuntimeModels(engines)
-  assert.equal(runtime.teachingModel.engineId, '')
-  assert.equal(runtime.opponentAnalysis.engineId, '')
 }
 
 function testInstalledPackageRefreshesProfileIdentity() {
