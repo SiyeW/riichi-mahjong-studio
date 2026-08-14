@@ -5,17 +5,18 @@ const { pathToFileURL } = require('node:url')
 const {
   app,
   BrowserWindow,
-  clipboard,
   dialog,
   ipcMain,
   net,
   protocol,
   shell,
 } = require('electron')
+const { registerApplicationIpc } = require('./ipc/application-ipc')
+const { createEngineIpcController } = require('./ipc/engine-ipc')
+const { registerSettingsIpc } = require('./ipc/settings-ipc')
 const { createEnvironmentService } = require('./services/environment-service')
 const { buildRuntimeMetrics } = require('./runtime-metrics')
-const { buildSettings, loadSettings, saveSettings } = require('./state/settings')
-const { discoverEnginePackages } = require('./state/engine-package-registry')
+const { loadSettings, saveSettings } = require('./state/settings')
 const { discoverSoundPacks, resolveSoundPackFile } = require('./state/sound-pack-registry')
 const { createSessionStore } = require('./state/session-store')
 const { createGameFileStore } = require('./state/game-file-store')
@@ -75,20 +76,6 @@ function registerSoundProtocol() {
   })
 }
 
-const APP_LEGAL_DOCUMENTS = Object.freeze({
-  license: 'LICENSE',
-  thirdPartyNotices: 'THIRD_PARTY_NOTICES.md',
-})
-
-async function openLocalDocument(filePath) {
-  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-    throw new Error('声明文件不存在，请检查安装是否完整')
-  }
-  const errorMessage = await shell.openPath(filePath)
-  if (errorMessage) throw new Error(errorMessage)
-  return true
-}
-
 const environmentBackend = createEnvironmentService(appOptions)
 const sessionStore = createSessionStore(environmentBackend.environmentGateway)
 const gameFileStore = createGameFileStore(portableRoot)
@@ -99,6 +86,14 @@ let startupRecoveryAttempted = false
 let publishedRecordDirty = false
 let closeRequestSerial = 0
 let runtimeMetricsBackendError = ''
+
+const engineIpcController = createEngineIpcController({
+  ipcMain,
+  appOptions,
+  projectRoot,
+  environmentGateway: environmentBackend.environmentGateway,
+  getMainWindow: () => mainWindow,
+})
 
 function publishRecordDirty(force = false) {
   const dirty = gameFileStore.isDirty()
@@ -129,27 +124,6 @@ async function collectRuntimeMetrics() {
     backendMetrics,
     systemMemory: process.getSystemMemoryInfo(),
   })
-}
-
-function saveLoadedEngineProfileState(profileId, loaded) {
-  const settings = loadSettings(appOptions)
-  const loadedProfileIds = new Set(settings.engines.loadedProfileIds || [])
-  if (loaded) loadedProfileIds.add(profileId)
-  else loadedProfileIds.delete(profileId)
-  settings.engines.loadedProfileIds = [...loadedProfileIds]
-  saveSettings(settings, appOptions)
-  return settings
-}
-
-async function restoreLoadedEngineProfiles() {
-  const settings = loadSettings(appOptions)
-  for (const profileId of settings.engines.loadedProfileIds || []) {
-    try {
-      await environmentBackend.environmentGateway.reloadEngine(profileId)
-    } catch (error) {
-      console.error(`[engine] failed to restore ${profileId}:`, error)
-    }
-  }
 }
 
 function beginRecordTracking({ dirty, nodeId = null }) {
@@ -490,7 +464,7 @@ function startStartupServices() {
   }
   startupServicesStarted = true
   environmentBackend.startAll()
-  void restoreLoadedEngineProfiles()
+  void engineIpcController.restoreLoadedProfiles()
 }
 
 function openMainWindow() {
@@ -500,151 +474,17 @@ function openMainWindow() {
 }
 
 function registerIpcHandlers() {
-  ipcMain.handle('settings:get', () => buildSettings(loadSettings(appOptions), appOptions))
+  registerSettingsIpc(ipcMain, appOptions)
+  registerApplicationIpc({
+    ipcMain,
+    appOptions,
+    resourceRoot,
+    collectRuntimeMetrics,
+  })
+  engineIpcController.register()
   ipcMain.handle('record:dirty-get', () => gameFileStore.isDirty())
 
-  ipcMain.handle('settings:save', (event, patch) => {
-    const current = loadSettings(appOptions)
-    const next = {
-      ...current,
-      ...patch,
-      modeDefaults: {
-        ...current.modeDefaults,
-        ...(patch?.modeDefaults || {}),
-      },
-      display: {
-        ...current.display,
-        ...(patch?.display || {}),
-      },
-      records: {
-        ...current.records,
-        ...(patch?.records || {}),
-      },
-      audio: {
-        ...current.audio,
-        ...(patch?.audio || {}),
-      },
-      window: {
-        ...current.window,
-        ...(patch?.window || {}),
-      },
-    }
-    saveSettings(next, appOptions)
-    return buildSettings(next, appOptions)
-  })
-
-  ipcMain.handle('engine:describe', async (event, profile) => {
-    const enginePath = String(profile?.enginePath || '')
-    const request = {
-      ...(profile || {}),
-      engineCommand: Array.isArray(profile?.engineCommand) && profile.engineCommand.length
-        ? profile.engineCommand.map(String)
-        : (enginePath ? [enginePath] : []),
-      engineCwd: String(profile?.engineCwd || '') || (enginePath ? path.dirname(enginePath) : ''),
-    }
-    const response = await environmentBackend.environmentGateway.describeEngine(request)
-    return response.description
-  })
-
-  ipcMain.handle('engine:choose-file', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择引擎文件',
-      properties: ['openFile'],
-      filters: [
-        { name: '引擎', extensions: ['exe', 'py'] },
-        { name: '所有文件', extensions: ['*'] },
-      ],
-    })
-    return result.canceled ? '' : String(result.filePaths[0] || '')
-  })
-
-  ipcMain.handle('engine:choose-weight', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '选择权重文件',
-      properties: ['openFile'],
-      filters: [
-        { name: '模型权重', extensions: ['pth', 'pt', 'onnx', 'bin'] },
-        { name: '所有文件', extensions: ['*'] },
-      ],
-    })
-    return result.canceled ? '' : String(result.filePaths[0] || '')
-  })
-
-  ipcMain.handle('engine:activate', async (event, payload) => {
-    const profileId = String(payload?.profileId || '')
-    if (!profileId) throw new Error('没有选择要加载的引擎')
-    const previous = loadSettings(appOptions)
-    const engines = JSON.parse(JSON.stringify(payload?.engines || previous.engines))
-    const profiles = engines.profiles
-    const profile = Array.isArray(profiles)
-      ? profiles.find((item) => item?.id === profileId)
-      : null
-    if (!profile) throw new Error('找不到要加载的引擎配置')
-    const enginePath = path.isAbsolute(profile.enginePath || '')
-      ? profile.enginePath
-      : path.resolve(projectRoot, profile.enginePath || '')
-    if (!enginePath || !fs.existsSync(enginePath)) {
-      throw new Error('引擎文件不存在')
-    }
-    for (const weight of profile.weights || []) {
-      const weightPath = path.isAbsolute(weight.path || '')
-        ? weight.path
-        : path.resolve(projectRoot, weight.path || '')
-      if (!weightPath || !fs.existsSync(weightPath)) {
-        throw new Error(`权重文件不存在：${weight.slotId || '未命名槽位'}`)
-      }
-    }
-    const assignedOutputs = Object.entries(engines.outputAssignments || {})
-      .filter(([, assignedProfileId]) => assignedProfileId === profileId)
-      .map(([outputId]) => outputId)
-    if (!assignedOutputs.length) throw new Error('尚未给这个引擎分配输出')
-    const attempted = { ...previous, engines }
-    saveSettings(attempted, appOptions)
-    const response = await environmentBackend.environmentGateway.reloadEngine(profileId)
-    if (assignedOutputs.includes('action-recommendation')) {
-      if (response?.reload?.errors?.decision) {
-        throw new Error(String(response.reload.errors.decision))
-      }
-      if (!response?.reload?.warmed?.teachingAnalysis) {
-        throw new Error('动作推荐未能完成加载')
-      }
-    }
-    if (assignedOutputs.some((outputId) => outputId !== 'action-recommendation')) {
-      if (response?.reload?.errors?.['opponent-analysis']) {
-        throw new Error(String(response.reload.errors['opponent-analysis']))
-      }
-      if (!response?.reload?.warmed?.opponentAnalysis) {
-        throw new Error('对手预测未能完成加载')
-      }
-    }
-    return buildSettings(saveLoadedEngineProfileState(profileId, true), appOptions)
-  })
-
-  ipcMain.handle('engine:unload', async (event, payload) => {
-    const profileId = String(payload?.profileId || '')
-    const engines = loadSettings(appOptions).engines
-    const assignedOutputs = Object.entries(engines.outputAssignments || {})
-      .filter(([, assignedProfileId]) => assignedProfileId === profileId)
-      .map(([outputId]) => outputId)
-    let state = null
-    if (assignedOutputs.includes('action-recommendation')) {
-      state = (await environmentBackend.environmentGateway.unloadEngine('decision', profileId)).state
-    }
-    if (
-      assignedOutputs.includes('opponent-shanten')
-      || assignedOutputs.includes('opponent-deal-in-probability')
-    ) {
-      state = (await environmentBackend.environmentGateway.unloadEngine('opponent-analysis', profileId)).state
-    }
-    const settings = saveLoadedEngineProfileState(profileId, false)
-    return {
-      state,
-      settings: buildSettings(settings, appOptions),
-    }
-  })
-
   ipcMain.handle('status:get', () => sessionStore.getSnapshot())
-  ipcMain.handle('system:runtime-metrics', () => collectRuntimeMetrics())
   ipcMain.handle('game:view', async () => {
     const response = await environmentBackend.environmentGateway.getGameView()
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
@@ -720,38 +560,6 @@ function registerIpcHandlers() {
     return response
   })
   ipcMain.handle('debug:latest-mjai', () => environmentBackend.environmentGateway.getLatestMjaiDebug())
-  ipcMain.handle('clipboard:read-text', () => clipboard.readText())
-  ipcMain.handle('clipboard:write-text', (event, text) => {
-    clipboard.writeText(String(text || ''))
-    return { ok: true }
-  })
-  ipcMain.handle('system:open-external', async (event, value) => {
-    const target = new URL(String(value || ''))
-    if (target.protocol !== 'https:' && target.protocol !== 'http:') {
-      throw new Error('仅允许打开网页链接')
-    }
-    await shell.openExternal(target.toString())
-    return true
-  })
-  ipcMain.handle('legal:open-app-document', async (event, documentId) => {
-    const fileName = APP_LEGAL_DOCUMENTS[String(documentId || '')]
-    if (!fileName) throw new Error('未知的声明文件')
-    return openLocalDocument(path.join(resourceRoot, fileName))
-  })
-  ipcMain.handle('legal:open-engine-document', async (event, payload) => {
-    const field = payload?.kind === 'license'
-      ? 'licenses'
-      : payload?.kind === 'notice'
-        ? 'notices'
-        : ''
-    if (!field) throw new Error('未知的引擎声明类型')
-    const engineId = String(payload?.engineId || '')
-    const documentIndex = Number(payload?.index)
-    const engine = discoverEnginePackages(appOptions).engines.find((item) => item.id === engineId)
-    const document = Number.isInteger(documentIndex) ? engine?.[field]?.[documentIndex] : null
-    if (!document?.available) throw new Error('引擎声明文件不存在')
-    return openLocalDocument(document.resolvedPath)
-  })
   ipcMain.handle('game:save', () => saveGame())
   ipcMain.handle('game:save-as', () => saveGameAs())
   ipcMain.handle('game:open', () => openGame())
