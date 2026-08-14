@@ -17,7 +17,14 @@ try:
 except ModuleNotFoundError:
     psutil = None
 
-from decision_adapter import analyze_action_choices, analyze_discard_choices, choose_ai_action, get_and_reset_ai_thinking_time_s, get_latest_mjai_debug, get_response_ms_by_seat, set_thinking_time_bounds, to_relative_model_path
+from action_recommendation_adapter import (
+    analyze_action_choices,
+    analyze_discard_choices,
+    choose_ai_action,
+    get_and_reset_ai_thinking_time_s,
+    get_latest_action_recommendation_debug,
+    set_thinking_time_bounds,
+)
 from action_recommendation_gateway import ActionRecommendationGateway
 from engine_assignments import profiles_by_output, resolve_engine_assignments
 from engine_runtime import EngineRuntimeRegistry
@@ -1673,7 +1680,7 @@ def emit(payload):
 
 
 def get_decision_response_ms():
-    response_times = get_response_ms_by_seat()
+    response_times = [0.0, 0.0, 0.0, 0.0]
     analysis_ms = ACTION_RECOMMENDATIONS.average_response_ms()
     if analysis_ms > 0:
         response_times[STATE["controlledSeat"] % 4] = analysis_ms
@@ -9477,7 +9484,7 @@ def handle_command(request_id, command, payload):
             return build_response(request_id, command)
 
         if command == "get_latest_mjai_debug":
-            return build_response(request_id, command, {"debug": get_latest_mjai_debug()})
+            return build_response(request_id, command, {"debug": get_latest_action_recommendation_debug()})
 
         if command == "get_shanten":
             return build_response(request_id, command, get_current_shanten_analysis())

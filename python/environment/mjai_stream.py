@@ -2,11 +2,11 @@
 
 This module is the single source of truth for converting the environment's
 internal actionHistory into the mjai-protocol event list consumed by:
-- external decision-engine inference (decision_adapter)
+- external decision-engine inference (action_recommendation_adapter)
 - pure-Python host rule state reconstruction (rule_kernel)
 
 Previously, build_mjai_stream() and build_start_kyoku_event() were duplicated
-across settlement.py and decision_adapter.py with subtle differences and missing
+across settlement.py and action_recommendation_adapter.py with subtle differences and missing
 hora/ryukyoku handlers.  This module eliminates both problems.
 """
 

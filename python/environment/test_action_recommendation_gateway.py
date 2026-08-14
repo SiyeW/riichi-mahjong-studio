@@ -6,7 +6,11 @@ import unittest
 from pathlib import Path
 
 from action_recommendation_gateway import ActionRecommendationGateway
-from decision_adapter import analyze_discard_choices, choose_ai_action
+from action_recommendation_adapter import (
+    analyze_discard_choices,
+    choose_ai_action,
+    get_latest_action_recommendation_debug,
+)
 
 
 class ActionRecommendationGatewayTest(unittest.TestCase):
@@ -227,6 +231,9 @@ class ActionRecommendationGatewayTest(unittest.TestCase):
                     accumulate_thinking=False,
                 )
                 self.assertEqual(action["pai"], "2m")
+                debug = get_latest_action_recommendation_debug()
+                self.assertEqual(debug["caller"], "choose_ai_action")
+                self.assertEqual(debug["result"]["bestCandidateId"], "discard:2m")
             finally:
                 gateway.shutdown()
 

@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from engine_process_client import EngineProcessClient
 from engine_runtime import initialize_engine_client
-from decision_adapter import to_relative_model_path
+from action_recommendation_adapter import resolve_engine_weight_path
 
 
 class ActionRecommendationGateway:
@@ -261,9 +261,6 @@ class ActionRecommendationGateway:
         self._last_fingerprint = self.cache_identity(model_path)
         return result
 
-    def uses_generic_protocol(self) -> bool:
-        return self._external_engine
-
     @staticmethod
     def _validate_generic_result(
         result: Dict[str, Any],
@@ -370,7 +367,7 @@ class ActionRecommendationGateway:
             raise RuntimeError("generic decision protocol is only used by external engines")
         if not legal_actions:
             raise ValueError("decision engine requires at least one legal candidate")
-        resolved_model_path = to_relative_model_path(str(model_path))
+        resolved_model_path = resolve_engine_weight_path(str(model_path))
         initializing = resolved_model_path not in self._ready_models
         self._set_activity(player_id, "loading" if initializing else "running")
         started_at = time.perf_counter()
@@ -449,7 +446,7 @@ class ActionRecommendationGateway:
             return self._expected_sha256
         if not model_path:
             return "unknown"
-        path = Path(to_relative_model_path(str(model_path))).resolve()
+        path = Path(resolve_engine_weight_path(str(model_path))).resolve()
         try:
             stat = path.stat()
             cached = self._model_hash_cache
@@ -612,7 +609,7 @@ class ActionRecommendationGateway:
         model_path = self._configured_model_path
         ready = bool(
             model_path
-            and to_relative_model_path(str(model_path)) in self._ready_models
+            and resolve_engine_weight_path(str(model_path)) in self._ready_models
         )
         return {
             "profileId": self._profile_id,
@@ -680,7 +677,7 @@ class ActionRecommendationGateway:
         with self._lock:
             if self._error_latched or self._unloaded:
                 return False
-        resolved_model_path = to_relative_model_path(str(model_path))
+        resolved_model_path = resolve_engine_weight_path(str(model_path))
         key = resolved_model_path
         if key in self._ready_models:
             return True
