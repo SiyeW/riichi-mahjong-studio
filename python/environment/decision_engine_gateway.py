@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from engine_process_client import EngineProcessClient
+from engine_runtime import initialize_engine_client
 from decision_adapter import to_relative_model_path
 
 
@@ -177,75 +178,23 @@ class DecisionEngineGateway:
         self._set_activity(self._active_seat, "idle")
 
     def _initialize(self, model_path: str, timeout: float) -> Dict[str, Any]:
-        hello = self._client.describe()
         initialized_weights = self._configured_weights or [{
             "slotId": "model",
             "format": self._model_format,
             "path": model_path,
         }]
-        output_contracts = hello.get("outputContracts") or []
-        action_contract = next(
-            (
-                output
-                for output in output_contracts
-                if isinstance(output, dict)
-                and output.get("id") == self._OUTPUT["id"]
-                and output.get("version") == self._OUTPUT["version"]
-            ),
-            None,
-        )
-        if action_contract is None:
-            raise RuntimeError("engine does not provide action-recommendation version 1")
-        slots = {
-            str(slot.get("id") or ""): slot
-            for slot in hello.get("weightSlots") or []
-            if isinstance(slot, dict)
-        }
-        configured_by_slot = {
-            weight["slotId"]: weight for weight in initialized_weights
-        }
-        for slot_id, weight in configured_by_slot.items():
-            slot = slots.get(slot_id)
-            formats = slot.get("formats") if isinstance(slot, dict) else None
-            if not isinstance(formats, list) or not any(
-                isinstance(item, dict) and item.get("id") == weight["format"]
-                for item in formats
-            ):
-                raise RuntimeError(f"engine does not accept the configured {slot_id} weight")
-        for slot_id, slot in slots.items():
-            required = slot.get("requiredForOutputs") or []
-            if any(
-                item.get("id") == self._OUTPUT["id"]
-                and item.get("version") == self._OUTPUT["version"]
-                for item in required
-                if isinstance(item, dict)
-            ) and slot_id not in configured_by_slot:
-                raise RuntimeError(f"engine requires the {slot_id} weight")
-        device_types = [
-            str(item.get("type") or "")
-            for item in hello.get("devices") or []
-            if isinstance(item, dict) and item.get("type")
-        ]
-        selected_device = self._device if self._device in device_types else ""
-        if not selected_device:
-            selected_device = device_types[0] if device_types else ""
-        if not selected_device:
-            raise RuntimeError("engine did not declare a usable device")
-        result = self._client.initialize(
-            [dict(self._OUTPUT)],
-            [dict(weight) for weight in initialized_weights],
-            device=selected_device,
+        initialization = initialize_engine_client(
+            self._client,
+            enabled_outputs=[dict(self._OUTPUT)],
+            weights=initialized_weights,
+            device_preference=self._device,
             options=self._engine_options,
             timeout=timeout,
         )
-        outputs = result.get("outputs")
-        if not isinstance(outputs, list) or len(outputs) != 1:
-            raise RuntimeError("engine initialization returned unexpected outputs")
-        initialized_output = outputs[0]
-        if not isinstance(initialized_output, dict) or any(
-            initialized_output.get(key) != value for key, value in self._OUTPUT.items()
-        ):
-            raise RuntimeError("engine did not initialize action-recommendation version 1")
+        output_key = (self._OUTPUT["id"], self._OUTPUT["version"])
+        result = initialization.result
+        action_contract = initialization.contracts[output_key]
+        initialized_output = initialization.outputs[output_key]
         metrics = initialized_output.get("metrics")
         self._action_metrics = [dict(item) for item in metrics] if isinstance(metrics, list) else []
         self._primary_metric_id = str(initialized_output.get("primaryMetricId") or "")
@@ -301,7 +250,7 @@ class DecisionEngineGateway:
             ):
                 raise RuntimeError("decision engine initialized an invalid recommendationMetricId")
         self._effective_options = dict(result.get("effectiveOptions") or {})
-        self._actual_device = str((result.get("device") or {}).get("type") or selected_device)
+        self._actual_device = initialization.device
         self._last_fingerprint = ""
         self._last_fingerprint = self.cache_identity(model_path)
         return result

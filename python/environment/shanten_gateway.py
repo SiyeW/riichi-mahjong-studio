@@ -14,6 +14,7 @@ from typing import Any, Callable, Dict, Optional
 import numpy as np
 
 from engine_process_client import EngineProcessClient  # noqa: E402
+from engine_runtime import initialize_engine_client
 
 TILE34_NAMES = [
     *(f"{number}m" for number in range(1, 10)),
@@ -480,90 +481,29 @@ class ShantenPredictorGateway:
             return True
         self._set_activity("loading")
         try:
-            hello = self._process_client.describe()
-            contracts = {
-                (str(output.get("id") or ""), output.get("version")): output
-                for output in hello.get("outputContracts") or []
-                if isinstance(output, dict)
-            }
             requested_outputs = self._requested_output_contracts()
-            for output in requested_outputs:
-                if (output["id"], output["version"]) not in contracts:
-                    raise RuntimeError(
-                        f"engine does not provide {output['id']} version {output['version']}"
-                    )
-            slots = {
-                str(slot.get("id") or ""): slot
-                for slot in hello.get("weightSlots") or []
-                if isinstance(slot, dict)
-            }
-            configured_by_slot = {
-                weight["slotId"]: weight for weight in self._configured_weights
-            }
-            for slot_id, weight in configured_by_slot.items():
-                slot = slots.get(slot_id)
-                formats = slot.get("formats") if isinstance(slot, dict) else None
-                if not isinstance(formats, list) or not any(
-                    isinstance(item, dict) and item.get("id") == weight["format"]
-                    for item in formats
-                ):
-                    raise RuntimeError(f"engine does not accept the configured {slot_id} weight")
-            requested_keys = {
-                (output["id"], output["version"]) for output in requested_outputs
-            }
-            for slot_id, slot in slots.items():
-                required = slot.get("requiredForOutputs") or []
-                if any(
-                    (item.get("id"), item.get("version")) in requested_keys
-                    for item in required
-                    if isinstance(item, dict)
-                ) and slot_id not in configured_by_slot:
-                    raise RuntimeError(f"engine requires the {slot_id} weight")
-            device_types = [
-                str(item.get("type") or "")
-                for item in hello.get("devices") or []
-                if isinstance(item, dict) and item.get("type")
-            ]
-            selected_device = (
-                self._device_preference
-                if self._device_preference in device_types
-                else (device_types[0] if device_types else "")
-            )
-            if not selected_device:
-                raise RuntimeError("engine did not declare a usable device")
-            result = self._process_client.initialize(
-                requested_outputs,
-                [dict(weight) for weight in self._configured_weights],
-                device=selected_device,
+            initialization = initialize_engine_client(
+                self._process_client,
+                enabled_outputs=requested_outputs,
+                weights=self._configured_weights,
+                device_preference=self._device_preference,
                 options=self._engine_options,
                 timeout=180,
             )
-            outputs = result.get("outputs")
-            actual_outputs = {
-                (str(output.get("id") or ""), output.get("version"))
-                for output in outputs or []
-                if isinstance(output, dict)
-            }
-            expected_outputs = {
-                (output["id"], output["version"])
-                for output in requested_outputs
-            }
-            if actual_outputs != expected_outputs:
-                raise RuntimeError("engine initialization returned unexpected outputs")
             revealed_supported = all(
-                bool(contracts[(output["id"], output["version"])].get("supportsRevealedHands"))
-                and bool(next(
-                    item.get("supportsRevealedHands")
-                    for item in outputs
-                    if item.get("id") == output["id"] and item.get("version") == output["version"]
-                ))
+                bool(initialization.contracts[
+                    (output["id"], output["version"])
+                ].get("supportsRevealedHands"))
+                and bool(initialization.outputs[
+                    (output["id"], output["version"])
+                ].get("supportsRevealedHands"))
                 for output in requested_outputs
             )
             self._supported_input_modes = (
                 ("public", "full-information") if revealed_supported else ("public",)
             )
-            self._effective_options = dict(result.get("effectiveOptions") or {})
-            self._actual_device = str((result.get("device") or {}).get("type") or selected_device)
+            self._effective_options = dict(initialization.result.get("effectiveOptions") or {})
+            self._actual_device = initialization.device
             self._engine_fingerprint = ""
             self._engine_fingerprint = self.cache_identity()
             self._model_ready = True
