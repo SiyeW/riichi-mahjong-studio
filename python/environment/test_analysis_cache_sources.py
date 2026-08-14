@@ -35,26 +35,14 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         self.assertEqual(service._quantize_shanten_probability(0.00124), 0.0012)
 
     def test_empty_engine_commands_remain_unconfigured(self):
-        defaults = service.get_default_models_config()
         decision_command = service._resolve_configured_engine_command(
             {
                 "engineCommand": [],
-                "modelPath": "legacy-model.pth",
+                "enginePath": "",
             },
-            defaults["teachingModel"],
-            kind="decision",
-        )
-        opponent_command = service._resolve_configured_engine_command(
-            {
-                "engineCommand": [],
-                "modelPath": "legacy-shanten-model.pth",
-            },
-            defaults["opponentAnalysis"],
-            kind="opponent-analysis",
         )
 
         self.assertEqual(decision_command, [])
-        self.assertEqual(opponent_command, [])
 
     def test_regular_view_command_does_not_reconfigure_engines(self):
         previous_game = service.STATE["game"]
@@ -63,8 +51,8 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         service.STATE["gameLoaded"] = False
         try:
             with (
-                mock.patch.object(service, "configure_decision_engine_from_config") as decision_configure,
-                mock.patch.object(service, "configure_opponent_analysis_engine_from_config") as opponent_configure,
+                mock.patch.object(service, "configure_action_recommendation_engine") as decision_configure,
+                mock.patch.object(service, "configure_opponent_prediction_engines") as opponent_configure,
             ):
                 service.handle_command("test", "get_game_view", {})
             decision_configure.assert_not_called()
@@ -73,27 +61,41 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             service.STATE["game"] = previous_game
             service.STATE["gameLoaded"] = previous_loaded
 
-    def test_saved_model_draft_does_not_replace_runtime_model_path(self):
-        previous_runtime = service._RUNTIME_MODELS_CONFIG
-        service._RUNTIME_MODELS_CONFIG = {
-            **service.get_default_models_config(),
-            "teachingModel": {"modelPath": "loaded-model.pth"},
+    def test_saved_engine_draft_does_not_replace_runtime_weight_path(self):
+        previous_runtime = service._RUNTIME_ENGINE_SETTINGS
+        service._RUNTIME_ENGINE_SETTINGS = {
+            "profiles": [{
+                "id": "profile.loaded",
+                "weights": [{
+                    "slotId": "model",
+                    "format": "example",
+                    "path": "C:\\loaded-model.pth",
+                }],
+            }],
+            "outputAssignments": {
+                "action-recommendation": "profile.loaded",
+            },
         }
         try:
             with mock.patch.object(
                 service,
                 "load_project_config",
-                return_value={"models": {"teachingModel": {"modelPath": "draft-model.pth"}}},
+                return_value={"engines": {
+                    "profiles": [{
+                        "id": "profile.draft",
+                        "weights": [{"slotId": "model", "path": "C:\\draft-model.pth"}],
+                    }],
+                    "outputAssignments": {
+                        "action-recommendation": "profile.draft",
+                    },
+                }},
             ):
-                self.assertEqual(service.get_teaching_model_path(), "loaded-model.pth")
+                self.assertEqual(service.get_action_engine_weight_path(), "C:\\loaded-model.pth")
         finally:
-            service._RUNTIME_MODELS_CONFIG = previous_runtime
+            service._RUNTIME_ENGINE_SETTINGS = previous_runtime
 
-    def test_engine_profiles_are_the_runtime_model_source(self):
+    def test_engine_profiles_are_resolved_directly_by_output(self):
         config = {
-            "models": {
-                "teachingModel": {"modelPath": "stale-model.pth"},
-            },
             "engines": {
                 "profiles": [
                     {
@@ -103,7 +105,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
                         "weights": [{
                             "slotId": "model",
                             "format": "decision-onnx",
-                            "path": "decision.onnx",
+                            "path": "C:\\decision.onnx",
                         }],
                         "options": {"temperature": 0.75},
                     },
@@ -114,7 +116,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
                         "weights": [{
                             "slotId": "model",
                             "format": "opponent-onnx",
-                            "path": "opponent.onnx",
+                            "path": "C:\\opponent.onnx",
                         }],
                         "options": {"threads": 2},
                     },
@@ -127,13 +129,13 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             },
         }
 
-        models = service._models_config_from_project_config(config)
+        action = service._gateway_profile(config, "action-recommendation")
+        opponent = service._gateway_profile(config, "opponent-shanten")
 
-        self.assertEqual(models["teachingModel"]["modelPath"], "decision.onnx")
-        self.assertEqual(models["opponentModel"]["modelPath"], "decision.onnx")
-        self.assertEqual(models["teachingModel"]["temperature"], 0.75)
-        self.assertEqual(models["opponentAnalysis"]["modelPath"], "opponent.onnx")
-        self.assertEqual(models["opponentAnalysis"]["engineOptions"], {"threads": 2})
+        self.assertEqual(action["model_path"], "C:\\decision.onnx")
+        self.assertEqual(action["engine_options"], {"temperature": 0.75})
+        self.assertEqual(opponent["model_path"], "C:\\opponent.onnx")
+        self.assertEqual(opponent["engine_options"], {"threads": 2})
 
     def test_unrecognized_cache_keys_are_discarded(self):
         game = service.create_empty_game(101010)

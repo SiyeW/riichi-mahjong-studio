@@ -19,7 +19,7 @@ except ModuleNotFoundError:
 
 from decision_adapter import analyze_action_choices, analyze_discard_choices, choose_ai_action, get_and_reset_ai_thinking_time_s, get_latest_mjai_debug, get_response_ms_by_seat, set_thinking_time_bounds, to_relative_model_path
 from decision_engine_gateway import DecisionEngineGateway
-from engine_assignments import profiles_by_output
+from engine_assignments import profiles_by_output, resolve_engine_assignments
 from opponent_gateway import OpponentAnalysisGateway
 from shanten_gateway import get_latest_shanten_mjai
 from mjai_stream import build_mjai_events_from_actions, build_mjai_stream
@@ -116,7 +116,7 @@ _PROJECT_CONFIG_LOCK = threading.Lock()
 _ENGINE_CONFIG_LOCK = threading.Lock()
 _PROJECT_CONFIG_SIGNATURE = None
 _PROJECT_CONFIG_VALUE = {}
-_RUNTIME_MODELS_CONFIG = None
+_RUNTIME_ENGINE_SETTINGS = None
 _MJAI_STREAM_CACHE = {}
 _MJAI_STREAM_CACHE_MAX = 64
 _LEGAL_ACTIONS_CACHE = {}
@@ -158,7 +158,7 @@ def debug_flow(message):
 
 def prewarm_runtime(profile_id=""):
     requested_profile_id = str(profile_id or "")
-    teaching_model_path = get_teaching_model_path()
+    action_weight_path = get_action_engine_weight_path()
     warmed = {
         "teachingAnalysis": False,
         "teachingPlay": False,
@@ -183,7 +183,7 @@ def prewarm_runtime(profile_id=""):
         if not DECISION_ENGINE_GATEWAY.runtime_status().get("profileId"):
             return False, None
         try:
-            ready = DECISION_ENGINE_GATEWAY.prewarm(0, teaching_model_path)
+            ready = DECISION_ENGINE_GATEWAY.prewarm(0, action_weight_path)
             error = (
                 None
                 if ready
@@ -294,7 +294,6 @@ def load_project_config():
                 "training",
                 "modeDefaults",
                 "audio",
-                "models",
                 "engines",
             ):
                 if key in user:
@@ -846,29 +845,24 @@ _NODE_COMMENT_MAX_LENGTH = 20_000
 
 def _analysis_source_display_name(kind):
     config = load_project_config()
-    models = _models_config_from_project_config(config)
-    config_key = "teachingModel" if kind == "decision" else "opponentAnalysis"
-    selected = models.get(config_key) if isinstance(models, dict) else None
-    selected = selected if isinstance(selected, dict) else {}
-    engines = config.get("engines") if isinstance(config, dict) else None
-    profiles = engines.get("profiles") if isinstance(engines, dict) else None
-    profile_name = next(
-        (
-            str(profile.get("name") or "")
-            for profile in (profiles or [])
-            if isinstance(profile, dict)
-            and str(profile.get("id") or "") == str(selected.get("profileId") or "")
-        ),
-        "",
+    output_ids = (
+        {"action-recommendation"}
+        if kind == "decision"
+        else {"opponent-shanten", "opponent-deal-in-probability"}
     )
-    return str(
-        selected.get("displayName")
-        or selected.get("name")
-        or profile_name
-        or selected.get("modelId")
-        or selected.get("engineId")
-        or kind
-    )
+    names = []
+    for assignment in resolve_engine_assignments(config):
+        if not output_ids.intersection(assignment["outputs"]):
+            continue
+        profile = assignment["profile"]
+        name = str(
+            profile.get("name")
+            or profile.get("engineId")
+            or assignment["profileId"]
+        )
+        if name and name not in names:
+            names.append(name)
+    return " + ".join(names) or str(kind)
 
 
 def _build_analysis_source(
@@ -1362,157 +1356,14 @@ def get_current_shanten_analysis():
     }
 
 
-def get_default_models_config():
-    empty_decision = {
-        "engine": "",
-        "profileId": "",
-        "engineId": "",
-        "engineVersion": "",
-        "modelId": "",
-        "modelFormat": "",
-        "modelSha256": "",
-        "modelPath": "",
-        "weights": [],
-        "engineCommand": [],
-        "engineCwd": "",
-        "engineOptions": {},
-        "temperature": 1,
-    }
-    empty_opponent = {
-        "profileId": "",
-        "engineId": "",
-        "engineVersion": "",
-        "modelId": "",
-        "modelFormat": "",
-        "modelSha256": "",
-        "modelPath": "",
-        "weights": [],
-        "inputModes": ["public"],
-        "engineCommand": [],
-        "engineCwd": "",
-        "engineOptions": {},
-    }
-    return {
-        "teachingModel": copy.deepcopy(empty_decision),
-        "opponentModel": copy.deepcopy(empty_decision),
-        "opponentAnalysis": copy.deepcopy(empty_opponent),
-        "opponentShanten": copy.deepcopy(empty_opponent),
-        "opponentDealInProbability": copy.deepcopy(empty_opponent),
-    }
+def _runtime_engine_config():
+    if isinstance(_RUNTIME_ENGINE_SETTINGS, dict):
+        return {"engines": _RUNTIME_ENGINE_SETTINGS}
+    return load_project_config()
 
 
-def _models_config_from_project_config(config):
-    models = config.get("models") if isinstance(config, dict) else None
-    models = models if isinstance(models, dict) else {}
-    defaults = get_default_models_config()
-    merged = {
-        "teachingModel": {
-            **defaults["teachingModel"],
-            **(models.get("teachingModel") or {}),
-        },
-        "opponentModel": {
-            **defaults["opponentModel"],
-            **(models.get("opponentModel") or {}),
-        },
-        "opponentAnalysis": {
-            **defaults["opponentAnalysis"],
-            **(models.get("opponentAnalysis") or {}),
-        },
-        "opponentShanten": {
-            **defaults["opponentShanten"],
-            **(models.get("opponentShanten") or {}),
-        },
-        "opponentDealInProbability": {
-            **defaults["opponentDealInProbability"],
-            **(models.get("opponentDealInProbability") or {}),
-        },
-    }
-    engines = config.get("engines") if isinstance(config, dict) else None
-    if not isinstance(engines, dict):
-        return merged
-
-    output_profiles = profiles_by_output(config)
-
-    def model_from_profile(profile, base, *, opponent_analysis=False):
-        if not isinstance(profile, dict):
-            return base
-        options = profile.get("options")
-        options = options if isinstance(options, dict) else {}
-        options = copy.deepcopy(options)
-        if profile.get("device"):
-            options["device"] = str(profile.get("device"))
-        weights = profile.get("weights")
-        weights = weights if isinstance(weights, list) else []
-        model_weight = next(
-            (
-                weight
-                for weight in weights
-                if isinstance(weight, dict) and str(weight.get("slotId") or "") == "model"
-            ),
-            next((weight for weight in weights if isinstance(weight, dict)), {}),
-        )
-        engine_path = str(profile.get("enginePath") or "")
-        engine_command = profile.get("engineCommand")
-        if not isinstance(engine_command, list):
-            engine_command = [engine_path] if engine_path else []
-        result = {
-            **base,
-            "profileId": str(profile.get("id") or ""),
-            "engine": str(profile.get("engineId") or ""),
-            "engineId": str(profile.get("engineId") or ""),
-            "engineVersion": str(profile.get("engineVersion") or ""),
-            "enginePath": engine_path,
-            "engineCommand": [str(value) for value in engine_command],
-            "engineCwd": str(profile.get("engineCwd") or ""),
-            "engineOptions": copy.deepcopy(options),
-            "modelId": "",
-            "modelFormat": str(model_weight.get("format") or ""),
-            "modelSha256": "",
-            "modelPath": str(model_weight.get("path") or ""),
-            "weights": copy.deepcopy(weights),
-        }
-        if opponent_analysis:
-            input_modes = profile.get("inputModes")
-            if isinstance(input_modes, list):
-                result["inputModes"] = [str(value) for value in input_modes]
-        else:
-            try:
-                result["temperature"] = float(options.get("temperature", 1))
-            except (TypeError, ValueError):
-                result["temperature"] = 1
-        return result
-
-    decision = output_profiles.get("action-recommendation")
-    opponent_shanten = output_profiles.get("opponent-shanten")
-    opponent_deal_in = output_profiles.get("opponent-deal-in-probability")
-    if decision:
-        decision_model = model_from_profile(decision, merged["teachingModel"])
-        merged["teachingModel"] = decision_model
-        merged["opponentModel"] = copy.deepcopy(decision_model)
-    if opponent_shanten:
-        merged["opponentShanten"] = model_from_profile(
-            opponent_shanten,
-            merged["opponentShanten"],
-            opponent_analysis=True,
-        )
-    if opponent_deal_in:
-        merged["opponentDealInProbability"] = model_from_profile(
-            opponent_deal_in,
-            merged["opponentDealInProbability"],
-            opponent_analysis=True,
-        )
-    merged["opponentAnalysis"] = copy.deepcopy(
-        merged["opponentShanten"]
-        if opponent_shanten
-        else merged["opponentDealInProbability"]
-    )
-    return merged
-
-
-def get_models_config():
-    if isinstance(_RUNTIME_MODELS_CONFIG, dict):
-        return _RUNTIME_MODELS_CONFIG
-    return _models_config_from_project_config(load_project_config())
+def _assigned_engine_profile(config, output_id):
+    return profiles_by_output(config).get(str(output_id or ""))
 
 
 def normalize_training_mode(mode):
@@ -1551,34 +1402,22 @@ def get_training_config():
     return merged
 
 
-def get_opponent_model_path(seat):
-    models_config = get_models_config()
-    model_path = str(
-        models_config["opponentModel"].get("modelPath")
-        or get_default_models_config()["opponentModel"]["modelPath"]
+def get_action_engine_weight_path():
+    profile = _assigned_engine_profile(
+        _runtime_engine_config(),
+        "action-recommendation",
     )
-    return _resolve_engine_resource_path(model_path) if getattr(sys, "frozen", False) else model_path
-
-
-def get_teaching_model_path():
-    models_config = get_models_config()
-    model_path = str(
-        models_config["teachingModel"].get("modelPath")
-        or get_default_models_config()["teachingModel"]["modelPath"]
+    weights = profile.get("weights") if isinstance(profile, dict) else None
+    weights = weights if isinstance(weights, list) else []
+    weight = next(
+        (
+            item
+            for item in weights
+            if isinstance(item, dict) and str(item.get("slotId") or "") == "model"
+        ),
+        next((item for item in weights if isinstance(item, dict)), {}),
     )
-    return _resolve_engine_resource_path(model_path) if getattr(sys, "frozen", False) else model_path
-
-
-def _read_model_metadata(model_path):
-    path = Path(to_relative_model_path(str(model_path or "")))
-    metadata_path = path.with_name("model.json")
-    try:
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {}
-    if str(metadata.get("file") or "") != path.name:
-        return {}
-    return metadata
+    return _resolve_engine_resource_path(weight.get("path") or "")
 
 
 def _resolve_engine_resource_path(path_value):
@@ -1593,8 +1432,7 @@ def _resolve_engine_resource_path(path_value):
     return str(Path(__file__).resolve().parents[2] / path)
 
 
-def _resolve_configured_engine_command(selected, _defaults, *, kind):
-    del kind
+def _resolve_configured_engine_command(selected):
     raw_command = selected.get("engineCommand")
     if isinstance(raw_command, list) and raw_command and str(raw_command[0] or ""):
         return [
@@ -1616,123 +1454,85 @@ def _resolve_configured_engine_cwd(selected, command):
     return str(Path(command[0]).resolve().parent) if command else None
 
 
-def configure_decision_engine_from_config(config):
-    defaults = get_default_models_config()["teachingModel"]
-    models = _models_config_from_project_config(config)
-    selected = models.get("teachingModel") if isinstance(models, dict) else None
-    selected = selected if isinstance(selected, dict) else {}
-    model_path = _resolve_engine_resource_path(
-        selected.get("modelPath") or defaults["modelPath"]
-    )
-    metadata = _read_model_metadata(model_path)
-    engine_command = _resolve_configured_engine_command(
-        selected,
-        defaults,
-        kind="decision",
-    )
-    DECISION_ENGINE_GATEWAY.configure_profile(
-        profile_id=str(
-            selected.get("profileId")
-            or defaults["profileId"]
-        ),
-        engine_id=str(
-            selected.get("engineId")
-            or metadata.get("engineId")
-            or defaults["engineId"]
-        ),
-        engine_version=str(
-            selected.get("engineVersion") or defaults["engineVersion"]
-        ),
-        model_id=str(
-            selected.get("modelId")
-            or metadata.get("id")
-            or defaults["modelId"]
-        ),
-        model_format=str(
-            selected.get("modelFormat")
-            or metadata.get("format")
-            or defaults["modelFormat"]
-        ),
-        expected_sha256=str(
-            selected.get("modelSha256")
-            or metadata.get("sha256")
-            or ""
-        ),
-        model_path=model_path,
-        weights=(
-            selected.get("weights")
-            if isinstance(selected.get("weights"), list)
-            else []
-        ),
-        engine_command=engine_command,
-        engine_cwd=_resolve_configured_engine_cwd(selected, engine_command),
-        engine_options=(
-            selected.get("engineOptions")
-            if isinstance(selected.get("engineOptions"), dict)
-            else {}
-        ),
-    )
-
-
-def configure_opponent_analysis_engine_from_config(config):
-    models = _models_config_from_project_config(config)
-    defaults = get_default_models_config()
-
-    def gateway_profile(config_key):
-        selected = models.get(config_key) if isinstance(models, dict) else None
-        selected = selected if isinstance(selected, dict) else {}
-        if not str(selected.get("profileId") or ""):
-            return None
-        base = defaults[config_key]
-        engine_command = _resolve_configured_engine_command(
-            selected,
-            base,
-            kind="opponent",
-        )
-        return {
-            "profile_id": str(selected.get("profileId") or ""),
-            "engine_id": str(selected.get("engineId") or ""),
-            "engine_version": str(selected.get("engineVersion") or ""),
-            "model_id": str(selected.get("modelId") or ""),
-            "model_format": str(selected.get("modelFormat") or ""),
-            "model_path": _resolve_engine_resource_path(selected.get("modelPath") or ""),
-            "weights": [
-                {
-                    "slotId": str(weight.get("slotId") or ""),
-                    "format": str(weight.get("format") or ""),
-                    "path": _resolve_engine_resource_path(weight.get("path") or ""),
-                }
-                for weight in (selected.get("weights") or [])
-                if isinstance(weight, dict)
-            ],
-            "expected_sha256": str(selected.get("modelSha256") or ""),
-            "input_modes": ["public"],
-            "engine_command": engine_command,
-            "engine_cwd": _resolve_configured_engine_cwd(selected, engine_command),
-            "engine_options": (
-                selected.get("engineOptions")
-                if isinstance(selected.get("engineOptions"), dict)
-                else {}
-            ),
+def _gateway_profile(config, output_id):
+    profile = _assigned_engine_profile(config, output_id)
+    if not isinstance(profile, dict):
+        return None
+    weights = [
+        {
+            "slotId": str(weight.get("slotId") or ""),
+            "format": str(weight.get("format") or ""),
+            "path": _resolve_engine_resource_path(weight.get("path") or ""),
         }
+        for weight in (profile.get("weights") or [])
+        if isinstance(weight, dict)
+    ]
+    primary_weight = next(
+        (weight for weight in weights if weight["slotId"] == "model"),
+        weights[0] if weights else {},
+    )
+    profile_options = profile.get("options")
+    options = copy.deepcopy(profile_options) if isinstance(profile_options, dict) else {}
+    if profile.get("device"):
+        options["device"] = str(profile.get("device"))
+    engine_command = _resolve_configured_engine_command(profile)
+    return {
+        "profile_id": str(profile.get("id") or ""),
+        "engine_id": str(profile.get("engineId") or ""),
+        "engine_version": str(profile.get("engineVersion") or ""),
+        "model_id": "",
+        "model_format": str(primary_weight.get("format") or ""),
+        "model_path": str(primary_weight.get("path") or ""),
+        "weights": weights,
+        "expected_sha256": "",
+        "engine_command": engine_command,
+        "engine_cwd": _resolve_configured_engine_cwd(profile, engine_command),
+        "engine_options": options,
+    }
 
+
+def configure_action_recommendation_engine(config):
+    selected = _gateway_profile(config, "action-recommendation") or {}
+    DECISION_ENGINE_GATEWAY.configure_profile(
+        profile_id=str(selected.get("profile_id") or ""),
+        engine_id=str(selected.get("engine_id") or ""),
+        engine_version=str(selected.get("engine_version") or ""),
+        model_id=str(selected.get("model_id") or ""),
+        model_format=str(selected.get("model_format") or ""),
+        expected_sha256=str(selected.get("expected_sha256") or ""),
+        model_path=str(selected.get("model_path") or "") or None,
+        weights=selected.get("weights") or [],
+        engine_command=selected.get("engine_command") or [],
+        engine_cwd=selected.get("engine_cwd"),
+        engine_options=selected.get("engine_options") or {},
+    )
+
+
+def configure_opponent_prediction_engines(config):
+    shanten = _gateway_profile(config, "opponent-shanten")
+    deal_in = _gateway_profile(config, "opponent-deal-in-probability")
+    if shanten:
+        shanten["input_modes"] = ["public"]
+    if deal_in:
+        deal_in["input_modes"] = ["public"]
     SHANTEN_GATEWAY.configure_profiles(
-        gateway_profile("opponentShanten"),
-        gateway_profile("opponentDealInProbability"),
+        shanten,
+        deal_in,
     )
 
 
 def apply_runtime_engine_config(config=None, *, invalidate=False):
     global _ACTIVE_DECISION_SOURCE_ID, _ACTIVE_SHANTEN_SOURCE_ID
     global _DECISION_CACHE_EPOCH, _SHANTEN_CACHE_EPOCH
-    global _RUNTIME_MODELS_CONFIG
+    global _RUNTIME_ENGINE_SETTINGS
 
     with _ENGINE_CONFIG_LOCK:
         config = config if isinstance(config, dict) else load_project_config()
-        configure_decision_engine_from_config(config)
-        configure_opponent_analysis_engine_from_config(config)
+        configure_action_recommendation_engine(config)
+        configure_opponent_prediction_engines(config)
 
-        _RUNTIME_MODELS_CONFIG = _models_config_from_project_config(config)
+        engines = config.get("engines") if isinstance(config, dict) else None
+        _RUNTIME_ENGINE_SETTINGS = copy.deepcopy(engines) if isinstance(engines, dict) else {}
 
         decision_source_id = _current_decision_analysis_source()["id"]
         shanten_source_id = _current_shanten_analysis_source()["id"]
@@ -4198,7 +3998,7 @@ def _submit_background_analysis(current_node, snapshot):
         return None
 
     seat = STATE["controlledSeat"]
-    model_path = get_teaching_model_path()
+    model_path = get_action_engine_weight_path()
     stream_bundle = get_cached_mjai_stream_bundle(game, node_id, seat)
     submitted_at = time.perf_counter()
     cache_epoch = _DECISION_CACHE_EPOCH
@@ -4444,7 +4244,7 @@ def resolve_analysis_for_current_node(current_node, snapshot, legal_actions):
             DECISION_ANALYSIS_GATEWAY,
             snapshot,
             STATE["controlledSeat"],
-            get_teaching_model_path(),
+            get_action_engine_weight_path(),
             mjai_events=stream_bundle["events"],
             mjai_prefix_hashes=stream_bundle["prefixHashes"],
             mjai_events_hash=stream_bundle["eventHash"],
@@ -4462,7 +4262,7 @@ def resolve_analysis_for_current_node(current_node, snapshot, legal_actions):
             DECISION_ANALYSIS_GATEWAY,
             snapshot,
             STATE["controlledSeat"],
-            get_teaching_model_path(),
+            get_action_engine_weight_path(),
             mjai_events=stream_bundle["events"],
             mjai_prefix_hashes=stream_bundle["prefixHashes"],
             mjai_events_hash=stream_bundle["eventHash"],
@@ -4646,7 +4446,7 @@ def get_auto_analysis_status(*, include_timeline=True):
         game = STATE.get("game")
         game_loaded = STATE.get("gameLoaded") and isinstance(game, dict)
         seat = int(STATE.get("controlledSeat", 0))
-        model_path = get_teaching_model_path() if game_loaded else ""
+        model_path = get_action_engine_weight_path() if game_loaded else ""
         with _AUTO_ANALYSIS_LOCK:
             status = copy.deepcopy(_AUTO_ANALYSIS_STATE)
             if not game_loaded:
@@ -5384,7 +5184,7 @@ def start_auto_analysis():
     cancel_auto_analysis(emit_progress=False)
     game = STATE["game"]
     seat = int(STATE["controlledSeat"])
-    model_path = get_teaching_model_path()
+    model_path = get_action_engine_weight_path()
     items = _build_auto_analysis_plan(game, seat, model_path)
     cached_count = sum(1 for item in items if item["cached"])
     pending = deque(
@@ -6506,7 +6306,7 @@ def resolve_discard_tsumogiri(snapshot, actor, tile, requested=None):
 
 def choose_ai_discard(snapshot, actor):
     sync_snapshot_state(snapshot)
-    model_path = get_opponent_model_path(actor)
+    model_path = get_action_engine_weight_path()
     can_use_drawn_tile_options = actor_just_drew(snapshot, actor)
     response = choose_ai_action_for_current_node(snapshot, actor, model_path)
     requested_tsumogiri = response.get("tsumogiri") if isinstance(response.get("tsumogiri"), bool) else None
@@ -6732,7 +6532,7 @@ def build_kan_reaction_window(snapshot):
     reaction_thinking_time_s = 0.0
 
     for seat in seats_in_order:
-        model_path = get_opponent_model_path(seat)
+        model_path = get_action_engine_weight_path()
         try:
             response = choose_ai_action_for_snapshot(snapshot, seat, model_path, accumulate_thinking=False)
         except Exception as error:  # pylint: disable=broad-except
@@ -6849,7 +6649,7 @@ def evaluate_reactions(snapshot):
         if seat == STATE["controlledSeat"]:
             response = {"type": "none", "actor": seat, "variant": "none", "label": "Pass"}
         else:
-            model_path = get_opponent_model_path(seat)
+            model_path = get_action_engine_weight_path()
             try:
                 response = choose_ai_action_for_snapshot(snapshot, seat, model_path, accumulate_thinking=False)
             except Exception as error:  # pylint: disable=broad-except
@@ -7756,7 +7556,7 @@ def advance_game_flow(game):
         if current_snapshot["currentActor"] == STATE["controlledSeat"]:
             return
         actor = current_snapshot["currentActor"]
-        model_path = get_opponent_model_path(actor)
+        model_path = get_action_engine_weight_path()
         response = choose_ai_action_for_current_node(current_snapshot, actor, model_path)
         debug_flow(f"[FLOW] advance reach_declaration AI actor={actor} response_type={response.get('type')} pai={response.get('pai')}")
 
@@ -8414,7 +8214,7 @@ def start_play_prefetch():
             "generation": generation,
             "gameId": game.get("gameId"),
             "seat": int(STATE["controlledSeat"]),
-            "modelPath": get_teaching_model_path(),
+            "modelPath": get_action_engine_weight_path(),
             "opponentInputMode": _get_opponent_analysis_input_mode(),
             "draftGame": draft_game,
             "steps": deque(),
@@ -9117,7 +8917,7 @@ def create_game():
     _BG_EXECUTOR.submit(
         DECISION_ENGINE_GATEWAY.prewarm,
         STATE["controlledSeat"],
-        get_teaching_model_path(),
+        get_action_engine_weight_path(),
     )
 
 

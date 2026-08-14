@@ -99,7 +99,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         items = service._build_auto_analysis_plan(
             game,
             0,
-            service.get_teaching_model_path(),
+            service.get_action_engine_weight_path(),
         )
         passive_kinds = [item["kind"] for item in items if item["nodeId"] == passive_id]
 
@@ -331,7 +331,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             0.25,
         )
 
-    def test_packaged_config_uses_user_engine_and_model_selection(self):
+    def test_packaged_config_uses_user_engine_selection(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             backend_root = root / "backend"
@@ -339,12 +339,14 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             backend_root.mkdir()
             portable_root.mkdir()
             (backend_root / "config.json").write_text(
-                '{"models":{"teachingModel":{"modelPath":"built-in.pth"}}}',
+                '{"engines":{"profiles":[],"outputAssignments":{}}}',
                 encoding="utf-8",
             )
             (portable_root / "config.json").write_text(
-                '{"models":{"teachingModel":{"modelPath":"selected.pth"}},'
-                '"engines":{"schemaVersion":2,"profiles":[],"outputAssignments":{"action-recommendation":"profile.custom"}}}',
+                '{"engines":{"schemaVersion":2,"profiles":[{'
+                '"id":"profile.custom","weights":[{"slotId":"model",'
+                '"format":"example","path":"selected.pth"}]}],'
+                '"outputAssignments":{"action-recommendation":"profile.custom"}}}',
                 encoding="utf-8",
             )
             with (
@@ -360,46 +362,48 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             service._PROJECT_CONFIG_VALUE = {}
 
         self.assertEqual(
-            config["models"]["teachingModel"]["modelPath"],
-            "selected.pth",
-        )
-        self.assertEqual(
             config["engines"]["outputAssignments"]["action-recommendation"],
             "profile.custom",
         )
+        self.assertEqual(
+            config["engines"]["profiles"][0]["weights"][0]["path"],
+            "selected.pth",
+        )
 
-    def test_decision_profile_identity_falls_back_to_model_metadata(self):
-        with tempfile.TemporaryDirectory() as directory:
-            model_path = Path(directory) / "model.bin"
-            model_path.write_bytes(b"test")
-            model_path.with_name("model.json").write_text(
-                '{"file":"model.bin","id":"example.decision-model.default",'
-                '"engineId":"example.decision-engine",'
-                '"format":"example-checkpoint",'
-                '"sha256":"7b47dffe5a003dc83a95df9440f9ec9e24dd62d6e3aa026246a81fff59f7fd05"}',
-                encoding="utf-8",
-            )
-            config = {
-                "models": {
-                    "teachingModel": {
-                        "modelPath": str(model_path),
-                    },
+    def test_action_engine_configuration_comes_from_assigned_profile(self):
+        config = {
+            "engines": {
+                "profiles": [{
+                    "id": "profile.custom",
+                    "engineId": "example.decision-engine",
+                    "engineVersion": "2.0.0",
+                    "enginePath": "C:\\engine.exe",
+                    "weights": [{
+                        "slotId": "model",
+                        "format": "example-checkpoint",
+                        "path": "C:\\model.bin",
+                    }],
+                }],
+                "outputAssignments": {
+                    "action-recommendation": "profile.custom",
                 },
-            }
-            with mock.patch.object(
-                service.DECISION_ENGINE_GATEWAY,
-                "configure_profile",
-            ) as configure:
-                service.configure_decision_engine_from_config(config)
+            },
+        }
+        with mock.patch.object(
+            service.DECISION_ENGINE_GATEWAY,
+            "configure_profile",
+        ) as configure:
+            service.configure_action_recommendation_engine(config)
 
         self.assertEqual(
-            configure.call_args.kwargs["model_id"],
-            "example.decision-model.default",
+            configure.call_args.kwargs["profile_id"],
+            "profile.custom",
         )
         self.assertEqual(
-            configure.call_args.kwargs["expected_sha256"],
-            "7b47dffe5a003dc83a95df9440f9ec9e24dd62d6e3aa026246a81fff59f7fd05",
+            configure.call_args.kwargs["engine_id"],
+            "example.decision-engine",
         )
+        self.assertEqual(configure.call_args.kwargs["model_path"], "C:\\model.bin")
 
     def test_hidden_and_ground_truth_streams_are_cached_separately(self):
         game = service.create_empty_game(232323)
