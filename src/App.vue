@@ -1463,63 +1463,7 @@
       </section>
     </div>
 
-    <div v-if="showAboutPanel" class="settings-modal-backdrop">
-      <section class="settings-modal about-modal">
-        <div class="settings-modal-header">
-          <h2>关于</h2>
-          <div class="settings-modal-actions">
-            <button class="settings-btn-secondary" @click="showAboutPanel = false">关闭</button>
-          </div>
-        </div>
-        <div class="about-brand">
-          <div>
-            <strong>Riichi Mahjong Studio</strong>
-            <span>立直麻将研究室</span>
-          </div>
-        </div>
-        <div class="about-grid">
-          <div class="about-item">
-            <span class="about-label">当前版本</span>
-            <span class="about-value">{{ appVersion }}</span>
-          </div>
-          <div class="about-item">
-            <span class="about-label">主程序许可证</span>
-            <span class="about-value">Apache License 2.0</span>
-            <div class="about-document-actions">
-              <button class="settings-btn-secondary" @click="openAppLegalDocument('license')">查看许可证全文</button>
-              <button class="settings-btn-secondary" @click="openAppLegalDocument('thirdPartyNotices')">查看第三方声明</button>
-            </div>
-            <small class="about-legal-note">完整版权归属、来源版本与修改说明以第三方声明为准。</small>
-          </div>
-          <div class="about-item about-links">
-            <span class="about-label">第三方开源项目</span>
-            <div class="about-link-list">
-              <div class="about-link-row">
-                <a href="https://github.com/killerducky/killer_mortal_gui" @click.prevent="openExternalLink('https://github.com/killerducky/killer_mortal_gui')">killerducky/killer_mortal_gui</a>
-                <span class="about-link-license">MIT</span>
-              </div>
-              <div class="about-link-row">
-                <a href="https://github.com/FluffyStuff/riichi-mahjong-tiles" @click.prevent="openExternalLink('https://github.com/FluffyStuff/riichi-mahjong-tiles')">FluffyStuff/riichi-mahjong-tiles</a>
-                <span class="about-link-license">CC0 1.0</span>
-              </div>
-              <div class="about-link-row">
-                <a href="https://github.com/MahjongRepository/mahjong" @click.prevent="openExternalLink('https://github.com/MahjongRepository/mahjong')">MahjongRepository/mahjong</a>
-                <span class="about-link-license">MIT</span>
-              </div>
-            </div>
-          </div>
-          <div class="about-item about-links">
-            <span class="about-label">项目维护者</span>
-            <div class="about-link-list">
-              <div class="about-link-row">
-                <a href="https://github.com/SiyeW" @click.prevent="openExternalLink('https://github.com/SiyeW')">SiyeW</a>
-                <span class="about-link-license">GitHub</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
+    <AboutDialog v-if="showAboutPanel" @close="showAboutPanel = false" />
   </div>
 
   <!-- 对手分析浮动窗口 -->
@@ -1610,8 +1554,8 @@
 </template>
 
 <script setup lang="ts">
-import packageJson from '../package.json'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
+import AboutDialog from './components/AboutDialog.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import ShantenPieChart from './components/ShantenPieChart.vue'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
@@ -2836,7 +2780,6 @@ function startDragFloatingPanel(e: MouseEvent) {
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
 }
-const appVersion = String(packageJson.version || '')
 const wallClipboardMessage = ref('')
 const quickTrainingModes = [
   { value: 'no_review', label: '关闭' },
@@ -6715,12 +6658,6 @@ async function showRecordInFolder() {
 function openExternalLink(url: string) {
   void window.trainerAPI?.openExternal(url).catch((error) => {
     console.error('Failed to open external link:', error)
-  })
-}
-
-function openAppLegalDocument(documentId: 'license' | 'thirdPartyNotices') {
-  void window.trainerAPI?.openAppLegalDocument(documentId).catch((error) => {
-    console.error('Failed to open application legal document:', error)
   })
 }
 

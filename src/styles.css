@@ -2934,100 +2934,10 @@ body {
   font-family: "Cascadia Mono", "Microsoft YaHei UI", monospace;
 }
 
-.about-modal {
-  width: min(calc(43.75rem * var(--ui-scale)), 92vw);
-}
-
-.about-brand {
-  display: flex;
-  align-items: center;
-  gap: calc(0.8rem * var(--chrome-scale));
-  margin-bottom: calc(0.9rem * var(--chrome-scale));
-}
-
-.about-logo {
-  width: calc(3.5rem * var(--ui-scale));
-  height: calc(3.5rem * var(--ui-scale));
-  object-fit: contain;
-}
-
-.about-brand > div {
-  display: grid;
-  gap: calc(0.12rem * var(--chrome-scale));
-}
-
-.about-brand span {
-  color: var(--text-dim);
-  font-size: var(--ui-font-xs);
-  letter-spacing: 0.12em;
-}
-
-.about-brand strong {
-  color: var(--text-main);
-  font-size: var(--ui-font-xl);
-  line-height: 1.15;
-}
-
-.about-grid {
-  display: grid;
-  gap: calc(0.75rem * var(--chrome-scale));
-}
-
-.about-item {
-  display: grid;
-  gap: calc(0.22rem * var(--chrome-scale));
-}
-
-.about-label {
-  font-size: var(--ui-font-md);
-  color: var(--text-dim);
-}
-
-.about-value {
-  min-height: calc(1.1rem * var(--chrome-scale));
-  font-size: var(--ui-font-lg);
-  color: var(--text-main);
-}
-
-.about-link-list {
-  display: grid;
-  gap: calc(0.22rem * var(--chrome-scale));
-}
-
-.about-link-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: calc(0.8rem * var(--chrome-scale));
-}
-
-.about-link-list a {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: calc(0.8rem * var(--chrome-scale));
-  color: rgba(197, 243, 233, 0.95);
-  text-decoration: none;
-  font-size: var(--ui-font-lg);
-}
-
-.about-link-license {
-  flex: 0 0 auto;
-  color: var(--text-dim);
-  font-size: var(--ui-font-lg);
-}
-
-.about-document-actions,
 .engine-legal-actions {
   display: flex;
   flex-wrap: wrap;
   gap: calc(0.35rem * var(--chrome-scale));
-}
-
-.about-legal-note {
-  color: var(--text-muted);
-  font-size: var(--ui-font-xs);
-  line-height: 1.45;
 }
 
 .engine-legal-actions button {
@@ -3042,10 +2952,6 @@ body {
 .engine-legal-actions button:hover:not(:disabled) {
   border-color: rgba(159, 226, 213, 0.62);
   background: rgba(28, 105, 94, 0.72);
-}
-
-.about-link-list a:hover {
-  text-decoration: underline;
 }
 
 .settings-checkbox {
