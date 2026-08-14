@@ -632,5 +632,3 @@ def serialize_game_record_parts(game_copy, state_copy):
         },
         "game": game_copy,
     }
-
-

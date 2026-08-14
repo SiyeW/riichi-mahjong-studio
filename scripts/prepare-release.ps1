@@ -14,6 +14,11 @@ $ArchivePath = Join-Path $ArtifactsRoot "$BundleName.zip"
 $ChecksumPath = Join-Path $ArtifactsRoot 'SHA256SUMS.txt'
 $ReleaseNotesPath = Join-Path $ArtifactsRoot 'RELEASE_NOTES.md'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$BuildDescription = if ($Version.Contains('-')) {
+    'Windows x64 portable preview build. This build is not code-signed.'
+} else {
+    'Windows x64 portable build. This build is not code-signed.'
+}
 
 function Assert-ProjectPath {
     param([Parameter(Mandatory = $true)][string]$Path)
@@ -63,7 +68,7 @@ if (-not $Match.Success) {
 $ReleaseNotes = @(
     "# Riichi Mahjong Studio $Version"
     ''
-    'Windows x64 portable preview build. This build is not code-signed.'
+    $BuildDescription
     ''
     $Match.Groups['body'].Value.Trim()
 )

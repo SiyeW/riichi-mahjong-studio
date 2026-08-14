@@ -1,6 +1,6 @@
 {
   "name": "riichi-mahjong-studio",
-  "version": "0.4.0-alpha.3",
+  "version": "0.4.0-rc.1",
   "private": true,
   "author": "SiyeWu",
   "description": "Local desktop Riichi Mahjong practice trainer with branching game records.",

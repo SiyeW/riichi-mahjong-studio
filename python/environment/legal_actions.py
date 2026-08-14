@@ -482,5 +482,3 @@ def _build_local_reaction_actions(snapshot, actor, *, can_resolve_hora_reaction)
             }
         )
     return legal_actions
-
-
