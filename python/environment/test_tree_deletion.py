@@ -52,7 +52,7 @@ class TreeDeletionTest(unittest.TestCase):
             mock.patch.object(service, "cancel_auto_analysis"),
             mock.patch.object(service, "purge_bg_analysis_tasks"),
             mock.patch.object(service, "purge_stale_mjai_stream_cache"),
-            mock.patch.object(service, "request_current_shanten_prediction"),
+            mock.patch.object(service, "request_current_opponent_analysis"),
         ):
             deleted_count = service.delete_node(target_id)
 
@@ -81,7 +81,7 @@ class TreeDeletionTest(unittest.TestCase):
             mock.patch.object(service, "cancel_auto_analysis"),
             mock.patch.object(service, "purge_bg_analysis_tasks"),
             mock.patch.object(service, "purge_stale_mjai_stream_cache"),
-            mock.patch.object(service, "request_current_shanten_prediction"),
+            mock.patch.object(service, "request_current_opponent_analysis"),
         ):
             service.delete_node(side_id)
 

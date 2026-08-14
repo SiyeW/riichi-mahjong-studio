@@ -186,7 +186,7 @@ class GameRecordFormatTests(unittest.TestCase):
         )
         self.assertNotIn("meta", record["game"]["nodes"]["n_1"]["action"])
 
-        with patch.object(service, "request_current_shanten_prediction"):
+        with patch.object(service, "request_current_opponent_analysis"):
             service.load_game_record(record)
         loaded = service.STATE["game"]
         self.assertEqual(loaded["nodes"]["n_root"]["depth"], 0)
@@ -232,7 +232,7 @@ class GameRecordFormatTests(unittest.TestCase):
         )
         stored = record["game"]["nodes"]["n_1"]["snapshot"]
         self.assertTrue(stored["actionHistoryReset"])
-        with patch.object(service, "request_current_shanten_prediction"):
+        with patch.object(service, "request_current_opponent_analysis"):
             service.load_game_record(record)
         self.assertEqual(
             service.STATE["game"]["nodes"]["n_1"]["snapshot"]["actionHistory"],

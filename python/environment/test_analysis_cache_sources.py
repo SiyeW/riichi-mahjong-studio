@@ -2,6 +2,7 @@ import copy
 import unittest
 from unittest import mock
 
+import analysis_cache
 import service
 
 
@@ -11,14 +12,14 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         service.STATE["nextGameId"] = 1
 
     def test_display_name_does_not_change_source_identity(self):
-        first = service._build_analysis_source(
+        first = analysis_cache.build_analysis_source(
             "decision",
             "sha256:engine",
             "decision-analysis-v3",
             "action-recommendation@1",
             display_name="Default model",
         )
-        renamed = service._build_analysis_source(
+        renamed = analysis_cache.build_analysis_source(
             "decision",
             "sha256:engine",
             "decision-analysis-v3",
@@ -30,9 +31,9 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         self.assertEqual(first["cacheFingerprint"], renamed["cacheFingerprint"])
 
     def test_opponent_cache_preserves_zero_and_tiny_positive_probabilities(self):
-        self.assertEqual(service._quantize_shanten_probability(0), 0.0)
-        self.assertEqual(service._quantize_shanten_probability(0.000001), 0.00001)
-        self.assertEqual(service._quantize_shanten_probability(0.00124), 0.0012)
+        self.assertEqual(analysis_cache.quantize_probability(0), 0.0)
+        self.assertEqual(analysis_cache.quantize_probability(0.000001), 0.00001)
+        self.assertEqual(analysis_cache.quantize_probability(0.00124), 0.0012)
 
     def test_empty_engine_commands_remain_unconfigured(self):
         decision_command = service._resolve_configured_engine_command(
@@ -195,35 +196,35 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "v3::0::public::best_model.pth:100:123": opponent_result,
         }
 
-        service._migrate_analysis_cache_storage(game)
+        analysis_cache.migrate_analysis_cache_storage(game)
 
         self.assertEqual(node["analysisCache"], {})
         self.assertEqual(node[service.OPPONENT_ANALYSIS_CACHE_FIELD], {})
-        self.assertEqual(game[service._ANALYSIS_SOURCES_FIELD], {})
+        self.assertEqual(game[service.ANALYSIS_SOURCES_FIELD], {})
 
     def test_stale_result_remains_visible_until_current_result_succeeds(self):
         game = service.create_empty_game(202020)
         node = game["nodes"][game["currentNodeId"]]
-        old_source = service._build_analysis_source(
+        old_source = analysis_cache.build_analysis_source(
             "decision",
             "sha256:old",
             "decision-analysis-v3",
             "action-recommendation@1",
             display_name="Old model",
         )
-        current_source = service._build_analysis_source(
+        current_source = analysis_cache.build_analysis_source(
             "decision",
             "sha256:current",
             "decision-analysis-v3",
             "action-recommendation@1",
             display_name="Current model",
         )
-        old_key = service._decision_cache_key(0, "discard", old_source)
-        current_key = service._decision_cache_key(0, "discard", current_source)
-        service._register_analysis_source(game, old_source)
+        old_key = analysis_cache.decision_cache_key(0, "discard", old_source)
+        current_key = analysis_cache.decision_cache_key(0, "discard", current_source)
+        analysis_cache.register_analysis_source(game, old_source)
         node["analysisCache"][old_key] = {"error": None, "discardEntries": [1]}
 
-        stale = service._find_stale_cache_entry(
+        stale = analysis_cache.find_stale_cache_entry(
             game,
             node,
             current_key,
@@ -254,7 +255,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         self.assertNotIn(old_key, node["analysisCache"])
         self.assertIn(current_key, node["analysisCache"])
         self.assertEqual(
-            game[service._ANALYSIS_SOURCES_FIELD][current_source["id"]]["engineFingerprint"],
+            game[service.ANALYSIS_SOURCES_FIELD][current_source["id"]]["engineFingerprint"],
             "sha256:runtime",
         )
 
@@ -267,7 +268,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "seat": 0,
             "inputMode": "public",
             "cacheKey": "o4::0::public::o-current",
-            "cacheEpoch": service._SHANTEN_CACHE_EPOCH,
+            "cacheEpoch": service._OPPONENT_ANALYSIS_CACHE_EPOCH,
         }
         node[service.OPPONENT_ANALYSIS_CACHE_FIELD] = {
             "o4::0::public::o-previous": {
@@ -284,7 +285,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         service.STATE["opponentAnalysisEnabled"] = True
         try:
             with (
-                mock.patch.object(service, "_current_shanten_context", return_value=context),
+                mock.patch.object(service, "_current_opponent_analysis_context", return_value=context),
                 mock.patch.object(
                     service.OPPONENT_PREDICTIONS,
                     "get_latest",
@@ -295,9 +296,9 @@ class AnalysisCacheSourceTest(unittest.TestCase):
                         "context": copy.deepcopy(context),
                     },
                 ),
-                mock.patch.object(service, "request_current_shanten_prediction") as request,
+                mock.patch.object(service, "request_current_opponent_analysis") as request,
             ):
-                result = service.get_current_shanten_analysis()
+                result = service.get_current_opponent_analysis()
         finally:
             service.STATE["game"] = previous_game
             service.STATE["gameLoaded"] = previous_loaded
@@ -316,7 +317,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "seat": 0,
             "inputMode": "public",
             "cacheKey": "o4::0::public::o-current",
-            "cacheEpoch": service._SHANTEN_CACHE_EPOCH,
+            "cacheEpoch": service._OPPONENT_ANALYSIS_CACHE_EPOCH,
         }
         node[service.OPPONENT_ANALYSIS_CACHE_FIELD] = {
             "o4::0::public::o-previous": {
@@ -333,15 +334,15 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         service.STATE["opponentAnalysisEnabled"] = True
         try:
             with (
-                mock.patch.object(service, "_current_shanten_context", return_value=context),
+                mock.patch.object(service, "_current_opponent_analysis_context", return_value=context),
                 mock.patch.object(
                     service.OPPONENT_PREDICTIONS,
                     "get_latest",
                     return_value={"status": "idle", "context": {}},
                 ),
-                mock.patch.object(service, "request_current_shanten_prediction") as request,
+                mock.patch.object(service, "request_current_opponent_analysis") as request,
             ):
-                result = service.get_current_shanten_analysis()
+                result = service.get_current_opponent_analysis()
         finally:
             service.STATE["game"] = previous_game
             service.STATE["gameLoaded"] = previous_loaded
@@ -353,14 +354,14 @@ class AnalysisCacheSourceTest(unittest.TestCase):
     def test_auto_analysis_only_accepts_the_requested_source(self):
         game = service.create_empty_game(303030)
         node = game["nodes"][game["currentNodeId"]]
-        old_source = service._build_analysis_source(
+        old_source = analysis_cache.build_analysis_source(
             "decision", "old", "post", "action-recommendation@1"
         )
-        current_source = service._build_analysis_source(
+        current_source = analysis_cache.build_analysis_source(
             "decision", "current", "post", "action-recommendation@1"
         )
-        old_key = service._decision_cache_key(0, "discard", old_source)
-        current_key = service._decision_cache_key(0, "discard", current_source)
+        old_key = analysis_cache.decision_cache_key(0, "discard", old_source)
+        current_key = analysis_cache.decision_cache_key(0, "discard", current_source)
         node["analysisCache"][old_key] = {"error": None}
         item = {
             "kind": "decision",

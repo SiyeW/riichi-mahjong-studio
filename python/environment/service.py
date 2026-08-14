@@ -1,5 +1,4 @@
 import copy
-import hashlib
 import json
 import os
 import random
@@ -26,10 +25,24 @@ from action_recommendation_adapter import (
     set_thinking_time_bounds,
 )
 from action_recommendation_gateway import ActionRecommendationGateway
+from analysis_cache import (
+    ANALYSIS_SOURCES_FIELD,
+    OPPONENT_ANALYSIS_CACHE_FIELD,
+    attach_analysis_context,
+    build_analysis_source,
+    cache_key_context,
+    compact_opponent_analysis,
+    decision_cache_key,
+    find_stale_cache_entry,
+    migrate_analysis_cache_storage,
+    opponent_analysis_cache_key,
+    prune_stale_cache_entries,
+    register_analysis_source,
+    same_analysis_context,
+)
 from engine_assignments import profiles_by_output, resolve_engine_assignments
 from engine_runtime import EngineRuntimeRegistry
 from game_record_storage import (
-    OPPONENT_ANALYSIS_CACHE_FIELD,
     RECORD_FORMAT_VERSION,
     hydrate_game_structure,
     hydrate_round_walls,
@@ -119,9 +132,9 @@ _ENGINE_RELOAD_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _BG_TASKS = {}
 _BG_COMPLETED = set()
 _DECISION_CACHE_EPOCH = 0
-_SHANTEN_CACHE_EPOCH = 0
+_OPPONENT_ANALYSIS_CACHE_EPOCH = 0
 _ACTIVE_DECISION_SOURCE_ID = None
-_ACTIVE_SHANTEN_SOURCE_ID = None
+_ACTIVE_OPPONENT_ANALYSIS_SOURCE_ID = None
 _EMIT_LOCK = threading.Lock()
 _STATE_LOCK = threading.RLock()
 _PLAY_PREFETCH_LOCK = threading.RLock()
@@ -229,7 +242,7 @@ def prewarm_runtime(profile_id=""):
         except Exception as error:
             return False, str(error)
         finally:
-            _emit_shanten_activity(
+            _emit_opponent_analysis_activity(
                 OPPONENT_PREDICTIONS.activity_state(),
                 OPPONENT_PREDICTIONS.activity_error(),
             )
@@ -319,13 +332,7 @@ def load_project_config():
         return _PROJECT_CONFIG_VALUE
 
 
-_SHANTEN_CACHE_VERSION = 4
-_DECISION_CACHE_VERSION = 3
 _DECISION_POSTPROCESSOR_VERSION = "decision-analysis-v2"
-_ANALYSIS_SOURCES_FIELD = "analysisSources"
-_ANALYSIS_SOURCE_SCHEMA_VERSION = 2
-_SHANTEN_SECTIONS = ("predictions", "ground_truth")
-_SHANTEN_GROUPS = ("opponents", "ron_wait")
 _NODE_COMMENT_MAX_LENGTH = 20_000
 
 
@@ -351,40 +358,8 @@ def _analysis_source_display_name(kind):
     return " + ".join(names) or str(kind)
 
 
-def _build_analysis_source(
-    kind,
-    engine_identity,
-    host_postprocessor_version,
-    output_contract,
-    *,
-    display_name=None,
-):
-    identity = {
-        "schemaVersion": _ANALYSIS_SOURCE_SCHEMA_VERSION,
-        "kind": str(kind),
-        "engineIdentity": str(engine_identity or "legacy-unknown"),
-        "outputContract": str(output_contract),
-    }
-    if host_postprocessor_version:
-        identity["hostPostprocessorVersion"] = str(host_postprocessor_version)
-    encoded = json.dumps(
-        identity,
-        ensure_ascii=True,
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    fingerprint = f"sha256:{hashlib.sha256(encoded).hexdigest()}"
-    prefix = "m" if kind == "decision" else "o"
-    return {
-        **identity,
-        "id": f"{prefix}-{fingerprint[7:23]}",
-        "cacheFingerprint": fingerprint,
-        "displayName": str(display_name or kind),
-    }
-
-
 def _current_decision_analysis_source(model_path=None, *, include_display_name=False):
-    return _build_analysis_source(
+    return build_analysis_source(
         "decision",
         ACTION_RECOMMENDATIONS.cache_identity(model_path),
         _DECISION_POSTPROCESSOR_VERSION,
@@ -397,8 +372,8 @@ def _current_decision_analysis_source(model_path=None, *, include_display_name=F
     )
 
 
-def _current_shanten_analysis_source(*, include_display_name=False):
-    return _build_analysis_source(
+def _current_opponent_analysis_source(*, include_display_name=False):
+    return build_analysis_source(
         "opponent",
         OPPONENT_PREDICTIONS.cache_identity(),
         None,
@@ -409,108 +384,6 @@ def _current_shanten_analysis_source(*, include_display_name=False):
             else "Opponent analysis"
         ),
     )
-
-
-def _register_analysis_source(game, source, result=None):
-    if not isinstance(game, dict) or not isinstance(source, dict):
-        return
-    source_id = str(source.get("id") or "")
-    if not source_id:
-        return
-    stored = copy.deepcopy(source)
-    if isinstance(result, dict) and result.get("engineFingerprint"):
-        stored["engineFingerprint"] = str(result["engineFingerprint"])
-    sources = game.setdefault(_ANALYSIS_SOURCES_FIELD, {})
-    existing = sources.get(source_id)
-    if isinstance(existing, dict):
-        stored = {**existing, **stored}
-    sources[source_id] = stored
-
-
-def _decision_cache_key(seat, phase, source):
-    return f"m{_DECISION_CACHE_VERSION}::{int(seat)}::{phase}::{source['id']}"
-
-
-def _shanten_cache_key(seat, input_mode, source):
-    return f"o{_SHANTEN_CACHE_VERSION}::{int(seat)}::{input_mode}::{source['id']}"
-
-
-def _cache_key_context(cache_key):
-    parts = str(cache_key or "").split("::")
-    if len(parts) != 4:
-        return None
-    version, seat, mode, source_id = parts
-    if version not in (f"m{_DECISION_CACHE_VERSION}", f"o{_SHANTEN_CACHE_VERSION}"):
-        return None
-    try:
-        resolved_seat = int(seat)
-    except (TypeError, ValueError):
-        return None
-    return {
-        "kind": "decision" if version.startswith("m") else "opponent",
-        "seat": resolved_seat,
-        "mode": mode,
-        "sourceId": source_id,
-    }
-
-
-def _prune_stale_cache_entries(cache, current_key):
-    current = _cache_key_context(current_key)
-    if not isinstance(cache, dict) or current is None:
-        return
-    for cache_key in list(cache):
-        candidate = _cache_key_context(cache_key)
-        if (
-            candidate is not None
-            and candidate["kind"] == current["kind"]
-            and candidate["seat"] == current["seat"]
-            and candidate["mode"] == current["mode"]
-            and cache_key != current_key
-        ):
-            cache.pop(cache_key, None)
-
-
-def _find_stale_cache_entry(game, node, current_key, cache_field):
-    current = _cache_key_context(current_key)
-    cache = node.get(cache_field) if isinstance(node, dict) else None
-    if current is None or not isinstance(cache, dict):
-        return None
-    for cache_key, result in reversed(list(cache.items())):
-        candidate = _cache_key_context(cache_key)
-        if (
-            cache_key != current_key
-            and candidate is not None
-            and candidate["kind"] == current["kind"]
-            and candidate["seat"] == current["seat"]
-            and candidate["mode"] == current["mode"]
-            and isinstance(result, dict)
-            and not result.get("error")
-        ):
-            payload = copy.deepcopy(result)
-            payload["cacheStatus"] = "stale"
-            payload["cacheSource"] = copy.deepcopy(
-                (game.get(_ANALYSIS_SOURCES_FIELD) or {}).get(candidate["sourceId"])
-            )
-            return payload
-    return None
-
-
-def _migrate_analysis_cache_storage(game):
-    if not isinstance(game, dict):
-        return
-    game.setdefault(_ANALYSIS_SOURCES_FIELD, {})
-    for node in game.get("nodes", {}).values():
-        decision_cache = node.setdefault("analysisCache", {})
-        if isinstance(decision_cache, dict):
-            for cache_key in list(decision_cache):
-                if _cache_key_context(cache_key) is None:
-                    decision_cache.pop(cache_key, None)
-
-        opponent_cache = node.get(OPPONENT_ANALYSIS_CACHE_FIELD)
-        if isinstance(opponent_cache, dict):
-            for cache_key in list(opponent_cache):
-                if _cache_key_context(cache_key) is None:
-                    opponent_cache.pop(cache_key, None)
 
 
 def _migrate_discard_tsumogiri(game):
@@ -604,51 +477,17 @@ def _migrate_terminal_table_scores(game):
         set_table_scores(snapshot, base_scores)
 
 
-def _quantize_shanten_probability(value):
-    try:
-        probability = float(value)
-    except (TypeError, ValueError):
-        probability = 0.0
-    probability = max(0.0, min(1.0, probability))
-    if probability == 0.0:
-        return 0.0
-    if probability < 0.0001:
-        # Preserve the distinction between an impossible event and a tiny
-        # positive probability without storing unnecessary model precision.
-        return 0.00001
-    return round(probability * 10000.0) / 10000.0
-
-
-def _compact_shanten_analysis(result):
-    compact = {
-        "status": "ready",
-        "precisionPercent": 0.01,
-    }
-    for section_name in _SHANTEN_SECTIONS:
-        section = result.get(section_name) if isinstance(result, dict) else None
-        compact_section = {}
-        for group_name in _SHANTEN_GROUPS:
-            group = section.get(group_name) if isinstance(section, dict) else None
-            compact_section[group_name] = {
-                str(label): [_quantize_shanten_probability(value) for value in values]
-                for label, values in (group.items() if isinstance(group, dict) else [])
-                if isinstance(values, list)
-            }
-        compact[section_name] = compact_section
-    return compact
-
-
-def _get_shanten_cache_key(seat=None):
+def _get_opponent_analysis_cache_key(seat=None):
     resolved_seat = STATE["controlledSeat"] if seat is None else int(seat)
     input_mode = _get_opponent_analysis_input_mode()
-    return _build_shanten_cache_key(resolved_seat, input_mode)
+    return _build_opponent_analysis_cache_key(resolved_seat, input_mode)
 
 
-def _build_shanten_cache_key(seat, input_mode):
-    return _shanten_cache_key(
+def _build_opponent_analysis_cache_key(seat, input_mode):
+    return opponent_analysis_cache_key(
         seat,
         input_mode,
-        _current_shanten_analysis_source(),
+        _current_opponent_analysis_source(),
     )
 
 
@@ -659,7 +498,7 @@ def _get_opponent_analysis_input_mode():
     return "public"
 
 
-def _current_shanten_context():
+def _current_opponent_analysis_context():
     game = STATE.get("game")
     if not STATE.get("gameLoaded") or not isinstance(game, dict):
         return None
@@ -673,39 +512,24 @@ def _current_shanten_context():
         "nodeId": node_id,
         "seat": seat,
         "inputMode": input_mode,
-        "cacheKey": _get_shanten_cache_key(seat),
-        "cacheEpoch": _SHANTEN_CACHE_EPOCH,
+        "cacheKey": _get_opponent_analysis_cache_key(seat),
+        "cacheEpoch": _OPPONENT_ANALYSIS_CACHE_EPOCH,
     }
 
 
-def _same_shanten_context(left, right):
-    if not isinstance(left, dict) or not isinstance(right, dict):
-        return False
-    return all(
-        left.get(key) == right.get(key)
-        for key in ("gameId", "nodeId", "seat", "cacheKey", "cacheEpoch")
-    )
-
-
-def _attach_shanten_context(result, context):
-    payload = copy.deepcopy(result)
-    payload["context"] = copy.deepcopy(context)
-    return payload
-
-
-def _cache_shanten_analysis_result(result, *, require_current):
+def _cache_opponent_analysis_result(result, *, require_current):
     context = result.get("context") if isinstance(result, dict) else None
     if not isinstance(context, dict) or result.get("status") != "ready":
         return False
-    if context.get("cacheEpoch") != _SHANTEN_CACHE_EPOCH:
+    if context.get("cacheEpoch") != _OPPONENT_ANALYSIS_CACHE_EPOCH:
         return False
 
-    compact = _compact_shanten_analysis(result)
+    compact = compact_opponent_analysis(result)
     changed = False
     is_current = False
     seat = int(context.get("seat", -1))
     with _STATE_LOCK:
-        is_current = _same_shanten_context(context, _current_shanten_context())
+        is_current = same_analysis_context(context, _current_opponent_analysis_context())
         if require_current and not is_current:
             return False
         game = STATE.get("game")
@@ -713,13 +537,13 @@ def _cache_shanten_analysis_result(result, *, require_current):
             return False
         node = game.get("nodes", {}).get(context.get("nodeId"))
         cache_key = str(context.get("cacheKey") or "")
-        if not isinstance(node, dict) or not cache_key or cache_key != _get_shanten_cache_key(seat):
+        if not isinstance(node, dict) or not cache_key or cache_key != _get_opponent_analysis_cache_key(seat):
             return False
 
-        source = _current_shanten_analysis_source(include_display_name=True)
-        _register_analysis_source(game, source, result)
+        source = _current_opponent_analysis_source(include_display_name=True)
+        register_analysis_source(game, source, result)
         cache = node.setdefault(OPPONENT_ANALYSIS_CACHE_FIELD, {})
-        _prune_stale_cache_entries(cache, cache_key)
+        prune_stale_cache_entries(cache, cache_key)
         if cache.get(cache_key) != compact:
             cache[cache_key] = compact
             changed = True
@@ -738,7 +562,7 @@ def _cache_shanten_analysis_result(result, *, require_current):
             "gameId": context.get("gameId"),
             "nodeId": context.get("nodeId"),
             "seat": seat,
-            "opponentAnalysis": _attach_shanten_context(compact, context),
+            "opponentAnalysis": attach_analysis_context(compact, context),
             "autoAnalysis": get_auto_analysis_status(
                 include_timeline=STATE.get("mode") == "research"
             ),
@@ -747,15 +571,15 @@ def _cache_shanten_analysis_result(result, *, require_current):
     return True
 
 
-def _store_shanten_analysis_result(result):
-    _cache_shanten_analysis_result(result, require_current=True)
+def _store_opponent_analysis_result(result):
+    _cache_opponent_analysis_result(result, require_current=True)
 
 
-def request_current_shanten_prediction(snapshot=None):
+def request_current_opponent_analysis(snapshot=None):
     with _STATE_LOCK:
         if not STATE.get("opponentAnalysisEnabled"):
             return False
-        context = _current_shanten_context()
+        context = _current_opponent_analysis_context()
         if context is None:
             return False
         OPPONENT_PREDICTIONS.set_latest_context(context)
@@ -788,7 +612,7 @@ def request_current_shanten_prediction(snapshot=None):
             STATE["visibleHands"],
             input_mode=input_mode,
             context=context,
-            on_complete=_store_shanten_analysis_result,
+            on_complete=_store_opponent_analysis_result,
             mjai_events=prediction_bundle["events"],
             mjai_prefix_hashes=prediction_bundle["prefixHashes"],
             mjai_events_hash=prediction_bundle["eventHash"],
@@ -799,40 +623,40 @@ def request_current_shanten_prediction(snapshot=None):
         return True
 
 
-def get_current_shanten_analysis():
+def get_current_opponent_analysis():
     if not STATE.get("opponentAnalysisEnabled"):
         return {"status": "disabled", "predictions": {}, "ground_truth": {}}
-    context = _current_shanten_context()
+    context = _current_opponent_analysis_context()
     if context is None:
         return {"status": "unavailable", "predictions": {}, "ground_truth": {}}
 
     latest = OPPONENT_PREDICTIONS.get_latest()
     latest_context = latest.get("context") if isinstance(latest, dict) else None
-    if _same_shanten_context(latest_context, context) and latest.get("status") == "ready":
+    if same_analysis_context(latest_context, context) and latest.get("status") == "ready":
         return latest
 
     node = STATE["game"]["nodes"][context["nodeId"]]
     cached = node.get(OPPONENT_ANALYSIS_CACHE_FIELD, {}).get(context["cacheKey"])
     if isinstance(cached, dict):
-        return _attach_shanten_context(cached, context)
+        return attach_analysis_context(cached, context)
 
-    stale = _find_stale_cache_entry(
+    stale = find_stale_cache_entry(
         STATE["game"],
         node,
         context["cacheKey"],
         OPPONENT_ANALYSIS_CACHE_FIELD,
     )
-    if _same_shanten_context(latest_context, context):
+    if same_analysis_context(latest_context, context):
         if isinstance(stale, dict):
-            return _attach_shanten_context(stale, context)
+            return attach_analysis_context(stale, context)
         return latest
 
-    request_current_shanten_prediction(node["snapshot"])
+    request_current_opponent_analysis(node["snapshot"])
     if isinstance(stale, dict):
-        return _attach_shanten_context(stale, context)
+        return attach_analysis_context(stale, context)
     latest = OPPONENT_PREDICTIONS.get_latest()
     latest_context = latest.get("context") if isinstance(latest, dict) else None
-    if _same_shanten_context(latest_context, context):
+    if same_analysis_context(latest_context, context):
         return latest
     return {
         "status": "loading",
@@ -1023,23 +847,23 @@ def configure_action_recommendation_engine(config):
 
 
 def configure_opponent_prediction_engines(config):
-    shanten = _gateway_profile(config, "opponent-shanten")
+    opponent_profile = _gateway_profile(config, "opponent-shanten")
     deal_in = _gateway_profile(config, "opponent-deal-in-probability")
-    if shanten:
-        shanten["input_modes"] = ["public"]
-        shanten["engine_client"] = ENGINE_RUNTIME_REGISTRY.get(shanten["profile_id"])
+    if opponent_profile:
+        opponent_profile["input_modes"] = ["public"]
+        opponent_profile["engine_client"] = ENGINE_RUNTIME_REGISTRY.get(opponent_profile["profile_id"])
     if deal_in:
         deal_in["input_modes"] = ["public"]
         deal_in["engine_client"] = ENGINE_RUNTIME_REGISTRY.get(deal_in["profile_id"])
     OPPONENT_PREDICTIONS.configure_profiles(
-        shanten,
+        opponent_profile,
         deal_in,
     )
 
 
 def apply_runtime_engine_config(config=None, *, invalidate=False):
-    global _ACTIVE_DECISION_SOURCE_ID, _ACTIVE_SHANTEN_SOURCE_ID
-    global _DECISION_CACHE_EPOCH, _SHANTEN_CACHE_EPOCH
+    global _ACTIVE_DECISION_SOURCE_ID, _ACTIVE_OPPONENT_ANALYSIS_SOURCE_ID
+    global _DECISION_CACHE_EPOCH, _OPPONENT_ANALYSIS_CACHE_EPOCH
     global _RUNTIME_ENGINE_SETTINGS
 
     with _ENGINE_CONFIG_LOCK:
@@ -1052,23 +876,23 @@ def apply_runtime_engine_config(config=None, *, invalidate=False):
         _RUNTIME_ENGINE_SETTINGS = copy.deepcopy(engines) if isinstance(engines, dict) else {}
 
         decision_source_id = _current_decision_analysis_source()["id"]
-        shanten_source_id = _current_shanten_analysis_source()["id"]
+        opponent_source_id = _current_opponent_analysis_source()["id"]
         source_changed = (
             _ACTIVE_DECISION_SOURCE_ID is not None
             and _ACTIVE_DECISION_SOURCE_ID != decision_source_id
         ) or (
-            _ACTIVE_SHANTEN_SOURCE_ID is not None
-            and _ACTIVE_SHANTEN_SOURCE_ID != shanten_source_id
+            _ACTIVE_OPPONENT_ANALYSIS_SOURCE_ID is not None
+            and _ACTIVE_OPPONENT_ANALYSIS_SOURCE_ID != opponent_source_id
         )
         _ACTIVE_DECISION_SOURCE_ID = decision_source_id
-        _ACTIVE_SHANTEN_SOURCE_ID = shanten_source_id
+        _ACTIVE_OPPONENT_ANALYSIS_SOURCE_ID = opponent_source_id
 
     if invalidate and source_changed:
         with _STATE_LOCK:
             cancel_auto_analysis("分析模型已更改")
             cancel_play_prefetch()
             _DECISION_CACHE_EPOCH += 1
-            _SHANTEN_CACHE_EPOCH += 1
+            _OPPONENT_ANALYSIS_CACHE_EPOCH += 1
             active_game = STATE.get("game")
             purge_bg_analysis_tasks(
                 active_game.get("gameId") if isinstance(active_game, dict) else None
@@ -1194,7 +1018,7 @@ def _emit_decision_activity(seat, state, error=None):
     })
 
 
-def _emit_shanten_activity(state, error=None):
+def _emit_opponent_analysis_activity(state, error=None):
     emit({
         "type": "model_activity",
         "model": "opponent_analysis",
@@ -1208,7 +1032,7 @@ def _emit_shanten_activity(state, error=None):
 
 
 ACTION_RECOMMENDATIONS.set_activity_callback(_emit_decision_activity)
-OPPONENT_PREDICTIONS.set_activity_callback(_emit_shanten_activity)
+OPPONENT_PREDICTIONS.set_activity_callback(_emit_opponent_analysis_activity)
 
 
 def create_match_state(seed):
@@ -1977,7 +1801,7 @@ def create_empty_game(seed):
         "nextNodeIndex": 2,
         "treeRevision": 1,
         "pendingReview": None,
-        _ANALYSIS_SOURCES_FIELD: {},
+        ANALYSIS_SOURCES_FIELD: {},
         "nodes": nodes,
     }
 
@@ -2194,10 +2018,10 @@ def purge_bg_analysis_tasks(game_id, node_ids=None):
 
 
 def reset_runtime_for_game_change():
-    global _DECISION_CACHE_EPOCH, _SHANTEN_CACHE_EPOCH
+    global _DECISION_CACHE_EPOCH, _OPPONENT_ANALYSIS_CACHE_EPOCH
 
     cancel_play_prefetch()
-    cancel_auto_analysis("牌谱已切换", emit_progress=False, cancel_shanten=False)
+    cancel_auto_analysis("牌谱已切换", emit_progress=False, cancel_opponent_analysis=False)
     _invalidate_auto_analysis_timeline()
     with _AUTO_ANALYSIS_LOCK:
         _AUTO_ANALYSIS_STATE.update({
@@ -2212,7 +2036,7 @@ def reset_runtime_for_game_change():
             "message": "",
         })
     _DECISION_CACHE_EPOCH += 1
-    _SHANTEN_CACHE_EPOCH += 1
+    _OPPONENT_ANALYSIS_CACHE_EPOCH += 1
     for future in list(_BG_TASKS.values()):
         try:
             future.cancel()
@@ -3485,7 +3309,7 @@ def _get_or_schedule_analysis(current_node, snapshot, legal_actions):
         return copy.deepcopy(current_node["analysisCache"][analysis_key])
 
     if not ACTION_RECOMMENDATIONS.accepts_requests():
-        return _find_stale_cache_entry(
+        return find_stale_cache_entry(
             STATE.get("game"),
             current_node,
             analysis_key,
@@ -3496,7 +3320,7 @@ def _get_or_schedule_analysis(current_node, snapshot, legal_actions):
         return None
 
     _submit_background_analysis(current_node, snapshot)
-    return _find_stale_cache_entry(
+    return find_stale_cache_entry(
         STATE.get("game"),
         current_node,
         analysis_key,
@@ -3508,7 +3332,7 @@ def get_analysis_cache_key(snapshot):
     phase = snapshot.get("phase")
     if phase == "draw_or_discard":
         phase = "discard"
-    return _decision_cache_key(
+    return decision_cache_key(
         STATE["controlledSeat"],
         phase,
         _current_decision_analysis_source(),
@@ -3520,15 +3344,15 @@ def _store_decision_analysis(game, node, cache_key, result, *, source=None):
         return None
     source = copy.deepcopy(source) if isinstance(source, dict) else _current_decision_analysis_source()
     source["displayName"] = _analysis_source_display_name("decision")
-    expected_source_id = (_cache_key_context(cache_key) or {}).get("sourceId")
+    expected_source_id = (cache_key_context(cache_key) or {}).get("sourceId")
     if expected_source_id != source["id"]:
         return None
-    _register_analysis_source(game, source, result)
+    register_analysis_source(game, source, result)
     compact = copy.deepcopy(result)
     compact.pop("engineFingerprint", None)
     compact.pop("hostPostprocessorVersion", None)
     cache = node.setdefault("analysisCache", {})
-    _prune_stale_cache_entries(cache, cache_key)
+    prune_stale_cache_entries(cache, cache_key)
     cache[cache_key] = compact
     return cache[cache_key]
 
@@ -3591,7 +3415,7 @@ def backfill_cached_child_comparisons(game):
         phase = str(snapshot.get("phase") or "")
         if phase == "draw_or_discard":
             phase = "discard"
-        analysis_key = _decision_cache_key(
+        analysis_key = decision_cache_key(
             controlled_seat,
             phase,
             _current_decision_analysis_source(),
@@ -3775,7 +3599,7 @@ def _ensure_auto_analysis_timeline_locked(game, seat, model_path):
         int(seat),
         str(model_path),
         _current_decision_analysis_source(model_path)["id"],
-        _get_shanten_cache_key(seat),
+        _get_opponent_analysis_cache_key(seat),
     )
     if _AUTO_ANALYSIS_TIMELINE.get("signature") == signature:
         return
@@ -3864,7 +3688,7 @@ def _auto_decision_cache_key(seat, snapshot, model_path):
     phase = snapshot.get("phase")
     if phase == "draw_or_discard":
         phase = "discard"
-    return _decision_cache_key(
+    return decision_cache_key(
         seat,
         phase,
         _current_decision_analysis_source(model_path),
@@ -4006,7 +3830,7 @@ def _build_auto_analysis_plan(
         round_root_map,
     )
     opponent_input_mode = _get_opponent_analysis_input_mode()
-    shanten_cache_key = _get_shanten_cache_key(seat)
+    opponent_cache_key = _get_opponent_analysis_cache_key(seat)
     decision_source = _current_decision_analysis_source(model_path)
     items = []
     for round_root_id in round_order:
@@ -4029,14 +3853,14 @@ def _build_auto_analysis_plan(
                         "cached": isinstance(decision_result, dict) and not decision_result.get("error"),
                     })
 
-            shanten_result = (node.get(OPPONENT_ANALYSIS_CACHE_FIELD) or {}).get(shanten_cache_key)
+            opponent_result = (node.get(OPPONENT_ANALYSIS_CACHE_FIELD) or {}).get(opponent_cache_key)
             items.append({
                 "kind": "opponent",
                 "nodeId": node_id,
                 "roundRootId": round_root_id,
-                "cacheKey": shanten_cache_key,
+                "cacheKey": opponent_cache_key,
                 "inputMode": opponent_input_mode,
-                "cached": isinstance(shanten_result, dict) and shanten_result.get("status") == "ready",
+                "cached": isinstance(opponent_result, dict) and opponent_result.get("status") == "ready",
             })
     return items
 
@@ -4082,7 +3906,7 @@ def auto_analysis_owns_item(kind, node_id):
         )
 
 
-def cancel_auto_analysis(message="已停止", *, emit_progress=True, cancel_shanten=True):
+def cancel_auto_analysis(message="已停止", *, emit_progress=True, cancel_opponent_analysis=True):
     global _AUTO_ANALYSIS_GENERATION, _AUTO_ANALYSIS_FUTURE, _AUTO_ANALYSIS_CONTEXT
     global _AUTO_ANALYSIS_REPRIORITIZE_TIMER, _AUTO_ANALYSIS_REPRIORITIZE_SERIAL
 
@@ -4110,7 +3934,7 @@ def cancel_auto_analysis(message="已停止", *, emit_progress=True, cancel_shan
             pass
     if reprioritize_timer is not None:
         reprioritize_timer.cancel()
-    if cancel_shanten:
+    if cancel_opponent_analysis:
         OPPONENT_PREDICTIONS.cancel_background()
     if was_running and emit_progress:
         _emit_auto_analysis_progress()
@@ -4182,7 +4006,7 @@ def _complete_auto_analysis_item(generation, item, result=None, error=None):
                     tree_updates = update_cached_child_comparisons(game, node, result, seat)
                     success = True
             else:
-                success = _cache_shanten_analysis_result(result, require_current=False)
+                success = _cache_opponent_analysis_result(result, require_current=False)
 
     with _AUTO_ANALYSIS_LOCK:
         context = _AUTO_ANALYSIS_CONTEXT
@@ -4240,7 +4064,7 @@ def _on_auto_decision_complete(generation, item, future):
         _complete_auto_analysis_item(generation, item, error=exc)
 
 
-def _on_auto_shanten_complete(generation, item, result):
+def _on_auto_opponent_analysis_complete(generation, item, result):
     status = str(result.get("status") or "") if isinstance(result, dict) else ""
     error = None if status == "ready" else status or "对手分析未返回结果"
     _complete_auto_analysis_item(generation, item, result=result, error=error)
@@ -4482,13 +4306,13 @@ def _schedule_next_auto_analysis_item(generation):
             return
 
         input_mode = str(item.get("inputMode") or "public")
-        shanten_context = {
+        opponent_context = {
             "gameId": game_id,
             "nodeId": item["nodeId"],
             "seat": seat,
             "inputMode": input_mode,
             "cacheKey": item["cacheKey"],
-            "cacheEpoch": _SHANTEN_CACHE_EPOCH,
+            "cacheEpoch": _OPPONENT_ANALYSIS_CACHE_EPOCH,
             "autoAnalysisGeneration": generation,
         }
         try:
@@ -4530,9 +4354,9 @@ def _schedule_next_auto_analysis_item(generation):
             game["nodes"][item["nodeId"]]["snapshot"],
             seat,
             input_mode=input_mode,
-            context=shanten_context,
+            context=opponent_context,
             on_complete=lambda result, g=generation, current_item=item: (
-                _on_auto_shanten_complete(g, current_item, result)
+                _on_auto_opponent_analysis_complete(g, current_item, result)
             ),
             mjai_events=prediction_bundle["events"],
             mjai_prefix_hashes=prediction_bundle["prefixHashes"],
@@ -5264,7 +5088,7 @@ def build_view_payload(compact_tree=False):
         # Opponent analysis owns a separate worker and starts independently of the decision engine.
         # Ship the current node's cache (or an explicit miss) with the view so the
         # renderer can distinguish an instant cache swap from waiting for inference.
-        opponent_analysis = get_current_shanten_analysis()
+        opponent_analysis = get_current_opponent_analysis()
     legal_actions = get_node_legal_actions(game, current_node_id)
     if legal_actions and STATE.get("decisionRecommendationsEnabled", True):
         # Rendering a position must never wait for decision-engine inference. Cached results
@@ -5349,7 +5173,7 @@ def load_game_record(record):
     repair_reaction_decision_nodes(game)
     if repair_main_branch_links(game):
         game["treeRevision"] = int(game.get("treeRevision", 0)) + 1
-    _migrate_analysis_cache_storage(game)
+    migrate_analysis_cache_storage(game)
     static_match_fields = (
         "matchId",
         "matchType",
@@ -5381,7 +5205,7 @@ def load_game_record(record):
     normalize_current_tree_cursor(STATE["game"], STATE["controlledSeat"])
     backfill_cached_child_comparisons(STATE["game"])
     if STATE["mode"] == "research":
-        request_current_shanten_prediction()
+        request_current_opponent_analysis()
 
 
 def build_state_payload(*, consume_thinking_time=True):
@@ -7252,17 +7076,17 @@ def _commit_prefetched_opponent_result(context, draft_node_id):
         return False
 
     input_mode = str(context.get("opponentInputMode") or "public")
-    cache_key = _build_shanten_cache_key(context["seat"], input_mode)
+    cache_key = _build_opponent_analysis_cache_key(context["seat"], input_mode)
     cache = node.setdefault(OPPONENT_ANALYSIS_CACHE_FIELD, {})
-    compact = _compact_shanten_analysis(result)
+    compact = compact_opponent_analysis(result)
     if cache.get(cache_key) == compact:
         return True
-    source = _current_shanten_analysis_source(include_display_name=True)
-    expected_source_id = (_cache_key_context(cache_key) or {}).get("sourceId")
+    source = _current_opponent_analysis_source(include_display_name=True)
+    expected_source_id = (cache_key_context(cache_key) or {}).get("sourceId")
     if expected_source_id != source["id"]:
         return False
-    _register_analysis_source(game, source, result)
-    _prune_stale_cache_entries(cache, cache_key)
+    register_analysis_source(game, source, result)
+    prune_stale_cache_entries(cache, cache_key)
     cache[cache_key] = compact
     _set_auto_analysis_timeline_cached("opponent", actual_node_id, True)
     emit({
@@ -7281,14 +7105,14 @@ def _commit_prefetched_opponent_result(context, draft_node_id):
             "seat": context["seat"],
             "inputMode": input_mode,
             "cacheKey": cache_key,
-            "cacheEpoch": _SHANTEN_CACHE_EPOCH,
+            "cacheEpoch": _OPPONENT_ANALYSIS_CACHE_EPOCH,
         }
         emit({
             "type": "opponent_analysis_ready",
             "gameId": context["gameId"],
             "nodeId": actual_node_id,
             "seat": context["seat"],
-            "opponentAnalysis": _attach_shanten_context(result, analysis_context),
+            "opponentAnalysis": attach_analysis_context(result, analysis_context),
             "timestamp": now_iso(),
         })
     return True
@@ -7306,7 +7130,7 @@ def _complete_play_prefetch_opponent(generation, draft_node_id, result):
             ):
                 return
             context["opponentPending"].discard(draft_node_id)
-            context["opponentResults"][draft_node_id] = _compact_shanten_analysis(result)
+            context["opponentResults"][draft_node_id] = compact_opponent_analysis(result)
         _commit_prefetched_opponent_result(context, draft_node_id)
 
 
@@ -7348,8 +7172,8 @@ def _schedule_play_prefetch_opponent(context, draft_node_id):
         "nodeId": f"prefetch:{context['generation']}:{draft_node_id}",
         "seat": seat,
         "inputMode": input_mode,
-        "cacheKey": _get_shanten_cache_key(seat),
-        "cacheEpoch": _SHANTEN_CACHE_EPOCH,
+        "cacheKey": _get_opponent_analysis_cache_key(seat),
+        "cacheEpoch": _OPPONENT_ANALYSIS_CACHE_EPOCH,
     }
     accepted = OPPONENT_PREDICTIONS.request_background_predict(
         snapshot,
@@ -8342,7 +8166,7 @@ def import_mortal_report(report, source_url, source_import_url=None, reconstruct
     STATE["controlledSeat"] = controlled_seat
     STATE["pendingSeatSwitch"] = None
     STATE["visibleHands"] = False
-    request_current_shanten_prediction(get_current_snapshot())
+    request_current_opponent_analysis(get_current_snapshot())
     return reconstruction
 
 
@@ -8367,7 +8191,7 @@ def import_custom_tenhou(raw_input, reconstruct_walls=False, seed=None):
     STATE["controlledSeat"] = controlled_seat
     STATE["pendingSeatSwitch"] = None
     STATE["visibleHands"] = False
-    request_current_shanten_prediction(get_current_snapshot())
+    request_current_opponent_analysis(get_current_snapshot())
     return reconstruction
 
 
@@ -8402,7 +8226,7 @@ def jump_to_node(node_id):
     snapshot = game["nodes"][node_id].get("snapshot")
     if snapshot and STATE.get("mode") == "research":
         sync_snapshot_state(snapshot)
-        request_current_shanten_prediction(snapshot)
+        request_current_opponent_analysis(snapshot)
     return previous_round_root_id == resolve_round_root_id_for_node(game, node_id)
 
 
@@ -8494,12 +8318,12 @@ def delete_node(node_id):
     mark_tree_changed(game)
     _invalidate_auto_analysis_timeline()
     if STATE.get("mode") == "research":
-        request_current_shanten_prediction(parent_snapshot)
+        request_current_opponent_analysis(parent_snapshot)
     return len(subtree_ids)
 
 
 def clear_loaded_analysis_caches():
-    global _DECISION_CACHE_EPOCH, _SHANTEN_CACHE_EPOCH
+    global _DECISION_CACHE_EPOCH, _OPPONENT_ANALYSIS_CACHE_EPOCH
     ensure_game_loaded()
     cancel_play_prefetch()
     game = STATE["game"]
@@ -8507,7 +8331,7 @@ def clear_loaded_analysis_caches():
 
     cancel_auto_analysis("缓存已清除")
     _DECISION_CACHE_EPOCH += 1
-    _SHANTEN_CACHE_EPOCH += 1
+    _OPPONENT_ANALYSIS_CACHE_EPOCH += 1
     purge_bg_analysis_tasks(game_id)
     OPPONENT_PREDICTIONS.cancel_all()
 
@@ -8530,7 +8354,7 @@ def clear_loaded_analysis_caches():
 
     had_pending_review = game.get("pendingReview") is not None
     game["pendingReview"] = None
-    game[_ANALYSIS_SOURCES_FIELD] = {}
+    game[ANALYSIS_SOURCES_FIELD] = {}
     _invalidate_auto_analysis_timeline()
     mark_tree_changed(game)
     return {
@@ -8617,7 +8441,7 @@ def handle_command(request_id, command, payload):
             cancel_play_prefetch()
             STATE["mode"] = next_mode
             if STATE["gameLoaded"] and STATE["mode"] == "research":
-                request_current_shanten_prediction(get_current_snapshot())
+                request_current_opponent_analysis(get_current_snapshot())
             elif STATE["gameLoaded"] and STATE["mode"] == "play":
                 start_play_prefetch()
             return build_response(request_id, command)
@@ -8637,7 +8461,7 @@ def handle_command(request_id, command, payload):
                 enabled = bool(payload.get("opponentAnalysis"))
                 STATE["opponentAnalysisEnabled"] = enabled
                 if enabled and STATE.get("gameLoaded"):
-                    request_current_shanten_prediction(get_current_snapshot())
+                    request_current_opponent_analysis(get_current_snapshot())
                 elif not enabled:
                     OPPONENT_PREDICTIONS.cancel_pending()
 
@@ -8657,7 +8481,7 @@ def handle_command(request_id, command, payload):
                 apply_pending_seat_switch_if_ready(get_current_snapshot() if STATE["gameLoaded"] else {})
                 if STATE["gameLoaded"]:
                     normalize_current_tree_cursor(STATE["game"], STATE["controlledSeat"])
-                    request_current_shanten_prediction(get_current_snapshot())
+                    request_current_opponent_analysis(get_current_snapshot())
             elif STATE["gameLoaded"]:
                 start_play_prefetch()
             return build_response(request_id, command)
@@ -8665,7 +8489,7 @@ def handle_command(request_id, command, payload):
         if command == "toggle_visible_hands":
             STATE["visibleHands"] = not STATE["visibleHands"]
             if STATE["gameLoaded"] and STATE["mode"] == "research":
-                request_current_shanten_prediction(get_current_snapshot())
+                request_current_opponent_analysis(get_current_snapshot())
             return build_response(request_id, command)
 
         if command == "get_game_view":
@@ -8676,10 +8500,10 @@ def handle_command(request_id, command, payload):
             if STATE["game"].get("pendingReview"):
                 return build_response(request_id, command)
             play_prefetch = advance_game_with_prefetch(STATE["game"])
-            # Trigger async opponent shanten prediction (research mode only)
+            # Trigger asynchronous opponent analysis in research mode.
             if STATE.get("gameLoaded") and STATE.get("mode") == "research":
                 snapshot = get_current_snapshot()
-                request_current_shanten_prediction(snapshot)
+                request_current_opponent_analysis(snapshot)
             response = build_response(
                 request_id,
                 command,
@@ -8829,7 +8653,7 @@ def handle_command(request_id, command, payload):
             return build_response(request_id, command, {"debug": get_latest_action_recommendation_debug()})
 
         if command == "get_shanten":
-            return build_response(request_id, command, get_current_shanten_analysis())
+            return build_response(request_id, command, get_current_opponent_analysis())
 
         if command == "get_shanten_mjai":
             return build_response(request_id, command, {"debug": get_latest_opponent_prediction_mjai()})

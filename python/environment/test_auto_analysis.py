@@ -178,7 +178,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
                 return_value={"events": [], "prefixHashes": [], "eventHash": 0},
             ),
         ):
-            requested = service.request_current_shanten_prediction(snapshot)
+            requested = service.request_current_opponent_analysis(snapshot)
 
         self.assertTrue(requested)
         request_predict.assert_called_once()
@@ -439,7 +439,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
                 future.set_exception(exc)
             return future
 
-        def complete_shanten(_snapshot, _seat, context=None, on_complete=None, **_streams):
+        def complete_opponent_analysis(_snapshot, _seat, context=None, on_complete=None, **_streams):
             on_complete({
                 "predictions": {"opponents": {}, "ron_wait": {}},
                 "ground_truth": {"opponents": {}, "ron_wait": {}},
@@ -461,7 +461,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             mock.patch.object(
                 service.OPPONENT_PREDICTIONS,
                 "request_background_predict",
-                side_effect=complete_shanten,
+                side_effect=complete_opponent_analysis,
             ),
         ):
             status = service.start_auto_analysis()

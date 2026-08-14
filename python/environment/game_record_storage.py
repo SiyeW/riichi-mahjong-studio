@@ -5,6 +5,8 @@ from __future__ import annotations
 import copy
 import json
 
+from analysis_cache import OPPONENT_ANALYSIS_CACHE_FIELD
+
 from service_helpers import (
     DORA_INDICATOR_POSITIONS,
     RINSHAN_DRAW_POSITIONS,
@@ -12,7 +14,6 @@ from service_helpers import (
     now_iso,
 )
 
-OPPONENT_ANALYSIS_CACHE_FIELD = "opponentAnalysisCache"
 _ROUND_WALL_STORAGE_FIELD = "roundWallStorage"
 _SNAPSHOT_WALL_STATE_FIELD = "wallState"
 _ROUND_WALL_LAYOUT_VERSION = 2
