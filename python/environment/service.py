@@ -16,6 +16,7 @@ except ModuleNotFoundError:
     psutil = None
 
 import auto_analysis_plan
+import engine_configuration
 import game_tree
 import legal_actions
 import play_prefetch_runtime
@@ -48,7 +49,7 @@ from analysis_cache import (
     register_analysis_source,
     same_analysis_context,
 )
-from engine_assignments import profiles_by_output, resolve_engine_assignments
+from engine_assignments import resolve_engine_assignments
 from engine_runtime import EngineRuntimeRegistry
 from game_record_storage import (
     RECORD_FORMAT_VERSION,
@@ -652,159 +653,59 @@ def _runtime_engine_config():
     return load_project_config()
 
 
-def _assigned_engine_profile(config, output_id):
-    return profiles_by_output(config).get(str(output_id or ""))
-
-
 def normalize_training_mode(mode):
-    return {
-        "no_review": "no_review",
-        "free_play": "preview_before_click",
-        "guided": "threshold_review",
-        "strict": "always_review",
-    }.get(str(mode or ""), str(mode or "threshold_review")) or "threshold_review"
+    return engine_configuration.normalize_training_mode(mode)
 
 
 def get_default_training_config():
-    return {
-        "mode": "threshold_review",
-        "mistakeThreshold": 0.25,
-        "thinkingTimeMinS": 0.25,
-        "thinkingTimeMaxS": 1.0,
-    }
+    return engine_configuration.default_training_config()
 
 
 def get_training_config():
-    config = load_project_config()
-    training = config.get("training") if isinstance(config, dict) else None
-    defaults = get_default_training_config()
-    if not isinstance(training, dict):
-        return defaults
-    merged = {
-        **defaults,
-        **training,
-    }
-    merged["mode"] = normalize_training_mode(merged.get("mode"))
-    try:
-        merged["mistakeThreshold"] = float(merged.get("mistakeThreshold", defaults["mistakeThreshold"]))
-    except (TypeError, ValueError):
-        merged["mistakeThreshold"] = defaults["mistakeThreshold"]
-    return merged
+    return engine_configuration.training_config(load_project_config())
 
 
 def get_action_engine_weight_path():
-    profile = _assigned_engine_profile(
+    return engine_configuration.action_engine_weight_path(
         _runtime_engine_config(),
-        "action-recommendation",
+        _resolve_engine_resource_path,
     )
-    weights = profile.get("weights") if isinstance(profile, dict) else None
-    weights = weights if isinstance(weights, list) else []
-    weight = next(
-        (
-            item
-            for item in weights
-            if isinstance(item, dict) and str(item.get("slotId") or "") == "model"
-        ),
-        next((item for item in weights if isinstance(item, dict)), {}),
-    )
-    return _resolve_engine_resource_path(weight.get("path") or "")
 
 
 def _resolve_engine_resource_path(path_value):
-    raw_value = str(path_value or "")
-    if not raw_value:
-        return ""
-    path = Path(raw_value)
-    if path.is_absolute():
-        return str(path)
-    if getattr(sys, "frozen", False) and path.parts and path.parts[0].lower() == "engines":
-        return str(Path(sys.executable).resolve().parents[2] / path)
-    return str(Path(__file__).resolve().parents[2] / path)
+    return engine_configuration.resolve_resource_path(
+        path_value,
+        project_root=Path(__file__).resolve().parents[2],
+        frozen=getattr(sys, "frozen", False),
+        executable=sys.executable,
+    )
 
 
 def _resolve_configured_engine_command(selected):
-    raw_command = selected.get("engineCommand")
-    if isinstance(raw_command, list) and raw_command and str(raw_command[0] or ""):
-        return [
-            _resolve_engine_resource_path(part) if index == 0 else str(part)
-            for index, part in enumerate(raw_command)
-        ]
-
-    engine_path = str(selected.get("enginePath") or "")
-    if engine_path:
-        return [_resolve_engine_resource_path(engine_path)]
-
-    return []
+    return engine_configuration.resolve_command(selected, _resolve_engine_resource_path)
 
 
 def _resolve_configured_engine_cwd(selected, command):
-    configured_cwd = str(selected.get("engineCwd") or "")
-    if configured_cwd:
-        return _resolve_engine_resource_path(configured_cwd)
-    return str(Path(command[0]).resolve().parent) if command else None
+    return engine_configuration.resolve_cwd(
+        selected,
+        command,
+        _resolve_engine_resource_path,
+    )
 
 
 def _gateway_profile(config, output_id):
-    profile = _assigned_engine_profile(config, output_id)
-    if not isinstance(profile, dict):
-        return None
-    weights = [
-        {
-            "slotId": str(weight.get("slotId") or ""),
-            "format": str(weight.get("format") or ""),
-            "path": _resolve_engine_resource_path(weight.get("path") or ""),
-        }
-        for weight in (profile.get("weights") or [])
-        if isinstance(weight, dict)
-    ]
-    primary_weight = next(
-        (weight for weight in weights if weight["slotId"] == "model"),
-        weights[0] if weights else {},
+    return engine_configuration.gateway_profile(
+        config,
+        output_id,
+        _resolve_engine_resource_path,
     )
-    profile_options = profile.get("options")
-    options = copy.deepcopy(profile_options) if isinstance(profile_options, dict) else {}
-    if profile.get("device"):
-        options["device"] = str(profile.get("device"))
-    engine_command = _resolve_configured_engine_command(profile)
-    return {
-        "profile_id": str(profile.get("id") or ""),
-        "engine_id": str(profile.get("engineId") or ""),
-        "engine_version": str(profile.get("engineVersion") or ""),
-        "model_id": "",
-        "model_format": str(primary_weight.get("format") or ""),
-        "model_path": str(primary_weight.get("path") or ""),
-        "weights": weights,
-        "expected_sha256": "",
-        "engine_command": engine_command,
-        "engine_cwd": _resolve_configured_engine_cwd(profile, engine_command),
-        "engine_options": options,
-    }
 
 
 def _engine_runtime_specifications(config):
-    specifications = []
-    for assignment in resolve_engine_assignments(config):
-        output_ids = assignment["outputs"]
-        selected = _gateway_profile(config, output_ids[0]) if output_ids else None
-        if not selected:
-            continue
-        options = dict(selected["engine_options"])
-        device_preference = str(options.pop("device", "auto") or "auto")
-        specifications.append({
-            "profile_id": selected["profile_id"],
-            "engine_id": selected["engine_id"],
-            "engine_version": selected["engine_version"],
-            "command": selected["engine_command"],
-            "cwd": selected["engine_cwd"],
-            "enabled_outputs": [
-                {"id": output_id, "version": 1}
-                for output_id in output_ids
-            ],
-            "weights": selected["weights"],
-            "device_preference": device_preference,
-            "options": options,
-        })
-    return specifications
+    return engine_configuration.runtime_specifications(
+        config,
+        _resolve_engine_resource_path,
+    )
 
 
 def configure_action_recommendation_engine(config):
