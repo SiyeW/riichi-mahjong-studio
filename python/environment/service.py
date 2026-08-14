@@ -19,6 +19,8 @@ except ModuleNotFoundError:
 import auto_analysis_plan
 import game_tree
 import play_prefetch_runtime
+import result_view
+import table_view
 from action_recommendation_adapter import (
     analyze_action_choices,
     analyze_discard_choices,
@@ -4237,167 +4239,22 @@ def build_tree_cursor_view(game, current_node_id):
 
 
 def rank_scores(scores):
-    normalized = [
-        int(scores[seat]) if isinstance(scores, (list, tuple)) and seat < len(scores) else 0
-        for seat in range(4)
-    ]
-    absolute_by_rank = sorted(range(4), key=lambda seat: (-normalized[seat], seat))
-    ranks = [0, 0, 0, 0]
-    for rank, seat in enumerate(absolute_by_rank, start=1):
-        ranks[seat] = rank
-    return ranks
+    return result_view.rank_scores(scores)
 
 
 def build_result_info(snapshot):
     sync_snapshot_state(snapshot)
-    last_action = snapshot.get("lastAction") or {}
-    action_type = last_action.get("type")
-    diff_to_controlled = [(seat - STATE["controlledSeat"] + 4) % 4 for seat in range(4)]
-    relative_labels = ["自家", "下家", "对家", "上家"]
-    seat_names = [relative_labels[diff_to_controlled[seat]] for seat in range(4)]
-
-    if action_type == "round_result":
-        result = copy.deepcopy(last_action.get("result") or {})
-        event_type = result.get("eventType", "round_result")
-        event_data = copy.deepcopy(result.get("eventData") or {})
-        if event_type == "hora":
-            hora_actor = int(event_data.get("actor", snapshot.get("dealer", 0)))
-            hora_target = int(event_data.get("target", hora_actor))
-            scores = copy.deepcopy(result.get("scores", snapshot.get("scores", [25000, 25000, 25000, 25000])))
-            return {
-                "eventType": "round_result",
-                "title": f"{seat_names[hora_actor]} {'自摸' if hora_actor == hora_target else '荣和 ' + seat_names[hora_target]}",
-                "detail": "",
-                "reason": None,
-                "scores": scores,
-                "ranks": rank_scores(scores),
-                "deltas": copy.deepcopy(event_data.get("deltas", [0, 0, 0, 0])),
-                "actor": hora_actor,
-                "target": hora_target,
-                "han": event_data.get("han"),
-                "fu": event_data.get("fu"),
-                "yaku": copy.deepcopy(event_data.get("yaku", [])),
-                "yakuDetails": copy.deepcopy(event_data.get("yakuDetails", [])),
-                "uraMarkers": copy.deepcopy(event_data.get("uraMarkers", [])),
-                "isOpenHand": event_data.get("isOpenHand"),
-                "cost": copy.deepcopy(event_data.get("cost", {})),
-            }
-        if event_type == "ryukyoku":
-            reason_label = str(event_data.get("reasonLabel") or "")
-            reason = str(event_data.get("reason") or "")
-            reason_titles = {
-                "exhaustive_draw": "荒牌流局",
-                "kyuushu_kyuuhai": "九种九牌",
-                "suufon_renda": "四风连打",
-                "suukantsu": "四杠散了",
-                "suucha_riichi": "四家立直",
-            }
-            label_titles = {
-                "": "荒牌流局",
-                "流局": "荒牌流局",
-                "九種九牌": "九种九牌",
-                "四風連打": "四风连打",
-                "四槓散了": "四杠散了",
-            }
-            title = reason_titles.get(reason) or label_titles.get(reason_label, reason_label)
-            scores = copy.deepcopy(result.get("scores", snapshot.get("scores", [25000, 25000, 25000, 25000])))
-            return {
-                "eventType": "round_result",
-                "title": title,
-                "detail": "",
-                "reason": reason,
-                "scores": scores,
-                "ranks": rank_scores(scores),
-                "deltas": copy.deepcopy(event_data.get("deltas", [0, 0, 0, 0])),
-            }
-        scores = copy.deepcopy(snapshot.get("scores", [25000, 25000, 25000, 25000]))
-        return {
-            "eventType": "round_result",
-            "title": "结算",
-            "detail": "",
-            "reason": None,
-            "scores": scores,
-            "ranks": rank_scores(scores),
-            "deltas": copy.deepcopy(result.get("deltas", [0, 0, 0, 0])),
-        }
-    if action_type in ("match_result", "match_end"):
-        result = copy.deepcopy(last_action.get("result") or {})
-        if action_type == "match_end" and not result.get("scores"):
-            for history_action in reversed(snapshot.get("actionHistory") or []):
-                if history_action.get("type") != "round_result":
-                    continue
-                result = copy.deepcopy(history_action.get("result") or {})
-                break
-        scores = copy.deepcopy(result.get("scores", snapshot.get("scores", [25000, 25000, 25000, 25000])))
-        return {
-            "eventType": "match_end",
-            "title": "终局",
-            "detail": f"{result.get('bakaze', 'W')}{result.get('kyoku', 4)} 结束",
-            "reason": None,
-            "scores": scores,
-            "ranks": rank_scores(scores),
-            "deltas": [0, 0, 0, 0],
-        }
-    return None
+    return result_view.build_result_info(snapshot, int(STATE["controlledSeat"]))
 
 
 def resolve_last_drawn_tile(snapshot, seat):
     sync_snapshot_state(snapshot)
-    if snapshot.get("currentActor") != seat:
-        return None
-
-    if snapshot.get("phase") == "game_end":
-        last_action = snapshot.get("lastAction") or {}
-        if last_action.get("type") == "hora" and last_action.get("actor") == seat:
-            if last_action.get("isTsumo", last_action.get("actor") == last_action.get("target")):
-                return str(last_action.get("pai") or "")
-        return None
-
-    if snapshot.get("phase") not in ("discard", "draw_or_discard", "reach_declaration", "round_result"):
-        return None
-
-    for action in reversed(snapshot.get("actionHistory", [])):
-        if int(action.get("actor", -1)) != seat:
-            continue
-        action_type = str(action.get("type") or "")
-        if action_type == "tsumo":
-            return str(action.get("pai") or "")
-        if action_type in ("chi", "pon", "daiminkan", "ankan", "kakan", "dahai", "hora", "ryukyoku"):
-            return None
-
-    return None
+    return table_view.resolve_last_drawn_tile(snapshot, seat)
 
 
 def resolve_display_last_draw_state(snapshot):
     sync_snapshot_state(snapshot)
-    last_action = snapshot.get("lastAction") or {}
-    phase = snapshot.get("phase")
-
-    if phase == "game_end" and last_action.get("type") == "hora":
-        winner = int(last_action.get("actor", -1))
-        target = int(last_action.get("target", winner))
-        if winner >= 0 and last_action.get("isTsumo", winner == target):
-            tile = str(last_action.get("pai") or "")
-            return winner, tile or None
-        return None, None
-
-    if phase == "round_result" and last_action.get("type") == "round_result":
-        result = last_action.get("result") or {}
-        if result.get("eventType") == "hora":
-            event_data = result.get("eventData") or {}
-            winner = int(event_data.get("actor", -1))
-            target = int(event_data.get("target", winner))
-            if winner >= 0 and winner == target:
-                tile = str(event_data.get("pai") or "")
-                return winner, tile or None
-
-    current_actor = snapshot.get("currentActor")
-    if current_actor is None:
-        return None, None
-    tile = resolve_last_drawn_tile(snapshot, current_actor)
-    if tile:
-        return int(current_actor), tile
-    return None, None
+    return table_view.resolve_display_last_draw_state(snapshot)
 
 
 def resolve_auto_advance_mode(snapshot):
@@ -4426,94 +4283,20 @@ def resolve_auto_advance_mode(snapshot):
 
 def build_table_view(snapshot):
     sync_snapshot_state(snapshot)
-    controlled_seat = STATE["controlledSeat"]
-    last_drawn_seat, last_drawn_tile = resolve_display_last_draw_state(snapshot)
-    hands_view = []
-    revealed_seats = set()
-    last = snapshot.get("lastAction") or {}
-    if last.get("type") == "hora":
-        revealed_seats.add(int(last.get("actor", -1)))
-    elif last.get("type") == "ryukyoku":
-        for s in last.get("tenpaiSeats", []):
-            revealed_seats.add(int(s))
-    elif last.get("type") == "round_result":
-        result = last.get("result") or {}
-        event_data = result.get("eventData") or {}
-        event_type = result.get("eventType")
-        if event_type == "hora":
-            revealed_seats.add(int(event_data.get("actor", -1)))
-        elif event_type == "ryukyoku":
-            for s in event_data.get("tenpaiSeats", []):
-                revealed_seats.add(int(s))
-    for seat, hand in enumerate(snapshot["hands"]):
-        if seat == controlled_seat or STATE["visibleHands"] or seat in revealed_seats:
-            hands_view.append(hand[:])
-        else:
-            hands_view.append(["?"] * len(hand))
-
-    return {
-        "matchId": STATE["game"].get("matchId") if STATE.get("game") else None,
-        "bakaze": snapshot["bakaze"],
-        "kyoku": snapshot["kyoku"],
-        "honba": snapshot["honba"],
-        "kyotaku": snapshot["kyotaku"],
-        "roundIndex": snapshot["roundIndex"],
-        "westEntered": snapshot.get("westEntered", False),
-        "dealer": snapshot["dealer"],
-        "currentActor": snapshot["currentActor"],
-        "phase": snapshot["phase"],
-        "turn": snapshot["turn"],
-        "drawIndex": snapshot["drawIndex"],
-        "lastDrawnSeat": last_drawn_seat,
-        "lastDrawnTile": last_drawn_tile,
-        "autoAdvanceMode": resolve_auto_advance_mode(snapshot),
-        "wallRemaining": len(snapshot["wall"]) - snapshot["drawIndex"],
-        "doraIndicators": snapshot["doraIndicators"][:],
-        "uraIndicators": snapshot.get("uraIndicators", [])[:],
-        "scores": snapshot["scores"][:],
-        "hands": hands_view,
-        "rivers": copy.deepcopy(snapshot["rivers"]),
-        "melds": copy.deepcopy(snapshot["melds"]),
-        "actionHistory": copy.deepcopy(snapshot.get("actionHistory", [])),
-        "riichiDeclared": copy.deepcopy(snapshot.get("riichiDeclared", [False, False, False, False])),
-        "riichiAccepted": copy.deepcopy(snapshot.get("riichiAccepted", [False, False, False, False])),
-        "ippatsuEligible": copy.deepcopy(snapshot.get("ippatsuEligible", [False, False, False, False])),
-        "pendingRiichiSeat": snapshot.get("pendingRiichiSeat"),
-        "riichiDiscardState": snapshot.get("riichiDiscardState"),
-        "pendingRiichiDiscard": copy.deepcopy(snapshot.get("pendingRiichiDiscard")),
-        "pendingKan": copy.deepcopy(snapshot.get("pendingKan")),
-        "pendingDiscard": copy.deepcopy(snapshot["pendingDiscard"]),
-        "reactionWindow": copy.deepcopy(snapshot["reactionWindow"]),
-        "kanReactionWindow": copy.deepcopy(snapshot.get("kanReactionWindow")),
-        "lastAction": copy.deepcopy(snapshot["lastAction"]),
-        "resultInfo": build_result_info(snapshot),
-    }
+    game = STATE.get("game")
+    return table_view.build_table_view(
+        snapshot,
+        controlled_seat=int(STATE["controlledSeat"]),
+        visible_hands=bool(STATE["visibleHands"]),
+        match_id=game.get("matchId") if isinstance(game, dict) else None,
+        auto_advance_mode=resolve_auto_advance_mode(snapshot),
+        result_info=build_result_info(snapshot),
+    )
 
 
 def build_match_summary(game, snapshot):
-    match_state = copy.deepcopy(game.get("matchState") or snapshot.get("matchState") or {})
     sync_snapshot_state(snapshot)
-    match_state["bakaze"] = snapshot["bakaze"]
-    match_state["kyoku"] = snapshot["kyoku"]
-    match_state["honba"] = snapshot["honba"]
-    match_state["kyotaku"] = snapshot["kyotaku"]
-    match_state["dealer"] = snapshot["dealer"]
-    match_state["scores"] = copy.deepcopy(snapshot["scores"])
-    match_state["roundIndex"] = snapshot["roundIndex"]
-    match_state["westEntered"] = snapshot.get("westEntered", False)
-    return {
-        "matchId": game.get("matchId") or game.get("gameId"),
-        "matchType": (game.get("matchConfig") or {}).get("matchType", "hanchan"),
-        "roundIndex": match_state.get("roundIndex", 0),
-        "bakaze": match_state.get("bakaze", "E"),
-        "kyoku": match_state.get("kyoku", 1),
-        "honba": match_state.get("honba", 0),
-        "kyotaku": match_state.get("kyotaku", 0),
-        "scores": copy.deepcopy(match_state.get("scores", [25000, 25000, 25000, 25000])),
-        "dealer": match_state.get("dealer", 0),
-        "westEntered": bool(match_state.get("westEntered", False)),
-        "ended": bool(match_state.get("ended", False)),
-    }
+    return table_view.build_match_summary(game, snapshot)
 
 
 def build_view_payload(compact_tree=False):
