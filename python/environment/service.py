@@ -19,6 +19,7 @@ except ModuleNotFoundError:
 
 from decision_adapter import analyze_action_choices, analyze_discard_choices, choose_ai_action, get_and_reset_ai_thinking_time_s, get_latest_mjai_debug, get_response_ms_by_seat, set_thinking_time_bounds, to_relative_model_path
 from decision_engine_gateway import DecisionEngineGateway
+from engine_assignments import profiles_by_output
 from opponent_gateway import OpponentAnalysisGateway
 from shanten_gateway import get_latest_shanten_mjai
 from mjai_stream import build_mjai_events_from_actions, build_mjai_stream
@@ -1430,21 +1431,7 @@ def _models_config_from_project_config(config):
     if not isinstance(engines, dict):
         return merged
 
-    def selected_profile(output_id):
-        profiles = engines.get("profiles")
-        if not isinstance(profiles, list):
-            return None
-        assignments = engines.get("outputAssignments")
-        selected_id = str(assignments.get(output_id) or "") if isinstance(assignments, dict) else ""
-        return next(
-            (
-                profile
-                for profile in profiles
-                if isinstance(profile, dict)
-                and str(profile.get("id") or "") == selected_id
-            ),
-            None,
-        )
+    output_profiles = profiles_by_output(config)
 
     def model_from_profile(profile, base, *, opponent_analysis=False):
         if not isinstance(profile, dict):
@@ -1495,9 +1482,9 @@ def _models_config_from_project_config(config):
                 result["temperature"] = 1
         return result
 
-    decision = selected_profile("action-recommendation")
-    opponent_shanten = selected_profile("opponent-shanten")
-    opponent_deal_in = selected_profile("opponent-deal-in-probability")
+    decision = output_profiles.get("action-recommendation")
+    opponent_shanten = output_profiles.get("opponent-shanten")
+    opponent_deal_in = output_profiles.get("opponent-deal-in-probability")
     if decision:
         decision_model = model_from_profile(decision, merged["teachingModel"])
         merged["teachingModel"] = decision_model
