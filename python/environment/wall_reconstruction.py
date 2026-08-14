@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import random
 from collections import Counter
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, List
 
 from service_helpers import (
     DORA_INDICATOR_POSITIONS,

@@ -53,7 +53,6 @@ from analysis_cache import (
 from engine_assignments import resolve_engine_assignments
 from engine_runtime import EngineRuntimeRegistry
 from game_record_storage import (
-    RECORD_FORMAT_VERSION,
     hydrate_game_structure,
     hydrate_round_walls,
     migrate_discard_tsumogiri,
@@ -77,14 +76,12 @@ from service_debug import run_debug_scenario
 from service_helpers import (
     DORA_INDICATOR_POSITIONS,
     RINSHAN_DRAW_POSITIONS,
-    SEAT_LABELS,
     URA_INDICATOR_POSITIONS,
     actor_just_drew,
     build_comparison_result,
     build_special_action_comparison_result,
     build_reaction_comparison_result,
     build_round_seed_stream,
-    get_forbidden_discard_families_after_self_furo,
     get_reaction_expected_hand_count,
     get_reaction_hand_consumed,
     resolve_reaction_hand_consumed,
@@ -92,11 +89,9 @@ from service_helpers import (
     normalize_tile_family,
     now_iso,
     sort_tiles,
-    unique_preserving_order,
 )
 from settlement import (
     can_ankan,
-    can_declare_ron,
     can_declare_riichi,
     compute_hora_result,
     can_declare_ryukyoku,
@@ -106,7 +101,6 @@ from settlement import (
     compute_exhaustive_ryukyoku,
     build_player_state,
     get_ankan_candidates,
-    get_valid_riichi_discards,
 )
 
 def get_project_root() -> Path:
