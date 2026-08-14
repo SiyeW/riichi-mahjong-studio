@@ -55,6 +55,8 @@ from game_record_storage import (
     RECORD_FORMAT_VERSION,
     hydrate_game_structure,
     hydrate_round_walls,
+    migrate_discard_tsumogiri,
+    migrate_terminal_table_scores,
     repair_tsumo_action_tiles,
     serialize_game_record_parts,
 )
@@ -368,94 +370,11 @@ def _current_opponent_analysis_source(*, include_display_name=False):
 
 
 def _migrate_discard_tsumogiri(game):
-    """Restore discard identity fields omitted by older AI-generated nodes."""
-    if not isinstance(game, dict):
-        return
-    for node in game.get("nodes", {}).values():
-        action = node.get("action") if isinstance(node, dict) else None
-        if not isinstance(action, dict) or action.get("type") != "dahai" or "tsumogiri" in action:
-            continue
-        snapshot = node.get("snapshot") or {}
-        last_action = snapshot.get("lastAction") or {}
-        if (
-            last_action.get("type") == "dahai"
-            and last_action.get("actor") == action.get("actor")
-            and str(last_action.get("pai") or "") == str(action.get("pai") or "")
-            and isinstance(last_action.get("tsumogiri"), bool)
-        ):
-            action["tsumogiri"] = last_action["tsumogiri"]
+    return migrate_discard_tsumogiri(game)
 
 
 def _migrate_terminal_table_scores(game):
-    """Keep settlement deltas out of the table until the next round starts."""
-    if not isinstance(game, dict):
-        return
-    nodes = game.get("nodes") or {}
-
-    def score_list(value):
-        if not isinstance(value, (list, tuple)) or len(value) != 4:
-            return None
-        try:
-            return [int(score) for score in value]
-        except (TypeError, ValueError):
-            return None
-
-    def set_table_scores(snapshot, scores):
-        snapshot["scores"] = copy.deepcopy(scores)
-        match_state = snapshot.get("matchState")
-        if isinstance(match_state, dict):
-            match_state["scores"] = copy.deepcopy(scores)
-
-    for node in nodes.values():
-        action = node.get("action") if isinstance(node, dict) else None
-        if not isinstance(action, dict) or action.get("type") != "round_result":
-            continue
-
-        terminal_nodes = []
-        cursor = nodes.get(node.get("parentId"))
-        while isinstance(cursor, dict) and (cursor.get("action") or {}).get("type") in ("hora", "ryukyoku"):
-            terminal_nodes.append(cursor)
-            cursor = nodes.get(cursor.get("parentId"))
-        if not terminal_nodes or not isinstance(cursor, dict):
-            continue
-        base_scores = score_list((cursor.get("snapshot") or {}).get("scores"))
-        if base_scores is None:
-            continue
-
-        snapshot = node.get("snapshot") or {}
-        result_payloads = []
-        action_result = action.get("result")
-        if isinstance(action_result, dict):
-            result_payloads.append(action_result)
-        last_result = (snapshot.get("lastAction") or {}).get("result")
-        if isinstance(last_result, dict):
-            result_payloads.append(last_result)
-
-        settled_scores = next((
-            scores
-            for scores in (score_list(result.get("scores")) for result in result_payloads)
-            if scores is not None
-        ), None)
-        if settled_scores is None:
-            deltas = None
-            for result in result_payloads:
-                event_data = result.get("eventData") or {}
-                deltas = score_list(event_data.get("deltas") or result.get("deltas"))
-                if deltas is not None:
-                    break
-            if deltas is None:
-                deltas = [0, 0, 0, 0]
-                for terminal_node in terminal_nodes:
-                    terminal_last = (terminal_node.get("snapshot") or {}).get("lastAction") or {}
-                    terminal_deltas = score_list(terminal_last.get("deltas")) or [0, 0, 0, 0]
-                    deltas = [deltas[seat] + terminal_deltas[seat] for seat in range(4)]
-            settled_scores = [base_scores[seat] + deltas[seat] for seat in range(4)]
-
-        for result in result_payloads:
-            result["scores"] = copy.deepcopy(settled_scores)
-        for terminal_node in terminal_nodes:
-            set_table_scores(terminal_node.get("snapshot") or {}, base_scores)
-        set_table_scores(snapshot, base_scores)
+    return migrate_terminal_table_scores(game)
 
 
 def _get_opponent_analysis_cache_key(seat=None):
