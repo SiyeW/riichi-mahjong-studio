@@ -10,6 +10,14 @@ function testFreshRegistryIsEmpty() {
     'action-recommendation': '',
     'opponent-shanten': '',
     'opponent-deal-in-probability': '',
+    'opponent-concealed-tile-count': '',
+    'wall-tile-count': '',
+    'opponent-dora-count': '',
+    'opponent-score': '',
+    'kyoku-outcome': '',
+    'kyoku-score-delta': '',
+    'match-placement': '',
+    'match-score': '',
   })
 }
 

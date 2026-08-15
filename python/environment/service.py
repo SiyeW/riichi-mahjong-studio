@@ -61,7 +61,7 @@ from game_record_storage import (
     serialize_game_record_parts,
 )
 from match_progression import apply_round_result_to_match_state
-from opponent_prediction_coordinator import OpponentPredictionCoordinator
+from opponent_prediction_coordinator import ANALYSIS_OUTPUT_IDS, OpponentPredictionCoordinator
 from opponent_prediction_gateway import get_latest_opponent_prediction_mjai
 from play_prefetch_runtime import PlayPrefetchRuntime
 from mjai_stream import build_mjai_events_from_actions, build_mjai_stream
@@ -316,7 +316,7 @@ def _analysis_source_display_name(kind):
     output_ids = (
         {"action-recommendation"}
         if kind == "decision"
-        else {"opponent-shanten", "opponent-deal-in-probability"}
+        else set(ANALYSIS_OUTPUT_IDS)
     )
     names = []
     for assignment in resolve_engine_assignments(config):
@@ -348,11 +348,22 @@ def _current_decision_analysis_source(model_path=None, *, include_display_name=F
 
 
 def _current_opponent_analysis_source(*, include_display_name=False):
+    config = load_project_config()
+    assigned_outputs = {
+        output_id
+        for assignment in resolve_engine_assignments(config)
+        for output_id in assignment["outputs"]
+    }
+    output_signature = "+".join(
+        f"{output_id}@1"
+        for output_id in ANALYSIS_OUTPUT_IDS
+        if output_id in assigned_outputs
+    ) or "opponent-analysis@1"
     return build_analysis_source(
         "opponent",
         OPPONENT_PREDICTIONS.cache_identity(),
         None,
-        "opponent-shanten@1+opponent-deal-in-probability@1",
+        output_signature,
         display_name=(
             _analysis_source_display_name("opponent")
             if include_display_name
@@ -639,18 +650,15 @@ def configure_action_recommendation_engine(config):
 
 
 def configure_opponent_prediction_engines(config):
-    opponent_profile = _gateway_profile(config, "opponent-shanten")
-    deal_in = _gateway_profile(config, "opponent-deal-in-probability")
-    if opponent_profile:
-        opponent_profile["input_modes"] = ["public"]
-        opponent_profile["engine_client"] = ENGINE_RUNTIME_REGISTRY.get(opponent_profile["profile_id"])
-    if deal_in:
-        deal_in["input_modes"] = ["public"]
-        deal_in["engine_client"] = ENGINE_RUNTIME_REGISTRY.get(deal_in["profile_id"])
-    OPPONENT_PREDICTIONS.configure_profiles(
-        opponent_profile,
-        deal_in,
-    )
+    profiles = {}
+    for output_id in ANALYSIS_OUTPUT_IDS:
+        profile = _gateway_profile(config, output_id)
+        if not profile:
+            continue
+        profile["input_modes"] = ["public"]
+        profile["engine_client"] = ENGINE_RUNTIME_REGISTRY.get(profile["profile_id"])
+        profiles[output_id] = profile
+    OPPONENT_PREDICTIONS.configure_profiles(profiles)
 
 
 def apply_runtime_engine_config(config=None, *, invalidate=False):

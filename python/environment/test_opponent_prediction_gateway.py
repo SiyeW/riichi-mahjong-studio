@@ -176,6 +176,94 @@ class OpponentOutputCompositionTest(unittest.TestCase):
         self.assertIn("shanten_probs", combined["raw"]["shimocha"])
         self.assertIn("ron_wait", combined["raw"]["shimocha"])
 
+    def test_additional_protocol_outputs_are_preserved_for_the_host(self):
+        gateway = OpponentPredictionGateway(enabled_outputs=["kyoku-outcome"])
+        try:
+            output_data = {
+                "drawProbability": 0.25,
+                "players": [
+                    {
+                        "seat": seat,
+                        "winProbability": 0.2,
+                        "dealInProbability": 0.1,
+                        "targetGivenWin": [
+                            {"seat": target, "probability": 0.25}
+                            for target in range(4)
+                        ],
+                    }
+                    for seat in range(4)
+                ],
+            }
+            players = gateway._validate_protocol_prediction(
+                {
+                    "outputs": [{
+                        "id": "kyoku-outcome",
+                        "version": 1,
+                        "data": output_data,
+                    }],
+                },
+                controlled_seat=0,
+            )
+            result = gateway._protocol_result_to_host(
+                players,
+                protocol_outputs={"kyoku-outcome": output_data},
+                events=[],
+                target_events=None,
+                controlled_seat=0,
+                context={"nodeId": "n_1"},
+                target_prefix_hashes=None,
+                target_event_hash=None,
+            )
+            self.assertEqual(result["outputs"]["kyoku-outcome"], output_data)
+            self.assertEqual(result["context"], {"nodeId": "n_1"})
+        finally:
+            gateway.shutdown()
+
+    def test_configure_profile_keeps_every_requested_analysis_output(self):
+        gateway = OpponentPredictionGateway(enabled_outputs=["opponent-shanten"])
+        try:
+            gateway.configure_profile(
+                profile_id="profile.unified",
+                engine_id="org.example.unified",
+                engine_version="1.0.0",
+                model_id="",
+                model_format="example-v1",
+                model_path="weights/example.pt",
+                enabled_outputs=[
+                    "opponent-shanten",
+                    "kyoku-outcome",
+                    "match-score",
+                ],
+            )
+            self.assertEqual(
+                [output["id"] for output in gateway._requested_output_contracts()],
+                ["opponent-shanten", "kyoku-outcome", "match-score"],
+            )
+        finally:
+            gateway.shutdown()
+
+    def test_merged_results_keep_additional_outputs(self):
+        combined = OpponentPredictionCoordinator._merge_results([
+            {
+                "predictions": {"opponents": {}, "ron_wait": {}},
+                "ground_truth": {"opponents": {}, "ron_wait": {}},
+                "outputs": {"kyoku-outcome": {"drawProbability": 0.25}},
+                "context": {"nodeId": "n_1"},
+                "status": "ready",
+            },
+            {
+                "predictions": {"opponents": {}, "ron_wait": {}},
+                "ground_truth": {"opponents": {}, "ron_wait": {}},
+                "outputs": {"match-score": {"players": []}},
+                "context": {"nodeId": "n_1"},
+                "status": "ready",
+            },
+        ])
+        self.assertEqual(
+            set(combined["outputs"]),
+            {"kyoku-outcome", "match-score"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

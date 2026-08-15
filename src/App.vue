@@ -85,7 +85,12 @@
         </span>
         <span class="toolbar-section">
           <button @click="openWallView" :disabled="!gameView.table">牌山</button>
-          <button @click="toggleShantenWindow" :disabled="!gameView.table">对手分析</button>
+          <button
+            :class="{ active: showAnalysisDock }"
+            :aria-pressed="showAnalysisDock"
+            @click="toggleAnalysisDock"
+            :disabled="!gameView.table"
+          >分析</button>
           <span
             class="toolbar-button-hint"
             :title="isReadOnlyRecord ? READ_ONLY_RECORD_HINT : undefined"
@@ -571,6 +576,44 @@
             </div>
           </div>
         </div>
+        </div>
+      </section>
+
+      <section
+        v-if="showAnalysisDock"
+        class="panel analysis-dock"
+        :class="{ 'reset-without-motion': suppressOpponentAnalysisTransitions }"
+        :style="[{ '--floating-panel-scale': uiScale }, colorSchemeCssVariables]"
+        aria-label="分析"
+      >
+        <div class="analysis-dock-header">
+          <h2>分析</h2>
+          <button
+            v-if="hasOpponentGroundTruth"
+            class="analysis-dock-mode"
+            @click="shantenViewMode = shantenViewMode === 'predictions' ? 'ground_truth' : 'predictions'"
+          >
+            {{ shantenViewMode === 'predictions' ? '预测值' : '实际值' }}
+          </button>
+        </div>
+        <div class="analysis-dock-body">
+          <p v-if="opponentAnalysisIsLoading" class="shanten-panel-state">正在加载</p>
+          <template v-else>
+            <p v-if="opponentAnalysisLoadError" class="shanten-panel-state is-error">{{ opponentAnalysisLoadError }}</p>
+            <AnalysisPanel
+              v-else
+              :analysis="gameView.opponentAnalysis"
+              :shanten-opponents="shantenOpponents"
+              :shanten-colors="shantenColors"
+              :shanten-labels="SHANTEN_LABELS"
+              :shanten-short-labels="SHANTEN_SHORT_LABELS"
+              :reduce-motion="reduceMotionEnabled || suppressOpponentAnalysisTransitions"
+              :controlled-seat="status.controlledSeat"
+              :dealer="gameView.table?.dealer ?? 0"
+              :tile-image-src="tileImageSrc"
+              :tile-face-label="tileFaceLabel"
+            />
+          </template>
         </div>
       </section>
 
@@ -1448,99 +1491,14 @@
     <AboutDialog v-if="showAboutPanel" @close="showAboutPanel = false" />
   </div>
 
-  <!-- 对手分析浮动窗口 -->
-  <div
-    v-if="showShantenWindow"
-    class="analysis-float-panel shanten-window"
-    :class="{ 'reset-without-motion': suppressOpponentAnalysisTransitions }"
-    :style="[
-      { '--floating-panel-scale': uiScale, zIndex: floatingPanelZ.shanten },
-      colorSchemeCssVariables,
-    ]"
-    @mousedown="focusFloatingPanel('shanten')"
-    @focusin="focusFloatingPanel('shanten')"
-  >
-    <div class="floating-panel-header" @mousedown="startDragFloatingPanel">
-      <span>对手分析</span>
-      <div class="floating-panel-header-actions">
-        <button class="floating-panel-action" @click="shantenViewMode = shantenViewMode === 'predictions' ? 'ground_truth' : 'predictions'">
-          {{ shantenViewMode === 'predictions' ? '预测值' : '实际值' }}
-        </button>
-        <button class="floating-panel-close" aria-label="关闭对手分析" @click="showShantenWindow = false">&times;</button>
-      </div>
-    </div>
-    <p v-if="opponentAnalysisIsLoading" class="shanten-panel-state">正在加载</p>
-    <template v-else>
-      <p v-if="opponentAnalysisLoadError" class="shanten-panel-state is-error">{{ opponentAnalysisLoadError }}</p>
-      <div class="shanten-summary">
-        <div class="shanten-charts">
-          <ShantenPieChart
-            v-for="opp in shantenOpponents"
-            :key="opp.key"
-            :label="opp.label"
-            :probabilities="opp.probabilities"
-            :colors="shantenColors"
-            :slice-labels="SHANTEN_LABELS"
-            :short-labels="SHANTEN_SHORT_LABELS"
-            :reduce-motion="reduceMotionEnabled || suppressOpponentAnalysisTransitions"
-            @slice-enter="(label, probability) => showShantenHover(opp.label, label, probability)"
-            @slice-leave="clearShantenHover"
-          />
-        </div>
-        <div class="shanten-legend" aria-label="向听图例">
-          <span v-for="(label, index) in SHANTEN_LABELS" :key="label" class="shanten-legend-item">
-            <i class="shanten-legend-swatch" :style="{ backgroundColor: shantenColors[index] }" />
-            <small>{{ label }}</small>
-          </span>
-        </div>
-      </div>
-      <div class="ron-wait-rows">
-        <div v-for="row in ronWaitTileRows" :key="row[0]" class="ron-wait-row">
-          <div class="ron-wait-row-tiles">
-            <div v-for="(tile, tileIndex) in row" :key="tile" class="ron-wait-tile">
-              <img class="tileImg mini-tile-img" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
-              <div
-                class="ron-wait-bars"
-                :class="{ 'has-adaptive-threshold': showRonAdaptiveThreshold }"
-                :style="{ '--ron-adaptive-threshold-top': ronBarHeight(RON_BAR_ADAPTIVE_MIN) }"
-              >
-                <span class="ron-bar-track" @mouseenter="showRonHover('上家', tile, displayedRonWaitData.kamicha[tileIdx(tile)])" @mouseleave="clearShantenHover"><span class="ron-bar-fill ron-bar-kamicha" :style="{ transform: `scaleY(${ronBarScale(displayedRonWaitData.kamicha[tileIdx(tile)])})` }" /></span>
-                <span class="ron-bar-track" @mouseenter="showRonHover('对家', tile, displayedRonWaitData.toimen[tileIdx(tile)])" @mouseleave="clearShantenHover"><span class="ron-bar-fill ron-bar-toimen" :style="{ transform: `scaleY(${ronBarScale(displayedRonWaitData.toimen[tileIdx(tile)])})` }" /></span>
-                <span class="ron-bar-track" @mouseenter="showRonHover('下家', tile, displayedRonWaitData.shimocha[tileIdx(tile)])" @mouseleave="clearShantenHover"><span class="ron-bar-fill ron-bar-shimocha" :style="{ transform: `scaleY(${ronBarScale(displayedRonWaitData.shimocha[tileIdx(tile)])})` }" /></span>
-              </div>
-              <span
-                v-if="tileIndex < row.length - 1"
-                class="ron-wait-bridge"
-                :class="{ 'has-adaptive-threshold': showRonAdaptiveThreshold }"
-                :style="{ '--ron-adaptive-threshold-top': ronBarHeight(RON_BAR_ADAPTIVE_MIN) }"
-                aria-hidden="true"
-              />
-            </div>
-          </div>
-          <div class="ron-wait-scale" aria-hidden="true">
-            <span
-              v-for="tick in ronWaitScaleTicks"
-              :key="tick.value"
-              class="ron-wait-scale-tick"
-              :style="{ top: ronBarHeight(tick.value) }"
-            >
-              <i />
-              <small>{{ tick.label }}</small>
-            </span>
-          </div>
-        </div>
-      </div>
-      <p class="shanten-hover-readout" :class="{ visible: shantenHoverText }">{{ shantenHoverText || '\u00a0' }}</p>
-    </template>
-  </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
+import AnalysisPanel from './components/AnalysisPanel.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
-import ShantenPieChart from './components/ShantenPieChart.vue'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 
@@ -1632,6 +1590,14 @@ const settings = reactive<TrainerSettings>({
       'action-recommendation': '',
       'opponent-shanten': '',
       'opponent-deal-in-probability': '',
+      'opponent-concealed-tile-count': '',
+      'wall-tile-count': '',
+      'opponent-dora-count': '',
+      'opponent-score': '',
+      'kyoku-outcome': '',
+      'kyoku-score-delta': '',
+      'match-placement': '',
+      'match-score': '',
     },
   },
 })
@@ -1698,11 +1664,10 @@ const clearingAnalysisCaches = ref(false)
 const analysisCacheClearMessage = ref('')
 
 // --- 对手分析 ---
-const showShantenWindow = ref(false)
-type FloatingPanelName = 'wall' | 'shanten' | 'engine' | 'roundMap' | 'customExport'
+const showAnalysisDock = ref(false)
+type FloatingPanelName = 'wall' | 'engine' | 'roundMap' | 'customExport'
 const floatingPanelZ = reactive<Record<FloatingPanelName, number>>({
   wall: 1000,
-  shanten: 1000,
   engine: 1000,
   roundMap: 1000,
   customExport: 1000,
@@ -1711,17 +1676,40 @@ let floatingPanelZCounter = 1000
 function focusFloatingPanel(panel: FloatingPanelName) {
   floatingPanelZ[panel] = ++floatingPanelZCounter
 }
-function toggleShantenWindow() {
-  showShantenWindow.value = !showShantenWindow.value
-  if (showShantenWindow.value) focusFloatingPanel('shanten')
+function toggleAnalysisDock() {
+  showAnalysisDock.value = !showAnalysisDock.value
 }
 type EngineRuntimeKind = 'decision' | 'opponent'
-type SupportedEngineOutputId = 'action-recommendation' | 'opponent-shanten' | 'opponent-deal-in-probability'
+type SupportedEngineOutputId =
+  | 'action-recommendation'
+  | 'opponent-shanten'
+  | 'opponent-deal-in-probability'
+  | 'opponent-concealed-tile-count'
+  | 'wall-tile-count'
+  | 'opponent-dora-count'
+  | 'opponent-score'
+  | 'kyoku-outcome'
+  | 'kyoku-score-delta'
+  | 'match-placement'
+  | 'match-score'
 const SUPPORTED_ENGINE_OUTPUTS: Array<{ id: SupportedEngineOutputId; version: number; label: string }> = [
   { id: 'action-recommendation', version: 1, label: '动作推荐' },
   { id: 'opponent-shanten', version: 1, label: '向听预测' },
   { id: 'opponent-deal-in-probability', version: 1, label: '铳率预测' },
+  { id: 'opponent-concealed-tile-count', version: 1, label: '暗牌构成' },
+  { id: 'wall-tile-count', version: 1, label: '牌山剩余' },
+  { id: 'opponent-dora-count', version: 1, label: '宝牌数预测' },
+  { id: 'opponent-score', version: 1, label: '打点预测' },
+  { id: 'kyoku-outcome', version: 1, label: '本局走向' },
+  { id: 'kyoku-score-delta', version: 1, label: '本局收支' },
+  { id: 'match-placement', version: 1, label: '终局顺位' },
+  { id: 'match-score', version: 1, label: '终局点数' },
 ]
+const OPPONENT_ENGINE_OUTPUT_IDS = SUPPORTED_ENGINE_OUTPUTS
+  .map((output) => output.id)
+  .filter((outputId): outputId is Exclude<SupportedEngineOutputId, 'action-recommendation'> => (
+    outputId !== 'action-recommendation'
+  ))
 const engineSaveMessage = ref('')
 const loadingEngineProfileId = ref('')
 const unloadingEngineProfileId = ref('')
@@ -1950,7 +1938,7 @@ function captureRuntimeEngineProfile(
 ) {
   const outputIds: SupportedEngineOutputId[] = kind === 'decision'
     ? ['action-recommendation']
-    : ['opponent-shanten', 'opponent-deal-in-probability']
+    : OPPONENT_ENGINE_OUTPUT_IDS
   for (const outputId of outputIds) {
     const profileId = engines.outputAssignments[outputId]
     const profile = engines.profiles.find((item) => item.id === profileId)
@@ -1967,9 +1955,11 @@ function markConfiguredEngineStarting(
   const runtime = runtimeEngineState(kind)
   if (runtime.ready || runtime.unloaded || runtimeEngineError(kind)) return
 
-  const outputId = kind === 'decision' ? 'action-recommendation' : 'opponent-shanten'
-  const profileId = engines.outputAssignments[outputId]
-    || (kind === 'opponent' ? engines.outputAssignments['opponent-deal-in-probability'] : '')
+  const profileId = kind === 'decision'
+    ? engines.outputAssignments['action-recommendation']
+    : OPPONENT_ENGINE_OUTPUT_IDS
+      .map((outputId) => engines.outputAssignments[outputId])
+      .find(Boolean) || ''
   const profile = engines.profiles.find((item) => item.id === profileId)
   if (!profile?.enginePath || !(profile.weights || []).every((weight) => weight.path)) return
   if (runtime.profileId && runtime.profileId !== profileId) return
@@ -2566,11 +2556,16 @@ function shantenResultHasRows(result: Record<string, unknown> | null | undefined
   if (!result) return false
   const predictions = result.predictions as Record<string, unknown> | undefined
   const groundTruth = result.ground_truth as Record<string, unknown> | undefined
-  return [predictions, groundTruth].some((section) => (
+  const outputs = result.outputs as Record<string, unknown> | undefined
+  return Boolean(outputs && Object.keys(outputs).length) || [predictions, groundTruth].some((section) => (
     hasShantenRows(section?.opponents as Record<string, number[]> | undefined)
     || hasShantenRows(section?.ron_wait as Record<string, number[]> | undefined)
   ))
 }
+
+const hasOpponentGroundTruth = computed(() => (
+  hasShantenRows(shantenGTData.value) || hasShantenRows(ronWaitGTData.value)
+))
 
 function shantenResultMatchesCurrentPosition(result: Record<string, unknown>): boolean {
   const context = result.context as Record<string, unknown> | undefined
@@ -2637,7 +2632,9 @@ function applyShantenResult(
   const hasPredRonWait = hasShantenRows(predRonWait)
   const hasGtOpponents = hasShantenRows(gtOpponents)
   const hasGtRonWait = hasShantenRows(gtRonWait)
+  const protocolOutputs = result.outputs as Record<string, unknown> | undefined
   const hasResult = hasPredOpponents || hasPredRonWait || hasGtOpponents || hasGtRonWait
+    || Boolean(protocolOutputs && Object.keys(protocolOutputs).length)
 
   if (!hasResult) {
     if (options.clearWhenEmpty) clearOpponentAnalysisWithoutMotion()
@@ -2664,18 +2661,20 @@ async function fetchShantenOnce() {
 }
 
 async function pollShanten() {
-  if (!showShantenWindow.value) return
+  if (!showAnalysisDock.value) return
   await fetchShantenOnce()
-  if (showShantenWindow.value) {
+  if (showAnalysisDock.value) {
     _shantenTimer = window.setTimeout(pollShanten, 2000)
   }
 }
 
-watch(showShantenWindow, async (open) => {
+watch(showAnalysisDock, async (open) => {
   if (_shantenTimer !== null) {
     window.clearTimeout(_shantenTimer)
     _shantenTimer = null
   }
+  await nextTick()
+  scheduleTableZoomRecalc()
   if (!open) {
     shantenHoverText.value = ''
     await syncAnalysisVisibilityToBackend()
@@ -3641,7 +3640,7 @@ const showTrainingRecommendations = computed(() => {
 })
 
 const opponentAnalysisNeeded = computed(() => (
-  showTrainingRecommendations.value || showShantenWindow.value
+  showTrainingRecommendations.value || showAnalysisDock.value
 ))
 
 watch(
@@ -6844,7 +6843,7 @@ async function closeGame() {
     cancelPendingWheelNavigation()
     clearAutoAdvanceTimer()
     showWallView.value = false
-    showShantenWindow.value = false
+    showAnalysisDock.value = false
     closeRoundMapOverlay()
     wallTiles.value = []
     const response = await window.trainerAPI.closeGame()

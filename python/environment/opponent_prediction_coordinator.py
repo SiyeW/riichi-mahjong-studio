@@ -12,19 +12,35 @@ from opponent_prediction_gateway import OpponentPredictionGateway
 
 SHANTEN_OUTPUT = "opponent-shanten"
 DEAL_IN_OUTPUT = "opponent-deal-in-probability"
+ANALYSIS_OUTPUT_IDS = (
+    SHANTEN_OUTPUT,
+    DEAL_IN_OUTPUT,
+    "opponent-concealed-tile-count",
+    "wall-tile-count",
+    "opponent-dora-count",
+    "opponent-score",
+    "kyoku-outcome",
+    "kyoku-score-delta",
+    "match-placement",
+    "match-score",
+)
 
 
 class OpponentPredictionCoordinator:
     """Use one engine instance per configured profile and merge its output blocks."""
 
     def __init__(self) -> None:
-        self._primary = OpponentPredictionGateway(enabled_outputs=[SHANTEN_OUTPUT])
-        self._secondary = OpponentPredictionGateway(enabled_outputs=[DEAL_IN_OUTPUT])
+        self._gateways: list[OpponentPredictionGateway] = []
         self._active: list[OpponentPredictionGateway] = []
         self._activity_callback: Optional[Callable[[str, Optional[str]], None]] = None
         self._callback_lock = threading.Lock()
-        self._primary.set_activity_callback(self._child_activity_changed)
-        self._secondary.set_activity_callback(self._child_activity_changed)
+
+    def _gateway_at(self, index: int) -> OpponentPredictionGateway:
+        while len(self._gateways) <= index:
+            gateway = OpponentPredictionGateway(enabled_outputs=[])
+            gateway.set_activity_callback(self._child_activity_changed)
+            self._gateways.append(gateway)
+        return self._gateways[index]
 
     @staticmethod
     def _profile_identity(profile: Optional[Dict[str, Any]]) -> str:
@@ -39,40 +55,36 @@ class OpponentPredictionCoordinator:
 
     def configure_profiles(
         self,
-        shanten: Optional[Dict[str, Any]],
-        deal_in: Optional[Dict[str, Any]],
+        profiles: Optional[Dict[str, Dict[str, Any]]],
+        deal_in: Optional[Dict[str, Any]] = None,
     ) -> None:
-        same_profile = (
-            bool(shanten)
-            and bool(deal_in)
-            and self._profile_identity(shanten) == self._profile_identity(deal_in)
-        )
-        if same_profile:
-            self._primary.configure_profile(
-                **shanten,
-                enabled_outputs=[SHANTEN_OUTPUT, DEAL_IN_OUTPUT],
-            )
-            self._secondary.unload()
-            self._active = [self._primary]
-            return
+        if deal_in is not None or (profiles and "profile_id" in profiles):
+            profiles = {
+                SHANTEN_OUTPUT: profiles,
+                DEAL_IN_OUTPUT: deal_in,
+            }
+        configured = profiles if isinstance(profiles, dict) else {}
+        grouped: list[tuple[Dict[str, Any], list[str]]] = []
+        group_index: Dict[str, int] = {}
+        for output_id in ANALYSIS_OUTPUT_IDS:
+            profile = configured.get(output_id)
+            if not isinstance(profile, dict) or not profile:
+                continue
+            identity = self._profile_identity(profile)
+            index = group_index.get(identity)
+            if index is None:
+                group_index[identity] = len(grouped)
+                grouped.append((profile, [output_id]))
+            else:
+                grouped[index][1].append(output_id)
 
         active: list[OpponentPredictionGateway] = []
-        if shanten:
-            self._primary.configure_profile(
-                **shanten,
-                enabled_outputs=[SHANTEN_OUTPUT],
-            )
-            active.append(self._primary)
-        else:
-            self._primary.unload()
-        if deal_in:
-            self._secondary.configure_profile(
-                **deal_in,
-                enabled_outputs=[DEAL_IN_OUTPUT],
-            )
-            active.append(self._secondary)
-        else:
-            self._secondary.unload()
+        for index, (profile, outputs) in enumerate(grouped):
+            gateway = self._gateway_at(index)
+            gateway.configure_profile(**profile, enabled_outputs=outputs)
+            active.append(gateway)
+        for gateway in self._gateways[len(grouped):]:
+            gateway.unload()
         self._active = active
 
     def _gateways_for_profile(
@@ -97,12 +109,14 @@ class OpponentPredictionCoordinator:
             return {
                 "predictions": {"opponents": {}, "ron_wait": {}},
                 "ground_truth": {"opponents": {}, "ron_wait": {}},
+                "outputs": {},
                 "status": "unconfigured",
             }
         merged: Dict[str, Any] = {
             "predictions": {"opponents": {}, "ron_wait": {}},
             "ground_truth": {"opponents": {}, "ron_wait": {}},
             "raw": {},
+            "outputs": {},
             "context": copy.deepcopy(results[0].get("context") or {}),
             "status": "ready",
         }
@@ -121,6 +135,9 @@ class OpponentPredictionCoordinator:
                 for player, values in raw.items():
                     if isinstance(values, dict):
                         merged["raw"].setdefault(player, {}).update(copy.deepcopy(values))
+            outputs = result.get("outputs") if isinstance(result, dict) else None
+            if isinstance(outputs, dict):
+                merged["outputs"].update(copy.deepcopy(outputs))
             status = str(result.get("status") or "")
             if status != "ready":
                 merged["status"] = status or "prediction_error"
@@ -279,5 +296,5 @@ class OpponentPredictionCoordinator:
             gateway.cancel_all()
 
     def shutdown(self) -> None:
-        self._primary.shutdown()
-        self._secondary.shutdown()
+        for gateway in self._gateways:
+            gateway.shutdown()

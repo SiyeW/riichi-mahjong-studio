@@ -28,6 +28,18 @@ _PROBABILITY_TOLERANCE = 1e-4
 _ENGINE_POSTPROCESSOR_VERSION = "opponent-analysis-host-v2"
 _SHANTEN_OUTPUT = {"id": "opponent-shanten", "version": 1}
 _DEAL_IN_OUTPUT = {"id": "opponent-deal-in-probability", "version": 1}
+_ANALYSIS_OUTPUTS = (
+    _SHANTEN_OUTPUT,
+    _DEAL_IN_OUTPUT,
+    {"id": "opponent-concealed-tile-count", "version": 1},
+    {"id": "wall-tile-count", "version": 1},
+    {"id": "opponent-dora-count", "version": 1},
+    {"id": "opponent-score", "version": 1},
+    {"id": "kyoku-outcome", "version": 1},
+    {"id": "kyoku-score-delta", "version": 1},
+    {"id": "match-placement", "version": 1},
+    {"id": "match-score", "version": 1},
+)
 
 
 def get_latest_opponent_prediction_mjai() -> Dict[str, Any]:
@@ -61,7 +73,7 @@ class OpponentPredictionGateway:
         ]
         self._enabled_outputs = tuple(
             output["id"]
-            for output in (_SHANTEN_OUTPUT, _DEAL_IN_OUTPUT)
+            for output in _ANALYSIS_OUTPUTS
             if output["id"] in requested_outputs
         )
         self._supported_input_modes = ("public",)
@@ -246,7 +258,7 @@ class OpponentPredictionGateway:
         ]
         next_outputs = tuple(
             output["id"]
-            for output in (_SHANTEN_OUTPUT, _DEAL_IN_OUTPUT)
+            for output in _ANALYSIS_OUTPUTS
             if output["id"] in requested_outputs
         )
         if not next_outputs:
@@ -335,7 +347,7 @@ class OpponentPredictionGateway:
     def _requested_output_contracts(self) -> list[Dict[str, Any]]:
         return [
             dict(output)
-            for output in (_SHANTEN_OUTPUT, _DEAL_IN_OUTPUT)
+            for output in _ANALYSIS_OUTPUTS
             if output["id"] in self._enabled_outputs
         ]
 
@@ -556,6 +568,12 @@ class OpponentPredictionGateway:
             for output in outputs
             if isinstance(output, dict) and isinstance(output.get("data"), dict)
         }
+        expected_outputs = {
+            (output["id"], output["version"])
+            for output in self._requested_output_contracts()
+        }
+        if set(by_output) != expected_outputs:
+            raise RuntimeError("opponent prediction response has missing or unexpected outputs")
         shanten_data = by_output.get((_SHANTEN_OUTPUT["id"], _SHANTEN_OUTPUT["version"]))
         deal_in_data = by_output.get((_DEAL_IN_OUTPUT["id"], _DEAL_IN_OUTPUT["version"]))
         requested = set(self._enabled_outputs)
@@ -649,6 +667,7 @@ class OpponentPredictionGateway:
         self,
         players: list[Dict[str, Any]],
         *,
+        protocol_outputs: Dict[str, Any],
         events: list[dict],
         target_events: Optional[list[dict]],
         controlled_seat: int,
@@ -697,6 +716,7 @@ class OpponentPredictionGateway:
                 "ron_wait": ground_truth_waits,
             },
             "raw": raw,
+            "outputs": copy.deepcopy(protocol_outputs),
             "context": copy.deepcopy(context),
             "status": "ready",
             "engineFingerprint": self._engine_fingerprint,
@@ -944,8 +964,14 @@ class OpponentPredictionGateway:
                     worker_result,
                     controlled_seat=c,
                 )
+                protocol_outputs = {
+                    str(output.get("id") or ""): copy.deepcopy(output.get("data"))
+                    for output in worker_result.get("outputs", [])
+                    if isinstance(output, dict) and isinstance(output.get("data"), dict)
+                }
                 result = self._protocol_result_to_host(
                     players,
+                    protocol_outputs=protocol_outputs,
                     events=events,
                     target_events=target_events,
                     controlled_seat=c,

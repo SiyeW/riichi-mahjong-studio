@@ -8,7 +8,7 @@ OPPONENT_ANALYSIS_CACHE_FIELD = "opponentAnalysisCache"
 
 _ANALYSIS_SOURCE_SCHEMA_VERSION = 2
 _DECISION_CACHE_VERSION = 3
-_OPPONENT_ANALYSIS_CACHE_VERSION = 4
+_OPPONENT_ANALYSIS_CACHE_VERSION = 5
 _OPPONENT_ANALYSIS_SECTIONS = ("predictions", "ground_truth")
 _OPPONENT_ANALYSIS_GROUPS = ("opponents", "ron_wait")
 
@@ -179,6 +179,8 @@ def compact_opponent_analysis(result):
                 if isinstance(values, list)
             }
         compact[section_name] = compact_section
+    outputs = result.get("outputs") if isinstance(result, dict) else None
+    compact["outputs"] = copy.deepcopy(outputs) if isinstance(outputs, dict) else {}
     return compact
 
 

@@ -268,11 +268,11 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "nodeId": node["id"],
             "seat": 0,
             "inputMode": "public",
-            "cacheKey": "o4::0::public::o-current",
+            "cacheKey": "o5::0::public::o-current",
             "cacheEpoch": service._OPPONENT_ANALYSIS_CACHE_EPOCH,
         }
         node[service.OPPONENT_ANALYSIS_CACHE_FIELD] = {
-            "o4::0::public::o-previous": {
+            "o5::0::public::o-previous": {
                 "status": "ready",
                 "predictions": {"opponents": {"kamicha": [1.0]}, "ron_wait": {}},
                 "ground_truth": {"opponents": {}, "ron_wait": {}},
@@ -317,11 +317,11 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "nodeId": node["id"],
             "seat": 0,
             "inputMode": "public",
-            "cacheKey": "o4::0::public::o-current",
+            "cacheKey": "o5::0::public::o-current",
             "cacheEpoch": service._OPPONENT_ANALYSIS_CACHE_EPOCH,
         }
         node[service.OPPONENT_ANALYSIS_CACHE_FIELD] = {
-            "o4::0::public::o-previous": {
+            "o5::0::public::o-previous": {
                 "status": "ready",
                 "predictions": {"opponents": {"kamicha": [1.0]}, "ron_wait": {}},
                 "ground_truth": {"opponents": {}, "ron_wait": {}},

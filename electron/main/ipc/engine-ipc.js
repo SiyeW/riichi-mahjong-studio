@@ -129,10 +129,7 @@ function createEngineIpcController({
       if (assignedOutputs.includes('action-recommendation')) {
         state = (await environmentGateway.unloadEngine('decision', profileId)).state
       }
-      if (
-        assignedOutputs.includes('opponent-shanten')
-        || assignedOutputs.includes('opponent-deal-in-probability')
-      ) {
+      if (assignedOutputs.some((outputId) => outputId !== 'action-recommendation')) {
         state = (await environmentGateway.unloadEngine('opponent-analysis', profileId)).state
       }
       const settings = saveLoadedProfileState(profileId, false)
