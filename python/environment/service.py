@@ -4694,6 +4694,7 @@ def _process_ai_discard(game, snapshot, actor):
         persist_snapshot_state(next_snapshot)
         action = {
             "type": "reach",
+            "variant": "declare",
             "actor": actor,
             "source": "ai",
         }

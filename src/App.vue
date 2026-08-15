@@ -4867,6 +4867,11 @@ interface NextMoveHint {
   consumed?: string[]
 }
 
+function normalizeSpecialActionVariant(actionType?: string, actionVariant?: string): string | undefined {
+  if (actionVariant) return actionVariant
+  return actionType === 'reach' ? 'declare' : undefined
+}
+
 const nextMoveHints = computed<NextMoveHint[]>(() => {
   const nodeId = gameView.currentNodeId
   if (!nodeId) return []
@@ -4900,7 +4905,10 @@ const nextMoveHints = computed<NextMoveHint[]>(() => {
         childNodeId: childId,
         isMainBranch,
         actionType: action.type,
-        actionVariant: typeof action.variant === 'string' ? action.variant : undefined,
+        actionVariant: normalizeSpecialActionVariant(
+          action.type,
+          typeof action.variant === 'string' ? action.variant : undefined,
+        ),
         consumed: Array.isArray(action.consumed) ? action.consumed.map(String) : [],
       })
     }
@@ -4922,7 +4930,7 @@ function getSpecialNextMoveHint(action: TrainerAction): NextMoveHint | null {
     (hint) => (
       hint.type === 'special'
       && hint.actionType === action.type
-      && hint.actionVariant === (action.variant ?? undefined)
+      && hint.actionVariant === normalizeSpecialActionVariant(action.type, action.variant)
       && [...(hint.consumed || [])].sort().join(',') === consumed
     ),
   ) || null

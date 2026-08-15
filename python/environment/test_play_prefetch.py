@@ -175,6 +175,24 @@ class PlayPrefetchTest(unittest.TestCase):
         self.assertTrue(child["action"]["tsumogiri"])
         self.assertTrue(child["snapshot"]["lastAction"]["tsumogiri"])
 
+    def test_ai_riichi_node_uses_declare_variant(self):
+        game = service.STATE["game"]
+        snapshot = service.get_current_snapshot()
+        actor = 1
+        snapshot["phase"] = "discard"
+        snapshot["currentActor"] = actor
+
+        with mock.patch.object(
+            service,
+            "choose_ai_discard",
+            return_value={"type": "reach", "actor": actor},
+        ):
+            service._process_ai_discard(game, snapshot, actor)
+
+        child = game["nodes"][game["currentNodeId"]]
+        self.assertEqual(child["action"]["type"], "reach")
+        self.assertEqual(child["action"]["variant"], "declare")
+
     def test_duplicate_drawn_tile_preserves_explicit_hand_discard(self):
         snapshot = copy.deepcopy(service.get_current_snapshot())
         actor = 1
