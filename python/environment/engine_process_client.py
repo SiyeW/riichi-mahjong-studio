@@ -16,7 +16,10 @@ MAX_STDERR_LINE_CHARS = 4096
 STDERR_TAIL_LINES = 100
 PROTOCOL = {"name": "riichi-engine-protocol", "major": 2, "minor": 1}
 HOST_ID = "riichi-mahjong-studio"
-HOST_VERSION = "0.4.0"
+
+
+def get_host_version() -> str:
+    return os.environ.get("RMS_APP_VERSION", "").strip() or "0.0.0-dev"
 
 
 class EngineProcessError(RuntimeError):
@@ -157,7 +160,7 @@ class EngineProcessClient:
                 "protocol": dict(PROTOCOL),
                 "host": {
                     "id": HOST_ID,
-                    "version": HOST_VERSION,
+                    "version": get_host_version(),
                 },
             },
             timeout=60,

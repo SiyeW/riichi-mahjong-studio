@@ -5,11 +5,19 @@ import textwrap
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
-from engine_process_client import EngineProcessClient, EngineProcessError
+from engine_process_client import EngineProcessClient, EngineProcessError, get_host_version
 
 
 class EngineProtocolTest(unittest.TestCase):
+    def test_host_version_comes_from_studio_process(self):
+        with mock.patch.dict(os.environ, {"RMS_APP_VERSION": "1.0.0-dev.0"}):
+            self.assertEqual(get_host_version(), "1.0.0-dev.0")
+
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(get_host_version(), "0.0.0-dev")
+
     def test_hello_rejects_duplicate_output_contracts(self):
         hello = {
             "engine": {"id": "test.engine", "name": "Test", "version": "1.0.0"},

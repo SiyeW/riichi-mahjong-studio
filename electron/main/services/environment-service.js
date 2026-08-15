@@ -15,6 +15,10 @@ function resolveDevelopmentPython(resourceRoot, env = process.env) {
   return 'python'
 }
 
+function resolveAppVersion(options = {}) {
+  return String(options.appVersion || '').trim() || '0.0.0-dev'
+}
+
 function resolveBundledBackend(resourceDir) {
   const exeName = process.platform === 'win32' ? 'environment-service.exe' : 'environment-service'
   const exePath = path.join(resourceDir, 'backend', 'environment-service', exeName)
@@ -37,6 +41,7 @@ function createEnvironmentService(options = {}) {
     cwd: useBundledBackend ? path.dirname(bundledBackend) : path.join(resourceRoot, 'python', 'environment'),
     env: {
       MJAI_TRAINER_PORTABLE_DIR: options.portableDir || process.cwd(),
+      RMS_APP_VERSION: resolveAppVersion(options),
     },
   })
 
@@ -166,4 +171,4 @@ function createEnvironmentService(options = {}) {
   }
 }
 
-module.exports = { createEnvironmentService, resolveDevelopmentPython }
+module.exports = { createEnvironmentService, resolveAppVersion, resolveDevelopmentPython }

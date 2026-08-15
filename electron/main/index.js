@@ -36,6 +36,7 @@ const portableRoot = app.isPackaged ? path.dirname(process.execPath) : projectRo
 const resourceRoot = app.isPackaged ? process.resourcesPath : projectRoot
 
 const appOptions = {
+  appVersion: app.getVersion(),
   appDir: projectRoot,
   resourceDir: resourceRoot,
   portableDir: portableRoot,
