@@ -11,6 +11,7 @@ incompatible changes.
 
 - 修复无法加载声明立直麻将引擎协议 2.1 的引擎程序包的问题。同一引擎中无法使用的输出不再影响其他兼容输出。
 - 修复牌山面板在加载完成后宽度突变的问题。
+- 修复引擎管理中深青色和深灰色条目在选中后无法区分的问题。
 
 </div>
 
@@ -20,6 +21,7 @@ incompatible changes.
 
 - リーチ麻雀エンジンプロトコル 2.1 を宣言するエンジンパッケージを読み込めない問題を修正しました。同じエンジンに利用できない出力が含まれていても、対応するほかの出力は引き続き使用できます。
 - 牌山パネルの読み込み完了時に横幅が変わる問題を修正しました。
+- エンジン管理で、濃い青緑色と濃い灰色の項目が選択時に同じ色になる問題を修正しました。
 
 </div>
 
@@ -29,6 +31,7 @@ incompatible changes.
 
 - Fix loading of engine packages that declare Riichi Engine Protocol 2.1. Unsupported outputs no longer prevent other compatible outputs from the same engine from being used.
 - Fix the wall panel changing width when loading completes.
+- Fix dark teal and dark gray items becoming indistinguishable when selected in the engine manager.
 
 </div>
 
