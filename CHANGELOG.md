@@ -10,6 +10,7 @@ incompatible changes.
 ### 中文
 
 - 修复无法加载声明立直麻将引擎协议 2.1 的引擎程序包的问题。同一引擎中无法使用的输出不再影响其他兼容输出。
+- 修复牌山面板在加载完成后宽度突变的问题。
 
 </div>
 
@@ -18,6 +19,7 @@ incompatible changes.
 ### 日本語
 
 - リーチ麻雀エンジンプロトコル 2.1 を宣言するエンジンパッケージを読み込めない問題を修正しました。同じエンジンに利用できない出力が含まれていても、対応するほかの出力は引き続き使用できます。
+- 牌山パネルの読み込み完了時に横幅が変わる問題を修正しました。
 
 </div>
 
@@ -26,6 +28,7 @@ incompatible changes.
 ### English
 
 - Fix loading of engine packages that declare Riichi Engine Protocol 2.1. Unsupported outputs no longer prevent other compatible outputs from the same engine from being used.
+- Fix the wall panel changing width when loading completes.
 
 </div>
 

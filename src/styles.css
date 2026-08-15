@@ -3059,7 +3059,7 @@ body {
 }
 
 .wall-loading-state {
-  min-width: calc(20rem * var(--floating-panel-scale));
+  width: calc(var(--ron-tile-w) * 16.6);
   margin: 0;
   padding: calc(2.5rem * var(--floating-panel-scale)) calc(1rem * var(--floating-panel-scale));
   color: var(--text-dim);
