@@ -21,6 +21,7 @@ const { discoverSoundPacks, resolveSoundPackFile } = require('./state/sound-pack
 const { createSessionStore } = require('./state/session-store')
 const { createGameFileStore } = require('./state/game-file-store')
 const { normalizeMortalReportUrl } = require('./mortal-report-url')
+const { createTranslator } = require('./i18n')
 const {
   decodeGameRecord,
   encodeGameRecord,
@@ -45,6 +46,11 @@ const appOptions = {
   isPackaged: app.isPackaged,
   execPath: process.execPath,
 }
+
+const t = createTranslator({
+  getPreference: () => loadSettings(appOptions).display.language,
+  getSystemLocale: () => app.getLocale(),
+})
 
 protocol.registerSchemesAsPrivileged([{
   scheme: 'rms-sound',
@@ -77,7 +83,7 @@ function registerSoundProtocol() {
   })
 }
 
-const environmentBackend = createEnvironmentService(appOptions)
+const environmentBackend = createEnvironmentService({ ...appOptions, t })
 const sessionStore = createSessionStore(environmentBackend.environmentGateway)
 const gameFileStore = createGameFileStore(portableRoot)
 gameFileStore.ensureDefaultDirectory()
@@ -94,6 +100,7 @@ const engineIpcController = createEngineIpcController({
   projectRoot,
   environmentGateway: environmentBackend.environmentGateway,
   getMainWindow: () => mainWindow,
+  t,
 })
 
 function publishRecordDirty(force = false) {
@@ -195,11 +202,11 @@ async function saveGameAs() {
   const currentPath = gameFileStore.getCurrentPath()
   const suggestedPath = currentPath || gameFileStore.buildDefaultSavePath(fs.existsSync)
   const result = await dialog.showSaveDialog(mainWindow, {
-    title: 'Save Game Record',
+    title: t('native.saveRecord'),
     defaultPath: suggestedPath,
     filters: [
-      { name: 'Mjai Studio Record', extensions: ['mjtrain'] },
-      { name: 'Legacy JSON Record', extensions: ['json'] },
+      { name: t('native.recordFilter'), extensions: ['mjtrain'] },
+      { name: t('native.legacyRecordFilter'), extensions: ['json'] },
     ],
   })
 
@@ -232,7 +239,7 @@ async function importGameRecordFile(filePath) {
     ? storedSourcePath
     : ''
   if (recoveryRecord) {
-    gameFileStore.openRecoveryRecord(recoverySourcePath)
+    gameFileStore.openRecoveryRecord(recoverySourcePath, t('record.unsavedName'))
   } else if (isNativeRecord) {
     gameFileStore.setCurrentPath(filePath)
   } else {
@@ -254,10 +261,10 @@ async function importGameRecordFile(filePath) {
 
 async function openGame() {
   const result = await dialog.showOpenDialog(mainWindow, {
-    title: 'Open Game Record',
+    title: t('native.openRecord'),
     defaultPath: gameFileStore.getDefaultDirectory(),
     properties: ['openFile'],
-    filters: [{ name: 'Mjai Studio Record', extensions: ['mjtrain', 'json'] }],
+    filters: [{ name: t('native.recordFilter'), extensions: ['mjtrain', 'json'] }],
   })
 
   if (result.canceled || !result.filePaths.length) {
@@ -284,8 +291,8 @@ async function restoreStartupRecovery() {
     if (mainWindow && !mainWindow.isDestroyed()) {
       void dialog.showMessageBox(mainWindow, {
         type: 'warning',
-        title: '恢复上次内容失败',
-        message: '未能自动读取退出时保留的内容，程序将继续正常启动。',
+        title: t('native.restoreFailed.title'),
+        message: t('native.restoreFailed.message'),
         detail: error instanceof Error ? error.message : String(error),
       })
     }
@@ -333,7 +340,7 @@ function saveWindowSettings(window) {
 }
 
 async function downloadMortalReport(rawInput) {
-  const sourceUrl = normalizeMortalReportUrl(rawInput)
+  const sourceUrl = normalizeMortalReportUrl(rawInput, t)
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 20000)
   try {
@@ -342,29 +349,29 @@ async function downloadMortalReport(rawInput) {
       headers: { Accept: 'application/json' },
     })
     if (!response.ok) {
-      throw new Error(`下载失败（HTTP ${response.status}）。`)
+      throw new Error(t('native.download.http', { status: response.status }))
     }
     const contentLength = Number(response.headers.get('content-length') || 0)
     if (contentLength > 25 * 1024 * 1024) {
-      throw new Error('报告文件过大，已停止导入。')
+      throw new Error(t('native.download.tooLarge'))
     }
     const text = await response.text()
     if (text.length > 25 * 1024 * 1024) {
-      throw new Error('报告文件过大，已停止导入。')
+      throw new Error(t('native.download.tooLarge'))
     }
     let report
     try {
       report = JSON.parse(text)
     } catch {
-      throw new Error('下载内容不是有效的 JSON 报告。')
+      throw new Error(t('native.download.invalidJson'))
     }
     if (!report || !Array.isArray(report.mjai_log) || !report.mjai_log.length) {
-      throw new Error('报告中没有可读取的 mjai_log。')
+      throw new Error(t('native.download.noLog'))
     }
     return { report, sourceUrl }
   } catch (error) {
     if (error?.name === 'AbortError') {
-      throw new Error('下载超时，请检查网络后重试。')
+      throw new Error(t('native.download.timeout'))
     }
     throw error
   } finally {
@@ -440,10 +447,10 @@ function createMainWindow() {
         console.error('[record] failed to save exit recovery record:', error)
         const result = await dialog.showMessageBox(window, {
           type: 'error',
-          title: '恢复存档保存失败',
-          message: '未能在退出前保存未保存内容。',
+          title: t('native.recoverySaveFailed.title'),
+          message: t('native.recoverySaveFailed.message'),
           detail: error instanceof Error ? error.message : String(error),
-          buttons: ['取消退出', '仍然退出'],
+          buttons: [t('native.cancelExit'), t('native.exitAnyway')],
           defaultId: 0,
           cancelId: 0,
         })
@@ -481,6 +488,7 @@ function registerIpcHandlers() {
     appOptions,
     resourceRoot,
     collectRuntimeMetrics,
+    t,
   })
   engineIpcController.register()
   ipcMain.handle('record:dirty-get', () => gameFileStore.isDirty())

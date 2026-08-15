@@ -39,7 +39,7 @@
               v-if="recordPath"
               class="record-title-button record-title-text"
               type="button"
-              aria-label="在资源管理器中显示当前存档"
+              :aria-label="t('toolbar.showInExplorer')"
               @click="showRecordInFolder"
             >{{ recordHeaderTitle }}</button>
             <span v-else class="record-title-text">Riichi Mahjong Studio</span>
@@ -53,26 +53,26 @@
             :disabled="gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'create'"
             @click="createGame"
-          >新建</button>
+          >{{ t('toolbar.new') }}</button>
           <button
             :class="{ 'is-pending': gameFileOperation === 'open' }"
             :disabled="gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'open'"
             @click="openGame"
-          >打开</button>
-          <button @click="openRecordImportPanel">导入</button>
+          >{{ t('toolbar.open') }}</button>
+          <button @click="openRecordImportPanel">{{ t('toolbar.import') }}</button>
           <button
             :class="{ 'is-pending': gameFileOperation === 'save' }"
             :disabled="!recordDirty || gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'save'"
             @click="saveGame"
-          >保存</button>
+          >{{ t('toolbar.save') }}</button>
           <button
             :class="{ 'is-pending': gameFileOperation === 'save-as' }"
             :disabled="!status.gameLoaded || gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'save-as'"
             @click="saveGameAs"
-          >另存为</button>
+          >{{ t('toolbar.saveAs') }}</button>
           <button
             :class="{
               'is-pending': gameFileOperation === 'close',
@@ -81,16 +81,16 @@
             :disabled="!status.gameLoaded || gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'close'"
             @click="closeGame"
-          >{{ closeRecordConfirmationPending ? '丢弃' : '关闭' }}</button>
+          >{{ closeRecordConfirmationPending ? t('toolbar.discard') : t('toolbar.close') }}</button>
         </span>
         <span class="toolbar-section">
-          <button @click="openWallView" :disabled="!gameView.table">牌山</button>
+          <button @click="openWallView" :disabled="!gameView.table">{{ t('toolbar.wall') }}</button>
           <button
             :class="{ active: showAnalysisDock }"
             :aria-pressed="showAnalysisDock"
             @click="toggleAnalysisDock"
             :disabled="!gameView.table"
-          >分析</button>
+          >{{ t('toolbar.analysis') }}</button>
           <span
             class="toolbar-button-hint"
             :title="isReadOnlyRecord ? READ_ONLY_RECORD_HINT : undefined"
@@ -99,16 +99,16 @@
           </span>
         </span>
         <span class="toolbar-section">
-          <button @click="openEngineWindow">引擎</button>
-          <button @click="openSettingsPanel">设置</button>
-          <button @click="showAboutPanel = true">关于</button>
+          <button @click="openEngineWindow">{{ t('toolbar.engine') }}</button>
+          <button @click="openSettingsPanel">{{ t('toolbar.settings') }}</button>
+          <button @click="showAboutPanel = true">{{ t('toolbar.about') }}</button>
         </span>
       </div>
     </header>
 
     <div v-if="bootstrapError" class="startup-banner">
       <span>{{ bootstrapError }}</span>
-      <button @click="refreshBootstrapState">重试加载</button>
+      <button @click="refreshBootstrapState">{{ t('common.retry') }}</button>
     </div>
 
     <main class="workspace">
@@ -180,8 +180,8 @@
                     :role="canToggleDecisionRecommendations ? 'button' : undefined"
                     :tabindex="canToggleDecisionRecommendations ? 0 : undefined"
                     :aria-pressed="canToggleDecisionRecommendations ? decisionRecommendationsEnabled : undefined"
-                    :aria-label="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? '隐藏引擎推荐' : '显示引擎推荐') : undefined"
-                    :title="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? '隐藏' : '显示') : undefined"
+                    :aria-label="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')) : undefined"
+                    :title="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')) : undefined"
                     @click.stop="toggleDecisionRecommendations"
                     @keydown.enter.prevent="toggleDecisionRecommendations"
                     @keydown.space.prevent="toggleDecisionRecommendations"
@@ -239,7 +239,7 @@
                               :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(southView.seat, southView.melds.length - 1 - mi)) }]"
                               :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)"
                               :alt="tileFaceLabel(item.tile)"
-                              :title="historicalJumpTitle(meldNodeId(southView.seat, southView.melds.length - 1 - mi), item.isKakan ? '碰牌' : '副露')"
+                              :title="historicalJumpTitle(meldNodeId(southView.seat, southView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))"
                               @dblclick.stop="jumpToHistoricalNode(meldNodeId(southView.seat, southView.melds.length - 1 - mi))"
                             />
                             <img
@@ -247,7 +247,7 @@
                               :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(southView.seat, southView.melds.length - 1 - mi, 'kakan')) }]"
                               :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)"
                               :alt="tileFaceLabel(item.tile)"
-                              :title="historicalJumpTitle(meldNodeId(southView.seat, southView.melds.length - 1 - mi, 'kakan'), '加杠牌')"
+                              :title="historicalJumpTitle(meldNodeId(southView.seat, southView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))"
                               @dblclick.stop="jumpToHistoricalNode(meldNodeId(southView.seat, southView.melds.length - 1 - mi, 'kakan'))"
                             />
                           </div>
@@ -265,8 +265,8 @@
                     :role="canToggleDecisionRecommendations ? 'button' : undefined"
                     :tabindex="canToggleDecisionRecommendations ? 0 : undefined"
                     :aria-pressed="canToggleDecisionRecommendations ? decisionRecommendationsEnabled : undefined"
-                    :aria-label="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? '隐藏引擎推荐' : '显示引擎推荐') : undefined"
-                    :title="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? '隐藏' : '显示') : undefined"
+                    :aria-label="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')) : undefined"
+                    :title="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')) : undefined"
                     @click.stop="toggleDecisionRecommendations"
                     @keydown.enter.prevent="toggleDecisionRecommendations"
                     @keydown.space.prevent="toggleDecisionRecommendations"
@@ -333,8 +333,8 @@
               <span class="pov-p1 hand-calls-p1" v-if="eastView.melds.length">
                 <template v-for="(meld, mi) in eastView.melds.slice().reverse()" :key="'p1m-'+mi">
                   <div v-for="(item, ti) in meldDisplayTiles(meld, eastView.seat)" :key="'p1mt-'+ti" class="tileDiv">
-                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi), item.isKakan ? '碰牌' : '副露')" @dblclick.stop="jumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi))" />
-                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan'), '加杠牌')" @dblclick.stop="jumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan'))" />
+                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi))" />
+                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan'))" />
                   </div>
                 </template>
               </span>
@@ -369,8 +369,8 @@
               <span class="pov-p2 hand-calls-p2" v-if="northView.melds.length">
                 <template v-for="(meld, mi) in northView.melds.slice().reverse()" :key="'p2m-'+mi">
                   <div v-for="(item, ti) in meldDisplayTiles(meld, northView.seat)" :key="'p2mt-'+ti" class="tileDiv">
-                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(northView.seat, northView.melds.length - 1 - mi), item.isKakan ? '碰牌' : '副露')" @dblclick.stop="jumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi))" />
-                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan'), '加杠牌')" @dblclick.stop="jumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan'))" />
+                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(northView.seat, northView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi))" />
+                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan'))" />
                   </div>
                 </template>
               </span>
@@ -405,8 +405,8 @@
               <span class="pov-p3 hand-calls-p3" v-if="westView.melds.length">
                 <template v-for="(meld, mi) in westView.melds.slice().reverse()" :key="'p3m-'+mi">
                   <div v-for="(item, ti) in meldDisplayTiles(meld, westView.seat)" :key="'p3mt-'+ti" class="tileDiv">
-                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(westView.seat, westView.melds.length - 1 - mi), item.isKakan ? '碰牌' : '副露')" @dblclick.stop="jumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi))" />
-                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan'), '加杠牌')" @dblclick.stop="jumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan'))" />
+                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(westView.seat, westView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi))" />
+                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan'))" />
                   </div>
                 </template>
               </span>
@@ -420,7 +420,7 @@
                   :key="slot.key"
                   :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
                   :data-pending-discard-seat="slot.isPending ? southView.seat : undefined"
-                  :title="historicalJumpTitle(slot.sourceNodeId, '弃牌')"
+                  :title="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
                   @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
                 >
                   <img
@@ -438,7 +438,7 @@
                   :key="slot.key"
                   :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
                   :data-pending-discard-seat="slot.isPending ? westView.seat : undefined"
-                  :title="historicalJumpTitle(slot.sourceNodeId, '弃牌')"
+                  :title="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
                   @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
                 >
                   <img
@@ -456,7 +456,7 @@
                   :key="slot.key"
                   :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
                   :data-pending-discard-seat="slot.isPending ? northView.seat : undefined"
-                  :title="historicalJumpTitle(slot.sourceNodeId, '弃牌')"
+                  :title="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
                   @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
                 >
                   <img
@@ -474,7 +474,7 @@
                   :key="slot.key"
                   :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
                   :data-pending-discard-seat="slot.isPending ? eastView.seat : undefined"
-                  :title="historicalJumpTitle(slot.sourceNodeId, '弃牌')"
+                  :title="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
                   @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
                 >
                   <img
@@ -495,10 +495,10 @@
                   <img :src="tileImageSrc(tile)" class="tileImg" :alt="tileFaceLabel(tile)" />
                 </div>
               </span>
-              <span v-if="gameView.table" class="gi-player-anchor gi-p0-anchor"><span class="gi-p0-outer" :class="{ 'is-actor': isCurrentActorSeat(southView.seat), 'is-east': seatWindLabel(southView.seat) === '东' }"><span class="gi-seat">{{ seatWindLabel(southView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[southView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: southView.riichiAccepted }">-1000</span></span></span>
-              <span v-if="gameView.table" class="gi-player-anchor gi-p1-anchor"><span class="gi-p1-outer" :class="{ 'is-actor': isCurrentActorSeat(eastView.seat), 'is-east': seatWindLabel(eastView.seat) === '东' }"><span class="gi-seat">{{ seatWindLabel(eastView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[eastView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: eastView.riichiAccepted }">-1000</span></span></span>
-              <span v-if="gameView.table" class="gi-player-anchor gi-p2-anchor"><span class="gi-p2-outer" :class="{ 'is-actor': isCurrentActorSeat(northView.seat), 'is-east': seatWindLabel(northView.seat) === '东' }"><span class="gi-seat">{{ seatWindLabel(northView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[northView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: northView.riichiAccepted }">-1000</span></span></span>
-              <span v-if="gameView.table" class="gi-player-anchor gi-p3-anchor"><span class="gi-p3-outer" :class="{ 'is-actor': isCurrentActorSeat(westView.seat), 'is-east': seatWindLabel(westView.seat) === '东' }"><span class="gi-seat">{{ seatWindLabel(westView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[westView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: westView.riichiAccepted }">-1000</span></span></span>
+              <span v-if="gameView.table" class="gi-player-anchor gi-p0-anchor"><span class="gi-p0-outer" :class="{ 'is-actor': isCurrentActorSeat(southView.seat), 'is-east': southView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(southView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[southView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: southView.riichiAccepted }">-1000</span></span></span>
+              <span v-if="gameView.table" class="gi-player-anchor gi-p1-anchor"><span class="gi-p1-outer" :class="{ 'is-actor': isCurrentActorSeat(eastView.seat), 'is-east': eastView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(eastView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[eastView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: eastView.riichiAccepted }">-1000</span></span></span>
+              <span v-if="gameView.table" class="gi-player-anchor gi-p2-anchor"><span class="gi-p2-outer" :class="{ 'is-actor': isCurrentActorSeat(northView.seat), 'is-east': northView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(northView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[northView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: northView.riichiAccepted }">-1000</span></span></span>
+              <span v-if="gameView.table" class="gi-player-anchor gi-p3-anchor"><span class="gi-p3-outer" :class="{ 'is-actor': isCurrentActorSeat(westView.seat), 'is-east': westView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(westView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[westView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: westView.riichiAccepted }">-1000</span></span></span>
             </div>
             <div v-if="actionAnnouncement.visible" :key="actionAnnouncement.key" :class="['table-callout', `is-${actionAnnouncement.position}`]">
               {{ actionAnnouncement.text }}
@@ -510,7 +510,7 @@
             >
             <div class="result-overlay-card">
               <div class="result-overlay-header">
-                <h3>{{ gameView.table.resultInfo.title }}</h3>
+                <h3>{{ localizedResultTitle(gameView.table.resultInfo.title) }}</h3>
                 <div v-if="resultHasHora" class="result-overlay-indicators">
                   <div class="result-indicator-group">
                     <span class="result-indicator-tiles">
@@ -519,7 +519,7 @@
                         :key="`result-dora-${index}`"
                         class="tileImg result-indicator-tile"
                         :src="tileImageSrc(tile)"
-                        :alt="tile === '?' ? '未翻开的宝牌指示牌' : `宝牌指示牌 ${tileFaceLabel(tile)}`"
+                        :alt="tile === '?' ? t('result.unrevealedDora') : t('result.doraIndicator', { tile: tileFaceLabel(tile) })"
                       />
                     </span>
                   </div>
@@ -530,7 +530,7 @@
                         :key="`result-ura-${index}`"
                         class="tileImg result-indicator-tile"
                         :src="tileImageSrc(tile)"
-                        :alt="tile === '?' ? '未翻开的里宝牌指示牌' : `里宝牌指示牌 ${tileFaceLabel(tile)}`"
+                        :alt="tile === '?' ? t('result.unrevealedUra') : t('result.uraIndicator', { tile: tileFaceLabel(tile) })"
                       />
                     </span>
                   </div>
@@ -553,7 +553,7 @@
                   :key="`result-score-${entry.seat}`"
                   :class="['result-score-card', `is-${entry.position}`]"
                   role="group"
-                  :aria-label="`${entry.label}，第 ${entry.rank} 名，原分 ${entry.before}，变动 ${formatDelta(entry.delta)}，结算 ${entry.after}`"
+                  :aria-label="t('result.scoreAria', { player: entry.label, rank: entry.rank, before: entry.before, delta: formatDelta(entry.delta), after: entry.after })"
                 >
                   <span class="result-score-heading">
                     <strong class="result-score-seat">{{ entry.label }}</strong>
@@ -568,10 +568,10 @@
                 </div>
               </div>
               <button v-if="!resultIsMatchEnd" class="result-dismiss-btn" @click="advanceGame" :aria-disabled="isReadOnlyRecord || status.mode !== 'play'">
-                {{ isReadOnlyRecord ? '只读' : '继续' }}
+                {{ isReadOnlyRecord ? t('common.readOnly') : t('common.continue') }}
               </button>
               <button v-else class="result-dismiss-btn" @click="showRoundMapInResearchMode">
-                局图
+                {{ t('roundMap.title') }}
               </button>
             </div>
           </div>
@@ -584,20 +584,20 @@
         class="panel analysis-dock"
         :class="{ 'reset-without-motion': suppressOpponentAnalysisTransitions }"
         :style="[{ '--floating-panel-scale': uiScale }, colorSchemeCssVariables]"
-        aria-label="分析"
+        :aria-label="t('analysis.title')"
       >
         <div class="analysis-dock-header">
-          <h2>分析</h2>
+          <h2>{{ t('analysis.title') }}</h2>
           <button
             v-if="hasOpponentGroundTruth"
             class="analysis-dock-mode"
             @click="shantenViewMode = shantenViewMode === 'predictions' ? 'ground_truth' : 'predictions'"
           >
-            {{ shantenViewMode === 'predictions' ? '预测值' : '实际值' }}
+            {{ shantenViewMode === 'predictions' ? t('analysis.predictions') : t('analysis.groundTruth') }}
           </button>
         </div>
         <div class="analysis-dock-body">
-          <p v-if="opponentAnalysisIsLoading" class="shanten-panel-state">正在加载</p>
+          <p v-if="opponentAnalysisIsLoading" class="shanten-panel-state">{{ t('common.loading') }}</p>
           <template v-else>
             <p v-if="opponentAnalysisLoadError" class="shanten-panel-state is-error">{{ opponentAnalysisLoadError }}</p>
             <AnalysisPanel
@@ -618,7 +618,7 @@
       </section>
 
       <aside class="panel side-panel">
-        <div class="panel-header"><h2>控制台</h2></div>
+        <div class="panel-header"><h2>{{ t('console.title') }}</h2></div>
         <div v-if="status.mode === 'research'" class="settings-preview auto-analysis-panel">
           <div class="auto-analysis-row">
             <button
@@ -627,7 +627,7 @@
               :disabled="!status.gameLoaded || autoAnalysisRequestInFlight"
               @click="toggleAutoAnalysis"
             >
-              {{ autoAnalysisRunning ? '停止' : '自动分析' }}
+              {{ autoAnalysisRunning ? t('console.stop') : t('console.autoAnalysis') }}
             </button>
             <div
               class="auto-analysis-progress"
@@ -644,13 +644,13 @@
         </div>
         <div class="settings-preview quick-training-panel" :class="{ collapsed: quickSettingsCollapsed }">
           <button class="panel-section-toggle" @click="quickSettingsCollapsed = !quickSettingsCollapsed">
-            <h3>选项</h3>
-            <span>{{ quickSettingsCollapsed ? '展开' : '折叠' }}</span>
+            <h3>{{ t('console.options') }}</h3>
+            <span>{{ quickSettingsCollapsed ? t('console.expand') : t('console.collapse') }}</span>
           </button>
           <div v-if="!quickSettingsCollapsed" class="quick-training-content">
             <div class="quick-audio-block quick-time-block">
               <div class="quick-time-header">
-                <span>音量</span>
+                <span>{{ t('console.volume') }}</span>
                 <strong>{{ quickAudioVolumeLabel }}</strong>
               </div>
               <div class="quick-time-slider-wrap">
@@ -672,7 +672,7 @@
               </div>
             </div>
             <div v-if="status.mode === 'research'" class="quick-seat-block">
-              <span class="seat-switch-label">切换座位</span>
+              <span class="seat-switch-label">{{ t('console.switchSeat') }}</span>
               <div class="seat-buttons seat-buttons-compact">
                 <button
                   v-for="option in relativeSeatOptions"
@@ -689,7 +689,7 @@
               </div>
             </div>
             <div v-if="status.mode === 'play'" class="quick-subsection">
-              <span class="quick-subsection-label">复核模式</span>
+              <span class="quick-subsection-label">{{ t('console.reviewMode') }}</span>
             <div class="quick-training-mode-row">
               <button
                 v-for="option in quickTrainingModes"
@@ -704,15 +704,15 @@
             </div>
             <div v-if="status.mode === 'play'" class="quick-time-block">
               <div class="quick-time-header">
-                <span>AI 思考延迟</span>
+                <span>{{ t('console.thinkingDelay') }}</span>
                 <strong>{{ quickMaxThinkingLabel }}</strong>
               </div>
               <div class="quick-time-slider-wrap">
                 <div class="quick-time-track">
                   <span class="quick-time-track-bg"></span>
                   <span class="quick-time-track-fill" :style="{ width: `${quickMaxThinkingPercent}%` }"></span>
-                  <span class="quick-time-marker quick-time-marker-min" :style="{ left: `${quickMinThinkingPercent}%` }" title="最短思考时间"></span>
-                  <span class="quick-time-marker quick-time-marker-auto" :style="{ left: `${quickAutoAdvancePercent}%` }" title="自动推进最小单位"></span>
+                  <span class="quick-time-marker quick-time-marker-min" :style="{ left: `${quickMinThinkingPercent}%` }" :title="t('console.minimumThinkingTime')"></span>
+                  <span class="quick-time-marker quick-time-marker-auto" :style="{ left: `${quickAutoAdvancePercent}%` }" :title="t('console.autoAdvanceUnit')"></span>
                   <span class="quick-time-thumb" :style="{ left: `${quickMaxThinkingPercent}%` }"></span>
                 </div>
                 <input
@@ -727,8 +727,8 @@
                 />
               </div>
               <div class="quick-time-legend">
-                <span>最短 {{ quickMinThinkingLabel }}</span>
-                <span>推进 {{ quickAutoAdvanceLabel }}</span>
+                <span>{{ t('console.minimumShort', { value: quickMinThinkingLabel }) }}</span>
+                <span>{{ t('console.advanceShort', { value: quickAutoAdvanceLabel }) }}</span>
               </div>
             </div>
           </div>
@@ -736,21 +736,21 @@
 
         <div class="settings-preview settings-preview-tree" :class="{ collapsed: treePanelCollapsed }">
           <button class="panel-section-toggle" @click="treePanelCollapsed = !treePanelCollapsed">
-            <h3>分支树</h3>
-            <span>{{ treePanelCollapsed ? '展开' : '折叠' }}</span>
+            <h3>{{ t('tree.title') }}</h3>
+            <span>{{ treePanelCollapsed ? t('console.expand') : t('console.collapse') }}</span>
           </button>
           <template v-if="!treePanelCollapsed">
             <div class="tree-actions">
-              <button @click="setCurrentNodeAsMainBranch" :disabled="!canSetCurrentNodeAsMainBranch || nodeMutationRequestInFlight">设为主分支</button>
+              <button @click="setCurrentNodeAsMainBranch" :disabled="!canSetCurrentNodeAsMainBranch || nodeMutationRequestInFlight">{{ t('tree.setMain') }}</button>
               <button
                 class="tree-delete-button"
                 :class="{ 'confirm-delete': deleteNodeConfirmationPending }"
                 :disabled="!canDeleteCurrentNode || nodeMutationRequestInFlight"
                 @click="deleteCurrentNode"
               >
-                {{ deleteNodeConfirmationPending ? '确认删除' : '删除节点' }}
+                {{ deleteNodeConfirmationPending ? t('common.confirmDelete') : t('tree.deleteNode') }}
               </button>
-              <button :disabled="!gameView.currentNodeId" @click="openCustomTenhouExport">导出</button>
+              <button :disabled="!gameView.currentNodeId" @click="openCustomTenhouExport">{{ t('common.export') }}</button>
             </div>
             <div
               v-if="treeDots.length"
@@ -845,8 +845,8 @@
               class="node-comment"
               rows="1"
               maxlength="20000"
-              placeholder="评注……"
-              aria-label="当前节点评注"
+              :placeholder="t('tree.commentPlaceholder')"
+              :aria-label="t('tree.currentComment')"
               @input="onNodeCommentInput"
               @blur="flushNodeCommentInBackground"
             />
@@ -856,18 +856,18 @@
 
         <div class="settings-preview" :class="{ collapsed: analysisPanelCollapsed }">
           <button class="panel-section-toggle" @click="analysisPanelCollapsed = !analysisPanelCollapsed">
-            <h3>评估表</h3>
-            <span>{{ analysisPanelCollapsed ? '展开' : '折叠' }}</span>
+            <h3>{{ t('evaluation.title') }}</h3>
+            <span>{{ analysisPanelCollapsed ? t('console.expand') : t('console.collapse') }}</span>
           </button>
           <template v-if="!analysisPanelCollapsed">
-            <p v-if="!effectiveDecisionRecommendationsEnabled" class="empty-copy">引擎推荐已隐藏</p>
+            <p v-if="!effectiveDecisionRecommendationsEnabled" class="empty-copy">{{ t('evaluation.hidden') }}</p>
             <p v-else-if="!showTrainingRecommendations" class="empty-copy">—</p>
             <p v-else-if="gameView.analysis?.error" class="empty-copy">{{ gameView.analysis.error }}</p>
             <div v-else-if="mergedAnalysisEntries.length" class="analysis-table-scroll">
               <table class="analysis-table">
                 <thead>
                   <tr>
-                    <th scope="col" class="analysis-action-heading">动作</th>
+                    <th scope="col" class="analysis-action-heading">{{ t('evaluation.action') }}</th>
                     <th
                       v-for="metric in decisionMetricDefinitions"
                       :key="metric.id"
@@ -910,7 +910,7 @@
               <table class="analysis-table">
                 <thead>
                   <tr>
-                    <th scope="col" class="analysis-action-heading">动作</th>
+                    <th scope="col" class="analysis-action-heading">{{ t('evaluation.action') }}</th>
                     <th
                       v-for="metric in decisionMetricDefinitions"
                       :key="metric.id"
@@ -976,9 +976,9 @@
         aria-describedby="runtime-memory-detail"
         tabindex="0"
       >
-        <span>程序内存 {{ formatMemorySize(runtimeMetrics?.applicationBytes) }}</span>
+        <span>{{ t('status.applicationMemory', { value: formatMemorySize(runtimeMetrics?.applicationBytes) }) }}</span>
         <span class="footer-memory-separator" aria-hidden="true">·</span>
-        <span>系统可用 {{ formatMemorySize(runtimeMetrics?.systemAvailableBytes) }}</span>
+        <span>{{ t('status.systemAvailable', { value: formatMemorySize(runtimeMetrics?.systemAvailableBytes) }) }}</span>
         <div id="runtime-memory-detail" class="footer-memory-tooltip" role="tooltip">
           <div v-for="row in runtimeMemoryRows" :key="row.label" class="footer-memory-tooltip-row">
             <span>{{ row.label }}</span>
@@ -999,52 +999,61 @@
     <div v-if="showSettingsPanel" class="settings-modal-backdrop">
       <section class="settings-modal">
         <div class="settings-modal-header">
-          <h2>设置</h2>
+          <h2>{{ t('settings.title') }}</h2>
           <div class="settings-modal-actions">
-            <button class="settings-btn-secondary" @click="closeSettingsPanel">关闭</button>
-            <button class="settings-btn-primary" @click="saveSettingsPanel">保存设置</button>
+            <button class="settings-btn-secondary" @click="closeSettingsPanel">{{ t('common.close') }}</button>
+            <button class="settings-btn-primary" @click="saveSettingsPanel">{{ t('settings.save') }}</button>
           </div>
         </div>
         <div class="settings-subsection">
-          <h3>界面</h3>
+          <h3>{{ t('settings.interface') }}</h3>
           <label>
-            <span>文字大小</span>
+            <span>{{ t('settings.language') }}</span>
+            <select v-model="settingsDraft.display.language">
+              <option value="system">{{ t('settings.language.system') }}</option>
+              <option value="zh-CN">{{ t('settings.language.zh-CN') }}</option>
+              <option value="ja-JP">{{ t('settings.language.ja-JP') }}</option>
+              <option value="en-US">{{ t('settings.language.en-US') }}</option>
+            </select>
+          </label>
+          <label>
+            <span>{{ t('settings.textSize') }}</span>
             <select v-model.number="settingsDraft.display.uiScale">
               <option v-for="scale in uiScaleOptions" :key="scale" :value="scale">{{ Math.round(scale * 100) }}%</option>
             </select>
           </label>
           <label>
-            <span>配色方案</span>
+            <span>{{ t('settings.colorScheme') }}</span>
             <select v-model="settingsDraft.display.colorScheme">
-              <option value="default">默认</option>
+              <option value="default">{{ t('common.default') }}</option>
               <option value="killerducky">killerducky</option>
             </select>
           </label>
           <label>
-            <span>牌桌位置</span>
+            <span>{{ t('settings.tablePosition') }}</span>
             <select v-model="settingsDraft.display.tablePosition">
-              <option value="center">居中</option>
-              <option value="left">靠左</option>
-              <option value="right">靠右</option>
+              <option value="center">{{ t('settings.tablePosition.center') }}</option>
+              <option value="left">{{ t('settings.tablePosition.left') }}</option>
+              <option value="right">{{ t('settings.tablePosition.right') }}</option>
             </select>
           </label>
           <label class="settings-checkbox">
             <input v-model="settingsDraft.display.reduceMotion" type="checkbox" />
             <span class="settings-checkbox-control" aria-hidden="true"></span>
-            <span class="settings-checkbox-label">减少动态效果</span>
+            <span class="settings-checkbox-label">{{ t('settings.reduceMotion') }}</span>
           </label>
           <label class="settings-checkbox">
             <input v-model="settingsDraft.display.showTsumogiriInPlay" type="checkbox" />
             <span class="settings-checkbox-control" aria-hidden="true"></span>
-            <span class="settings-checkbox-label">对局时显示手摸切</span>
+            <span class="settings-checkbox-label">{{ t('settings.showTsumogiri') }}</span>
           </label>
         </div>
         <div class="settings-subsection">
-          <h3>音效</h3>
+          <h3>{{ t('settings.sound') }}</h3>
           <label>
-            <span>音效包</span>
+            <span>{{ t('settings.soundPack') }}</span>
             <select v-model="settingsDraft.audio.soundPackId">
-              <option value="">无</option>
+              <option value="">{{ t('common.none') }}</option>
               <option v-for="pack in settings.runtime?.soundPackCatalog.packs || []" :key="pack.id" :value="pack.id">
                 {{ pack.name }}
               </option>
@@ -1052,20 +1061,20 @@
           </label>
         </div>
         <div class="settings-subsection">
-          <h3>对局</h3>
+          <h3>{{ t('settings.game') }}</h3>
           <label>
-            <span>差异阈值（%）</span>
+            <span>{{ t('settings.mistakeThreshold') }}</span>
             <input v-model.number="mistakeThresholdDisplay" type="number" min="0" max="100" step="1" />
           </label>
         </div>
         <div class="settings-subsection">
-          <h3>存档</h3>
+          <h3>{{ t('settings.records') }}</h3>
           <label class="settings-checkbox settings-checkbox-with-description">
             <input v-model="settingsDraft.records.saveRecoveryOnExit" type="checkbox" />
             <span class="settings-checkbox-control" aria-hidden="true"></span>
             <span class="settings-checkbox-copy">
-              <span class="settings-checkbox-label">退出时保留未保存的内容</span>
-              <span class="settings-checkbox-description">如果有未保存的修改，则下次启动时将从关闭的位置继续。</span>
+              <span class="settings-checkbox-label">{{ t('settings.keepRecovery') }}</span>
+              <span class="settings-checkbox-description">{{ t('settings.keepRecovery.description') }}</span>
             </span>
           </label>
         </div>
@@ -1080,9 +1089,9 @@
       @focusin="focusFloatingPanel('roundMap')"
     >
       <div class="floating-panel-header" @mousedown="startDragFloatingPanel">
-        <span>局图</span>
+        <span>{{ t('roundMap.title') }}</span>
         <div class="floating-panel-header-actions">
-          <button class="floating-panel-close" aria-label="关闭局图" @click="closeRoundMapOverlay">&times;</button>
+          <button class="floating-panel-close" :aria-label="t('roundMap.close')" @click="closeRoundMapOverlay">&times;</button>
         </div>
       </div>
       <div class="round-map-panel-body">
@@ -1157,7 +1166,7 @@
               :key="`round-map-score-${entry.seat}`"
               :class="['result-score-card', `is-${entry.position}`, { 'is-empty': !entry.hasScores }]"
               role="group"
-              :aria-label="entry.showDelta ? `${entry.label}，第 ${entry.rank} 名，原分 ${entry.before}，变动 ${formatDelta(entry.delta)}，结算 ${entry.after}` : (entry.hasScores ? `${entry.label}，分数 ${entry.after}` : entry.label)"
+              :aria-label="entry.showDelta ? t('result.scoreAria', { player: entry.label, rank: entry.rank, before: entry.before, delta: formatDelta(entry.delta), after: entry.after }) : (entry.hasScores ? t('result.scoreOnlyAria', { player: entry.label, score: entry.after }) : entry.label)"
             >
               <span class="result-score-heading">
                 <strong class="result-score-seat">{{ entry.label }}</strong>
@@ -1184,31 +1193,31 @@
       @focusin="focusFloatingPanel('wall')"
     >
       <div class="floating-panel-header" @mousedown="startDragFloatingPanel">
-        <span>牌山</span>
+        <span>{{ t('wall.title') }}</span>
         <div class="floating-panel-header-actions">
-          <button v-if="wallViewComplete" class="floating-panel-action" @click="copyWallToClipboard" :disabled="!wallTiles.length">复制</button>
-          <button v-if="wallViewComplete && !isReadOnlyRecord" class="floating-panel-action" @click="importWallFromClipboard">导入</button>
-          <button class="floating-panel-close" aria-label="关闭牌山" @click="showWallView = false">&times;</button>
+          <button v-if="wallViewComplete" class="floating-panel-action" @click="copyWallToClipboard" :disabled="!wallTiles.length">{{ t('common.copy') }}</button>
+          <button v-if="wallViewComplete && !isReadOnlyRecord" class="floating-panel-action" @click="importWallFromClipboard">{{ t('common.import') }}</button>
+          <button class="floating-panel-close" :aria-label="t('wall.close')" @click="showWallView = false">&times;</button>
         </div>
       </div>
       <p v-if="wallClipboardMessage" class="wall-clipboard-message">{{ wallClipboardMessage }}</p>
-      <p v-if="wallLoading" class="wall-loading-state" role="status">正在加载牌山……</p>
+      <p v-if="wallLoading" class="wall-loading-state" role="status">{{ t('wall.loading') }}</p>
       <template v-else>
         <div v-if="wallOrigin !== 'generated' || wallSeed !== null || wallSourceUrl" class="wall-metadata">
           <p v-if="wallOrigin !== 'generated'">
-            <span>牌山来源</span><strong>{{ wallOrigin === 'reconstructed' ? '重建的牌山' : '导入的牌山' }}</strong>
+            <span>{{ t('wall.source') }}</span><strong>{{ wallOrigin === 'reconstructed' ? t('wall.source.reconstructed') : t('wall.source.imported') }}</strong>
           </p>
-          <p v-if="wallSeed !== null"><span>对局牌山种子</span><code>{{ wallSeed }}</code></p>
-          <p v-if="wallSourceUrl"><span>导入地址</span><code>{{ wallSourceUrl }}</code></p>
+          <p v-if="wallSeed !== null"><span>{{ t('wall.seed') }}</span><code>{{ wallSeed }}</code></p>
+          <p v-if="wallSourceUrl"><span>{{ t('wall.importUrl') }}</span><code>{{ wallSourceUrl }}</code></p>
         </div>
         <div v-if="wallCanReconstruct && !wallViewComplete" class="wall-reconstruction">
           <button class="floating-panel-action" :disabled="wallReconstructing" @click="reconstructImportedWalls">
-            {{ wallReconstructing ? '正在重建……' : '重建牌山' }}
+            {{ wallReconstructing ? t('wall.reconstructing') : t('wall.reconstruct') }}
           </button>
-          <p>按牌谱中的已知牌张还原牌山，并随机补全未出现的剩余牌山。重建后可以进入对局模式。</p>
+          <p>{{ t('wall.reconstruct.description') }}</p>
           <label>
-            <span>对局牌山种子（可选）</span>
-            <input v-model.trim="wallReconstructionSeed" type="text" inputmode="numeric" placeholder="留空则随机生成" />
+            <span>{{ t('wall.seedOptional') }}</span>
+            <input v-model.trim="wallReconstructionSeed" type="text" inputmode="numeric" :placeholder="t('wall.seedPlaceholder')" />
           </label>
         </div>
       </template>
@@ -1258,14 +1267,14 @@
       @focusin="focusFloatingPanel('engine')"
     >
       <div class="floating-panel-header" @mousedown="startDragFloatingPanel">
-        <span>引擎管理</span>
+        <span>{{ t('engine.title') }}</span>
         <div class="floating-panel-header-actions">
-          <button class="floating-panel-close" aria-label="关闭引擎管理" @click="closeEngineWindow">&times;</button>
+          <button class="floating-panel-close" :aria-label="t('engine.close')" @click="closeEngineWindow">&times;</button>
         </div>
       </div>
       <div class="engine-manager-body">
         <div class="engine-profile-column">
-          <div class="engine-output-filters" aria-label="按输出能力筛选引擎">
+          <div class="engine-output-filters" :aria-label="t('engine.filterByOutput')">
             <button
               v-for="output in SUPPORTED_ENGINE_OUTPUTS"
               :key="output.id"
@@ -1289,7 +1298,7 @@
             :class="engineProfileClasses(profile)"
             @click="selectEngineProfile(profile.id)"
           >
-            <span>{{ profile.name || '未命名引擎' }}</span>
+            <span>{{ profile.name || t('common.unnamedEngine') }}</span>
             <small>{{ engineProfileSubtitle(profile) }}</small>
             <button
               v-if="shouldShowEngineActionButton(profile)"
@@ -1298,26 +1307,26 @@
               :disabled="Boolean(loadingEngineProfileId || unloadingEngineProfileId)"
               @click.stop="handleEngineProfileAction(profile)"
             >
-              {{ profileIsLoaded(profile) ? '卸载' : '加载' }}
+              {{ profileIsLoaded(profile) ? t('engine.unload') : t('engine.load') }}
             </button>
           </div>
           <div class="engine-list-actions">
-            <button @click="moveEngineProfile(-1)" :disabled="activeEngineProfileIndex <= 0">上移</button>
-            <button @click="moveEngineProfile(1)" :disabled="activeEngineProfileIndex < 0 || activeEngineProfileIndex >= activeEngineProfiles.length - 1">下移</button>
-            <button @click="duplicateEngineProfile" :disabled="!activeEngineProfile">复制</button>
+            <button @click="moveEngineProfile(-1)" :disabled="activeEngineProfileIndex <= 0">{{ t('engine.moveUp') }}</button>
+            <button @click="moveEngineProfile(1)" :disabled="activeEngineProfileIndex < 0 || activeEngineProfileIndex >= activeEngineProfiles.length - 1">{{ t('engine.moveDown') }}</button>
+            <button @click="duplicateEngineProfile" :disabled="!activeEngineProfile">{{ t('engine.duplicate') }}</button>
             <button
               :class="{ danger: deleteEngineConfirmationId === activeEngineProfile?.id }"
               @click="deleteEngineProfile"
               :disabled="!activeEngineProfile || activeEngineProfile.builtIn || profileAssignedOutputs(activeEngineProfile).length > 0"
             >
-              {{ deleteEngineConfirmationId === activeEngineProfile?.id ? '确认删除' : '删除' }}
+              {{ deleteEngineConfirmationId === activeEngineProfile?.id ? t('common.confirmDelete') : t('common.delete') }}
             </button>
           </div>
-          <button class="engine-add-button" @click="addEngineProfile">添加引擎</button>
+          <button class="engine-add-button" @click="addEngineProfile">{{ t('engine.add') }}</button>
         </div>
         <div v-if="activeEngineProfile" class="engine-profile-detail">
           <label>
-            <span>显示名称</span>
+            <span>{{ t('engine.displayName') }}</span>
             <input
               :value="activeEngineProfile.name"
               :placeholder="suggestedEngineProfileName(activeEngineProfile)"
@@ -1327,14 +1336,14 @@
             />
           </label>
           <div class="engine-weight-field">
-            <span>引擎</span>
+            <span>{{ t('engine.executable') }}</span>
             <div>
-              <input :value="activeEngineProfile.enginePath" :disabled="profileConfigurationLocked(activeEngineProfile)" readonly type="text" placeholder="选择引擎文件" />
-              <button :disabled="activeEngineProfile.builtIn || profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineFile">选择</button>
+              <input :value="activeEngineProfile.enginePath" :disabled="profileConfigurationLocked(activeEngineProfile)" readonly type="text" :placeholder="t('engine.selectExecutable')" />
+              <button :disabled="activeEngineProfile.builtIn || profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineFile">{{ t('common.select') }}</button>
             </div>
           </div>
           <div class="engine-weight-field">
-            <span>输出</span>
+            <span>{{ t('engine.output') }}</span>
             <div class="engine-output-options">
               <label
                 v-for="output in activeSupportedOutputs"
@@ -1350,7 +1359,7 @@
                 <span class="settings-checkbox-control" aria-hidden="true"></span>
                 <span class="settings-checkbox-label">{{ output.label }}</span>
               </label>
-              <small v-if="activeEngineProfile.enginePath && !activeSupportedOutputs.length && !describingEngineIds.has(engineDescriptionKey(activeEngineProfile))">主程序无法使用这个引擎声明的输出。</small>
+              <small v-if="activeEngineProfile.enginePath && !activeSupportedOutputs.length && !describingEngineIds.has(engineDescriptionKey(activeEngineProfile))">{{ t('engine.unsupportedOutputs') }}</small>
             </div>
           </div>
           <div
@@ -1361,12 +1370,12 @@
           >
             <span>{{ localizedEngineText(slot.title, slot.id) }}</span>
             <div>
-              <input :value="engineWeight(activeEngineProfile, slot.id)?.path || ''" :disabled="profileConfigurationLocked(activeEngineProfile)" readonly type="text" placeholder="选择权重文件" />
-              <button :disabled="activeEngineProfile.builtIn || !activeEngineProfile.enginePath || profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineWeight(slot.id)">选择</button>
+              <input :value="engineWeight(activeEngineProfile, slot.id)?.path || ''" :disabled="profileConfigurationLocked(activeEngineProfile)" readonly type="text" :placeholder="t('engine.selectWeight')" />
+              <button :disabled="activeEngineProfile.builtIn || !activeEngineProfile.enginePath || profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineWeight(slot.id)">{{ t('common.select') }}</button>
             </div>
           </div>
           <label v-if="activeEngineDevices.length">
-            <span>运行设备</span>
+            <span>{{ t('engine.runtimeDevice') }}</span>
             <select
               :value="activeEngineProfile.device"
               :disabled="profileConfigurationLocked(activeEngineProfile)"
@@ -1381,7 +1390,7 @@
             v-if="activeCatalogEngine && (activeCatalogEngine.licenses.length || activeCatalogEngine.notices.length)"
             class="engine-legal-field"
           >
-            <span>许可与声明</span>
+            <span>{{ t('engine.licenses') }}</span>
             <div class="engine-legal-actions">
               <button
                 v-for="(license, index) in activeCatalogEngine.licenses"
@@ -1403,7 +1412,7 @@
                 v-if="activeCatalogEngine.sourceUrl"
                 @click="openExternalLink(activeCatalogEngine.sourceUrl)"
               >
-                查看源码
+                {{ t('engine.viewSource') }}
               </button>
             </div>
           </div>
@@ -1411,7 +1420,7 @@
             v-if="activeEngineProfile.enginePath && describingEngineIds.has(engineDescriptionKey(activeEngineProfile))"
             class="engine-inline-status"
           >
-            正在读取引擎参数...
+            {{ t('engine.readingOptions') }}
           </p>
           <label v-for="option in activeEngineOptionEntries" :key="option.key">
             <span>{{ option.label }}</span>
@@ -1421,7 +1430,7 @@
               :disabled="profileConfigurationLocked(activeEngineProfile)"
               @change="setEngineOptionFromEvent(option, $event)"
             >
-              <option value="">默认（{{ formatEngineOptionDefault(option.defaultValue) }}）</option>
+              <option value="">{{ t('engine.defaultOption', { value: formatEngineOptionDefault(option.defaultValue) }) }}</option>
               <option v-for="value in option.enumValues" :key="String(value)" :value="value">
                 {{ value }}
               </option>
@@ -1432,9 +1441,9 @@
               :disabled="profileConfigurationLocked(activeEngineProfile)"
               @change="setEngineOptionFromEvent(option, $event)"
             >
-              <option value="">默认（{{ formatEngineOptionDefault(option.defaultValue) }}）</option>
-              <option value="true">是</option>
-              <option value="false">否</option>
+              <option value="">{{ t('engine.defaultOption', { value: formatEngineOptionDefault(option.defaultValue) }) }}</option>
+              <option value="true">{{ t('common.yes') }}</option>
+              <option value="false">{{ t('common.no') }}</option>
             </select>
             <input
               v-else
@@ -1447,10 +1456,10 @@
             />
           </label>
           <p v-if="engineDescribeErrors[engineDescriptionKey(activeEngineProfile)]" class="engine-diagnostic">
-            无法读取参数：{{ engineDescribeErrors[engineDescriptionKey(activeEngineProfile)] }}
+            {{ t('engine.optionsFailed', { message: engineDescribeErrors[engineDescriptionKey(activeEngineProfile)] }) }}
           </p>
           <p v-if="engineCatalogDiagnostics.length" class="engine-diagnostic">
-            包诊断：{{ engineCatalogDiagnostics[0].message }}
+            {{ t('engine.packageDiagnostic', { message: engineCatalogDiagnostics[0].message }) }}
           </p>
         </div>
       </div>
@@ -1460,28 +1469,28 @@
     <div v-if="showMjaiDebug" class="settings-modal-backdrop" @click.self="showMjaiDebug = false">
       <section class="wall-view-panel mjai-debug-panel">
         <div class="settings-modal-header">
-          <h2>最新 MJAI 数据</h2>
+          <h2>{{ t('debug.title') }}</h2>
           <div class="settings-modal-actions">
             <button
               class="settings-btn-secondary"
               :disabled="!status.gameLoaded || clearingAnalysisCaches"
               @click="clearLoadedAnalysisCaches"
             >
-              {{ clearingAnalysisCaches ? '正在清除...' : '清除牌谱分析缓存' }}
+              {{ clearingAnalysisCaches ? t('debug.clearingCache') : t('debug.clearCache') }}
             </button>
-            <button class="settings-btn-secondary" @click="showMjaiDebug = false">关闭 (F1)</button>
+            <button class="settings-btn-secondary" @click="showMjaiDebug = false">{{ t('debug.close') }}</button>
           </div>
         </div>
         <p v-if="analysisCacheClearMessage" class="mjai-cache-clear-message">{{ analysisCacheClearMessage }}</p>
         <div class="mjai-debug-info">
-          <span v-if="mjaiDebugData.caller">调用: {{ mjaiDebugData.caller }}</span>
-          <span v-if="mjaiDebugData.seat != null">座位: {{ mjaiDebugData.seat }}</span>
-          <span v-if="mjaiDebugData.phase">阶段: {{ mjaiDebugData.phase }}</span>
-          <span v-if="mjaiDebugData.eventCount != null">事件数: {{ mjaiDebugData.eventCount }}</span>
-          <span v-if="mjaiDebugData.responseType">响应: {{ mjaiDebugData.responseType }}</span>
+          <span v-if="mjaiDebugData.caller">{{ t('debug.caller', { value: String(mjaiDebugData.caller) }) }}</span>
+          <span v-if="mjaiDebugData.seat != null">{{ t('debug.seat', { value: String(mjaiDebugData.seat) }) }}</span>
+          <span v-if="mjaiDebugData.phase">{{ t('debug.phase', { value: String(mjaiDebugData.phase) }) }}</span>
+          <span v-if="mjaiDebugData.eventCount != null">{{ t('debug.eventCount', { value: String(mjaiDebugData.eventCount) }) }}</span>
+          <span v-if="mjaiDebugData.responseType">{{ t('debug.response', { value: String(mjaiDebugData.responseType) }) }}</span>
         </div>
         <pre class="mjai-debug-pre">{{ mjaiDebugJson }}</pre>
-        <div class="mjai-debug-section-label">向听预测模型</div>
+        <div class="mjai-debug-section-label">{{ t('debug.shantenModel') }}</div>
         <pre class="mjai-debug-pre">{{ shantenMjaiJson }}</pre>
         <div class="mjai-debug-status">{{ shantenStatus }}</div>
         <pre class="mjai-debug-pre" v-if="shantenRawData.kamicha">{{ shantenRawJson }}</pre>
@@ -1499,8 +1508,11 @@ import AnalysisPanel from './components/AnalysisPanel.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
+import { normalizeLanguagePreference, setLanguagePreference, useI18n } from './i18n'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
+
+const { locale, numberLocale, t } = useI18n()
 
 const seats = [0, 1, 2, 3]
 type ColorSchemeId = TrainerSettings['display']['colorScheme']
@@ -1569,6 +1581,7 @@ const settings = reactive<TrainerSettings>({
     autoAdvanceDelayMs: 250,
   },
   display: {
+    language: 'system',
     colorScheme: 'default',
     reduceMotion: false,
     uiScale: 1,
@@ -1663,6 +1676,12 @@ const shantenMjaiJson = computed(() => JSON.stringify(shantenMjaiData.value, nul
 const clearingAnalysisCaches = ref(false)
 const analysisCacheClearMessage = ref('')
 
+watchEffect(() => {
+  setLanguagePreference(showSettingsPanel.value
+    ? settingsDraft.display.language
+    : settings.display.language)
+})
+
 // --- 对手分析 ---
 const showAnalysisDock = ref(false)
 type FloatingPanelName = 'wall' | 'engine' | 'roundMap' | 'customExport'
@@ -1692,21 +1711,26 @@ type SupportedEngineOutputId =
   | 'kyoku-score-delta'
   | 'match-placement'
   | 'match-score'
-const SUPPORTED_ENGINE_OUTPUTS: Array<{ id: SupportedEngineOutputId; version: number; label: string }> = [
-  { id: 'action-recommendation', version: 1, label: '动作推荐' },
-  { id: 'opponent-shanten', version: 1, label: '向听预测' },
-  { id: 'opponent-deal-in-probability', version: 1, label: '铳率预测' },
-  { id: 'opponent-concealed-tile-count', version: 1, label: '暗牌构成' },
-  { id: 'wall-tile-count', version: 1, label: '牌山剩余' },
-  { id: 'opponent-dora-count', version: 1, label: '宝牌数预测' },
-  { id: 'opponent-score', version: 1, label: '打点预测' },
-  { id: 'kyoku-outcome', version: 1, label: '本局走向' },
-  { id: 'kyoku-score-delta', version: 1, label: '本局收支' },
-  { id: 'match-placement', version: 1, label: '终局顺位' },
-  { id: 'match-score', version: 1, label: '终局点数' },
+const SUPPORTED_ENGINE_OUTPUT_DEFINITIONS: Array<{ id: SupportedEngineOutputId; version: number; labelKey: string }> = [
+  { id: 'action-recommendation', version: 1, labelKey: 'analysis.output.action' },
+  { id: 'opponent-shanten', version: 1, labelKey: 'analysis.output.shanten' },
+  { id: 'opponent-deal-in-probability', version: 1, labelKey: 'analysis.output.dealIn' },
+  { id: 'opponent-concealed-tile-count', version: 1, labelKey: 'analysis.output.concealedTiles' },
+  { id: 'wall-tile-count', version: 1, labelKey: 'analysis.output.wallTiles' },
+  { id: 'opponent-dora-count', version: 1, labelKey: 'analysis.output.dora' },
+  { id: 'opponent-score', version: 1, labelKey: 'analysis.output.score' },
+  { id: 'kyoku-outcome', version: 1, labelKey: 'analysis.output.kyokuOutcome' },
+  { id: 'kyoku-score-delta', version: 1, labelKey: 'analysis.output.kyokuDelta' },
+  { id: 'match-placement', version: 1, labelKey: 'analysis.output.matchPlacement' },
+  { id: 'match-score', version: 1, labelKey: 'analysis.output.matchScore' },
 ]
+const SUPPORTED_ENGINE_OUTPUTS = computed(() => SUPPORTED_ENGINE_OUTPUT_DEFINITIONS.map((output) => ({
+  id: output.id,
+  version: output.version,
+  label: t(output.labelKey),
+})))
 const OPPONENT_ENGINE_OUTPUT_IDS = SUPPORTED_ENGINE_OUTPUTS
-  .map((output) => output.id)
+  .value.map((output) => output.id)
   .filter((outputId): outputId is Exclude<SupportedEngineOutputId, 'action-recommendation'> => (
     outputId !== 'action-recommendation'
   ))
@@ -1755,7 +1779,7 @@ const activeEngineDescription = computed(() => (
 ))
 const activeSupportedOutputs = computed(() => {
   const contracts = activeEngineDescription.value?.outputContracts || []
-  return SUPPORTED_ENGINE_OUTPUTS.filter((supported) => contracts.some((contract) => (
+  return SUPPORTED_ENGINE_OUTPUTS.value.filter((supported) => contracts.some((contract) => (
     contract.id === supported.id && contract.version === supported.version
   )))
 })
@@ -1846,7 +1870,7 @@ function engineProfileSupportsOutput(
   outputId: SupportedEngineOutputId,
 ): boolean {
   const description = engineDescriptions[engineDescriptionKey(profile)]
-  const supported = SUPPORTED_ENGINE_OUTPUTS.find((output) => output.id === outputId)
+  const supported = SUPPORTED_ENGINE_OUTPUTS.value.find((output) => output.id === outputId)
   return Boolean(supported && description?.outputContracts.some((contract) => (
     contract.id === supported.id && contract.version === supported.version
   )))
@@ -2050,14 +2074,14 @@ function engineProfileClasses(profile: TrainerEngineProfile) {
 }
 
 function engineProfileSubtitle(profile: TrainerEngineProfile): string {
-  if (profile.id === loadingEngineProfileId.value) return '正在加载'
-  if (engineLoadErrors[profile.id]) return '加载失败'
+  if (profile.id === loadingEngineProfileId.value) return t('engine.status.loading')
+  if (engineLoadErrors[profile.id]) return t('engine.status.failed')
   const runtimeGroups = profileRuntimeKinds(profile)
   if (!runtimeGroups.some((kind) => profileMatchesRuntime(profile, kind))) return ''
-  if (runtimeGroups.some((kind) => runtimeEngineError(kind))) return '加载失败'
-  if (runtimeGroups.every((kind) => profileRuntimeState(profile, kind)?.unloaded === true)) return '未加载'
-  if (!profileIsLoaded(profile)) return '正在加载'
-  return '已加载'
+  if (runtimeGroups.some((kind) => runtimeEngineError(kind))) return t('engine.status.failed')
+  if (runtimeGroups.every((kind) => profileRuntimeState(profile, kind)?.unloaded === true)) return t('engine.status.notLoaded')
+  if (!profileIsLoaded(profile)) return t('engine.status.loading')
+  return t('engine.status.loaded')
 }
 
 const engineFooterMessage = computed(() => {
@@ -2100,7 +2124,7 @@ function duplicateEngineProfile() {
   if (!source) return
   const copyProfile: TrainerEngineProfile = JSON.parse(JSON.stringify(source))
   copyProfile.id = `profile.user.${Date.now().toString(36)}`
-  copyProfile.name = `${source.name} 副本`
+  copyProfile.name = t('engine.copySuffix', { name: source.name })
   copyProfile.builtIn = false
   copyProfile.autoName = false
   activeEngineProfiles.value.splice(activeEngineProfileIndex.value + 1, 0, copyProfile)
@@ -2212,11 +2236,18 @@ async function chooseEngineWeight(slotId: string) {
 
 function localizedEngineText(value: string | Record<string, string> | undefined, fallback: string): string {
   if (typeof value === 'string') return value
-  return value?.['zh-CN'] || value?.default || fallback
+  const language = locale.value.split('-')[0]
+  return value?.[locale.value]
+    || value?.[language]
+    || value?.['en-US']
+    || value?.en
+    || value?.default
+    || value?.['zh-CN']
+    || fallback
 }
 
 function profileAssignedOutputs(profile: TrainerEngineProfile): SupportedEngineOutputId[] {
-  return SUPPORTED_ENGINE_OUTPUTS
+  return SUPPORTED_ENGINE_OUTPUTS.value
     .map((output) => output.id)
     .filter((outputId) => settingsDraft.engines.outputAssignments[outputId] === profile.id)
 }
@@ -2255,9 +2286,9 @@ function setEngineDevice(event: Event) {
 }
 
 function formatEngineOptionDefault(value: unknown): string {
-  if (value === true) return '是'
-  if (value === false) return '否'
-  return value == null ? '引擎设置' : String(value)
+  if (value === true) return t('common.yes')
+  if (value === false) return t('common.no')
+  return value == null ? t('engine.settingFallback') : String(value)
 }
 
 function engineOptionInputMode(option: typeof activeEngineOptionEntries.value[number]) {
@@ -2285,7 +2316,7 @@ function setEngineOptionFromEvent(option: typeof activeEngineOptionEntries.value
       || (option.maximum !== undefined && value > option.maximum)
     if (invalid) {
       target.value = String(profile.options[option.key] ?? '')
-      engineSaveMessage.value = `${option.label}的输入不符合引擎参数要求。`
+      engineSaveMessage.value = t('engine.optionInvalid', { label: option.label })
       return
     }
     profile.options[option.key] = value
@@ -2343,7 +2374,7 @@ async function saveEngineDraftSnapshot(
     if (engineDraftRevision === revision) replaceEngineDraft(saved.engines)
     return true
   } catch (error) {
-    engineSaveMessage.value = `保存失败：${error instanceof Error ? error.message : String(error)}`
+    engineSaveMessage.value = t('engine.saveFailed', { message: error instanceof Error ? error.message : String(error) })
     return false
   }
 }
@@ -2387,7 +2418,7 @@ async function loadEngineProfile(profileId: string) {
     if (engineDraftRevision === activationRevision) {
       replaceEngineDraft(loaded.engines)
     }
-    engineSaveMessage.value = '引擎已加载。'
+    engineSaveMessage.value = t('engine.loaded')
   } catch (error) {
     try {
       const failedSettings = await window.trainerAPI.getSettings()
@@ -2399,7 +2430,7 @@ async function loadEngineProfile(profileId: string) {
       // Keep the original load error when status synchronization also fails.
     }
     engineLoadErrors[profileId] = error instanceof Error ? error.message : String(error)
-    engineSaveMessage.value = `加载失败：${engineLoadErrors[profileId]}`
+    engineSaveMessage.value = t('engine.loadFailed', { message: engineLoadErrors[profileId] })
   } finally {
     loadingEngineProfileId.value = ''
     if (engineSavedRevision < engineDraftRevision) scheduleEngineAutosave(0)
@@ -2422,9 +2453,9 @@ async function unloadEngineProfile(profileId: string) {
       }
       void fetchShantenOnce()
     }
-    engineSaveMessage.value = '引擎已卸载。'
+    engineSaveMessage.value = t('engine.unloaded')
   } catch (error) {
-    engineSaveMessage.value = `卸载失败：${error instanceof Error ? error.message : String(error)}`
+    engineSaveMessage.value = t('engine.unloadFailed', { message: error instanceof Error ? error.message : String(error) })
   } finally {
     unloadingEngineProfileId.value = ''
   }
@@ -2457,7 +2488,16 @@ const displayedRonWaitData = computed(() => ({
 const shantenRawData = ref<Record<string, Record<string, unknown>>>({})
 const shantenRawJson = computed(() => JSON.stringify(shantenRawData.value, null, 2))
 const shantenStatus = ref('—')
-const SHANTEN_LABELS = ['听牌','1向听','2向听','3向听','4向听','5向听','6向听','振听/无役']
+const SHANTEN_LABELS = computed(() => [
+  t('shanten.tenpai'),
+  t('shanten.one'),
+  t('shanten.two'),
+  t('shanten.three'),
+  t('shanten.four'),
+  t('shanten.five'),
+  t('shanten.six'),
+  t('shanten.furiten'),
+])
 const SHANTEN_SHORT_LABELS = ['0','1','2','3','4','5','6','X']
 const RON_TILE_ROWS = [
   ['1m','2m','3m','4m','5m','6m','7m','8m','9m'],
@@ -2720,9 +2760,9 @@ async function syncAnalysisVisibilityToBackend(refreshView = false): Promise<boo
 const shantenOpponents = computed(() => {
   const c = status.controlledSeat
   const opponents = [
-    { key: 'kamicha', seat: (c + 3) % 4, label: '上家' },
-    { key: 'toimen', seat: (c + 2) % 4, label: '对家' },
-    { key: 'shimocha', seat: (c + 1) % 4, label: '下家' },
+    { key: 'kamicha', seat: (c + 3) % 4, label: t('seat.kamicha') },
+    { key: 'toimen', seat: (c + 2) % 4, label: t('seat.toimen') },
+    { key: 'shimocha', seat: (c + 1) % 4, label: t('seat.shimocha') },
   ]
   return opponents.map((opp) => ({
     ...opp,
@@ -2757,12 +2797,12 @@ function startDragFloatingPanel(e: MouseEvent) {
   window.addEventListener('mouseup', onUp)
 }
 const wallClipboardMessage = ref('')
-const quickTrainingModes = [
-  { value: 'no_review', label: '关闭' },
-  { value: 'threshold_review', label: '差异' },
-  { value: 'always_review', label: '全部' },
-  { value: 'preview_before_click', label: '展示' },
-] as const
+const quickTrainingModes = computed(() => [
+  { value: 'no_review', label: t('mode.noReview') },
+  { value: 'threshold_review', label: t('mode.difference') },
+  { value: 'always_review', label: t('mode.all') },
+  { value: 'preview_before_click', label: t('mode.preview') },
+] as const)
 const wallTileRows = computed(() => {
   const rows: Array<Array<Array<{ index: number; tile: string; status: string }>>> = []
   const sectionEnds = [53, 122, wallTiles.value.length]
@@ -2841,15 +2881,15 @@ function formatMemorySize(value: number | null | undefined) {
 
 const runtimeMemoryRows = computed(() => {
   const metrics = runtimeMetrics.value
-  if (!metrics) return [{ label: '内存信息', value: '正在读取' }]
+  if (!metrics) return [{ label: t('status.memoryInfo'), value: t('status.reading') }]
   const engineCount = metrics.engineProcessCount === null
     ? ''
-    : `（${metrics.engineProcessCount} 个进程）`
+    : t('status.engineProcesses', { count: metrics.engineProcessCount })
   return [
     { label: 'Electron', value: formatMemorySize(metrics.electronBytes) },
-    { label: 'Python 后端', value: formatMemorySize(metrics.backendBytes) },
-    { label: `引擎及其子进程${engineCount}`, value: formatMemorySize(metrics.engineBytes) },
-    { label: '系统总内存', value: formatMemorySize(metrics.systemTotalBytes) },
+    { label: t('status.pythonBackend'), value: formatMemorySize(metrics.backendBytes) },
+    { label: t('status.engines', { count: engineCount }), value: formatMemorySize(metrics.engineBytes) },
+    { label: t('status.systemTotal'), value: formatMemorySize(metrics.systemTotalBytes) },
   ]
 })
 
@@ -2891,11 +2931,15 @@ const autoAnalysisLabel = computed(() => {
   const { status: state, failed } = status.autoAnalysis
   const completed = Math.max(0, Number(status.autoAnalysis.timelineReady) || 0)
   const total = autoAnalysisTimelineTotal.value
-  if (!status.gameLoaded) return '未载入牌谱'
-  if (state === 'running') return total ? `${completed} / ${total}` : '正在扫描'
-  if (state === 'completed') return failed ? `${completed} / ${total} · ${failed} 项失败` : (total ? `${completed} / ${total}` : '无需分析')
-  if (state === 'canceled') return total ? `已停止 ${completed} / ${total}` : '已停止'
-  return total ? `${completed} / ${total}` : '尚未开始'
+  if (!status.gameLoaded) return t('autoAnalysis.noRecord')
+  if (state === 'running') return total ? `${completed} / ${total}` : t('autoAnalysis.scanning')
+  if (state === 'completed') return failed
+    ? t('autoAnalysis.failedCount', { completed, total, failed })
+    : (total ? `${completed} / ${total}` : t('autoAnalysis.notNeeded'))
+  if (state === 'canceled') return total
+    ? t('autoAnalysis.stoppedProgress', { completed, total })
+    : t('autoAnalysis.stopped')
+  return total ? `${completed} / ${total}` : t('autoAnalysis.notStarted')
 })
 function prepareAutoAnalysisCanvas(canvas: HTMLCanvasElement) {
   const rect = canvas.getBoundingClientRect()
@@ -3068,7 +3112,7 @@ const engineStatusItems = computed(() => {
   }
   const statePriority: TrainerModelActivityState[] = ['error', 'loading', 'running', 'idle']
   const decisionState = statePriority.find((state) => decision.includes(state)) || 'idle'
-  const relativeNames = ['自家', '下家', '对家', '上家']
+  const relativeNames = [t('seat.self'), t('seat.shimocha'), t('seat.toimen'), t('seat.kamicha')]
   const activeRoles = relativeNames.filter((_, offset) => (
     decision[(controlledSeat + offset) % 4] === 'running'
     || decision[(controlledSeat + offset) % 4] === 'loading'
@@ -3112,16 +3156,16 @@ const engineStatusItems = computed(() => {
       ? timingValues.reduce((sum, value) => sum + value, 0) / timingValues.length
       : 0
     const roleLabel = kinds.has('decision') && activeRoles.length
-      ? ` · ${activeRoles.join('、')}`
+      ? ` · ${activeRoles.join(t('common.listSeparator'))}`
       : ''
-    const baseLabel = `${profile.name || '未命名引擎'}${roleLabel}`
+    const baseLabel = `${profile.name || t('common.unnamedEngine')}${roleLabel}`
     const uniqueErrors = [...new Set(errorValues.filter(Boolean))]
     return [{
       id: profile.id,
       label: state === 'error' && uniqueErrors.length
         ? `${baseLabel}：${uniqueErrors.join('；')}`
         : averageMs > 0
-          ? `${baseLabel} · 近10次平均 ${averageMs.toFixed(1)} ms`
+          ? t('status.recentAverage', { engine: baseLabel, value: averageMs.toFixed(1) })
           : baseLabel,
       state,
     }]
@@ -3134,10 +3178,10 @@ const quickThinkingDragValue = ref<number | null>(null)
 const quickVolumeDragValue = ref<number | null>(null)
 const currentTrainingMode = computed(() => normalizeTrainingMode(settings.training.mode))
 const relativeSeatOptions = computed(() => ([
-  { label: '上家', seat: (status.controlledSeat + 3) % 4 },
-  { label: '自家', seat: status.controlledSeat },
-  { label: '下家', seat: (status.controlledSeat + 1) % 4 },
-  { label: '对家', seat: (status.controlledSeat + 2) % 4 },
+  { label: t('seat.kamicha'), seat: (status.controlledSeat + 3) % 4 },
+  { label: t('seat.self'), seat: status.controlledSeat },
+  { label: t('seat.shimocha'), seat: (status.controlledSeat + 1) % 4 },
+  { label: t('seat.toimen'), seat: (status.controlledSeat + 2) % 4 },
 ]))
 const quickThinkingMaxValue = computed(() => quickThinkingDragValue.value ?? settings.training.thinkingTimeMaxS)
 const quickAudioVolumeValue = computed(() => quickVolumeDragValue.value ?? settings.audio.volume)
@@ -3160,15 +3204,15 @@ const bootstrapError = ref('')
 const activeAudioPlayers = new Set<HTMLAudioElement>()
 
 const isReadOnlyRecord = computed(() => Boolean(gameView.readOnly))
-const READ_ONLY_RECORD_HINT = '牌谱缺少完整牌山，无法创建新的对局分支'
+const READ_ONLY_RECORD_HINT = computed(() => t('mode.readOnlyHint'))
 
 const modeButtonLabel = computed(() => {
-  if (isReadOnlyRecord.value) return '只读研究'
-  return status.mode === 'play' ? '进入研究模式' : '进入对局模式'
+  if (isReadOnlyRecord.value) return t('mode.readOnlyResearch')
+  return status.mode === 'play' ? t('mode.enterResearch') : t('mode.enterPlay')
 })
 
 const visibleHandsToggleLabel = computed(() => (
-  status.visibleHands ? '隐藏手牌' : '显示手牌'
+  status.visibleHands ? t('mode.hideHands') : t('mode.showHands')
 ))
 
 
@@ -3192,7 +3236,6 @@ const windowTitle = computed(() => {
 })
 
 interface YakuDisplayMeta {
-  label: string
   closedHan: number
   openHan: number
   isYakuman?: boolean
@@ -3206,71 +3249,71 @@ interface ResultYakuItem {
 }
 
 const YAKU_DISPLAY_META: Record<string, YakuDisplayMeta> = {
-  'Menzen Tsumo': { label: '门前清自摸和', closedHan: 1, openHan: 0 },
-  Riichi: { label: '立直', closedHan: 1, openHan: 0 },
-  Ippatsu: { label: '一发', closedHan: 1, openHan: 0 },
-  Pinfu: { label: '平和', closedHan: 1, openHan: 0 },
-  Tanyao: { label: '断幺九', closedHan: 1, openHan: 1 },
-  Iipeiko: { label: '一杯口', closedHan: 1, openHan: 0 },
-  'Yakuhai (haku)': { label: '役牌白', closedHan: 1, openHan: 1 },
-  'Yakuhai (hatsu)': { label: '役牌发', closedHan: 1, openHan: 1 },
-  'Yakuhai (chun)': { label: '役牌中', closedHan: 1, openHan: 1 },
-  'Yakuhai (seat wind east)': { label: '自风东', closedHan: 1, openHan: 1 },
-  'Yakuhai (seat wind south)': { label: '自风南', closedHan: 1, openHan: 1 },
-  'Yakuhai (seat wind west)': { label: '自风西', closedHan: 1, openHan: 1 },
-  'Yakuhai (seat wind north)': { label: '自风北', closedHan: 1, openHan: 1 },
-  'Yakuhai (round wind east)': { label: '场风东', closedHan: 1, openHan: 1 },
-  'Yakuhai (round wind south)': { label: '场风南', closedHan: 1, openHan: 1 },
-  'Yakuhai (round wind west)': { label: '场风西', closedHan: 1, openHan: 1 },
-  'Yakuhai (round wind north)': { label: '场风北', closedHan: 1, openHan: 1 },
-  'Rinshan Kaihou': { label: '岭上开花', closedHan: 1, openHan: 1 },
-  Chankan: { label: '抢杠', closedHan: 1, openHan: 1 },
-  'Haitei Raoyue': { label: '海底摸月', closedHan: 1, openHan: 1 },
-  'Houtei Raoyui': { label: '河底捞鱼', closedHan: 1, openHan: 1 },
-  'Double Riichi': { label: '双立直', closedHan: 2, openHan: 0 },
-  'Open Riichi': { label: '开立直', closedHan: 2, openHan: 0 },
-  'Double Open Riichi': { label: '双开立直', closedHan: 3, openHan: 0 },
-  Chiitoitsu: { label: '七对子', closedHan: 2, openHan: 0 },
-  Chantai: { label: '混全带幺九', closedHan: 2, openHan: 1 },
-  Ittsu: { label: '一气通贯', closedHan: 2, openHan: 1 },
-  'Sanshoku Doujun': { label: '三色同顺', closedHan: 2, openHan: 1 },
-  'Sanshoku Doukou': { label: '三色同刻', closedHan: 2, openHan: 2 },
-  'San Ankou': { label: '三暗刻', closedHan: 2, openHan: 2 },
-  'San Kantsu': { label: '三杠子', closedHan: 2, openHan: 2 },
-  Toitoi: { label: '对对和', closedHan: 2, openHan: 2 },
-  Honroutou: { label: '混老头', closedHan: 2, openHan: 2 },
-  'Shou Sangen': { label: '小三元', closedHan: 2, openHan: 2 },
-  Honitsu: { label: '混一色', closedHan: 3, openHan: 2 },
-  Junchan: { label: '纯全带幺九', closedHan: 3, openHan: 2 },
-  Ryanpeikou: { label: '二杯口', closedHan: 3, openHan: 0 },
-  Chinitsu: { label: '清一色', closedHan: 6, openHan: 5 },
-  Renhou: { label: '人和', closedHan: 5, openHan: 0 },
-  'Nagashi Mangan': { label: '流局满贯', closedHan: 5, openHan: 5 },
-  Dora: { label: '宝牌', closedHan: 0, openHan: 0 },
-  'Aka Dora': { label: '赤宝牌', closedHan: 0, openHan: 0 },
-  'Ura Dora': { label: '里宝牌', closedHan: 0, openHan: 0 },
-  'Kokushi Musou': { label: '国士无双', closedHan: 13, openHan: 0, isYakuman: true },
-  'Suu Ankou': { label: '四暗刻', closedHan: 13, openHan: 0, isYakuman: true },
-  Daisangen: { label: '大三元', closedHan: 13, openHan: 13, isYakuman: true },
-  Shousuushii: { label: '小四喜', closedHan: 13, openHan: 13, isYakuman: true },
-  Ryuuiisou: { label: '绿一色', closedHan: 13, openHan: 13, isYakuman: true },
-  'Suu Kantsu': { label: '四杠子', closedHan: 13, openHan: 13, isYakuman: true },
-  'Tsuu Iisou': { label: '字一色', closedHan: 13, openHan: 13, isYakuman: true },
-  Chinroutou: { label: '清老头', closedHan: 13, openHan: 13, isYakuman: true },
-  'Chuuren Poutou': { label: '九莲宝灯', closedHan: 13, openHan: 0, isYakuman: true },
-  Tenhou: { label: '天和', closedHan: 13, openHan: 0, isYakuman: true },
-  Chiihou: { label: '地和', closedHan: 13, openHan: 0, isYakuman: true },
-  Daisharin: { label: '大车轮', closedHan: 13, openHan: 0, isYakuman: true },
-  Daichikurin: { label: '大竹林', closedHan: 13, openHan: 0, isYakuman: true },
-  Daisuurin: { label: '大数邻', closedHan: 13, openHan: 0, isYakuman: true },
-  Daichisei: { label: '大七星', closedHan: 13, openHan: 0, isYakuman: true },
-  Paarenchan: { label: '八连庄', closedHan: 13, openHan: 13, isYakuman: true },
-  'Renhou (yakuman)': { label: '人和', closedHan: 13, openHan: 0, isYakuman: true },
-  Sashikomi: { label: '差入', closedHan: 13, openHan: 13, isYakuman: true },
-  'Kokushi Musou Juusanmen Matchi': { label: '国士无双十三面', closedHan: 26, openHan: 0, isYakuman: true },
-  'Suu Ankou Tanki': { label: '四暗刻单骑', closedHan: 26, openHan: 0, isYakuman: true },
-  'Daburu Chuuren Poutou': { label: '纯正九莲宝灯', closedHan: 26, openHan: 0, isYakuman: true },
-  'Dai Suushii': { label: '大四喜', closedHan: 26, openHan: 26, isYakuman: true },
+  'Menzen Tsumo': { closedHan: 1, openHan: 0 },
+  Riichi: { closedHan: 1, openHan: 0 },
+  Ippatsu: { closedHan: 1, openHan: 0 },
+  Pinfu: { closedHan: 1, openHan: 0 },
+  Tanyao: { closedHan: 1, openHan: 1 },
+  Iipeiko: { closedHan: 1, openHan: 0 },
+  'Yakuhai (haku)': { closedHan: 1, openHan: 1 },
+  'Yakuhai (hatsu)': { closedHan: 1, openHan: 1 },
+  'Yakuhai (chun)': { closedHan: 1, openHan: 1 },
+  'Yakuhai (seat wind east)': { closedHan: 1, openHan: 1 },
+  'Yakuhai (seat wind south)': { closedHan: 1, openHan: 1 },
+  'Yakuhai (seat wind west)': { closedHan: 1, openHan: 1 },
+  'Yakuhai (seat wind north)': { closedHan: 1, openHan: 1 },
+  'Yakuhai (round wind east)': { closedHan: 1, openHan: 1 },
+  'Yakuhai (round wind south)': { closedHan: 1, openHan: 1 },
+  'Yakuhai (round wind west)': { closedHan: 1, openHan: 1 },
+  'Yakuhai (round wind north)': { closedHan: 1, openHan: 1 },
+  'Rinshan Kaihou': { closedHan: 1, openHan: 1 },
+  Chankan: { closedHan: 1, openHan: 1 },
+  'Haitei Raoyue': { closedHan: 1, openHan: 1 },
+  'Houtei Raoyui': { closedHan: 1, openHan: 1 },
+  'Double Riichi': { closedHan: 2, openHan: 0 },
+  'Open Riichi': { closedHan: 2, openHan: 0 },
+  'Double Open Riichi': { closedHan: 3, openHan: 0 },
+  Chiitoitsu: { closedHan: 2, openHan: 0 },
+  Chantai: { closedHan: 2, openHan: 1 },
+  Ittsu: { closedHan: 2, openHan: 1 },
+  'Sanshoku Doujun': { closedHan: 2, openHan: 1 },
+  'Sanshoku Doukou': { closedHan: 2, openHan: 2 },
+  'San Ankou': { closedHan: 2, openHan: 2 },
+  'San Kantsu': { closedHan: 2, openHan: 2 },
+  Toitoi: { closedHan: 2, openHan: 2 },
+  Honroutou: { closedHan: 2, openHan: 2 },
+  'Shou Sangen': { closedHan: 2, openHan: 2 },
+  Honitsu: { closedHan: 3, openHan: 2 },
+  Junchan: { closedHan: 3, openHan: 2 },
+  Ryanpeikou: { closedHan: 3, openHan: 0 },
+  Chinitsu: { closedHan: 6, openHan: 5 },
+  Renhou: { closedHan: 5, openHan: 0 },
+  'Nagashi Mangan': { closedHan: 5, openHan: 5 },
+  Dora: { closedHan: 0, openHan: 0 },
+  'Aka Dora': { closedHan: 0, openHan: 0 },
+  'Ura Dora': { closedHan: 0, openHan: 0 },
+  'Kokushi Musou': { closedHan: 13, openHan: 0, isYakuman: true },
+  'Suu Ankou': { closedHan: 13, openHan: 0, isYakuman: true },
+  Daisangen: { closedHan: 13, openHan: 13, isYakuman: true },
+  Shousuushii: { closedHan: 13, openHan: 13, isYakuman: true },
+  Ryuuiisou: { closedHan: 13, openHan: 13, isYakuman: true },
+  'Suu Kantsu': { closedHan: 13, openHan: 13, isYakuman: true },
+  'Tsuu Iisou': { closedHan: 13, openHan: 13, isYakuman: true },
+  Chinroutou: { closedHan: 13, openHan: 13, isYakuman: true },
+  'Chuuren Poutou': { closedHan: 13, openHan: 0, isYakuman: true },
+  Tenhou: { closedHan: 13, openHan: 0, isYakuman: true },
+  Chiihou: { closedHan: 13, openHan: 0, isYakuman: true },
+  Daisharin: { closedHan: 13, openHan: 0, isYakuman: true },
+  Daichikurin: { closedHan: 13, openHan: 0, isYakuman: true },
+  Daisuurin: { closedHan: 13, openHan: 0, isYakuman: true },
+  Daichisei: { closedHan: 13, openHan: 0, isYakuman: true },
+  Paarenchan: { closedHan: 13, openHan: 13, isYakuman: true },
+  'Renhou (yakuman)': { closedHan: 13, openHan: 0, isYakuman: true },
+  Sashikomi: { closedHan: 13, openHan: 13, isYakuman: true },
+  'Kokushi Musou Juusanmen Matchi': { closedHan: 26, openHan: 0, isYakuman: true },
+  'Suu Ankou Tanki': { closedHan: 26, openHan: 0, isYakuman: true },
+  'Daburu Chuuren Poutou': { closedHan: 26, openHan: 0, isYakuman: true },
+  'Dai Suushii': { closedHan: 26, openHan: 26, isYakuman: true },
 }
 
 function yakuMeta(name: string): YakuDisplayMeta | undefined {
@@ -3280,6 +3323,13 @@ function yakuMeta(name: string): YakuDisplayMeta | undefined {
   const base = YAKU_DISPLAY_META[countedBonus[1]]
   const han = Number(countedBonus[2])
   return base ? { ...base, closedHan: han, openHan: han } : undefined
+}
+
+function localizedYakuLabel(name: string, fallback: string): string {
+  const baseName = name.replace(/^(Dora|Aka Dora|Ura Dora)\s+\d+$/, '$1')
+  const key = `yaku.${baseName}`
+  const translated = t(key)
+  return translated === key ? fallback : translated
 }
 
 const resultIsOpenHand = computed(() => {
@@ -3296,7 +3346,7 @@ const resultYakuItems = computed<ResultYakuItem[]>(() => {
   if (info.yakuDetails?.length) {
     return info.yakuDetails.map((item) => ({
       name: item.name,
-      label: yakuMeta(item.name)?.label || item.name,
+      label: localizedYakuLabel(item.name, item.name),
       han: Number(item.han || 0),
       isYakuman: Boolean(item.isYakuman),
     }))
@@ -3306,7 +3356,7 @@ const resultYakuItems = computed<ResultYakuItem[]>(() => {
     const meta = yakuMeta(name)
     return {
       name,
-      label: meta?.label || name,
+      label: localizedYakuLabel(name, name),
       han: resultIsOpenHand.value ? Number(meta?.openHan || 0) : Number(meta?.closedHan || 0),
       isYakuman: Boolean(meta?.isYakuman),
     }
@@ -3323,6 +3373,20 @@ const resultHasHora = computed(() => {
   const actor = Number(gameView.table?.resultInfo?.actor)
   return Number.isInteger(actor) && actor >= 0 && actor <= 3
 })
+
+function localizedResultTitle(value: unknown): string {
+  const title = String(value || '').trim()
+  const key = ({
+    '终局': 'action.matchEnd',
+    '終局': 'action.matchEnd',
+    '进行中': 'result.inProgress',
+    '進行中': 'result.inProgress',
+    '流局': 'action.drawResult',
+    '和牌': 'action.win',
+    '和了': 'action.win',
+  } as Record<string, string>)[title]
+  return key ? t(key) : title
+}
 
 const resultIsMatchEnd = computed(() => (
   gameView.table?.resultInfo?.eventType === 'match_end'
@@ -3363,15 +3427,18 @@ const resultUraSlots = computed(() => {
 function formatResultYakuValue(yaku: ResultYakuItem): string {
   if (yaku.isYakuman) {
     const multiplier = Math.max(1, Math.round(yaku.han / 13))
-    return multiplier > 1 ? `${multiplier}倍役满` : '役满'
+    return multiplier > 1 ? t('result.multipleYakuman', { value: multiplier }) : t('result.yakuman')
   }
-  return yaku.han > 0 ? `${yaku.han}翻` : ''
+  return yaku.han > 0 ? t('result.han', { value: yaku.han }) : ''
 }
 
 const resultHanFuLabel = computed(() => {
   const info = gameView.table?.resultInfo
   if (!info || (!info.han && !info.fu)) return ''
-  return `${Number(info.han || 0)}翻${info.fu ? `${info.fu}符` : ''}`
+  return t('result.hanFu', {
+    han: Number(info.han || 0),
+    fu: info.fu ? t('result.fu', { value: info.fu }) : '',
+  })
 })
 
 function resultBasePoints(han: number, fu: number): number {
@@ -3411,35 +3478,35 @@ const resultPointsLabel = computed(() => {
   return String(isDealer ? dealerPayment * 3 : dealerPayment + nonDealerPayment * 2)
 })
 
-const RESULT_LEVEL_LABELS: Record<string, string> = {
-  mangan: '满贯',
-  'kiriage mangan': '满贯',
-  'nagashi mangan': '流局满贯',
-  haneman: '跳满',
-  baiman: '倍满',
-  sanbaiman: '三倍满',
-  'kazoe sanbaiman': '累计三倍满',
-  yakuman: '役满',
-  'kazoe yakuman': '累计役满',
-  '2x yakuman': '两倍役满',
-  '3x yakuman': '三倍役满',
-  '4x yakuman': '四倍役满',
-  '5x yakuman': '五倍役满',
-  '6x yakuman': '六倍役满',
+const RESULT_LEVEL_KEYS: Record<string, string> = {
+  mangan: 'result.limit.mangan',
+  'kiriage mangan': 'result.limit.mangan',
+  'nagashi mangan': 'result.limit.nagashiMangan',
+  haneman: 'result.limit.haneman',
+  baiman: 'result.limit.baiman',
+  sanbaiman: 'result.limit.sanbaiman',
+  'kazoe sanbaiman': 'result.limit.kazoeSanbaiman',
+  yakuman: 'result.yakuman',
+  'kazoe yakuman': 'result.limit.kazoeYakuman',
+  '2x yakuman': 'result.limit.doubleYakuman',
+  '3x yakuman': 'result.limit.tripleYakuman',
+  '4x yakuman': 'result.limit.fourYakuman',
+  '5x yakuman': 'result.limit.fiveYakuman',
+  '6x yakuman': 'result.limit.sixYakuman',
 }
 
 const resultHandLabel = computed(() => {
   const info = gameView.table?.resultInfo
   if (!info) return ''
   const level = String(info.cost?.yaku_level || '')
-  if (level) return RESULT_LEVEL_LABELS[level] || level
+  if (level) return RESULT_LEVEL_KEYS[level] ? t(RESULT_LEVEL_KEYS[level]) : level
   const han = Number(info.han || 0)
   const fu = Number(info.fu || 0)
-  if (han >= 13) return '累计役满'
-  if (han >= 11) return '三倍满'
-  if (han >= 8) return '倍满'
-  if (han >= 6) return '跳满'
-  if (resultBasePoints(han, fu) >= 2000) return '满贯'
+  if (han >= 13) return t('result.limit.kazoeYakuman')
+  if (han >= 11) return t('result.limit.sanbaiman')
+  if (han >= 8) return t('result.limit.baiman')
+  if (han >= 6) return t('result.limit.haneman')
+  if (resultBasePoints(han, fu) >= 2000) return t('result.limit.mangan')
   return ''
 })
 
@@ -3471,57 +3538,58 @@ const resultScoreLayout = computed(() => {
 function formatTreeAction(action?: Record<string, unknown> | null): string {
   const a = action
   if (!a) return '—'
-  const t = String(a.type || '')
+  const actionType = String(a.type || '')
   const actor = Number(a.actor ?? -1)
   const pai = a.pai ? tileFaceLabel(String(a.pai)) : ''
 
   // dora reveal — system event, no actor
-  if (t === 'dora') return `新宝牌指示牌 ${pai}`
+  if (actionType === 'dora') return t('tree.newDora', { tile: pai })
 
   // System events do not belong to a player seat.
-  if (t === 'start_kyoku') return '开局'
-  if (t === 'round_result') return '结算'
-  if (t === 'game_end') return '终局'
-  if (t === 'match_end') return '终局'
+  if (actionType === 'start_kyoku') return t('action.roundStart')
+  if (actionType === 'round_result') return t('action.roundResult')
+  if (actionType === 'game_end' || actionType === 'match_end') return t('action.matchEnd')
 
   const seat = relativeSeatLabel(actor)
   const consumed = (Array.isArray(a.consumed) ? a.consumed : []).map((tile) => tileFaceLabel(String(tile))).join('')
 
   // dahai: 摸切 or 手切
-  if (t === 'dahai') {
-    const kind = Boolean(a.tsumogiri) ? '摸切' : '手切'
-    return `${seat} ${kind} ${pai}`
+  if (actionType === 'dahai') {
+    const kind = Boolean(a.tsumogiri) ? t('action.tsumogiri') : t('action.tedashi')
+    return t('tree.playerTileAction', { player: seat, action: kind, tile: pai })
   }
 
   // tsumo (draw) — hide opponent's drawn tile when visibleHands is off
-  if (t === 'tsumo') {
+  if (actionType === 'tsumo') {
     const showPai = status.visibleHands || actor === status.controlledSeat ? pai : '？'
-    return `${seat} 摸　 ${showPai}`
+    return t('tree.playerTileAction', { player: seat, action: t('action.draw'), tile: showPai })
   }
 
   // hora: 自摸 or 荣和
-  if (t === 'hora') {
+  if (actionType === 'hora') {
     const isTsumo = a.variant === 'tsumo' || actor === Number(a.target ?? -2)
-    return `${seat} ${isTsumo ? '自摸' : '荣和'}`
+    return t('tree.playerAction', { player: seat, action: isTsumo ? t('action.tsumo') : t('action.ron') })
   }
 
   // reach / riichi declaration
-  if (t === 'reach') return `${seat} 立直`
-  if (t === 'reach_accepted') return `${seat} 立直成立`
+  if (actionType === 'reach') return t('tree.playerAction', { player: seat, action: t('action.riichi') })
+  if (actionType === 'reach_accepted') return t('tree.playerAction', { player: seat, action: t('action.riichiAccepted') })
 
   // meld actions
-  if (t === 'pon') return `${seat} 碰　 ${pai}${consumed ? ` (${consumed})` : ''}`
-  if (t === 'chi') return `${seat} 吃　 ${pai}${consumed ? ` (${consumed})` : ''}`
-  if (t === 'daiminkan' || t === 'ankan' || t === 'kakan') return `${seat} 杠　 ${pai}`
+  if (actionType === 'pon') return t('tree.playerMeldAction', { player: seat, action: t('action.pon'), tile: pai, consumed: consumed ? ` (${consumed})` : '' })
+  if (actionType === 'chi') return t('tree.playerMeldAction', { player: seat, action: t('action.chi'), tile: pai, consumed: consumed ? ` (${consumed})` : '' })
+  if (actionType === 'daiminkan' || actionType === 'ankan' || actionType === 'kakan') return t('tree.playerTileAction', { player: seat, action: t('action.kan'), tile: pai })
 
   // ryukyoku
-  if (t === 'ryukyoku') {
+  if (actionType === 'ryukyoku') {
     return ryukyokuActionLabel(a)
   }
 
   // fallback
-  const label = reactionTypeLabel(t)
-  return `${seat} ${label}${pai ? ` ${pai}` : ''}`
+  const label = reactionTypeLabel(actionType)
+  return pai
+    ? t('tree.playerTileAction', { player: seat, action: label, tile: pai })
+    : t('tree.playerAction', { player: seat, action: label })
 }
 
 const tableSeatViews = computed(() => {
@@ -4510,9 +4578,10 @@ const roundMapSettlementTitle = computed(() => {
   if (!round) return ''
   const isTerminal = Boolean(round.matchEndInfo) || round.tailPhase === 'match_end'
   if (!roundMapHoveredRound.value) {
-    return isTerminal ? '终局' : '进行中'
+    return isTerminal ? t('action.matchEnd') : t('result.inProgress')
   }
-  return round.resultInfo?.title || (isTerminal ? '终局' : '进行中')
+  return localizedResultTitle(round.resultInfo?.title)
+    || (isTerminal ? t('action.matchEnd') : t('result.inProgress'))
 })
 
 const roundMapSettlementLayout = computed(() => {
@@ -5168,18 +5237,20 @@ async function jumpToRoundRoot(roundRootId: string) {
 }
 
 function seatLabel(seat: number): string {
-  return ['东起', '南起', '西起', '北起'][seat] ?? `座位${seat}`
+  return [t('seat.start.east'), t('seat.start.south'), t('seat.start.west'), t('seat.start.north')][seat]
+    ?? t('seat.number', { seat })
 }
 
 function relativeSeatLabel(seat: number): string {
   const diff = (seat - status.controlledSeat + 4) % 4
-  return ['自家', '下家', '对家', '上家'][diff] ?? `座位${seat}`
+  return [t('seat.self'), t('seat.shimocha'), t('seat.toimen'), t('seat.kamicha')][diff]
+    ?? t('seat.number', { seat })
 }
 
 function seatWindLabel(seat: number): string {
   const dealer = gameView.table?.dealer ?? 0
   const windIndex = (seat - dealer + 4) % 4
-  return ['东', '南', '西', '北'][windIndex] ?? '?'
+  return [t('wind.east'), t('wind.south'), t('wind.west'), t('wind.north')][windIndex] ?? '?'
 }
 
 function isCurrentActorSeat(seat: number): boolean {
@@ -5188,83 +5259,82 @@ function isCurrentActorSeat(seat: number): boolean {
 }
 
 function roundWindLabel(bakaze: string): string {
-  return ({ E: '东', S: '南', W: '西' } as Record<string, string>)[bakaze] || bakaze
+  return ({ E: t('wind.east'), S: t('wind.south'), W: t('wind.west'), N: t('wind.north') } as Record<string, string>)[bakaze] || bakaze
 }
 
 function tileFaceLabel(tile: string): string {
   if (!tile || tile === '?') return ' '
   const honorMap: Record<string, string> = {
-    E: '东', S: '南', W: '西', N: '北', P: '白', F: '发', C: '中',
+    E: t('wind.east'), S: t('wind.south'), W: t('wind.west'), N: t('wind.north'),
+    P: t('tile.white'), F: t('tile.green'), C: t('tile.red'),
   }
   if (honorMap[tile]) return honorMap[tile]
   const isRed = tile.endsWith('r')
   const base = isRed ? tile.slice(0, -1) : tile
-  return `${isRed ? '红' : ''}${base}`
+  return isRed ? t('tile.redPrefix', { tile: base }) : base
 }
 
 function reactionTypeLabel(type: string): string {
   return {
-    none: '跳过',
-    chi: '吃',
-    chi_low: '吃',
-    chi_mid: '吃',
-    chi_high: '吃',
-    pon: '碰',
-    daiminkan: '杠',
-    ankan: '杠',
-    kakan: '杠',
-    hora: '荣和',
-    reach: '立直',
-    reach_accepted: '立直成立',
-    dahai: '打牌',
-    tsumo: '摸',
-    round_result: '结算',
-    game_end: '终局',
-    match_end: '终局',
-    start_kyoku: '开局',
+    none: t('action.skip'),
+    chi: t('action.chi'),
+    chi_low: t('action.chi'),
+    chi_mid: t('action.chi'),
+    chi_high: t('action.chi'),
+    pon: t('action.pon'),
+    daiminkan: t('action.kan'),
+    ankan: t('action.kan'),
+    kakan: t('action.kan'),
+    hora: t('action.ron'),
+    reach: t('action.riichi'),
+    reach_accepted: t('action.riichiAccepted'),
+    dahai: t('action.discard'),
+    tsumo: t('action.draw'),
+    round_result: t('action.roundResult'),
+    game_end: t('action.matchEnd'),
+    match_end: t('action.matchEnd'),
+    start_kyoku: t('action.roundStart'),
   }[type] || type
 }
 
 function ryukyokuActionLabel(action: Record<string, unknown>): string {
   const reason = String(action.reason || action.variant || '')
   const knownReasons: Record<string, string> = {
-    exhaustive_draw: '荒牌流局',
-    kyuushu_kyuuhai: '九种九牌',
-    suufon_renda: '四风连打',
-    suukantsu: '四杠散了',
-    suucha_riichi: '四家立直',
+    exhaustive_draw: t('draw.exhaustive'),
+    kyuushu_kyuuhai: t('draw.kyuushu'),
+    suufon_renda: t('draw.suufon'),
+    suukantsu: t('draw.suukantsu'),
+    suucha_riichi: t('draw.suuchaRiichi'),
   }
   if (knownReasons[reason]) return knownReasons[reason]
   const reasonLabel = String(action.reasonLabel || '').trim()
   const knownLabels: Record<string, string> = {
-    '': '荒牌流局',
-    '流局': '荒牌流局',
-    '荒牌流局': '荒牌流局',
-    '九種九牌': '九种九牌',
-    '九种九牌': '九种九牌',
-    '四風連打': '四风连打',
-    '四风连打': '四风连打',
-    '四槓散了': '四杠散了',
-    '四杠散了': '四杠散了',
-    '四家立直': '四家立直',
+    '': t('draw.exhaustive'),
+    '流局': t('draw.exhaustive'),
+    '荒牌流局': t('draw.exhaustive'),
+    '九種九牌': t('draw.kyuushu'),
+    '九种九牌': t('draw.kyuushu'),
+    '四風連打': t('draw.suufon'),
+    '四风连打': t('draw.suufon'),
+    '四槓散了': t('draw.suukantsu'),
+    '四杠散了': t('draw.suukantsu'),
+    '四家立直': t('draw.suuchaRiichi'),
   }
   return knownLabels[reasonLabel] || reasonLabel
 }
 
 function specialActionLabel(action: TrainerAction): string {
   if (action.type === 'hora') {
-    return action.variant === 'tsumo' ? '自摸' : '荣和'
+    return action.variant === 'tsumo' ? t('action.tsumo') : t('action.ron')
   }
   if (action.type === 'ryukyoku') {
     return ryukyokuActionLabel(action as unknown as Record<string, unknown>)
   }
-  if (action.type === 'reach') return '立直'
-  if (action.type === 'none') return '跳过'
-  if (action.type === 'chi') return '吃'
-  if (action.type === 'pon') return '碰'
-  if (action.type === 'daiminkan') return '杠'
-  if (action.type === 'ankan') return '杠'
-  if (action.type === 'kakan') return '杠'
+  if (action.type === 'reach') return t('action.riichi')
+  if (action.type === 'none') return t('action.skip')
+  if (action.type === 'chi') return t('action.chi')
+  if (action.type === 'pon') return t('action.pon')
+  if (action.type === 'daiminkan' || action.type === 'ankan' || action.type === 'kakan') return t('action.kan')
   return reactionTypeLabel(action.type)
 }
 
@@ -5304,7 +5374,7 @@ let staticAssetsWarmupPromise: Promise<void> | null = null
 const tileArtworkReady = ref(false)
 const tileArtworkLoadedCount = ref(0)
 const tileArtworkLoadingLabel = computed(() => (
-  `正在加载 (${tileArtworkLoadedCount.value}/${tileArtworkSources.length})`
+  t('common.loadingProgress', { completed: tileArtworkLoadedCount.value, total: tileArtworkSources.length })
 ))
 const preloadedTileImages: HTMLImageElement[] = []
 
@@ -5333,7 +5403,7 @@ function canJumpToHistoricalNode(nodeId: string | null | undefined): boolean {
 }
 
 function historicalJumpTitle(nodeId: string | null | undefined, _source: string): string | undefined {
-  return canJumpToHistoricalNode(nodeId) ? '双击跳转' : undefined
+  return canJumpToHistoricalNode(nodeId) ? t('action.doubleClickJump') : undefined
 }
 
 function jumpToHistoricalNode(nodeId: string | null | undefined) {
@@ -5838,23 +5908,23 @@ function rawAnalysisEntryBar(entry?: { bar?: number; probability?: number } | nu
 }
 
 function resolveReactionAnalysisLabel(entry: { type?: string; variant?: string; label?: string; pai?: string; consumed?: string[] }): string {
-  const t = entry.type || ''
-  if (t === 'chi') return '吃'
-  if (t === 'pon') return '碰'
-  if (t === 'daiminkan') return '杠'
-  if (t === 'hora') return '荣和'
-  if (t === 'none') return '跳过'
-  return reactionTypeLabel(t)
+  const actionType = entry.type || ''
+  if (actionType === 'chi') return t('action.chi')
+  if (actionType === 'pon') return t('action.pon')
+  if (actionType === 'daiminkan') return t('action.kan')
+  if (actionType === 'hora') return t('action.ron')
+  if (actionType === 'none') return t('action.skip')
+  return reactionTypeLabel(actionType)
 }
 
 function resolveSpecialAnalysisLabel(entry: { type?: string; variant?: string; label?: string; pai?: string; consumed?: string[] }): string {
-  const t = entry.type || ''
-  if (t === 'reach') return '立直'
-  if (t === 'hora') return entry.variant === 'tsumo' ? '自摸' : '荣和'
-  if (t === 'ankan' || t === 'kakan' || t === 'daiminkan') return '杠'
-  if (t === 'ryukyoku') return '九种九牌'
-  if (t === 'none') return '跳过'
-  return entry.label || t
+  const actionType = entry.type || ''
+  if (actionType === 'reach') return t('action.riichi')
+  if (actionType === 'hora') return entry.variant === 'tsumo' ? t('action.tsumo') : t('action.ron')
+  if (actionType === 'ankan' || actionType === 'kakan' || actionType === 'daiminkan') return t('action.kan')
+  if (actionType === 'ryukyoku') return t('draw.kyuushu')
+  if (actionType === 'none') return t('action.skip')
+  return entry.label || actionType
 }
 
 function analysisActionDisplayTiles(entry: { type?: string; pai?: string; consumed?: string[] }): string[] {
@@ -5918,7 +5988,9 @@ function discardVariantLabel(entry: { pai: string; tsumogiri?: boolean }): strin
     || !variants.some((candidate) => !candidate.tsumogiri)) {
     return ''
   }
-  return entry.tsumogiri ? '（摸切）' : '（手切）'
+  return entry.tsumogiri
+    ? t('evaluation.actionSuffix', { action: t('action.tsumogiri') })
+    : t('evaluation.actionSuffix', { action: t('action.tedashi') })
 }
 
 function formatDecisionMetric(
@@ -5993,6 +6065,7 @@ function applySettings(nextSettings: TrainerSettings) {
   })
   Object.assign(settings.modeDefaults, nextSettings.modeDefaults)
   Object.assign(settings.display, nextSettings.display || {}, {
+    language: normalizeLanguagePreference(nextSettings.display?.language),
     colorScheme: normalizeColorScheme(nextSettings.display?.colorScheme),
     uiScale: normalizeUiScale(nextSettings.display?.uiScale),
     showTsumogiriInPlay: nextSettings.display?.showTsumogiriInPlay !== false,
@@ -6599,15 +6672,15 @@ function resolveActionAnnouncementText(node?: TrainerTreeNode | null): string | 
   if (!node?.action) return null
   const action = node.action as Record<string, unknown>
   const type = String(action.type || '')
-  if (type === 'reach') return '立直'
-  if (type === 'chi') return '吃'
-  if (type === 'pon') return '碰'
-  if (type === 'daiminkan' || type === 'ankan' || type === 'kakan') return '杠'
+  if (type === 'reach') return t('action.riichi')
+  if (type === 'chi') return t('action.chi')
+  if (type === 'pon') return t('action.pon')
+  if (type === 'daiminkan' || type === 'ankan' || type === 'kakan') return t('action.kan')
   if (type === 'hora') {
     const variant = String(action.variant || '')
     const actor = Number(action.actor ?? -1)
     const target = Number(action.target ?? -999)
-    return variant === 'tsumo' || actor === target ? '自摸' : '荣'
+    return variant === 'tsumo' || actor === target ? t('action.tsumo') : t('action.ronShort')
   }
   return null
 }
@@ -6665,7 +6738,7 @@ async function refreshGameView() {
 
 async function refreshBootstrapState() {
   if (!window.trainerAPI) {
-    bootstrapError.value = '未检测到桌面桥接接口，无法加载界面。'
+    bootstrapError.value = t('error.desktopBridge')
     return
   }
   try {
@@ -6702,11 +6775,11 @@ async function refreshBootstrapState() {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     if (message.includes('exited before responding') || message.includes('Permission denied') || message.includes('ModuleNotFoundError')) {
-      bootstrapError.value = `后端启动失败，请检查 Python 路径和依赖（numpy 等）是否正确。${message}`
+      bootstrapError.value = t('error.backendStart', { message })
       cloneSettingsDraftFromCurrent()
       showSettingsPanel.value = true
     } else {
-      bootstrapError.value = `启动加载失败：${message}`
+      bootstrapError.value = t('error.bootstrap', { message })
     }
   }
 }
@@ -6761,7 +6834,7 @@ async function handleRecordImported(result: TrainerRecordImportResult) {
   showRecordImportPanel.value = false
   if (result.reconstruction) {
     await openWallView()
-    wallClipboardMessage.value = `已重建 ${result.reconstruction.roundCount} 局的牌山。`
+    wallClipboardMessage.value = t('wall.reconstructedRounds', { count: result.reconstruction.roundCount })
   }
 }
 
@@ -6868,6 +6941,7 @@ function closeSettingsPanel() {
 
 async function saveSettingsPanel() {
   if (!window.trainerAPI) return
+  settingsDraft.display.language = normalizeLanguagePreference(settingsDraft.display.language)
   settingsDraft.display.colorScheme = normalizeColorScheme(settingsDraft.display.colorScheme)
   settingsDraft.display.uiScale = normalizeUiScale(settingsDraft.display.uiScale)
   settingsDraft.display.tablePosition = normalizeTablePosition(settingsDraft.display.tablePosition)
@@ -7153,9 +7227,9 @@ async function reconstructImportedWalls() {
     applyGameView(response.view)
     wallReconstructionSeed.value = ''
     await refreshWallView(false, true)
-    wallClipboardMessage.value = `已重建 ${response.reconstruction.roundCount} 局的牌山。`
+    wallClipboardMessage.value = t('wall.reconstructedRounds', { count: response.reconstruction.roundCount })
   } catch (error) {
-    wallClipboardMessage.value = error instanceof Error ? error.message : '牌山重建失败。'
+    wallClipboardMessage.value = error instanceof Error ? error.message : t('wall.reconstructFailed')
   } finally {
     wallReconstructing.value = false
   }
@@ -7197,9 +7271,9 @@ async function copyWallToClipboard() {
   const text = wallTiles.value.map((tile) => encodeWallClipboardTile(tile.tile)).join('')
   try {
     await window.trainerAPI.writeClipboardText(text)
-    wallClipboardMessage.value = '牌山已复制到剪贴板。'
+    wallClipboardMessage.value = t('wall.copied')
   } catch {
-    wallClipboardMessage.value = '复制失败。'
+    wallClipboardMessage.value = t('wall.copyFailed')
   }
 }
 
@@ -7209,21 +7283,21 @@ async function importWallFromClipboard() {
     const raw = await window.trainerAPI.readClipboardText()
     const tiles = parseWallClipboardText(raw)
     if (tiles.length !== 136) {
-      wallClipboardMessage.value = '剪贴板内容不是合法的 136 张牌山。'
+      wallClipboardMessage.value = t('wall.invalidClipboard')
       return
     }
-    const confirmed = window.confirm('识别到一组 136 张牌山。导入后会用它重建当前这一局的开局，并删除这一局后续的所有分支。是否继续？')
+    const confirmed = window.confirm(t('wall.importConfirm'))
     if (!confirmed) {
-      wallClipboardMessage.value = '已取消导入。'
+      wallClipboardMessage.value = t('wall.importCanceled')
       return
     }
     const response = await window.trainerAPI.importWall(tiles)
     applyStatus(response.state)
     applyGameView(response.view)
     await refreshWallView()
-    wallClipboardMessage.value = '已从剪贴板导入牌山，并重置当前局分支。'
+    wallClipboardMessage.value = t('wall.imported')
   } catch (error) {
-    wallClipboardMessage.value = error instanceof Error ? error.message : '导入失败。'
+    wallClipboardMessage.value = error instanceof Error ? error.message : t('wall.importFailed')
   }
 }
 
@@ -7409,9 +7483,9 @@ function formatActionValue(action: TrainerAction): string {
   if (action.type !== 'dahai') {
     const special = resolveSpecialEntry(action)
     if (special) return special.value.toFixed(3)
-    if (action.type === 'hora') return '和牌'
-    if (action.type === 'reach') return '立直'
-    if (action.type === 'ryukyoku') return '流局'
+    if (action.type === 'hora') return t('action.win')
+    if (action.type === 'reach') return t('action.riichi')
+    if (action.type === 'ryukyoku') return t('action.drawResult')
   }
   if (action.value !== undefined) return action.value.toFixed(3)
   if (!action.pai || !gameView.analysis?.discardEntries?.length) return '-'
@@ -7766,7 +7840,7 @@ function handlePythonEvent(event: TrainerPythonEvent) {
         const decisionErrors = [...errors.decision]
         const decisionPerformance = [...(status.modelPerformance?.decision || [0, 0, 0, 0])]
         decision[seat] = activityState
-        decisionErrors[seat] = activityState === 'error' ? String(event.error || '未知错误') : null
+        decisionErrors[seat] = activityState === 'error' ? String(event.error || t('error.unknown')) : null
         if (Number.isFinite(averageMs) && averageMs >= 0) decisionPerformance[seat] = averageMs
         status.modelPerformance = {
           decision: decisionPerformance,
@@ -7797,7 +7871,7 @@ function handlePythonEvent(event: TrainerPythonEvent) {
         opponentAnalysis: activityState,
         errors: {
           decision: [...errors.decision],
-          opponentAnalysis: activityState === 'error' ? String(event.error || '未知错误') : null,
+          opponentAnalysis: activityState === 'error' ? String(event.error || t('error.unknown')) : null,
         },
       }
       if (activityState === 'error') {
@@ -7890,15 +7964,17 @@ async function clearLoadedAnalysisCaches() {
     ronWaitPredData.value = {}
     ronWaitGTData.value = {}
     shantenRawData.value = {}
-    shantenStatus.value = '缓存已清除'
+    shantenStatus.value = t('debug.cacheCleared')
 
     const { decisionEntries, opponentEntries, comparisons } = response.cleared
-    analysisCacheClearMessage.value = (
-      `已从当前内存牌谱清除决策引擎 ${decisionEntries} 项、对手分析 ${opponentEntries} 项、节点评估 ${comparisons} 项；尚未写入牌谱文件。`
-    )
+    analysisCacheClearMessage.value = t('debug.cacheSummary', {
+      decision: decisionEntries,
+      opponent: opponentEntries,
+      comparisons,
+    })
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    analysisCacheClearMessage.value = `清除失败：${message}`
+    analysisCacheClearMessage.value = t('debug.clearFailed', { message })
   } finally {
     clearingAnalysisCaches.value = false
   }

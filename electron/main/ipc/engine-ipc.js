@@ -10,6 +10,7 @@ function createEngineIpcController({
   projectRoot,
   environmentGateway,
   getMainWindow,
+  t,
 }) {
   function saveLoadedProfileState(profileId, loaded) {
     const settings = loadSettings(appOptions)
@@ -48,11 +49,11 @@ function createEngineIpcController({
 
     ipcMain.handle('engine:choose-file', async () => {
       const result = await dialog.showOpenDialog(getMainWindow(), {
-        title: '选择引擎文件',
+        title: t('engine.chooseExecutableTitle'),
         properties: ['openFile'],
         filters: [
-          { name: '引擎', extensions: ['exe', 'py'] },
-          { name: '所有文件', extensions: ['*'] },
+          { name: t('engine.fileFilter'), extensions: ['exe', 'py'] },
+          { name: t('engine.allFilesFilter'), extensions: ['*'] },
         ],
       })
       return result.canceled ? '' : String(result.filePaths[0] || '')
@@ -60,11 +61,11 @@ function createEngineIpcController({
 
     ipcMain.handle('engine:choose-weight', async () => {
       const result = await dialog.showOpenDialog(getMainWindow(), {
-        title: '选择权重文件',
+        title: t('engine.chooseWeightTitle'),
         properties: ['openFile'],
         filters: [
-          { name: '模型权重', extensions: ['pth', 'pt', 'onnx', 'bin'] },
-          { name: '所有文件', extensions: ['*'] },
+          { name: t('engine.weightFilter'), extensions: ['pth', 'pt', 'onnx', 'bin'] },
+          { name: t('engine.allFilesFilter'), extensions: ['*'] },
         ],
       })
       return result.canceled ? '' : String(result.filePaths[0] || '')
@@ -72,32 +73,32 @@ function createEngineIpcController({
 
     ipcMain.handle('engine:activate', async (event, payload) => {
       const profileId = String(payload?.profileId || '')
-      if (!profileId) throw new Error('没有选择要加载的引擎')
+      if (!profileId) throw new Error(t('native.engine.noProfile'))
       const previous = loadSettings(appOptions)
       const engines = JSON.parse(JSON.stringify(payload?.engines || previous.engines))
       const profiles = engines.profiles
       const profile = Array.isArray(profiles)
         ? profiles.find((item) => item?.id === profileId)
         : null
-      if (!profile) throw new Error('找不到要加载的引擎配置')
+      if (!profile) throw new Error(t('native.engine.profileMissing'))
       const enginePath = path.isAbsolute(profile.enginePath || '')
         ? profile.enginePath
         : path.resolve(projectRoot, profile.enginePath || '')
       if (!enginePath || !fs.existsSync(enginePath)) {
-        throw new Error('引擎文件不存在')
+        throw new Error(t('native.engine.fileMissing'))
       }
       for (const weight of profile.weights || []) {
         const weightPath = path.isAbsolute(weight.path || '')
           ? weight.path
           : path.resolve(projectRoot, weight.path || '')
         if (!weightPath || !fs.existsSync(weightPath)) {
-          throw new Error(`权重文件不存在：${weight.slotId || '未命名槽位'}`)
+          throw new Error(t('native.engine.weightMissing', { slot: weight.slotId || t('engine.unnamedSlot') }))
         }
       }
       const assignedOutputs = Object.entries(engines.outputAssignments || {})
         .filter(([, assignedProfileId]) => assignedProfileId === profileId)
         .map(([outputId]) => outputId)
-      if (!assignedOutputs.length) throw new Error('尚未给这个引擎分配输出')
+      if (!assignedOutputs.length) throw new Error(t('native.engine.noOutput'))
       saveSettings({ ...previous, engines }, appOptions)
       const response = await environmentGateway.reloadEngine(profileId)
       if (assignedOutputs.includes('action-recommendation')) {
@@ -105,7 +106,7 @@ function createEngineIpcController({
           throw new Error(String(response.reload.errors.decision))
         }
         if (!response?.reload?.warmed?.teachingAnalysis) {
-          throw new Error('动作推荐未能完成加载')
+          throw new Error(t('native.engine.actionWarmupFailed'))
         }
       }
       if (assignedOutputs.some((outputId) => outputId !== 'action-recommendation')) {
@@ -113,7 +114,7 @@ function createEngineIpcController({
           throw new Error(String(response.reload.errors['opponent-analysis']))
         }
         if (!response?.reload?.warmed?.opponentAnalysis) {
-          throw new Error('对手预测未能完成加载')
+          throw new Error(t('native.engine.analysisWarmupFailed'))
         }
       }
       return buildSettings(saveLoadedProfileState(profileId, true), appOptions)

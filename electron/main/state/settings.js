@@ -19,6 +19,7 @@ const DEFAULT_TRAINING_SETTINGS = Object.freeze({
 })
 const DEFAULT_MODE_SETTINGS = Object.freeze({ autoAdvanceDelayMs: 250 })
 const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
+  language: 'system',
   colorScheme: 'default',
   reduceMotion: false,
   uiScale: 1,
@@ -56,6 +57,9 @@ function normalizeTrainingSettings(training = {}) {
 function normalizeDisplaySettings(display = {}) {
   return {
     ...display,
+    language: ['system', 'zh-CN', 'ja-JP', 'en-US'].includes(display.language)
+      ? display.language
+      : DEFAULT_DISPLAY_SETTINGS.language,
     colorScheme: display.colorScheme === 'killerducky' ? 'killerducky' : 'default',
     tablePosition: ['left', 'center', 'right'].includes(display.tablePosition)
       ? display.tablePosition
@@ -267,5 +271,6 @@ module.exports = {
   loadSettings,
   migrateSettings,
   normalizeAudioSettings,
+  normalizeDisplaySettings,
   saveSettings,
 }

@@ -1,10 +1,11 @@
 const REPORT_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}$/
 const REPORT_PATH_PATTERN = /^\/report\/([A-Za-z0-9_-]{8,128})\.json$/
+const { translate } = require('./i18n')
 
-function normalizeMortalReportUrl(rawInput) {
+function normalizeMortalReportUrl(rawInput, localize = (key) => translate('zh-CN', key)) {
   const input = String(rawInput || '').trim()
   if (!input) {
-    throw new Error('请粘贴 Mortal 在线牌谱网址。')
+    throw new Error(localize('native.mortal.empty'))
   }
 
   let reportId = ''
@@ -15,10 +16,10 @@ function normalizeMortalReportUrl(rawInput) {
     try {
       parsed = new URL(input)
     } catch {
-      throw new Error('网址格式不正确。')
+      throw new Error(localize('native.mortal.invalidUrl'))
     }
     if (parsed.protocol !== 'https:' || parsed.hostname !== 'mjai.ekyu.moe') {
-      throw new Error('目前只支持 mjai.ekyu.moe 的公开 Mortal 报告。')
+      throw new Error(localize('native.mortal.unsupportedHost'))
     }
 
     if (/^\/progress\/?$/.test(parsed.pathname)) {
@@ -33,7 +34,7 @@ function normalizeMortalReportUrl(rawInput) {
   }
 
   if (!reportId) {
-    throw new Error('未能从网址中识别 Mortal 报告 ID。')
+    throw new Error(localize('native.mortal.noId'))
   }
   return `https://mjai.ekyu.moe/report/${reportId}.json`
 }

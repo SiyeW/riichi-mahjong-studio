@@ -6,19 +6,19 @@
     @focusin="emit('focus')"
   >
     <div class="floating-panel-header" @mousedown="emit('start-drag', $event)">
-      <span>导出自定义牌谱</span>
+      <span>{{ t('export.title') }}</span>
       <div class="floating-panel-header-actions">
-        <button class="floating-panel-close" aria-label="关闭导出" @click="emit('close')">&times;</button>
+        <button class="floating-panel-close" :aria-label="t('export.close')" @click="emit('close')">&times;</button>
       </div>
     </div>
-    <p v-if="loading" class="custom-tenhou-export-state">正在生成……</p>
+    <p v-if="loading" class="custom-tenhou-export-state">{{ t('export.generating') }}</p>
     <p v-else-if="errorMessage" class="custom-tenhou-export-state is-error">{{ errorMessage }}</p>
     <div v-else class="custom-tenhou-export-fields">
       <label v-for="field in fields" :key="field.key">
         <span class="custom-tenhou-export-label">
           <strong>{{ field.label }}</strong>
           <button class="floating-panel-action" @click="copyField(field.key)">
-            {{ copiedKey === field.key ? '已复制' : '复制' }}
+            {{ copiedKey === field.key ? t('common.copied') : t('common.copy') }}
           </button>
         </span>
         <textarea :value="field.value" readonly spellcheck="false"></textarea>
@@ -29,6 +29,9 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useI18n } from '../i18n'
+
+const { t } = useI18n()
 
 type ExportFieldKey = 'tenhou' | 'mortal' | 'naga'
 
@@ -53,9 +56,9 @@ let copiedTimer: number | null = null
 let refreshTimer: number | null = null
 
 const fields = computed(() => [
-  { key: 'tenhou' as const, label: '天凤格式（当前分支的当前小局）', value: values.tenhou },
-  { key: 'mortal' as const, label: 'Mortal 格式（当前分支的完整对局）', value: values.mortal },
-  { key: 'naga' as const, label: 'NAGA 格式（当前分支的完整对局）', value: values.naga },
+  { key: 'tenhou' as const, label: t('export.tenhou'), value: values.tenhou },
+  { key: 'mortal' as const, label: t('export.mortal'), value: values.mortal },
+  { key: 'naga' as const, label: t('export.naga'), value: values.naga },
 ])
 
 async function refresh(showLoading = false) {
@@ -71,7 +74,7 @@ async function refresh(showLoading = false) {
     values.naga = result.naga || ''
   } catch (error) {
     if (generation !== requestGeneration) return
-    errorMessage.value = error instanceof Error ? error.message : '生成自定义牌谱失败。'
+    errorMessage.value = error instanceof Error ? error.message : t('export.failed')
   } finally {
     if (generation === requestGeneration) loading.value = false
   }
@@ -160,7 +163,7 @@ onBeforeUnmount(() => {
   border-radius: calc(3px * var(--floating-panel-scale));
   background: rgba(0, 29, 35, 0.5);
   color: rgba(224, 240, 236, 0.86);
-  font-family: "Cascadia Mono", "Microsoft YaHei UI", monospace;
+  font-family: ui-monospace, monospace;
   font-size: calc(0.75rem * var(--floating-panel-scale));
   line-height: 1.45;
 }

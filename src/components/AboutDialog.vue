@@ -2,33 +2,33 @@
   <div class="settings-modal-backdrop">
     <section class="settings-modal about-modal">
       <div class="settings-modal-header">
-        <h2>关于</h2>
+        <h2>{{ t('about.title') }}</h2>
         <div class="settings-modal-actions">
-          <button class="settings-btn-secondary" @click="emit('close')">关闭</button>
+          <button class="settings-btn-secondary" @click="emit('close')">{{ t('common.close') }}</button>
         </div>
       </div>
       <div class="about-brand">
         <div>
           <strong>Riichi Mahjong Studio</strong>
-          <span>立直麻将研究室</span>
+          <span>{{ t('app.subtitle') }}</span>
         </div>
       </div>
       <div class="about-grid">
         <div class="about-item">
-          <span class="about-label">当前版本</span>
+          <span class="about-label">{{ t('about.version') }}</span>
           <span class="about-value">{{ appVersion }}</span>
         </div>
         <div class="about-item">
-          <span class="about-label">主程序许可证</span>
+          <span class="about-label">{{ t('about.license') }}</span>
           <span class="about-value">Apache License 2.0</span>
           <div class="about-document-actions">
-            <button class="settings-btn-secondary" @click="openLegalDocument('license')">查看许可证全文</button>
-            <button class="settings-btn-secondary" @click="openLegalDocument('thirdPartyNotices')">查看第三方声明</button>
+            <button class="settings-btn-secondary" @click="openLegalDocument('license')">{{ t('about.viewLicense') }}</button>
+            <button class="settings-btn-secondary" @click="openLegalDocument('thirdPartyNotices')">{{ t('about.viewNotices') }}</button>
           </div>
-          <small class="about-legal-note">完整版权归属、来源版本与修改说明以第三方声明为准。</small>
+          <small class="about-legal-note">{{ t('about.legalNote') }}</small>
         </div>
         <div class="about-item">
-          <span class="about-label">第三方开源项目</span>
+          <span class="about-label">{{ t('about.thirdParty') }}</span>
           <div class="about-link-list">
             <div class="about-link-row">
               <a href="https://github.com/killerducky/killer_mortal_gui" @click.prevent="openExternalLink('https://github.com/killerducky/killer_mortal_gui')">killerducky/killer_mortal_gui</a>
@@ -45,7 +45,7 @@
           </div>
         </div>
         <div class="about-item">
-          <span class="about-label">项目维护者</span>
+          <span class="about-label">{{ t('about.maintainer') }}</span>
           <div class="about-link-list">
             <div class="about-link-row">
               <a href="https://github.com/SiyeW" @click.prevent="openExternalLink('https://github.com/SiyeW')">SiyeW</a>
@@ -60,6 +60,9 @@
 
 <script setup lang="ts">
 import packageJson from '../../package.json'
+import { useI18n } from '../i18n'
+
+const { t } = useI18n()
 
 const emit = defineEmits<{ close: [] }>()
 const appVersion = String(packageJson.version || '')

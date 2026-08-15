@@ -13,6 +13,7 @@ function createBackendProcess({
   args = [],
   cwd,
   env = {},
+  formatStartError = (processName, message) => `${processName} failed to start: ${message}`,
 }) {
   let child = null
   let serviceReady = false
@@ -83,7 +84,7 @@ function createBackendProcess({
     spawnedChild.on('error', (err) => {
       if (child !== spawnedChild) return
       console.error(`[${name}] spawn error: ${err.message}`)
-      rejectPendingRequests(new Error(`${name} 无法启动：${err.message}`))
+      rejectPendingRequests(new Error(formatStartError(name, err.message)))
       child = null
     })
 

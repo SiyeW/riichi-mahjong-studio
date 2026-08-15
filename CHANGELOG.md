@@ -9,6 +9,7 @@ incompatible changes.
 
 ### 中文
 
+- 界面支持简体中文、日文和英文，可以在设置中切换；默认跟随系统语言。
 - 修复无法加载声明立直麻将引擎协议 2.1 的引擎程序包的问题。同一引擎中无法使用的输出不再影响其他兼容输出。
 - 修复牌山面板在加载完成后宽度突变的问题。
 - 修复引擎管理中深青色和深灰色条目在选中后无法区分的问题。
@@ -19,6 +20,7 @@ incompatible changes.
 
 ### 日本語
 
+- 中国語（簡体字）、日本語、英語の表示に対応しました。設定から切り替えられ、初期設定ではシステムの言語に合わせます。
 - リーチ麻雀エンジンプロトコル 2.1 を宣言するエンジンパッケージを読み込めない問題を修正しました。同じエンジンに利用できない出力が含まれていても、対応するほかの出力は引き続き使用できます。
 - 牌山パネルの読み込み完了時に横幅が変わる問題を修正しました。
 - エンジン管理で、濃い青緑色と濃い灰色の項目が選択時に同じ色になる問題を修正しました。
@@ -29,6 +31,7 @@ incompatible changes.
 
 ### English
 
+- Add Simplified Chinese, Japanese, and English interface languages. The app follows the system language by default and can be changed in Settings.
 - Fix loading of engine packages that declare Riichi Engine Protocol 2.1. Unsupported outputs no longer prevent other compatible outputs from the same engine from being used.
 - Fix the wall panel changing width when loading completes.
 - Fix dark teal and dark gray items becoming indistinguishable when selected in the engine manager.

@@ -41,14 +41,17 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "locales/**/*",
       "!electron/**/*.test.js",
+      "!locales/**/*.test.js",
       "!node_modules/**/*",
       "package.json"
     ],
     "asar": true,
     "electronLanguages": [
       "en-US",
-      "zh-CN"
+      "zh-CN",
+      "ja"
     ],
     "directories": {
       "buildResources": "build",

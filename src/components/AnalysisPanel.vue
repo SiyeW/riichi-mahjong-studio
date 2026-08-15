@@ -1,25 +1,25 @@
 <template>
   <div class="unified-analysis" :class="{ 'reduce-motion': reduceMotion }">
-    <div class="analysis-view-tabs" role="tablist" aria-label="分析视图">
+    <div class="analysis-view-tabs" role="tablist" :aria-label="t('analysis.view')">
       <button
         type="button"
         role="tab"
         :aria-selected="activeView === 'situation'"
         :class="{ selected: activeView === 'situation' }"
         @click="activeView = 'situation'"
-      >局势</button>
+      >{{ t('analysis.situation') }}</button>
       <button
         type="button"
         role="tab"
         :aria-selected="activeView === 'tiles'"
         :class="{ selected: activeView === 'tiles' }"
         @click="activeView = 'tiles'"
-      >牌张</button>
+      >{{ t('analysis.tiles') }}</button>
     </div>
 
     <div v-if="activeView === 'situation'" class="analysis-situation-view">
       <section class="analysis-opponent-section">
-        <div class="analysis-section-heading">三名对手</div>
+        <div class="analysis-section-heading">{{ t('analysis.opponents') }}</div>
         <div class="analysis-opponent-grid">
           <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-card">
             <ShantenPieChart
@@ -33,12 +33,12 @@
               @slice-leave="clearHover"
             />
             <div class="analysis-opponent-estimates">
-              <span :title="opponent.doraTitle"><small>宝牌</small>{{ opponent.dora }}</span>
-              <span :title="opponent.scoreTitle"><small>打点</small>{{ opponent.score }}</span>
+              <span :title="opponent.doraTitle"><small>{{ t('analysis.dora') }}</small>{{ opponent.dora }}</span>
+              <span :title="opponent.scoreTitle"><small>{{ t('analysis.score') }}</small>{{ opponent.score }}</span>
             </div>
           </div>
         </div>
-        <div class="analysis-shanten-legend" aria-label="向听图例">
+        <div class="analysis-shanten-legend" :aria-label="t('analysis.shantenLegend')">
           <span v-for="(label, index) in shantenLabels" :key="label">
             <i :style="{ backgroundColor: shantenColors[index] }" />{{ label }}
           </span>
@@ -46,8 +46,8 @@
       </section>
 
       <section class="analysis-player-section">
-        <div class="analysis-section-heading">四名玩家</div>
-        <div class="analysis-outcome-strip" aria-label="对局走向">
+        <div class="analysis-section-heading">{{ t('analysis.players') }}</div>
+        <div class="analysis-outcome-strip" :aria-label="t('analysis.outcome')">
           <div class="analysis-outcome-bar">
             <span
               v-for="segment in outcomeSegments"
@@ -66,7 +66,7 @@
 
         <div class="analysis-player-table">
           <div class="analysis-player-row analysis-player-header" aria-hidden="true">
-            <span>玩家</span><span>胡牌</span><span>放铳</span><span>局收支</span><span>终局顺位</span><span>终局点数</span>
+            <span>{{ t('analysis.player') }}</span><span>{{ t('analysis.win') }}</span><span>{{ t('analysis.dealIn') }}</span><span>{{ t('analysis.kyokuDelta') }}</span><span>{{ t('analysis.matchPlacement') }}</span><span>{{ t('analysis.matchScore') }}</span>
           </div>
           <div v-for="player in playerRows" :key="player.seat" class="analysis-player-row">
             <strong class="analysis-player-name">{{ player.label }}</strong>
@@ -78,7 +78,7 @@
               <span :style="{ width: `${player.winProbability * 100}%` }" />
               <small>{{ formatProbability(player.winProbability) }}</small>
               <div v-if="hoveredWinnerSeat === player.seat" class="analysis-target-popover">
-                <strong>{{ player.label }}和牌目标</strong>
+                <strong>{{ t('analysis.winTarget', { player: player.label }) }}</strong>
                 <div v-for="target in player.targets" :key="target.seat">
                   <small>{{ target.label }}</small>
                   <i><span :style="{ width: `${target.probability * 100}%` }" /></i>
@@ -116,9 +116,9 @@
     </div>
 
     <div v-else class="analysis-tiles-view">
-      <div class="analysis-tile-mode-tabs" role="tablist" aria-label="牌张分析内容">
-        <button :class="{ selected: tileMode === 'risk' }" @click="tileMode = 'risk'">铳率</button>
-        <button :class="{ selected: tileMode === 'counts' }" @click="tileMode = 'counts'">枚数分布</button>
+      <div class="analysis-tile-mode-tabs" role="tablist" :aria-label="t('analysis.tileContent')">
+        <button :class="{ selected: tileMode === 'risk' }" @click="tileMode = 'risk'">{{ t('analysis.risk') }}</button>
+        <button :class="{ selected: tileMode === 'counts' }" @click="tileMode = 'counts'">{{ t('analysis.countDistribution') }}</button>
       </div>
 
       <div v-if="tileMode === 'risk'" class="analysis-risk-grid">
@@ -150,7 +150,7 @@
                 :key="source.key"
                 type="button"
                 :class="`source-${source.key}`"
-                :aria-label="`${source.label} ${tileFaceLabel(tile)}枚数分布`"
+                :aria-label="t('analysis.tileCountDistribution', { source: source.label, tile: tileFaceLabel(tile) })"
                 @mouseenter="showCountTooltip(tile, source)"
                 @mouseleave="countTooltip = null"
               >
@@ -169,14 +169,14 @@
             <span v-for="source in countSources" :key="source.key"><i :class="`source-${source.key}`" />{{ source.label }}</span>
           </div>
           <div class="analysis-count-legend">
-            <span v-for="value in [0, 1, 2, 3, 4]" :key="value"><i :class="`count-${value}`" />{{ value }}枚</span>
+            <span v-for="value in [0, 1, 2, 3, 4]" :key="value"><i :class="`count-${value}`" />{{ t('analysis.countUnit', { value }) }}</span>
           </div>
         </div>
         <div v-if="countTooltip" class="analysis-count-tooltip">
           <strong>{{ countTooltip.sourceLabel }} · {{ tileFaceLabel(countTooltip.tile) }}</strong>
-          <span>期望 {{ countTooltip.expected.toFixed(2) }} 枚</span>
+          <span>{{ t('analysis.expectedCount', { value: countTooltip.expected.toFixed(2) }) }}</span>
           <div v-for="segment in countTooltip.segments" :key="segment.value">
-            <small>{{ segment.value }}枚</small>
+            <small>{{ t('analysis.countUnit', { value: segment.value }) }}</small>
             <i><span :class="`count-${segment.value}`" :style="{ width: `${segment.probability * 100}%` }" /></i>
             <em>{{ formatProbability(segment.probability) }}</em>
           </div>
@@ -190,7 +190,10 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useI18n } from '../i18n'
 import ShantenPieChart from './ShantenPieChart.vue'
+
+const { t, numberLocale } = useI18n()
 
 type AnalysisRecord = Record<string, unknown>
 type DistributionEntry = { value: number; probability: number }
@@ -279,17 +282,20 @@ function seatPrediction(outputId: string, seat: number): NumericPrediction {
 
 function formatCompactPoints(value: number | null): string {
   if (value === null || !Number.isFinite(value)) return '—'
-  const rounded = Math.round(value)
-  if (Math.abs(rounded) >= 10000) return `${(rounded / 10000).toFixed(Math.abs(rounded) >= 100000 ? 0 : 1)}万`
-  return rounded.toLocaleString('zh-CN')
+  return new Intl.NumberFormat(numberLocale.value, {
+    notation: Math.abs(value) >= 10000 ? 'compact' : 'standard',
+    maximumFractionDigits: 1,
+  }).format(Math.round(value))
 }
 
 function formatPoints(value: number | null): string {
-  return value === null || !Number.isFinite(value) ? '暂无数据' : `${Math.round(value).toLocaleString('zh-CN')} 点`
+  return value === null || !Number.isFinite(value)
+    ? t('analysis.noData')
+    : t('analysis.points', { value: Math.round(value).toLocaleString(numberLocale.value) })
 }
 
 function formatPlainPoints(value: number | null): string {
-  return value === null || !Number.isFinite(value) ? '—' : Math.round(value).toLocaleString('zh-CN')
+  return value === null || !Number.isFinite(value) ? '—' : Math.round(value).toLocaleString(numberLocale.value)
 }
 
 function formatSignedCompactPoints(value: number | null): string {
@@ -306,7 +312,9 @@ function formatProbability(value: number): string {
 }
 
 function predictionTitle(prediction: NumericPrediction, unit: string): string {
-  const expected = prediction.expectedValue === null ? '暂无期望值' : `期望 ${prediction.expectedValue.toFixed(2)}${unit}`
+  const expected = prediction.expectedValue === null
+    ? t('analysis.noExpectedValue')
+    : t('analysis.expectedValue', { value: prediction.expectedValue.toFixed(2), unit })
   if (!prediction.distribution.length) return expected
   return `${expected}；${prediction.distribution.map((entry) => `${entry.value}${unit} ${formatProbability(entry.probability)}`).join('，')}`
 }
@@ -318,19 +326,20 @@ const opponentCards = computed(() => props.shantenOpponents.map((opponent) => {
     ...opponent,
     dora: dora.expectedValue === null ? '—' : dora.expectedValue.toFixed(1),
     score: formatCompactPoints(score.expectedValue),
-    doraTitle: predictionTitle(dora, '枚'),
-    scoreTitle: predictionTitle(score, '点'),
+    doraTitle: predictionTitle(dora, t('unit.tile')),
+    scoreTitle: predictionTitle(score, t('unit.point')),
   }
 }))
 
 function relativeLabel(seat: number): string {
   const offset = (seat - props.controlledSeat + 4) % 4
-  return ['自家', '下家', '对家', '上家'][offset] || `座位${seat}`
+  return [t('seat.self'), t('seat.shimocha'), t('seat.toimen'), t('seat.kamicha')][offset]
+    || t('seat.number', { seat })
 }
 
 function windLabel(seat: number): string {
-  const wind = ['东', '南', '西', '北'][(seat - props.dealer + 4) % 4] || '?'
-  return `${wind}（${relativeLabel(seat)}）`
+  const wind = [t('wind.east'), t('wind.south'), t('wind.west'), t('wind.north')][(seat - props.dealer + 4) % 4] || '?'
+  return t('seat.windRelative', { wind, relative: relativeLabel(seat) })
 }
 
 function targetRows(player: AnalysisRecord, winnerSeat: number) {
@@ -339,7 +348,7 @@ function targetRows(player: AnalysisRecord, winnerSeat: number) {
     const entry = raw.find((item) => Number(item.seat) === seat)
     return {
       seat,
-      label: seat === winnerSeat ? '自摸' : windLabel(seat),
+      label: seat === winnerSeat ? t('action.tsumo') : windLabel(seat),
       probability: probability(entry?.probability),
     }
   })
@@ -353,10 +362,10 @@ const outcomeSegments = computed(() => {
   const selfDealIn = probability(self.dealInProbability)
   const horizontal = Math.max(0, 1 - draw - selfWin - selfDealIn)
   const segments = [
-    { key: 'draw', label: '流局', probability: draw },
-    { key: 'self-win', label: '自家胡牌', probability: selfWin },
-    { key: 'self-deal-in', label: '自家放铳', probability: selfDealIn },
-    { key: 'horizontal', label: '横移', probability: horizontal },
+    { key: 'draw', label: t('analysis.draw'), probability: draw },
+    { key: 'self-win', label: t('analysis.selfWin'), probability: selfWin },
+    { key: 'self-deal-in', label: t('analysis.selfDealIn'), probability: selfDealIn },
+    { key: 'horizontal', label: t('analysis.horizontal'), probability: horizontal },
   ]
   const total = segments.reduce((sum, segment) => sum + segment.probability, 0) || 1
   return segments.map((segment) => ({ ...segment, displayProbability: segment.probability / total }))
@@ -387,7 +396,7 @@ const playerRows = computed(() => playerSeatOrder.value.map((seat) => {
     kyokuDelta: delta.expectedValue,
     placement: normalizedPlacement,
     expectedPlacement: placement.expectedValue === null ? '—' : placement.expectedValue.toFixed(2),
-    placementTitle: predictionTitle(placement, '位'),
+    placementTitle: predictionTitle(placement, t('unit.place')),
     matchScore: matchScore.expectedValue,
   }
 }))
@@ -419,7 +428,7 @@ const opponentSources = computed<TileSource[]>(() => props.shantenOpponents.map(
 })))
 const countSources = computed<TileSource[]>(() => [
   ...opponentSources.value,
-  { key: 'wall', label: '牌山', seat: null },
+  { key: 'wall', label: t('analysis.wall'), seat: null },
 ])
 
 function riskProbability(seat: number | null, tile: string): number {

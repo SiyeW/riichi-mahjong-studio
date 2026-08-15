@@ -41,7 +41,10 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { useI18n } from '../i18n'
 import { getUiMotionDurationMs } from '../uiMotion'
+
+const { t } = useI18n()
 
 const props = defineProps<{
   label: string
@@ -66,7 +69,9 @@ function normalizeProbabilities(values: number[]): number[] {
 
 const isEmpty = computed(() => normalizeProbabilities(props.probabilities).every((value) => value === 0))
 const chartAriaLabel = computed(() => (
-  isEmpty.value ? `${props.label}向听概率暂无数据` : `${props.label}向听概率分布`
+  isEmpty.value
+    ? t('shanten.emptyAria', { opponent: props.label })
+    : t('shanten.chartAria', { opponent: props.label })
 ))
 const animatedProbabilities = ref(normalizeProbabilities(props.probabilities))
 let animationFrame = 0

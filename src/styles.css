@@ -52,7 +52,7 @@ body {
   --opacity-called: 0.25;
   background: var(--bg-main);
   color: var(--text-main);
-  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font-family: system-ui, sans-serif;
   overflow: hidden;
 }
 
@@ -2997,7 +2997,7 @@ body {
   resize: vertical;
   min-height: calc(8rem * var(--ui-scale));
   line-height: 1.45;
-  font-family: "Cascadia Mono", "Microsoft YaHei UI", monospace;
+  font-family: ui-monospace, monospace;
 }
 
 .engine-legal-actions {
@@ -3164,7 +3164,7 @@ body {
 }
 
 .wall-metadata code {
-  font-family: "Cascadia Mono", "Microsoft YaHei UI", monospace;
+  font-family: ui-monospace, monospace;
   font-weight: 400;
   overflow-wrap: anywhere;
 }
@@ -3930,7 +3930,7 @@ body {
 .shanten-slice-label {
   fill: rgb(248 252 250 / 75%);
   paint-order: stroke fill;
-  font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font-family: system-ui, sans-serif;
   font-size: 0.22px;
   text-anchor: middle;
   dominant-baseline: central;

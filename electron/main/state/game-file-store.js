@@ -95,12 +95,12 @@ function createGameFileStore(baseDir) {
     clearCurrentPath() {
       currentPath = null
     },
-    openRecoveryRecord(sourcePath = '') {
+    openRecoveryRecord(sourcePath = '', displayName = RECOVERY_DISPLAY_NAME) {
       currentPath = sourcePath || null
       recoveryRecord = true
       suggestedFileName = currentPath
         ? path.basename(currentPath)
-        : buildSuggestedFileName(RECOVERY_DISPLAY_NAME)
+        : buildSuggestedFileName(displayName)
       return suggestedFileName
     },
     isRecoveryRecord() {

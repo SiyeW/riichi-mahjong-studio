@@ -13,6 +13,7 @@ function testPortableDefaultsHaveNoEngines() {
   assert.equal(settings.audio.volume, 50)
   assert.equal(settings.audio.soundPackId, '')
   assert.equal(settings.display.tablePosition, 'center')
+  assert.equal(settings.display.language, 'system')
   assert.equal('voice' in settings.audio, false)
 }
 
@@ -33,12 +34,14 @@ function testUserProfilePersists() {
     settings.engines.outputAssignments['action-recommendation'] = 'profile.example'
     settings.engines.loadedProfileIds = ['profile.example']
     settings.display.tablePosition = 'right'
+    settings.display.language = 'ja-JP'
     saveSettings(settings, options)
     const reloaded = loadSettings(options)
     assert.equal(reloaded.engines.outputAssignments['action-recommendation'], 'profile.example')
     assert.equal(reloaded.engines.profiles[0].name, 'My engine')
     assert.deepEqual(reloaded.engines.loadedProfileIds, ['profile.example'])
     assert.equal(reloaded.display.tablePosition, 'right')
+    assert.equal(reloaded.display.language, 'ja-JP')
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })
   }
@@ -52,6 +55,19 @@ function testInvalidTablePositionUsesCenter() {
       display: { tablePosition: 'diagonal' },
     }))
     assert.equal(loadSettings(options).display.tablePosition, 'center')
+  } finally {
+    fs.rmSync(portableDir, { recursive: true, force: true })
+  }
+}
+
+function testInvalidLanguageUsesSystem() {
+  const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'riichi-studio-language-settings-'))
+  const options = { appDir: portableDir, portableDir, resourceDir: portableDir }
+  try {
+    fs.writeFileSync(path.join(portableDir, 'config.json'), JSON.stringify({
+      display: { language: 'fr-FR' },
+    }))
+    assert.equal(loadSettings(options).display.language, 'system')
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })
   }
@@ -88,4 +104,5 @@ testPortableDefaultsHaveNoEngines()
 testUserProfilePersists()
 testSoundPackSelectionPersistsOnlyWhileAvailable()
 testInvalidTablePositionUsesCenter()
+testInvalidLanguageUsesSystem()
 console.log('settings tests passed')

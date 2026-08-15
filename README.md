@@ -20,6 +20,7 @@
 - 可以打开和保存 `.mjtrain` 存档，与他人分享牌局
 - 可以自由安装外部引擎，分析决策、对手向听、牌张放铳率等信息
 - 可以自由安装外部音效包
+- 界面支持简体中文、日文和英文
 
 ### 获取与启动
 
@@ -52,7 +53,7 @@
 
 ### 开发
 
-目前仍处于开发阶段，功能尚未完备，界面和操作仍可能调整。未来将开发多语言界面和跨平台版本。
+目前仍处于开发阶段，功能尚未完备，界面和操作仍可能调整。未来将开发跨平台版本。
 
 欢迎试用、提交 [Issue](https://github.com/SiyeW/riichi-mahjong-studio/issues) 或参与开发。主程序的构建、调试和测试方法请见 [开发文档](docs/development.md)。第三方引擎协议请见 [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)，自定义音效包的制作方法请见 [音效包文档](docs/sound-packs.md)。更多问题欢迎联系。
 
@@ -73,7 +74,7 @@
 
 ### Riichi Mahjong Studio
 
-リーチ麻雀の牌譜検討と対局練習に使えるデスクトップアプリケーションで、[riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) に対応する外部エンジンを読み込めます。今後は日本語を含む多言語インターフェースを開発する予定です。
+リーチ麻雀の牌譜検討と対局練習に使えるデスクトップアプリケーションで、[riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) に対応する外部エンジンを読み込めます。
 
 ### 主な機能
 
@@ -83,6 +84,7 @@
 - `.mjtrain` 形式の牌譜を開いて保存し、他の人と対局を共有できます
 - 外部エンジンを自由に導入し、行動選択、対戦相手のシャンテン状態、各牌の放銃率などを解析できます
 - 外部効果音パックを自由に導入できます
+- 中国語（簡体字）、日本語、英語で表示できます
 
 ### 入手と起動
 
@@ -90,11 +92,11 @@
 
 ### 基本的な使い方
 
-- **新しい対局：** 「新建」をクリックすると、ランダムに生成された完全な牌山から練習を始めます。他のプレイヤーはエンジンが操作します。
-- **牌譜を開く：** 「打开」をクリックし、保存済みの `.mjtrain` ファイルを選択します。
-- **牌譜をインポート：** 「导入」をクリックし、[Mortal オンライン解析](https://mjai.ekyu.moe/zh-cn.html)レポートの URL、または[天鳳カスタム牌譜](https://tenhou.net/6/)の URL や内容を貼り付けます。インポート後は、未確定部分の牌山をランダムに再構築して対局モードへ移ることもできます。
+- **新しい対局：** 「新規」をクリックすると、ランダムに生成された完全な牌山から練習を始めます。他のプレイヤーはエンジンが操作します。
+- **牌譜を開く：** 「開く」をクリックし、保存済みの `.mjtrain` ファイルを選択します。
+- **牌譜をインポート：** 「インポート」をクリックし、[Mortal オンライン解析](https://mjai.ekyu.moe/zh-cn.html)レポートの URL、または[天鳳カスタム牌譜](https://tenhou.net/6/)の URL や内容を貼り付けます。インポート後は、未確定部分の牌山をランダムに再構築して対局モードへ移ることもできます。
 - **牌譜を検討：** 検討モードでは対局の分岐やノードを行き来し、ノードにコメントを付けることもできます。
-- **牌譜を保存：** 「保存」または「另存为」を使用し、現在の対局と分岐を `.mjtrain` 形式で保存します。
+- **牌譜を保存：** 「保存」または「名前を付けて保存」を使用し、現在の対局と分岐を `.mjtrain` 形式で保存します。
 
 ### 外部エンジンと効果音
 
@@ -103,15 +105,15 @@
 牌譜の閲覧と整理にはエンジンを必要としません。対局練習や打牌解析などの機能には、必要な能力を持つエンジンとその重みファイルを設定してください。
 
 1. [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) に対応するエンジンプログラムと、必要なモデルの重みを用意します。
-2. 「引擎」を開き、「添加引擎」をクリックして、実行ファイルまたは Python エントリーポイントを選択します。
+2. 「エンジン」を開き、「エンジンを追加」をクリックして、実行ファイルまたは Python エントリーポイントを選択します。
 3. エンジン情報の読み込み後、そのエンジンに割り当てる出力を選択します。1 つのエンジンに複数の出力を割り当てることもできます。
 4. 画面の指示に従ってモデルの重み、実行デバイス、エンジン固有の設定を指定します。
-5. 「加载」をクリックします。読み込みが完了すると、対応する解析画面や対局処理で出力が使用されます。
+5. 「読み込む」をクリックします。読み込みが完了すると、対応する解析画面や対局処理で出力が使用されます。
 6. 読み込み済みのエンジンを変更する場合は、先に読み込みを解除してください。
 
 #### 効果音の設定
 
-対応する効果音パックを、アプリケーションと同じ場所にある `sound-packs` フォルダーへ構成を保ったまま展開します。フォルダーがない場合は作成してください。アプリケーションを再起動し、「设置 → 音效 → 音效包」から選択します。
+対応する効果音パックを、アプリケーションと同じ場所にある `sound-packs` フォルダーへ構成を保ったまま展開します。フォルダーがない場合は作成してください。アプリケーションを再起動し、「設定 → サウンド → 効果音パック」から選択します。
 
 ### 開発
 
@@ -136,7 +138,7 @@
 
 ### Riichi Mahjong Studio
 
-A desktop application for studying game records and practicing Riichi Mahjong. It can load external engines compatible with [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol). A multilingual interface, including English, is planned.
+A desktop application for studying game records and practicing Riichi Mahjong. It can load external engines compatible with [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol).
 
 ### Main features
 
@@ -146,6 +148,7 @@ A desktop application for studying game records and practicing Riichi Mahjong. I
 - Open and save `.mjtrain` records to share games with others
 - Install external engines of your choice to analyze decisions, opponent shanten, tile-specific deal-in probability, and more
 - Install external sound packs of your choice
+- Use the interface in Simplified Chinese, Japanese, or English
 
 ### Download and launch
 
@@ -153,11 +156,11 @@ Visit [Releases](https://github.com/SiyeW/riichi-mahjong-studio/releases) to dow
 
 ### Basic use
 
-- **Create a game:** Select “新建” to start from a randomly generated complete wall. The other players are controlled by engines.
-- **Open a record:** Select “打开” and choose a saved `.mjtrain` file.
-- **Import a record:** Select “导入” and paste a [Mortal online analysis](https://mjai.ekyu.moe/zh-cn.html) report URL or the URL or content of a [Tenhou custom game record](https://tenhou.net/6/). After importing, the unknown wall can be reconstructed at random so that the game can be continued in play mode.
+- **Create a game:** Select “New” to start from a randomly generated complete wall. The other players are controlled by engines.
+- **Open a record:** Select “Open” and choose a saved `.mjtrain` file.
+- **Import a record:** Select “Import” and paste a [Mortal online analysis](https://mjai.ekyu.moe/zh-cn.html) report URL or the URL or content of a [Tenhou custom game record](https://tenhou.net/6/). After importing, the unknown wall can be reconstructed at random so that the game can be continued in play mode.
 - **Study a game:** In research mode, move between game branches and nodes, and add comments to individual nodes.
-- **Save a record:** Use “保存” or “另存为” to write the current game and its branches to a `.mjtrain` record.
+- **Save a record:** Use “Save” or “Save as” to write the current game and its branches to a `.mjtrain` record.
 
 ### External engines and sound
 
@@ -166,15 +169,15 @@ Visit [Releases](https://github.com/SiyeW/riichi-mahjong-studio/releases) to dow
 No engine is required to browse and organize game records. Practice games, decision analysis, and similar features require an engine with the corresponding capabilities and its weight files.
 
 1. Prepare an engine compatible with [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol) and any model weights it requires.
-2. Open “引擎,” select “添加引擎,” and choose the engine executable or Python entry point.
+2. Open “Engine,” select “Add engine,” and choose the engine executable or Python entry point.
 3. Wait for the application to read the engine declaration, then select the outputs that the engine should provide. One engine may provide multiple outputs.
 4. Select the requested model weights and runtime device, and adjust any engine-specific options.
-5. Select “加载.” Once loaded, the engine output is available to the corresponding analysis view or game process.
+5. Select “Load.” Once loaded, the engine output is available to the corresponding analysis view or game process.
 6. Unload a running engine before changing its configuration.
 
 #### Configure sound
 
-Extract a compatible sound pack, without changing its internal structure, into the `sound-packs` directory beside the application. Create the directory if it does not exist. Restart the application, then select the pack under “设置 → 音效 → 音效包.”
+Extract a compatible sound pack, without changing its internal structure, into the `sound-packs` directory beside the application. Create the directory if it does not exist. Restart the application, then select the pack under “Settings → Sound → Sound pack.”
 
 ### Development
 

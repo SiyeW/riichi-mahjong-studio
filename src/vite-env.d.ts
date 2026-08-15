@@ -59,6 +59,7 @@ interface TrainerSettings {
     autoAdvanceDelayMs: number
   }
   display: {
+    language: 'system' | 'zh-CN' | 'ja-JP' | 'en-US'
     colorScheme: 'default' | 'killerducky'
     reduceMotion: boolean
     uiScale: number
@@ -744,4 +745,9 @@ interface Window {
     onRecordDirtyChanged: (callback: (dirty: boolean) => void) => () => void
     onBeforeClose: (callback: () => void | Promise<void>) => () => void
   }
+}
+
+declare module '*.json' {
+  const value: Record<string, string>
+  export default value
 }
