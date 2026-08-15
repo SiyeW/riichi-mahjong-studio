@@ -14,7 +14,7 @@ from typing import Any, Callable, Optional
 MAX_PROTOCOL_LINE_BYTES = 8 * 1024 * 1024
 MAX_STDERR_LINE_CHARS = 4096
 STDERR_TAIL_LINES = 100
-PROTOCOL = {"name": "riichi-engine-protocol", "major": 2, "minor": 0}
+PROTOCOL = {"name": "riichi-engine-protocol", "major": 2, "minor": 1}
 HOST_ID = "riichi-mahjong-studio"
 HOST_VERSION = "0.4.0"
 
@@ -162,11 +162,15 @@ class EngineProcessClient:
             },
             timeout=60,
         )
-        protocol = self._hello.get("protocol") or {}
+        protocol = self._hello.get("protocol")
         if (
-            protocol.get("name") != PROTOCOL["name"]
+            not isinstance(protocol, dict)
+            or protocol.get("name") != PROTOCOL["name"]
             or protocol.get("major") != PROTOCOL["major"]
-            or protocol.get("minor") != PROTOCOL["minor"]
+            or isinstance(protocol.get("minor"), bool)
+            or not isinstance(protocol.get("minor"), int)
+            or protocol.get("minor") < 0
+            or protocol.get("minor") > PROTOCOL["minor"]
         ):
             self._stop_process()
             raise EngineProcessError("engine protocol version is not compatible")

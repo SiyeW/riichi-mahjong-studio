@@ -118,9 +118,33 @@ function testUnsafePathsAreRejected() {
   assert.ok(validateEngineManifest(unsafeLicenseEngine).some((error) => error.includes('licenses entry path')))
 }
 
+function testProtocolMinorCompatibility() {
+  for (const minor of [0, 1, 99]) {
+    const engine = customEngine()
+    engine.protocol.minor = minor
+    engine.futureOptionalField = { enabled: true }
+    assert.deepEqual(validateEngineManifest(engine), [])
+  }
+
+  const incompatibleMajor = customEngine()
+  incompatibleMajor.protocol.major = 3
+  assert.ok(validateEngineManifest(incompatibleMajor).some((error) => error.includes('protocol')))
+
+  for (const minor of [-1, 1.5, '1', true, null]) {
+    const engine = customEngine()
+    engine.protocol.minor = minor
+    assert.ok(validateEngineManifest(engine).some((error) => error.includes('protocol')))
+  }
+
+  const unknownSchema = customEngine()
+  unknownSchema.schemaVersion = 3
+  assert.ok(validateEngineManifest(unknownSchema).some((error) => error.includes('schemaVersion')))
+}
+
 testEmptyPublicCatalog()
 testPortablePackagesAndDuplicatePrecedence()
 testMissingExecutableMakesPackageUnavailable()
 testExternalEngineRootsFromEnvironment()
 testUnsafePathsAreRejected()
+testProtocolMinorCompatibility()
 console.log('engine package registry tests passed')

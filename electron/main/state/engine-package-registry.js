@@ -3,6 +3,8 @@ const path = require('node:path')
 
 const ID_PATTERN = /^[a-z0-9][a-z0-9._-]{2,127}$/
 const SEMVER_PATTERN = /^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$/
+const ENGINE_PROTOCOL_NAME = 'riichi-engine-protocol'
+const ENGINE_PROTOCOL_MAJOR = 2
 
 function currentPlatformKey() {
   return process.platform === 'win32'
@@ -45,10 +47,12 @@ function validateEngineManifest(manifest) {
   }
   addError(
     errors,
-    manifest.protocol?.name === 'riichi-engine-protocol'
-      && manifest.protocol?.major === 2
-      && manifest.protocol?.minor === 0,
-    'protocol must be riichi-engine-protocol 2.0',
+    isObject(manifest.protocol)
+      && manifest.protocol.name === ENGINE_PROTOCOL_NAME
+      && manifest.protocol.major === ENGINE_PROTOCOL_MAJOR
+      && Number.isInteger(manifest.protocol.minor)
+      && manifest.protocol.minor >= 0,
+    'protocol must declare a supported riichi-engine-protocol major version',
   )
 
   const entrypoints = manifest.entrypoints

@@ -5,6 +5,30 @@ incompatible changes.
 
 ## [Unreleased]
 
+<div lang="zh-CN">
+
+### 中文
+
+- 修复无法加载声明立直麻将引擎协议 2.1 的引擎程序包的问题。同一引擎中无法使用的输出不再影响其他兼容输出。
+
+</div>
+
+<div lang="ja-JP">
+
+### 日本語
+
+- リーチ麻雀エンジンプロトコル 2.1 を宣言するエンジンパッケージを読み込めない問題を修正しました。同じエンジンに利用できない出力が含まれていても、対応するほかの出力は引き続き使用できます。
+
+</div>
+
+<div lang="en-US">
+
+### English
+
+- Fix loading of engine packages that declare Riichi Engine Protocol 2.1. Unsupported outputs no longer prevent other compatible outputs from the same engine from being used.
+
+</div>
+
 ## [0.4.0] - 2026-08-15
 
 <div lang="zh-CN">

@@ -29,6 +29,31 @@ class EngineProtocolTest(unittest.TestCase):
         with self.assertRaisesRegex(EngineProcessError, "invalid output contract"):
             EngineProcessClient._validate_hello(hello)
 
+    def test_hello_ignores_unknown_optional_fields_and_output_contracts(self):
+        hello = {
+            "engine": {"id": "test.engine", "name": "Test", "version": "1.0.0"},
+            "outputContracts": [
+                {"id": "action-recommendation", "version": 2, "futureField": True},
+                {"id": "future-output", "version": 1, "payloadShape": "future"},
+            ],
+            "weightSlots": [{
+                "id": "future-model",
+                "formats": [{"id": "future-format"}],
+                "requiredForOutputs": [{"id": "future-output", "version": 1}],
+            }],
+            "devices": [{"type": "cpu", "futureField": True}],
+            "runtimeCapabilities": {
+                "multipleSessions": False,
+                "concurrentRequests": False,
+                "cancellation": False,
+                "futureCapability": True,
+            },
+            "optionsSchema": {"type": "object", "futureKeyword": True},
+            "futureTopLevelField": {"enabled": True},
+        }
+
+        EngineProcessClient._validate_hello(hello)
+
     def test_custom_command_uses_external_json_rpc_engine(self):
         script = textwrap.dedent(
             """
@@ -87,6 +112,51 @@ class EngineProtocolTest(unittest.TestCase):
                 status = client.request("engine.getStatus")
                 self.assertEqual(status["state"], "ready")
                 self.assertEqual(client.hello["engine"]["id"], "third-party.mock")
+            finally:
+                client.shutdown()
+
+    def test_hello_rejects_a_minor_above_the_host_request(self):
+        script = textwrap.dedent(
+            """
+            import json
+            import sys
+
+            for line in sys.stdin:
+                request = json.loads(line)
+                print(json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": request.get("id"),
+                    "result": {
+                        "protocol": {
+                            "name": "riichi-engine-protocol",
+                            "major": 2,
+                            "minor": request["params"]["protocol"]["minor"] + 1,
+                        },
+                        "engine": {"id": "third-party.future", "name": "Future", "version": "1.0.0"},
+                        "outputContracts": [{"id": "future-output", "version": 1}],
+                        "weightSlots": [],
+                        "devices": [{"type": "cpu"}],
+                        "runtimeCapabilities": {
+                            "multipleSessions": False,
+                            "concurrentRequests": False,
+                            "cancellation": False,
+                        },
+                        "optionsSchema": {"type": "object"},
+                    },
+                }), flush=True)
+            """
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            script_path = Path(directory) / "future_engine.py"
+            script_path.write_text(script, encoding="utf-8")
+            client = EngineProcessClient(
+                "custom",
+                command=[sys.executable, str(script_path)],
+                cwd=directory,
+            )
+            try:
+                with self.assertRaisesRegex(EngineProcessError, "not compatible"):
+                    client.describe()
             finally:
                 client.shutdown()
 

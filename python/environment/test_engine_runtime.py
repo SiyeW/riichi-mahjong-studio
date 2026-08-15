@@ -108,6 +108,54 @@ class EngineRuntimeTest(unittest.TestCase):
                 timeout=90,
             )
 
+    def test_ignores_unsupported_outputs_and_their_weights(self):
+        supported = {"id": "opponent-shanten", "version": 1}
+        configured = [
+            {"id": "action-recommendation", "version": 1},
+            supported,
+        ]
+        hello = {
+            "outputContracts": [
+                {"id": "action-recommendation", "version": 2},
+                supported,
+                {"id": "future-output", "version": 1},
+            ],
+            "weightSlots": [
+                {
+                    "id": "supported",
+                    "formats": [{"id": "onnx"}],
+                    "requiredForOutputs": [supported],
+                },
+                {
+                    "id": "future",
+                    "formats": [{"id": "future"}],
+                    "requiredForOutputs": [{"id": "future-output", "version": 1}],
+                },
+            ],
+            "devices": [{"type": "cpu"}],
+        }
+        result = {"outputs": [supported], "device": {"type": "cpu"}}
+        client = FakeClient(hello, result)
+
+        initialized = initialize_engine_client(
+            client,
+            enabled_outputs=configured,
+            weights=[
+                {"slotId": "supported", "format": "onnx", "path": "supported.onnx"},
+                {"slotId": "future", "format": "future", "path": "future.bin"},
+            ],
+            device_preference="cpu",
+            options={},
+            timeout=90,
+        )
+
+        self.assertEqual(set(initialized.outputs), {("opponent-shanten", 1)})
+        self.assertEqual(client.initialize_calls, [(
+            [supported],
+            [{"slotId": "supported", "format": "onnx", "path": "supported.onnx"}],
+            {"device": "cpu", "options": {}, "timeout": 90},
+        )])
+
     def _runtime_specification(self):
         return {
             "profile_id": "profile.example",
@@ -145,6 +193,29 @@ class EngineRuntimeTest(unittest.TestCase):
         self.assertEqual(process.initialize_calls[0][0], self.outputs)
         self.assertEqual(action["outputs"], [self.result["outputs"][1]])
         self.assertEqual(opponent["outputs"], [self.result["outputs"][0]])
+
+    def test_unsupported_output_does_not_block_another_profile_output(self):
+        supported = self.outputs[1]
+        hello = {
+            **self.hello,
+            "outputContracts": [
+                {"id": "action-recommendation", "version": 2},
+                supported,
+            ],
+        }
+        result = {"outputs": [supported], "device": {"type": "cpu"}}
+        FakeProcessClient.instances = []
+        FakeProcessClient.hello = hello
+        FakeProcessClient.result = result
+        with mock.patch("engine_runtime.EngineProcessClient", FakeProcessClient):
+            runtime = EngineProfileRuntime(**self._runtime_specification())
+            with self.assertRaisesRegex(RuntimeError, "does not provide action-recommendation version 1"):
+                runtime.initialize([self.outputs[0]], self.weights)
+            opponent = runtime.initialize([supported], self.weights)
+
+        process = FakeProcessClient.instances[0]
+        self.assertEqual(process.initialize_calls[0][0], [supported])
+        self.assertEqual(opponent["outputs"], [supported])
 
     def test_registry_reuses_unchanged_profile_runtime(self):
         FakeProcessClient.instances = []

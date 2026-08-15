@@ -1771,7 +1771,12 @@ const activeSupportedOutputs = computed(() => {
     contract.id === supported.id && contract.version === supported.version
   )))
 })
-const activeEngineWeightSlots = computed(() => activeEngineDescription.value?.weightSlots || [])
+const activeEngineWeightSlots = computed(() => {
+  const supportedKeys = new Set(activeSupportedOutputs.value.map((output) => `${output.id}:${output.version}`))
+  return (activeEngineDescription.value?.weightSlots || []).filter((slot) => (
+    slot.requiredForOutputs?.some((output) => supportedKeys.has(`${output.id}:${output.version}`)) === true
+  ))
+})
 const activeEngineDevices = computed(() => activeEngineDescription.value?.devices || [])
 const activeEngineOptionEntries = computed(() => {
   const properties = activeEngineDescription.value?.optionsSchema?.properties || {}

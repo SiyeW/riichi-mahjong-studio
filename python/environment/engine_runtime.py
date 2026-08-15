@@ -54,10 +54,10 @@ def initialize_engine_client(
     timeout: float,
 ) -> EngineInitialization:
     """Validate and initialize the outputs assigned to one engine configuration."""
-    requested_outputs = [dict(output) for output in enabled_outputs]
-    requested_keys = {_output_key(output) for output in requested_outputs}
-    if len(requested_keys) != len(requested_outputs) or any(
-        not output_id or version <= 0 for output_id, version in requested_keys
+    configured_outputs = [dict(output) for output in enabled_outputs]
+    configured_keys = {_output_key(output) for output in configured_outputs}
+    if len(configured_keys) != len(configured_outputs) or any(
+        not output_id or version <= 0 for output_id, version in configured_keys
     ):
         raise RuntimeError("enabled engine outputs are invalid or duplicated")
 
@@ -67,21 +67,40 @@ def initialize_engine_client(
         for output in hello.get("outputContracts") or []
         if isinstance(output, dict)
     }
-    for output_id, version in requested_keys:
-        if (output_id, version) not in contracts:
-            raise RuntimeError(f"engine does not provide {output_id} version {version}")
+    requested_outputs = [
+        output
+        for output in configured_outputs
+        if _output_key(output) in contracts
+    ]
+    requested_keys = {_output_key(output) for output in requested_outputs}
+    if not requested_outputs:
+        raise RuntimeError("engine does not provide any compatible enabled outputs")
 
     slots = {
         str(slot.get("id") or ""): slot
         for slot in hello.get("weightSlots") or []
         if isinstance(slot, dict)
     }
-    configured_by_slot = {
+    all_configured_by_slot = {
         str(weight.get("slotId") or ""): weight
         for weight in weights
     }
-    if len(configured_by_slot) != len(weights) or "" in configured_by_slot:
+    if len(all_configured_by_slot) != len(weights) or "" in all_configured_by_slot:
         raise RuntimeError("configured engine weights are invalid or duplicated")
+    required_slot_ids = {
+        slot_id
+        for slot_id, slot in slots.items()
+        if any(
+            _output_key(item) in requested_keys
+            for item in slot.get("requiredForOutputs") or []
+            if isinstance(item, dict)
+        )
+    }
+    configured_by_slot = {
+        slot_id: weight
+        for slot_id, weight in all_configured_by_slot.items()
+        if slot_id in required_slot_ids
+    }
     for slot_id, weight in configured_by_slot.items():
         slot = slots.get(slot_id)
         formats = slot.get("formats") if isinstance(slot, dict) else None
@@ -90,13 +109,8 @@ def initialize_engine_client(
             for item in formats
         ):
             raise RuntimeError(f"engine does not accept the configured {slot_id} weight")
-    for slot_id, slot in slots.items():
-        required = slot.get("requiredForOutputs") or []
-        if any(
-            _output_key(item) in requested_keys
-            for item in required
-            if isinstance(item, dict)
-        ) and slot_id not in configured_by_slot:
+    for slot_id in required_slot_ids:
+        if slot_id not in configured_by_slot:
             raise RuntimeError(f"engine requires the {slot_id} weight")
 
     device_types = [
@@ -114,7 +128,7 @@ def initialize_engine_client(
 
     result = client.initialize(
         requested_outputs,
-        [dict(weight) for weight in weights],
+        [dict(configured_by_slot[slot_id]) for slot_id in slots if slot_id in configured_by_slot],
         device=selected_device,
         options=dict(options),
         timeout=timeout,
@@ -233,10 +247,15 @@ class EngineProfileRuntime:
                 )
             initialized = self._initialization
         result = dict(initialized.result)
-        result["outputs"] = [
-            dict(initialized.outputs[_output_key(output)])
+        unavailable = [
+            _output_key(output)
             for output in requested_outputs
+            if _output_key(output) not in initialized.outputs
         ]
+        if unavailable:
+            output_id, version = unavailable[0]
+            raise RuntimeError(f"engine does not provide {output_id} version {version}")
+        result["outputs"] = [dict(initialized.outputs[_output_key(output)]) for output in requested_outputs]
         return result
 
     def request(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
