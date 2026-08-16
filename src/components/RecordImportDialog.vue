@@ -102,7 +102,7 @@ async function submitImport() {
 .record-import-copy {
   margin-bottom: calc(0.75rem * var(--chrome-scale));
   color: var(--text-dim);
-  font-size: var(--ui-font-md);
+  font-size: var(--ui-text-body);
   line-height: 1.55;
 }
 
@@ -121,7 +121,7 @@ async function submitImport() {
   border: 1px solid rgba(225, 114, 95, 0.35);
   background: rgba(116, 38, 28, 0.42);
   color: rgba(255, 225, 218, 0.94);
-  font-size: var(--ui-font-md);
+  font-size: var(--ui-text-body);
   line-height: 1.45;
 }
 

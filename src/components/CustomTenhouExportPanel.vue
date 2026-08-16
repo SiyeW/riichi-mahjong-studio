@@ -126,7 +126,7 @@ onBeforeUnmount(() => {
   margin: 0;
   padding: calc(2rem * var(--floating-panel-scale));
   color: var(--text-dim);
-  font-size: calc(0.9rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-body);
   text-align: center;
 }
 
@@ -151,7 +151,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: calc(0.6rem * var(--floating-panel-scale));
   color: var(--text-dim);
-  font-size: calc(0.875rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-body);
 }
 
 .custom-tenhou-export-fields textarea {
@@ -164,7 +164,7 @@ onBeforeUnmount(() => {
   background: rgba(0, 29, 35, 0.5);
   color: rgba(224, 240, 236, 0.86);
   font-family: ui-monospace, monospace;
-  font-size: calc(0.75rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
   line-height: 1.45;
 }
 </style>

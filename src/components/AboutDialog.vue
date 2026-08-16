@@ -99,13 +99,13 @@ function openLegalDocument(documentId: 'license' | 'thirdPartyNotices') {
 
 .about-brand span {
   color: var(--text-dim);
-  font-size: var(--ui-font-xs);
+  font-size: var(--ui-text-caption);
   letter-spacing: 0.12em;
 }
 
 .about-brand strong {
   color: var(--text-main);
-  font-size: var(--ui-font-xl);
+  font-size: var(--ui-text-title);
   line-height: 1.15;
 }
 
@@ -120,13 +120,13 @@ function openLegalDocument(documentId: 'license' | 'thirdPartyNotices') {
 }
 
 .about-label {
-  font-size: var(--ui-font-md);
+  font-size: var(--ui-text-body);
   color: var(--text-dim);
 }
 
 .about-value {
   min-height: calc(1.1rem * var(--chrome-scale));
-  font-size: var(--ui-font-lg);
+  font-size: var(--ui-text-heading);
   color: var(--text-main);
 }
 
@@ -149,7 +149,7 @@ function openLegalDocument(documentId: 'license' | 'thirdPartyNotices') {
   gap: calc(0.8rem * var(--chrome-scale));
   color: rgba(197, 243, 233, 0.95);
   text-decoration: none;
-  font-size: var(--ui-font-lg);
+  font-size: var(--ui-text-heading);
 }
 
 .about-link-list a:hover {
@@ -159,7 +159,7 @@ function openLegalDocument(documentId: 'license' | 'thirdPartyNotices') {
 .about-link-license {
   flex: 0 0 auto;
   color: var(--text-dim);
-  font-size: var(--ui-font-lg);
+  font-size: var(--ui-text-heading);
 }
 
 .about-document-actions {
@@ -170,7 +170,7 @@ function openLegalDocument(documentId: 'license' | 'thirdPartyNotices') {
 
 .about-legal-note {
   color: var(--text-muted);
-  font-size: var(--ui-font-xs);
+  font-size: var(--ui-text-caption);
   line-height: 1.45;
 }
 </style>
