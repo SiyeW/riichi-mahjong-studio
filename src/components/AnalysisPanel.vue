@@ -174,7 +174,7 @@
         </div>
         <div v-if="countTooltip" class="analysis-count-tooltip">
           <strong>{{ countTooltip.sourceLabel }} · {{ tileFaceLabel(countTooltip.tile) }}</strong>
-          <span>{{ t('analysis.expectedCount', { value: countTooltip.expected.toFixed(2) }) }}</span>
+          <span v-if="countTooltip.scalarValue !== null">{{ t('analysis.predictedCount', { value: countTooltip.scalarValue.toFixed(2) }) }}</span>
           <div v-for="segment in countTooltip.segments" :key="segment.value">
             <small>{{ t('analysis.countUnit', { value: segment.value }) }}</small>
             <i><span :class="`count-${segment.value}`" :style="{ width: `${segment.probability * 100}%` }" /></i>
@@ -191,13 +191,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from '../i18n'
+import { parseNumericPrediction, type DistributionEntry, type NumericPrediction } from '../numericPrediction'
 import ShantenPieChart from './ShantenPieChart.vue'
 
 const { t, numberLocale } = useI18n()
 
 type AnalysisRecord = Record<string, unknown>
-type DistributionEntry = { value: number; probability: number }
-type NumericPrediction = { distribution: DistributionEntry[]; expectedValue: number | null }
 type TileSource = { key: string; label: string; seat: number | null }
 
 const props = defineProps<{
@@ -220,7 +219,7 @@ const hoveredWinnerSeat = ref<number | null>(null)
 const countTooltip = ref<{
   tile: string
   sourceLabel: string
-  expected: number
+  scalarValue: number | null
   segments: DistributionEntry[]
 } | null>(null)
 
@@ -260,20 +259,7 @@ function playerOutput(outputId: string, seat: number): AnalysisRecord {
 }
 
 function parsePrediction(value: unknown): NumericPrediction {
-  const source = objectValue(value)
-  const distribution = Array.isArray(source.distribution)
-    ? source.distribution.map((entry) => objectValue(entry)).map((entry) => ({
-      value: finiteNumber(entry.value),
-      probability: probability(entry.probability),
-    }))
-    : []
-  const rawExpected = Number(source.expectedValue)
-  const expectedValue = Number.isFinite(rawExpected)
-    ? rawExpected
-    : (distribution.length
-      ? distribution.reduce((sum, entry) => sum + (entry.value * entry.probability), 0)
-      : null)
-  return { distribution, expectedValue }
+  return parseNumericPrediction(value)
 }
 
 function seatPrediction(outputId: string, seat: number): NumericPrediction {
@@ -312,11 +298,17 @@ function formatProbability(value: number): string {
 }
 
 function predictionTitle(prediction: NumericPrediction, unit: string): string {
-  const expected = prediction.expectedValue === null
-    ? t('analysis.noExpectedValue')
-    : t('analysis.expectedValue', { value: prediction.expectedValue.toFixed(2), unit })
-  if (!prediction.distribution.length) return expected
-  return `${expected}；${prediction.distribution.map((entry) => `${entry.value}${unit} ${formatProbability(entry.probability)}`).join('，')}`
+  const scalar = prediction.scalarValue === null
+    ? ''
+    : t(
+      prediction.scalarSource === 'point-estimate' ? 'analysis.predictionValue' : 'analysis.expectedValue',
+      { value: prediction.scalarValue.toFixed(2), unit },
+    )
+  const distribution = prediction.distribution
+    .map((entry) => `${entry.value}${unit} ${formatProbability(entry.probability)}`)
+    .join('，')
+  if (scalar && distribution) return `${scalar}；${distribution}`
+  return scalar || distribution || t('analysis.noData')
 }
 
 const opponentCards = computed(() => props.shantenOpponents.map((opponent) => {
@@ -324,8 +316,8 @@ const opponentCards = computed(() => props.shantenOpponents.map((opponent) => {
   const score = seatPrediction('opponent-score', opponent.seat)
   return {
     ...opponent,
-    dora: dora.expectedValue === null ? '—' : dora.expectedValue.toFixed(1),
-    score: formatCompactPoints(score.expectedValue),
+    dora: dora.scalarValue === null ? '—' : dora.scalarValue.toFixed(1),
+    score: formatCompactPoints(score.scalarValue),
     doraTitle: predictionTitle(dora, t('unit.tile')),
     scoreTitle: predictionTitle(score, t('unit.point')),
   }
@@ -393,11 +385,11 @@ const playerRows = computed(() => playerSeatOrder.value.map((seat) => {
     winProbability: probability(outcome.winProbability),
     dealInProbability: probability(outcome.dealInProbability),
     targets: targetRows(outcome, seat),
-    kyokuDelta: delta.expectedValue,
+    kyokuDelta: delta.scalarValue,
     placement: normalizedPlacement,
-    expectedPlacement: placement.expectedValue === null ? '—' : placement.expectedValue.toFixed(2),
+    expectedPlacement: placement.scalarValue === null ? '—' : placement.scalarValue.toFixed(2),
     placementTitle: predictionTitle(placement, t('unit.place')),
-    matchScore: matchScore.expectedValue,
+    matchScore: matchScore.scalarValue,
   }
 }))
 
@@ -464,8 +456,7 @@ function countSegments(tile: string, source: TileSource): DistributionEntry[] {
   }))
   const total = values.reduce((sum, entry) => sum + entry.probability, 0)
   if (total > 0) return values.map((entry) => ({ ...entry, probability: entry.probability / total }))
-  const rounded = Math.max(0, Math.min(4, Math.round(prediction.expectedValue || 0)))
-  return values.map((entry) => ({ ...entry, probability: entry.value === rounded ? 1 : 0 }))
+  return values
 }
 
 function showCountTooltip(tile: string, source: TileSource) {
@@ -473,8 +464,8 @@ function showCountTooltip(tile: string, source: TileSource) {
   countTooltip.value = {
     tile,
     sourceLabel: source.label,
-    expected: prediction.expectedValue || 0,
-    segments: countSegments(tile, source),
+    scalarValue: prediction.scalarValue,
+    segments: prediction.distribution.length ? countSegments(tile, source) : [],
   }
 }
 </script>

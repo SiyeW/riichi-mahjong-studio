@@ -7,10 +7,17 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from engine_process_client import EngineProcessClient, EngineProcessError, get_host_version
+from engine_process_client import PROTOCOL, EngineProcessClient, EngineProcessError, get_host_version
 
 
 class EngineProtocolTest(unittest.TestCase):
+    def test_host_requests_protocol_2_2(self):
+        self.assertEqual(PROTOCOL, {
+            "name": "riichi-engine-protocol",
+            "major": 2,
+            "minor": 2,
+        })
+
     def test_host_version_comes_from_studio_process(self):
         with mock.patch.dict(os.environ, {"RMS_APP_VERSION": "1.0.0-dev.0"}):
             self.assertEqual(get_host_version(), "1.0.0-dev.0")

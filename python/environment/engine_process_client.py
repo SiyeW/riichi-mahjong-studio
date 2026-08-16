@@ -14,7 +14,7 @@ from typing import Any, Callable, Optional
 MAX_PROTOCOL_LINE_BYTES = 8 * 1024 * 1024
 MAX_STDERR_LINE_CHARS = 4096
 STDERR_TAIL_LINES = 100
-PROTOCOL = {"name": "riichi-engine-protocol", "major": 2, "minor": 1}
+PROTOCOL = {"name": "riichi-engine-protocol", "major": 2, "minor": 2}
 HOST_ID = "riichi-mahjong-studio"
 
 
