@@ -65,6 +65,11 @@ interface TrainerSettings {
     uiScale: number
     showTsumogiriInPlay: boolean
     tablePosition: 'left' | 'center' | 'right'
+    workspaceLayout: {
+      order: Array<'analysis' | 'table' | 'console'>
+      analysisVisible: boolean
+      consoleVisible: boolean
+    }
   }
   records: {
     saveRecoveryOnExit: boolean

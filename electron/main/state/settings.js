@@ -18,6 +18,11 @@ const DEFAULT_TRAINING_SETTINGS = Object.freeze({
   thinkingTimeMaxS: 1,
 })
 const DEFAULT_MODE_SETTINGS = Object.freeze({ autoAdvanceDelayMs: 250 })
+const DEFAULT_WORKSPACE_LAYOUT = Object.freeze({
+  order: Object.freeze(['table', 'analysis', 'console']),
+  analysisVisible: false,
+  consoleVisible: true,
+})
 const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
   language: 'system',
   colorScheme: 'default',
@@ -25,6 +30,7 @@ const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
   uiScale: 1,
   showTsumogiriInPlay: true,
   tablePosition: 'center',
+  workspaceLayout: DEFAULT_WORKSPACE_LAYOUT,
 })
 const DEFAULT_RECORD_SETTINGS = Object.freeze({ saveRecoveryOnExit: true })
 const DEFAULT_AUDIO_SETTINGS = Object.freeze({ volume: 50, soundPackId: '' })
@@ -54,6 +60,20 @@ function normalizeTrainingSettings(training = {}) {
   return normalized
 }
 
+function normalizeWorkspaceLayout(workspaceLayout = {}) {
+  const validItems = ['analysis', 'table', 'console']
+  const requestedOrder = Array.isArray(workspaceLayout.order) ? workspaceLayout.order : []
+  const order = [...new Set(requestedOrder.filter((item) => validItems.includes(item)))]
+  for (const item of DEFAULT_WORKSPACE_LAYOUT.order) {
+    if (!order.includes(item)) order.push(item)
+  }
+  return {
+    order,
+    analysisVisible: workspaceLayout.analysisVisible === true,
+    consoleVisible: workspaceLayout.consoleVisible !== false,
+  }
+}
+
 function normalizeDisplaySettings(display = {}) {
   return {
     ...display,
@@ -64,6 +84,7 @@ function normalizeDisplaySettings(display = {}) {
     tablePosition: ['left', 'center', 'right'].includes(display.tablePosition)
       ? display.tablePosition
       : DEFAULT_DISPLAY_SETTINGS.tablePosition,
+    workspaceLayout: normalizeWorkspaceLayout(display.workspaceLayout),
   }
 }
 
@@ -98,6 +119,7 @@ function getDefaultSettings(
     },
     display: {
       ...DEFAULT_DISPLAY_SETTINGS,
+      workspaceLayout: normalizeWorkspaceLayout(DEFAULT_WORKSPACE_LAYOUT),
     },
     records: {
       ...DEFAULT_RECORD_SETTINGS,
@@ -272,5 +294,6 @@ module.exports = {
   migrateSettings,
   normalizeAudioSettings,
   normalizeDisplaySettings,
+  normalizeWorkspaceLayout,
   saveSettings,
 }

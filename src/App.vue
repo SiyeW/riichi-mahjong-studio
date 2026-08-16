@@ -84,6 +84,12 @@
           >{{ closeRecordConfirmationPending ? t('toolbar.discard') : t('toolbar.close') }}</button>
         </span>
         <span class="toolbar-section">
+          <span
+            class="toolbar-button-hint"
+            :title="isReadOnlyRecord ? READ_ONLY_RECORD_HINT : undefined"
+          >
+            <button @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
+          </span>
           <button @click="openWallView" :disabled="!gameView.table">{{ t('toolbar.wall') }}</button>
           <button
             :class="{ active: showAnalysisDock }"
@@ -91,12 +97,13 @@
             @click="toggleAnalysisDock"
             :disabled="!gameView.table"
           >{{ t('toolbar.analysis') }}</button>
-          <span
-            class="toolbar-button-hint"
-            :title="isReadOnlyRecord ? READ_ONLY_RECORD_HINT : undefined"
+          <button
+            :class="{ active: showConsoleDock }"
+            :aria-pressed="showConsoleDock"
+            @click="toggleConsoleDock"
           >
-            <button @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
-          </span>
+            {{ t('toolbar.console') }}
+          </button>
         </span>
         <span class="toolbar-section">
           <button @click="openEngineWindow">{{ t('toolbar.engine') }}</button>
@@ -111,8 +118,8 @@
       <button @click="refreshBootstrapState">{{ t('common.retry') }}</button>
     </div>
 
-    <main class="workspace">
-      <section class="panel table-panel">
+    <main ref="workspaceRoot" class="workspace">
+      <section class="panel table-panel" :style="{ order: workspaceItemOrder('table') }">
         <div
           ref="tableStageEl"
           class="table-stage"
@@ -581,13 +588,25 @@
 
       <section
         v-if="showAnalysisDock"
-        class="panel analysis-dock"
-        :class="{ 'reset-without-motion': suppressOpponentAnalysisTransitions }"
-        :style="[{ '--floating-panel-scale': uiScale }, colorSchemeCssVariables]"
+        class="panel dock-module analysis-dock"
+        :class="{
+          'reset-without-motion': suppressOpponentAnalysisTransitions,
+          'is-dragging': draggingDockPanel === 'analysis',
+        }"
+        :style="[
+          { '--floating-panel-scale': uiScale, order: workspaceItemOrder('analysis') },
+          colorSchemeCssVariables,
+        ]"
         :aria-label="t('analysis.title')"
       >
-        <div class="analysis-dock-header">
-          <h2>{{ t('analysis.title') }}</h2>
+        <div class="dock-module-header analysis-dock-header">
+          <div
+            class="dock-module-drag-handle"
+            :title="t('workspace.dragPanel', { panel: t('analysis.title') })"
+            @pointerdown="startDockPanelPointerDrag('analysis', $event)"
+          >
+            <h2>{{ t('analysis.title') }}</h2>
+          </div>
           <button
             v-if="hasOpponentGroundTruth"
             class="analysis-dock-mode"
@@ -617,8 +636,22 @@
         </div>
       </section>
 
-      <aside class="panel side-panel">
-        <div class="panel-header"><h2>{{ t('console.title') }}</h2></div>
+      <aside
+        v-if="showConsoleDock"
+        class="panel dock-module side-panel console-dock"
+        :class="{ 'is-dragging': draggingDockPanel === 'console' }"
+        :style="{ order: workspaceItemOrder('console') }"
+      >
+        <div class="dock-module-header panel-header">
+          <div
+            class="dock-module-drag-handle"
+            :title="t('workspace.dragPanel', { panel: t('console.title') })"
+            @pointerdown="startDockPanelPointerDrag('console', $event)"
+          >
+            <h2>{{ t('console.title') }}</h2>
+          </div>
+        </div>
+        <div class="console-dock-body">
         <div v-if="status.mode === 'research'" class="settings-preview auto-analysis-panel">
           <div class="auto-analysis-row">
             <button
@@ -948,7 +981,23 @@
             <p v-else class="empty-copy">—</p>
           </template>
         </div>
+        </div>
       </aside>
+
+      <div
+        v-if="draggingDockPanel"
+        class="dock-drop-overlay"
+        :style="{ gridTemplateColumns: `repeat(${dockDropZones.length}, minmax(0, 1fr))` }"
+      >
+        <div
+          v-for="zone in dockDropZones"
+          :key="zone.position"
+          class="dock-drop-zone"
+          :class="{ active: activeDockDropPosition === zone.position }"
+        >
+          <span>{{ t(zone.labelKey) }}</span>
+        </div>
+      </div>
     </main>
 
     <footer class="footer">
@@ -1517,6 +1566,11 @@ const { locale, numberLocale, t } = useI18n()
 const seats = [0, 1, 2, 3]
 type ColorSchemeId = TrainerSettings['display']['colorScheme']
 type TablePosition = TrainerSettings['display']['tablePosition']
+type WorkspaceItemId = TrainerSettings['display']['workspaceLayout']['order'][number]
+type DockPanelId = Exclude<WorkspaceItemId, 'table'>
+type DockDropPosition = 0 | 1 | 2
+
+const DEFAULT_WORKSPACE_ORDER: WorkspaceItemId[] = ['table', 'analysis', 'console']
 
 const DEFAULT_SHANTEN_COLORS = [
   '#4CAF50',
@@ -1553,6 +1607,29 @@ function normalizeTablePosition(value: unknown): TablePosition {
   return value === 'left' || value === 'right' ? value : 'center'
 }
 
+function normalizeWorkspaceOrder(value: unknown): WorkspaceItemId[] {
+  const validItems: WorkspaceItemId[] = ['analysis', 'table', 'console']
+  const requested = Array.isArray(value) ? value : []
+  const order = requested.filter((item): item is WorkspaceItemId => (
+    typeof item === 'string' && validItems.includes(item as WorkspaceItemId)
+  )).filter((item, index, items) => items.indexOf(item) === index)
+  for (const item of DEFAULT_WORKSPACE_ORDER) {
+    if (!order.includes(item)) order.push(item)
+  }
+  return order
+}
+
+function normalizeWorkspaceLayout(value: unknown): TrainerSettings['display']['workspaceLayout'] {
+  const source = value && typeof value === 'object'
+    ? value as Partial<TrainerSettings['display']['workspaceLayout']>
+    : {}
+  return {
+    order: normalizeWorkspaceOrder(source.order),
+    analysisVisible: source.analysisVisible === true,
+    consoleVisible: source.consoleVisible !== false,
+  }
+}
+
 const settings = reactive<TrainerSettings>({
   configPath: '',
   runtime: {
@@ -1587,6 +1664,7 @@ const settings = reactive<TrainerSettings>({
     uiScale: 1,
     showTsumogiriInPlay: true,
     tablePosition: 'center',
+    workspaceLayout: normalizeWorkspaceLayout(null),
   },
   records: {
     saveRecoveryOnExit: true,
@@ -1682,8 +1760,125 @@ watchEffect(() => {
     : settings.display.language)
 })
 
-// --- 对手分析 ---
-const showAnalysisDock = ref(false)
+// --- 工作区与分析 ---
+const workspaceLayout = computed(() => normalizeWorkspaceLayout(settings.display.workspaceLayout))
+let workspaceLayoutSaveGeneration = 0
+
+function workspaceItemOrder(item: WorkspaceItemId): number {
+  return workspaceLayout.value.order.indexOf(item) + 1
+}
+
+function updateWorkspaceLayout(nextLayout: TrainerSettings['display']['workspaceLayout']) {
+  const normalized = normalizeWorkspaceLayout(nextLayout)
+  settings.display.workspaceLayout = normalized
+  if (showSettingsPanel.value) settingsDraft.display.workspaceLayout = JSON.parse(JSON.stringify(normalized))
+  void nextTick(() => scheduleTableZoomRecalc())
+  const generation = ++workspaceLayoutSaveGeneration
+  void window.trainerAPI?.saveSettings({
+    display: {
+      ...settings.display,
+      workspaceLayout: JSON.parse(JSON.stringify(normalized)),
+    },
+  }).then((saved) => {
+    if (generation !== workspaceLayoutSaveGeneration) return
+    applySettings(saved)
+  }).catch((error) => {
+    console.warn('Failed to save workspace layout:', error)
+  })
+}
+
+const showAnalysisDock = computed({
+  get: () => workspaceLayout.value.analysisVisible && Boolean(gameView.table),
+  set: (visible: boolean) => updateWorkspaceLayout({
+    ...workspaceLayout.value,
+    analysisVisible: visible,
+  }),
+})
+const showConsoleDock = computed({
+  get: () => workspaceLayout.value.consoleVisible,
+  set: (visible: boolean) => updateWorkspaceLayout({
+    ...workspaceLayout.value,
+    consoleVisible: visible,
+  }),
+})
+const workspaceRoot = ref<HTMLElement | null>(null)
+const draggingDockPanel = ref<DockPanelId | null>(null)
+const activeDockDropPosition = ref<DockDropPosition | null>(null)
+let dockDragPointerId: number | null = null
+const dockDropZones = computed<Array<{ position: DockDropPosition; labelKey: string }>>(() => {
+  const visiblePanelCount = Number(showAnalysisDock.value) + Number(showConsoleDock.value)
+  if (visiblePanelCount < 2) {
+    return [
+      { position: 0, labelKey: 'workspace.dockLeft' },
+      { position: 2, labelKey: 'workspace.dockRight' },
+    ]
+  }
+  return [
+    { position: 0, labelKey: 'workspace.dockLeft' },
+    { position: 1, labelKey: 'workspace.dockCenter' },
+    { position: 2, labelKey: 'workspace.dockRight' },
+  ]
+})
+
+function dockDropPositionAt(clientX: number): DockDropPosition {
+  const bounds = workspaceRoot.value?.getBoundingClientRect()
+  if (!bounds || bounds.width <= 0) return 1
+  const ratio = Math.max(0, Math.min(0.999, (clientX - bounds.left) / bounds.width))
+  const zones = dockDropZones.value
+  return zones[Math.floor(ratio * zones.length)]?.position ?? zones[0]?.position ?? 0
+}
+
+function handleDockPanelPointerMove(event: PointerEvent) {
+  if (event.pointerId !== dockDragPointerId || !draggingDockPanel.value) return
+  activeDockDropPosition.value = dockDropPositionAt(event.clientX)
+}
+
+function finishDockPanelPointerDrag(event: PointerEvent) {
+  if (event.pointerId !== dockDragPointerId) return
+  const position = activeDockDropPosition.value
+  removeDockPanelPointerListeners()
+  if (position !== null) dropDockPanel(position)
+  else endDockPanelDrag()
+}
+
+function cancelDockPanelPointerDrag(event: PointerEvent) {
+  if (event.pointerId !== dockDragPointerId) return
+  removeDockPanelPointerListeners()
+  endDockPanelDrag()
+}
+
+function removeDockPanelPointerListeners() {
+  window.removeEventListener('pointermove', handleDockPanelPointerMove)
+  window.removeEventListener('pointerup', finishDockPanelPointerDrag)
+  window.removeEventListener('pointercancel', cancelDockPanelPointerDrag)
+  dockDragPointerId = null
+}
+
+function startDockPanelPointerDrag(panel: DockPanelId, event: PointerEvent) {
+  if (event.button !== 0) return
+  event.preventDefault()
+  dockDragPointerId = event.pointerId
+  draggingDockPanel.value = panel
+  activeDockDropPosition.value = dockDropPositionAt(event.clientX)
+  window.addEventListener('pointermove', handleDockPanelPointerMove)
+  window.addEventListener('pointerup', finishDockPanelPointerDrag)
+  window.addEventListener('pointercancel', cancelDockPanelPointerDrag)
+}
+
+function endDockPanelDrag() {
+  draggingDockPanel.value = null
+  activeDockDropPosition.value = null
+}
+
+function dropDockPanel(position: DockDropPosition) {
+  const panel = draggingDockPanel.value
+  if (!panel) return
+  const order = workspaceLayout.value.order.filter((item) => item !== panel)
+  order.splice(position, 0, panel)
+  updateWorkspaceLayout({ ...workspaceLayout.value, order })
+  endDockPanelDrag()
+}
+
 type FloatingPanelName = 'wall' | 'engine' | 'roundMap' | 'customExport'
 const floatingPanelZ = reactive<Record<FloatingPanelName, number>>({
   wall: 1000,
@@ -1697,6 +1892,9 @@ function focusFloatingPanel(panel: FloatingPanelName) {
 }
 function toggleAnalysisDock() {
   showAnalysisDock.value = !showAnalysisDock.value
+}
+function toggleConsoleDock() {
+  showConsoleDock.value = !showConsoleDock.value
 }
 type EngineRuntimeKind = 'decision' | 'opponent'
 type SupportedEngineOutputId =
@@ -2918,6 +3116,15 @@ const pendingSeatSwitchLabel = ref('')
 const autoAnalysisCanvasEl = ref<HTMLCanvasElement | null>(null)
 let autoAnalysisCanvasRaf = 0
 let autoAnalysisResizeObserver: ResizeObserver | null = null
+watch(showConsoleDock, async (open) => {
+  await nextTick()
+  scheduleTableZoomRecalc()
+  autoAnalysisResizeObserver?.disconnect()
+  if (open && autoAnalysisCanvasEl.value) {
+    autoAnalysisResizeObserver?.observe(autoAnalysisCanvasEl.value)
+    scheduleAutoAnalysisCanvasDraw()
+  }
+})
 const autoAnalysisRunning = computed(() => status.autoAnalysis.status === 'running')
 const autoAnalysisTimeline = computed(() => status.autoAnalysis.timeline || '')
 const autoAnalysisTimelineTotal = computed(() => autoAnalysisTimeline.value.length)
@@ -6070,6 +6277,7 @@ function applySettings(nextSettings: TrainerSettings) {
     uiScale: normalizeUiScale(nextSettings.display?.uiScale),
     showTsumogiriInPlay: nextSettings.display?.showTsumogiriInPlay !== false,
     tablePosition: normalizeTablePosition(nextSettings.display?.tablePosition),
+    workspaceLayout: normalizeWorkspaceLayout(nextSettings.display?.workspaceLayout),
   })
   Object.assign(settings.records, nextSettings.records || {})
   Object.assign(settings.audio, nextSettings.audio)
@@ -6916,7 +7124,6 @@ async function closeGame() {
     cancelPendingWheelNavigation()
     clearAutoAdvanceTimer()
     showWallView.value = false
-    showAnalysisDock.value = false
     closeRoundMapOverlay()
     wallTiles.value = []
     const response = await window.trainerAPI.closeGame()
@@ -6945,6 +7152,7 @@ async function saveSettingsPanel() {
   settingsDraft.display.colorScheme = normalizeColorScheme(settingsDraft.display.colorScheme)
   settingsDraft.display.uiScale = normalizeUiScale(settingsDraft.display.uiScale)
   settingsDraft.display.tablePosition = normalizeTablePosition(settingsDraft.display.tablePosition)
+  settingsDraft.display.workspaceLayout = normalizeWorkspaceLayout(settingsDraft.display.workspaceLayout)
   settingsDraft.training.mistakeThreshold = Math.max(
     0,
     Math.min(1, Number(settingsDraft.training.mistakeThreshold) || 0),
@@ -8075,6 +8283,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  removeDockPanelPointerListeners()
   cancelEngineAutosaveTimer()
   flushNodeCommentInBackground()
   if (deleteEngineConfirmationTimer !== null) {

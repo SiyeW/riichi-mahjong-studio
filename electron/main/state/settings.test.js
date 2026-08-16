@@ -14,6 +14,11 @@ function testPortableDefaultsHaveNoEngines() {
   assert.equal(settings.audio.soundPackId, '')
   assert.equal(settings.display.tablePosition, 'center')
   assert.equal(settings.display.language, 'system')
+  assert.deepEqual(settings.display.workspaceLayout, {
+    order: ['table', 'analysis', 'console'],
+    analysisVisible: false,
+    consoleVisible: true,
+  })
   assert.equal('voice' in settings.audio, false)
 }
 
@@ -35,6 +40,11 @@ function testUserProfilePersists() {
     settings.engines.loadedProfileIds = ['profile.example']
     settings.display.tablePosition = 'right'
     settings.display.language = 'ja-JP'
+    settings.display.workspaceLayout = {
+      order: ['console', 'table', 'analysis'],
+      analysisVisible: true,
+      consoleVisible: false,
+    }
     saveSettings(settings, options)
     const reloaded = loadSettings(options)
     assert.equal(reloaded.engines.outputAssignments['action-recommendation'], 'profile.example')
@@ -42,6 +52,11 @@ function testUserProfilePersists() {
     assert.deepEqual(reloaded.engines.loadedProfileIds, ['profile.example'])
     assert.equal(reloaded.display.tablePosition, 'right')
     assert.equal(reloaded.display.language, 'ja-JP')
+    assert.deepEqual(reloaded.display.workspaceLayout, {
+      order: ['console', 'table', 'analysis'],
+      analysisVisible: true,
+      consoleVisible: false,
+    })
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })
   }
@@ -68,6 +83,29 @@ function testInvalidLanguageUsesSystem() {
       display: { language: 'fr-FR' },
     }))
     assert.equal(loadSettings(options).display.language, 'system')
+  } finally {
+    fs.rmSync(portableDir, { recursive: true, force: true })
+  }
+}
+
+function testInvalidWorkspaceLayoutUsesSafeDefaults() {
+  const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'riichi-studio-workspace-settings-'))
+  const options = { appDir: portableDir, portableDir, resourceDir: portableDir }
+  try {
+    fs.writeFileSync(path.join(portableDir, 'config.json'), JSON.stringify({
+      display: {
+        workspaceLayout: {
+          order: ['console', 'unknown', 'console'],
+          analysisVisible: 'yes',
+          consoleVisible: 'no',
+        },
+      },
+    }))
+    assert.deepEqual(loadSettings(options).display.workspaceLayout, {
+      order: ['console', 'table', 'analysis'],
+      analysisVisible: false,
+      consoleVisible: true,
+    })
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })
   }
@@ -105,4 +143,5 @@ testUserProfilePersists()
 testSoundPackSelectionPersistsOnlyWhileAvailable()
 testInvalidTablePositionUsesCenter()
 testInvalidLanguageUsesSystem()
+testInvalidWorkspaceLayoutUsesSafeDefaults()
 console.log('settings tests passed')

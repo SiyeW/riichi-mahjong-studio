@@ -285,6 +285,7 @@ body {
 }
 
 .workspace {
+  position: relative;
   flex: 1;
   display: flex;
   min-height: 0;
@@ -298,6 +299,56 @@ body {
   background: var(--bg-stage);
 }
 
+.dock-module {
+  --dock-module-scale: var(--floating-panel-scale, var(--chrome-scale));
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid rgba(0, 0, 0, 0.35);
+  border-left: 1px solid rgba(140, 195, 188, 0.18);
+  display: flex;
+  flex-direction: column;
+  transition: opacity var(--ui-motion-duration) var(--ui-motion-easing);
+}
+
+.dock-module.is-dragging {
+  opacity: 0.42;
+}
+
+.dock-module-header {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: space-between;
+  align-items: center;
+  min-height: calc(2.25rem * var(--dock-module-scale));
+  padding: calc(0.35rem * var(--dock-module-scale)) calc(0.6rem * var(--dock-module-scale));
+  border-bottom: 1px solid rgba(140, 195, 188, 0.14);
+  background: rgba(1, 34, 41, 0.28);
+}
+
+.dock-module-drag-handle {
+  align-self: stretch;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  min-width: 0;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.dock-module-drag-handle:active {
+  cursor: grabbing;
+}
+
+.dock-module-header h2 {
+  margin: 0;
+  color: rgba(230, 242, 238, 0.88);
+  font-size: calc(0.88rem * var(--dock-module-scale));
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
 .analysis-dock {
   --floating-panel-scale: 1;
   --floating-panel-inline-padding: calc(0.6rem * var(--floating-panel-scale));
@@ -306,33 +357,11 @@ body {
     32vw,
     calc(32rem * var(--floating-panel-scale))
   );
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  border-right: 1px solid rgba(0, 0, 0, 0.35);
-  border-left: 1px solid rgba(140, 195, 188, 0.18);
   background: linear-gradient(180deg, #073e48 0%, #042f38 100%);
-  display: flex;
-  flex-direction: column;
 }
 
 .analysis-dock-header {
-  display: flex;
-  flex: 0 0 auto;
-  justify-content: space-between;
-  align-items: center;
-  min-height: calc(2.25rem * var(--floating-panel-scale));
-  padding: calc(0.35rem * var(--floating-panel-scale)) calc(0.6rem * var(--floating-panel-scale));
-  border-bottom: 1px solid rgba(140, 195, 188, 0.14);
-  background: rgba(1, 34, 41, 0.28);
-}
-
-.analysis-dock-header h2 {
-  margin: 0;
-  color: rgba(230, 242, 238, 0.88);
-  font-size: calc(0.88rem * var(--floating-panel-scale));
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  gap: calc(0.5rem * var(--floating-panel-scale));
 }
 
 .analysis-dock-mode {
@@ -356,6 +385,41 @@ body {
   min-height: 0;
   overflow: auto;
   padding: 0 var(--floating-panel-inline-padding) calc(0.4rem * var(--floating-panel-scale));
+}
+
+.dock-drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  gap: calc(0.5rem * var(--chrome-scale));
+  padding: calc(0.7rem * var(--chrome-scale));
+  background: rgba(0, 25, 31, 0.52);
+}
+
+.dock-drop-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed rgba(154, 207, 197, 0.34);
+  background: rgba(5, 55, 64, 0.28);
+  color: rgba(214, 233, 229, 0.74);
+  font-size: var(--ui-font-md);
+  pointer-events: auto;
+}
+
+.dock-drop-zone.active {
+  border-style: solid;
+  border-color: rgba(94, 205, 145, 0.88);
+  background: rgba(17, 112, 68, 0.38);
+  color: rgba(247, 252, 250, 0.96);
+  box-shadow: inset 0 0 0 1px rgba(94, 205, 145, 0.28);
+}
+
+.dock-drop-zone span {
+  padding: calc(0.3rem * var(--chrome-scale)) calc(0.55rem * var(--chrome-scale));
+  border: 1px solid rgba(140, 195, 188, 0.2);
+  background: rgba(1, 34, 41, 0.88);
 }
 
 .table-stage {
@@ -2021,28 +2085,27 @@ body {
 .side-panel {
   width: var(--side-panel-width);
   flex-shrink: 0;
-  overflow-y: auto;
+  overflow: hidden;
   background: linear-gradient(180deg, #032e36 0%, #02252c 100%);
-  border-left: 1px solid rgba(0, 0, 0, 0.35);
-  padding: calc(0.5rem * var(--chrome-scale)) calc(0.48rem * var(--chrome-scale)) calc(0.7rem * var(--chrome-scale));
-  display: flex;
-  flex-direction: column;
-  gap: calc(0.36rem * var(--chrome-scale));
+  padding: 0;
 }
 
 .side-panel .panel-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding: calc(0.1rem * var(--chrome-scale)) calc(0.2rem * var(--chrome-scale)) calc(0.2rem * var(--chrome-scale));
-  border-bottom: 1px solid rgba(140, 195, 185, 0.12);
-  margin-bottom: calc(0.08rem * var(--chrome-scale));
+  margin: 0;
 }
 
 .side-panel .panel-header h2 {
-  font-size: var(--ui-font-lg);
-  letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.console-dock-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: calc(0.36rem * var(--chrome-scale));
+  min-height: 0;
+  overflow-y: auto;
+  padding: calc(0.5rem * var(--chrome-scale)) calc(0.48rem * var(--chrome-scale)) calc(0.7rem * var(--chrome-scale));
 }
 
 .settings-preview {
