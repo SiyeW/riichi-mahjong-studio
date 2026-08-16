@@ -487,7 +487,7 @@ function showCountTooltip(tile: string, source: TileSource) {
   width: 100%;
   max-width: none;
   color: rgba(238, 247, 244, 0.92);
-  font-size: calc(0.78rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-body);
 }
 
 button {
@@ -544,7 +544,7 @@ button {
   padding: calc(0.28rem * var(--floating-panel-scale)) calc(0.42rem * var(--floating-panel-scale));
   border-bottom: 1px solid var(--analysis-border);
   color: rgba(232, 243, 240, 0.88);
-  font-size: calc(0.8rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-control);
   font-weight: 600;
 }
 
@@ -572,7 +572,7 @@ button {
 
 .analysis-opponent-card :deep(.shanten-opp-label) {
   color: rgba(226, 239, 235, 0.82);
-  font-size: calc(0.86rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-body);
 }
 
 .analysis-opponent-estimates {
@@ -591,7 +591,7 @@ button {
   min-width: 0;
   padding-top: calc(0.24rem * var(--floating-panel-scale));
   color: rgba(244, 249, 247, 0.94);
-  font-size: calc(0.8rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-body);
   font-variant-numeric: tabular-nums;
 }
 
@@ -601,7 +601,7 @@ button {
 
 .analysis-opponent-estimates small {
   color: rgba(186, 211, 207, 0.68);
-  font-size: calc(0.65rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
 }
 
 .analysis-shanten-legend {
@@ -612,7 +612,7 @@ button {
   padding: calc(0.3rem * var(--floating-panel-scale)) calc(0.38rem * var(--floating-panel-scale));
   border-top: 1px solid var(--analysis-border);
   color: rgba(205, 224, 220, 0.7);
-  font-size: calc(0.64rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
 }
 
 .analysis-shanten-legend span,
@@ -645,7 +645,7 @@ button {
 
 .analysis-outcome-bar {
   display: flex;
-  height: calc(0.86rem * var(--floating-panel-scale));
+  height: calc(1.1rem * var(--ui-scale));
   overflow: hidden;
   background: rgba(255, 255, 255, 0.05);
 }
@@ -661,7 +661,7 @@ button {
 .analysis-outcome-bar small {
   overflow: hidden;
   color: rgba(255, 255, 255, 0.9);
-  font-size: calc(0.56rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
   font-variant-numeric: tabular-nums;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
   white-space: nowrap;
@@ -674,9 +674,10 @@ button {
 
 .analysis-outcome-legend {
   display: flex;
+  flex-wrap: wrap;
   gap: calc(0.4rem * var(--floating-panel-scale));
   color: rgba(207, 226, 221, 0.72);
-  font-size: calc(0.62rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
 }
 
 .analysis-player-table {
@@ -694,7 +695,7 @@ button {
     calc(4.2rem * var(--floating-panel-scale));
   gap: calc(0.32rem * var(--floating-panel-scale));
   align-items: center;
-  min-height: calc(2rem * var(--floating-panel-scale));
+  min-height: calc(2.2rem * var(--ui-scale));
   border-bottom: 1px solid rgba(140, 195, 188, 0.09);
 }
 
@@ -703,9 +704,9 @@ button {
 }
 
 .analysis-player-header {
-  min-height: calc(1.65rem * var(--floating-panel-scale));
+  min-height: calc(1.8rem * var(--ui-scale));
   color: rgba(190, 213, 209, 0.66);
-  font-size: calc(0.62rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
   text-align: center;
 }
 
@@ -716,7 +717,7 @@ button {
 .analysis-player-name {
   overflow: hidden;
   color: rgba(232, 243, 240, 0.86);
-  font-size: calc(0.7rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-body);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -724,7 +725,7 @@ button {
 
 .analysis-player-probability {
   position: relative;
-  height: calc(0.72rem * var(--floating-panel-scale));
+  height: calc(1rem * var(--ui-scale));
   background: rgba(255, 255, 255, 0.055);
 }
 
@@ -741,7 +742,7 @@ button {
   align-items: center;
   justify-content: center;
   color: rgba(240, 248, 246, 0.86);
-  font-size: calc(0.57rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
@@ -775,7 +776,7 @@ button {
 .analysis-count-tooltip strong {
   display: block;
   margin-bottom: calc(0.35rem * var(--floating-panel-scale));
-  font-size: calc(0.7rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-body);
 }
 
 .analysis-target-popover > div,
@@ -791,7 +792,7 @@ button {
 .analysis-count-tooltip small {
   overflow: hidden;
   color: rgba(196, 219, 214, 0.76);
-  font-size: calc(0.62rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -814,7 +815,7 @@ button {
 .analysis-target-popover em,
 .analysis-count-tooltip em {
   color: rgba(225, 238, 234, 0.8);
-  font-size: calc(0.6rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
   font-style: normal;
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -825,7 +826,7 @@ button {
   position: relative;
   display: flex;
   align-items: center;
-  height: calc(0.78rem * var(--floating-panel-scale));
+  height: calc(1rem * var(--ui-scale));
   background: rgba(255, 255, 255, 0.045);
 }
 
@@ -851,7 +852,7 @@ button {
   left: 50%;
   top: 50%;
   color: rgba(246, 250, 249, 0.9);
-  font-size: calc(0.58rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
   line-height: 1;
   transform: translate(-50%, -50%);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
@@ -880,7 +881,7 @@ button {
 .analysis-placement-cell small,
 .analysis-score-cell {
   color: rgba(229, 241, 237, 0.84);
-  font-size: calc(0.62rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -1006,7 +1007,7 @@ button {
   justify-content: center;
   gap: calc(0.55rem * var(--floating-panel-scale));
   color: rgba(205, 224, 220, 0.72);
-  font-size: calc(0.64rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
 }
 
 .analysis-count-legends {
@@ -1023,14 +1024,14 @@ button {
   display: block;
   margin-bottom: calc(0.25rem * var(--floating-panel-scale));
   color: rgba(194, 218, 213, 0.76);
-  font-size: calc(0.64rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
 }
 
 .analysis-hover-readout {
   min-height: calc(1rem * var(--floating-panel-scale));
   margin: calc(0.2rem * var(--floating-panel-scale)) 0 0;
   color: rgba(224, 238, 234, 0.82);
-  font-size: calc(0.68rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
   line-height: 1;
   text-align: center;
   visibility: hidden;

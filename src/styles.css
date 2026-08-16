@@ -90,6 +90,11 @@ body {
   --ui-font-lg: calc(1.125rem * var(--ui-scale));
   --ui-font-xl: calc(1.3rem * var(--ui-scale));
   --ui-font-display: calc(1.5rem * var(--ui-scale));
+  --ui-text-caption: var(--ui-font-xs);
+  --ui-text-body: var(--ui-font-sm);
+  --ui-text-control: var(--ui-font-md);
+  --ui-text-heading: var(--ui-font-lg);
+  --ui-text-title: var(--ui-font-xl);
   --side-panel-width: calc(19.625rem * var(--ui-scale));
   --topbar-min-h: calc(3.125rem * var(--ui-scale));
   --footer-min-h: calc(1.75rem * var(--ui-scale));
@@ -344,7 +349,7 @@ body {
 .dock-module-header h2 {
   margin: 0;
   color: rgba(230, 242, 238, 0.88);
-  font-size: calc(0.88rem * var(--dock-module-scale));
+  font-size: var(--ui-text-body);
   font-weight: 600;
   letter-spacing: 0.04em;
 }
@@ -371,7 +376,7 @@ body {
   color: rgba(218, 234, 230, 0.8);
   background: rgba(4, 55, 66, 0.78);
   font: inherit;
-  font-size: calc(0.7rem * var(--floating-panel-scale));
+  font-size: var(--ui-text-caption);
   cursor: pointer;
 }
 
@@ -2222,7 +2227,7 @@ body {
   margin-bottom: calc(0.28rem * var(--chrome-scale));
   padding-bottom: calc(0.22rem * var(--chrome-scale));
   border-bottom: 1px solid rgba(140, 195, 185, 0.08);
-  font-size: var(--ui-font-sm);
+  font-size: var(--ui-text-body);
   letter-spacing: 0.06em;
   color: rgba(235, 245, 242, 0.84);
   text-transform: uppercase;
@@ -2275,7 +2280,7 @@ body {
 }
 
 .quick-subsection-label {
-  font-size: var(--ui-font-sm);
+  font-size: var(--ui-text-body);
   color: var(--text-dim);
 }
 
@@ -2294,7 +2299,7 @@ body {
   border: 1px solid rgba(0, 0, 0, 0.28);
   background: rgba(8, 80, 94, 0.72);
   color: var(--text-main);
-  font-size: var(--ui-font-md);
+  font-size: var(--ui-text-control);
   padding-left: calc(0.3rem * var(--ui-scale));
   padding-right: calc(0.3rem * var(--ui-scale));
   cursor: pointer;
@@ -2325,13 +2330,13 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: calc(0.5rem * var(--chrome-scale));
-  font-size: var(--ui-font-sm);
+  font-size: var(--ui-text-body);
   color: var(--text-dim);
 }
 
 .quick-time-header strong {
   color: var(--text-main);
-  font-size: var(--ui-font-md);
+  font-size: var(--ui-text-control);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2405,7 +2410,7 @@ body {
 .meta-label {
   color: var(--text-dim);
   flex-shrink: 0;
-  font-size: var(--ui-font-xs);
+  font-size: var(--ui-text-caption);
 }
 
 .meta-value {
@@ -2413,7 +2418,7 @@ body {
   color: var(--text-main);
   min-width: 0;
   overflow-wrap: anywhere;
-  font-size: var(--ui-font-sm);
+  font-size: var(--ui-text-body);
 }
 
 .tree-actions {
@@ -2426,7 +2431,7 @@ body {
 
 .tree-actions button {
   flex-shrink: 0;
-  font-size: var(--ui-font-sm);
+  font-size: var(--ui-text-body);
   padding: calc(0.25rem * var(--ui-scale)) calc(0.5rem * var(--ui-scale));
 }
 
@@ -2627,13 +2632,13 @@ body {
   color: rgba(218, 237, 232, 0.86);
   caret-color: rgba(188, 228, 216, 0.92);
   font: inherit;
-  font-size: var(--ui-font-md);
+  font-size: var(--ui-text-control);
   line-height: 1.45;
   transition: border-color var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .node-comment:placeholder-shown {
-  font-size: var(--ui-font-sm);
+  font-size: var(--ui-text-body);
   line-height: 1.35;
 }
 
@@ -2806,7 +2811,7 @@ body {
   align-items: center;
   padding: calc(0.32rem * var(--chrome-scale)) calc(1rem * var(--chrome-scale));
   border-top: 1px solid rgba(0, 0, 0, 0.20);
-  font-size: var(--ui-font-sm);
+  font-size: var(--ui-text-body);
   color: var(--text-dim);
   background: #02191e;
 }
@@ -2990,7 +2995,7 @@ body {
 }
 
 .settings-modal-header h2 {
-  font-size: var(--ui-font-xl);
+  font-size: var(--ui-text-title);
 }
 
 .settings-modal-actions {
@@ -3023,7 +3028,7 @@ body {
 }
 
 .settings-subsection h3 {
-  font-size: var(--ui-font-lg);
+  font-size: var(--ui-text-heading);
   margin-bottom: calc(0.2rem * var(--chrome-scale));
 }
 
@@ -3036,13 +3041,13 @@ body {
 }
 
 .opponent-card h4 {
-  font-size: var(--ui-font-md);
+  font-size: var(--ui-text-control);
 }
 
 .settings-modal label {
   display: grid;
   gap: calc(0.16rem * var(--chrome-scale));
-  font-size: var(--ui-font-sm);
+  font-size: var(--ui-text-body);
 }
 
 .settings-modal input,
@@ -3053,7 +3058,7 @@ body {
   border: 1px solid rgba(0, 0, 0, 0.28);
   background: rgba(255, 255, 255, 0.95);
   color: #153237;
-  font-size: var(--ui-font-md);
+  font-size: var(--ui-text-control);
 }
 
 .settings-modal textarea {
@@ -3146,7 +3151,7 @@ body {
 }
 
 .settings-checkbox-label {
-  font-size: var(--ui-font-md);
+  font-size: var(--ui-text-control);
   line-height: 1.2;
 }
 
@@ -3165,7 +3170,7 @@ body {
 
 .settings-checkbox-description {
   color: var(--text-soft);
-  font-size: var(--ui-font-sm);
+  font-size: var(--ui-text-body);
   line-height: 1.35;
 }
 
