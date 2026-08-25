@@ -22,12 +22,41 @@ function createEngineIpcController({
     return settings
   }
 
+  function assignedOutputsFor(engines, profileId) {
+    return Object.entries(engines.outputAssignments || {})
+      .filter(([, assignedProfileId]) => assignedProfileId === profileId)
+      .map(([outputId]) => outputId)
+  }
+
+  function assertReloadSucceeded(assignedOutputs, response) {
+    if (assignedOutputs.includes('action-recommendation')) {
+      if (response?.reload?.errors?.decision) {
+        throw new Error(String(response.reload.errors.decision))
+      }
+      if (!response?.reload?.warmed?.teachingAnalysis) {
+        throw new Error(t('native.engine.actionWarmupFailed'))
+      }
+    }
+    if (assignedOutputs.some((outputId) => outputId !== 'action-recommendation')) {
+      if (response?.reload?.errors?.['opponent-analysis']) {
+        throw new Error(String(response.reload.errors['opponent-analysis']))
+      }
+      if (!response?.reload?.warmed?.opponentAnalysis) {
+        throw new Error(t('native.engine.analysisWarmupFailed'))
+      }
+    }
+  }
+
   async function restoreLoadedProfiles() {
     const settings = loadSettings(appOptions)
     for (const profileId of settings.engines.loadedProfileIds || []) {
       try {
-        await environmentGateway.reloadEngine(profileId)
+        const assignedOutputs = assignedOutputsFor(settings.engines, profileId)
+        if (!assignedOutputs.length) throw new Error(t('native.engine.noOutput'))
+        const response = await environmentGateway.reloadEngine(profileId)
+        assertReloadSucceeded(assignedOutputs, response)
       } catch (error) {
+        saveLoadedProfileState(profileId, false)
         console.error(`[engine] failed to restore ${profileId}:`, error)
       }
     }
@@ -85,6 +114,7 @@ function createEngineIpcController({
         ? profile.enginePath
         : path.resolve(projectRoot, profile.enginePath || '')
       if (!enginePath || !fs.existsSync(enginePath)) {
+        saveLoadedProfileState(profileId, false)
         throw new Error(t('native.engine.fileMissing'))
       }
       for (const weight of profile.weights || []) {
@@ -92,32 +122,24 @@ function createEngineIpcController({
           ? weight.path
           : path.resolve(projectRoot, weight.path || '')
         if (!weightPath || !fs.existsSync(weightPath)) {
+          saveLoadedProfileState(profileId, false)
           throw new Error(t('native.engine.weightMissing', { slot: weight.slotId || t('engine.unnamedSlot') }))
         }
       }
-      const assignedOutputs = Object.entries(engines.outputAssignments || {})
-        .filter(([, assignedProfileId]) => assignedProfileId === profileId)
-        .map(([outputId]) => outputId)
-      if (!assignedOutputs.length) throw new Error(t('native.engine.noOutput'))
+      const assignedOutputs = assignedOutputsFor(engines, profileId)
+      if (!assignedOutputs.length) {
+        saveLoadedProfileState(profileId, false)
+        throw new Error(t('native.engine.noOutput'))
+      }
       saveSettings({ ...previous, engines }, appOptions)
-      const response = await environmentGateway.reloadEngine(profileId)
-      if (assignedOutputs.includes('action-recommendation')) {
-        if (response?.reload?.errors?.decision) {
-          throw new Error(String(response.reload.errors.decision))
-        }
-        if (!response?.reload?.warmed?.teachingAnalysis) {
-          throw new Error(t('native.engine.actionWarmupFailed'))
-        }
+      try {
+        const response = await environmentGateway.reloadEngine(profileId)
+        assertReloadSucceeded(assignedOutputs, response)
+        return buildSettings(saveLoadedProfileState(profileId, true), appOptions)
+      } catch (error) {
+        saveLoadedProfileState(profileId, false)
+        throw error
       }
-      if (assignedOutputs.some((outputId) => outputId !== 'action-recommendation')) {
-        if (response?.reload?.errors?.['opponent-analysis']) {
-          throw new Error(String(response.reload.errors['opponent-analysis']))
-        }
-        if (!response?.reload?.warmed?.opponentAnalysis) {
-          throw new Error(t('native.engine.analysisWarmupFailed'))
-        }
-      }
-      return buildSettings(saveLoadedProfileState(profileId, true), appOptions)
     })
 
     ipcMain.handle('engine:unload', async (event, payload) => {

@@ -1332,6 +1332,7 @@
                 assigned: Boolean(settingsDraft.engines.outputAssignments[output.id]),
                 loaded: engineOutputAssignmentIsLoaded(output.id),
                 loading: engineOutputAssignmentIsLoading(output.id),
+                error: engineOutputAssignmentHasError(output.id),
                 selected: engineOutputFilter === output.id,
               }"
               :aria-pressed="engineOutputFilter === output.id"
@@ -1388,7 +1389,7 @@
             <span>{{ t('engine.executable') }}</span>
             <div>
               <input :value="activeEngineProfile.enginePath" :disabled="profileConfigurationLocked(activeEngineProfile)" readonly type="text" :placeholder="t('engine.selectExecutable')" />
-              <button :disabled="activeEngineProfile.builtIn || profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineFile">{{ t('common.select') }}</button>
+              <button :disabled="profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineFile">{{ t('common.select') }}</button>
             </div>
           </div>
           <div class="engine-weight-field">
@@ -1415,12 +1416,11 @@
             v-for="slot in activeEngineWeightSlots"
             :key="slot.id"
             class="engine-weight-field"
-            :class="{ inactive: !weightSlotIsActive(slot, activeEngineProfile) }"
           >
             <span>{{ localizedEngineText(slot.title, slot.id) }}</span>
             <div>
               <input :value="engineWeight(activeEngineProfile, slot.id)?.path || ''" :disabled="profileConfigurationLocked(activeEngineProfile)" readonly type="text" :placeholder="t('engine.selectWeight')" />
-              <button :disabled="activeEngineProfile.builtIn || !activeEngineProfile.enginePath || profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineWeight(slot.id)">{{ t('common.select') }}</button>
+              <button :disabled="!activeEngineProfile.enginePath || profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineWeight(slot.id)">{{ t('common.select') }}</button>
             </div>
           </div>
           <label v-if="activeEngineDevices.length">
@@ -1975,17 +1975,26 @@ const activeCatalogEngine = computed(() => (
 const activeEngineDescription = computed(() => (
   engineDescriptions[engineDescriptionKey(activeEngineProfile.value)] || null
 ))
-const activeSupportedOutputs = computed(() => {
-  const contracts = activeEngineDescription.value?.outputContracts || []
+function supportedOutputsForProfile(profile: TrainerEngineProfile) {
+  const contracts = engineDescriptions[engineDescriptionKey(profile)]?.outputContracts || []
   return SUPPORTED_ENGINE_OUTPUTS.value.filter((supported) => contracts.some((contract) => (
     contract.id === supported.id && contract.version === supported.version
   )))
+}
+const activeSupportedOutputs = computed(() => {
+  const profile = activeEngineProfile.value
+  return profile ? supportedOutputsForProfile(profile) : []
 })
-const activeEngineWeightSlots = computed(() => {
-  const supportedKeys = new Set(activeSupportedOutputs.value.map((output) => `${output.id}:${output.version}`))
-  return (activeEngineDescription.value?.weightSlots || []).filter((slot) => (
+function weightSlotsForProfile(profile: TrainerEngineProfile) {
+  const description = engineDescriptions[engineDescriptionKey(profile)]
+  const supportedKeys = new Set(supportedOutputsForProfile(profile).map((output) => `${output.id}:${output.version}`))
+  return (description?.weightSlots || []).filter((slot) => (
     slot.requiredForOutputs?.some((output) => supportedKeys.has(`${output.id}:${output.version}`)) === true
   ))
+}
+const activeEngineWeightSlots = computed(() => {
+  const profile = activeEngineProfile.value
+  return profile ? weightSlotsForProfile(profile) : []
 })
 const activeEngineDevices = computed(() => activeEngineDescription.value?.devices || [])
 const activeEngineOptionEntries = computed(() => {
@@ -2090,10 +2099,18 @@ function engineOutputAssignmentIsLoaded(outputId: SupportedEngineOutputId): bool
 
 function engineOutputAssignmentIsLoading(outputId: SupportedEngineOutputId): boolean {
   const profile = engineOutputAssignmentProfile(outputId)
-  if (!profile || engineOutputAssignmentIsLoaded(outputId)) return false
+  if (!profile || engineOutputAssignmentIsLoaded(outputId) || engineOutputAssignmentHasError(outputId)) return false
   if (loadingEngineProfileId.value === profile.id) return true
   const runtime = profileRuntimeState(profile, engineOutputRuntimeKind(outputId))
   return Boolean(runtime && !runtime.ready && !runtime.unloaded)
+}
+
+function engineOutputAssignmentHasError(outputId: SupportedEngineOutputId): boolean {
+  const profile = engineOutputAssignmentProfile(outputId)
+  if (!profile) return false
+  const kind = engineOutputRuntimeKind(outputId)
+  return Boolean(engineLoadErrors[profile.id])
+    || (profileMatchesRuntime(profile, kind) && Boolean(runtimeEngineError(kind)))
 }
 
 async function describeEngineProfile(
@@ -2240,6 +2257,7 @@ function profileIsLoaded(profile: TrainerEngineProfile): boolean {
 }
 
 function profileIsLoading(profile: TrainerEngineProfile): boolean {
+  if (engineLoadErrors[profile.id]) return false
   if (profile.id === loadingEngineProfileId.value) return true
   return profileRuntimeKinds(profile).some((kind) => {
     const runtime = profileRuntimeState(profile, kind)
@@ -2285,7 +2303,10 @@ function engineProfileSubtitle(profile: TrainerEngineProfile): string {
 const engineFooterMessage = computed(() => {
   const profile = activeEngineProfile.value
   const runtimeError = profile
-    ? profileRuntimeKinds(profile).map(runtimeEngineError).find(Boolean)
+    ? profileRuntimeKinds(profile)
+      .filter((kind) => profileMatchesRuntime(profile, kind))
+      .map(runtimeEngineError)
+      .find(Boolean)
     : ''
   return runtimeError || engineSaveMessage.value
 })
@@ -2295,7 +2316,7 @@ function shouldShowEngineActionButton(profile: TrainerEngineProfile): boolean {
     || (
       !profileIsLoading(profile)
       && Boolean(profile.enginePath && profileAssignedOutputs(profile).length)
-      && activeRequiredWeightsReady(profile)
+      && requiredWeightsReady(profile)
       && !profileIsLoaded(profile)
     )
 }
@@ -2392,7 +2413,7 @@ function setEngineProfileName(event: Event) {
 
 async function chooseEngineFile() {
   const profile = activeEngineProfile.value
-  if (!profile || profile.builtIn || profileConfigurationLocked(profile) || !window.trainerAPI?.chooseEngineFile) return
+  if (!profile || profileConfigurationLocked(profile) || !window.trainerAPI?.chooseEngineFile) return
   const selectedPath = await window.trainerAPI.chooseEngineFile()
   if (!selectedPath || profileConfigurationLocked(profile)) return
   profile.enginePath = selectedPath
@@ -2412,7 +2433,7 @@ async function chooseEngineFile() {
 
 async function chooseEngineWeight(slotId: string) {
   const profile = activeEngineProfile.value
-  if (!profile || profile.builtIn || profileConfigurationLocked(profile) || !window.trainerAPI?.chooseEngineWeight) return
+  if (!profile || profileConfigurationLocked(profile) || !window.trainerAPI?.chooseEngineWeight) return
   const selectedPath = await window.trainerAPI.chooseEngineWeight()
   if (!selectedPath || profileConfigurationLocked(profile)) return
   const slot = activeEngineWeightSlots.value.find((item) => item.id === slotId)
@@ -2468,8 +2489,8 @@ function weightSlotIsActive(slot: TrainerEngineDescription['weightSlots'][number
   return required.some((output) => output.version === 1 && assigned.has(output.id as SupportedEngineOutputId))
 }
 
-function activeRequiredWeightsReady(profile: TrainerEngineProfile): boolean {
-  return activeEngineWeightSlots.value
+function requiredWeightsReady(profile: TrainerEngineProfile): boolean {
+  return weightSlotsForProfile(profile)
     .filter((slot) => weightSlotIsActive(slot, profile))
     .every((slot) => {
       const weight = engineWeight(profile, slot.id)

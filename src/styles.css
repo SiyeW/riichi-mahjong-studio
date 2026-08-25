@@ -3637,24 +3637,9 @@ textarea {
   background: var(--engine-state-unloaded-bg);
 }
 
-.engine-output-filter.assigned::after {
-  position: absolute;
-  top: calc(0.22rem * var(--floating-panel-scale));
-  right: calc(0.22rem * var(--floating-panel-scale));
-  width: calc(0.28rem * var(--floating-panel-scale));
-  height: calc(0.28rem * var(--floating-panel-scale));
-  border-radius: 50%;
-  background: rgba(170, 186, 184, 0.58);
-  content: '';
-}
-
 .engine-output-filter.loaded {
   color: var(--text-main);
   background: var(--engine-state-loaded-bg);
-}
-
-.engine-output-filter.loaded::after {
-  background: rgb(119, 231, 185);
 }
 
 .engine-output-filter.loading {
@@ -3662,8 +3647,9 @@ textarea {
   background: var(--engine-state-loading-bg);
 }
 
-.engine-output-filter.loading::after {
-  background: rgb(237, 185, 91);
+.engine-output-filter.error {
+  color: var(--text-main);
+  background: var(--engine-state-error-bg);
 }
 
 .engine-output-filter.selected {
@@ -3691,6 +3677,10 @@ textarea {
 
 .engine-output-filter.loading.selected {
   background: var(--engine-state-loading-selected-bg);
+}
+
+.engine-output-filter.error.selected {
+  background: var(--engine-state-error-selected-bg);
 }
 
 .engine-output-filter:hover {
@@ -3808,6 +3798,7 @@ textarea {
 .engine-output-filter.assigned,
 .engine-output-filter.loaded,
 .engine-output-filter.loading,
+.engine-output-filter.error,
 .engine-output-filter.selected,
 .engine-profile-item.loaded,
 .engine-profile-item.loading,
@@ -3897,10 +3888,6 @@ textarea {
   gap: calc(0.14rem * var(--floating-panel-scale));
   color: var(--text-dim);
   font-size: var(--ui-text-caption);
-}
-
-.engine-weight-field.inactive {
-  opacity: 0.48;
 }
 
 .engine-weight-field > div {
