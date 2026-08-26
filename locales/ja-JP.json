@@ -98,6 +98,8 @@
   "analysis.score": "打点",
   "analysis.shantenLegend": "シャンテン数の凡例",
   "analysis.outcome": "局の結果予測",
+  "analysis.winDealIn": "放銃／和了",
+  "analysis.matchProjection": "終局",
   "analysis.player": "プレイヤー",
   "analysis.win": "和了",
   "analysis.dealIn": "放銃",

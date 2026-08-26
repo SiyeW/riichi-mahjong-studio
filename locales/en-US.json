@@ -98,6 +98,8 @@
   "analysis.score": "Hand value",
   "analysis.shantenLegend": "Shanten legend",
   "analysis.outcome": "Round outcome",
+  "analysis.winDealIn": "Deal-in / Win",
+  "analysis.matchProjection": "Final",
   "analysis.player": "Player",
   "analysis.win": "Win",
   "analysis.dealIn": "Deal in",

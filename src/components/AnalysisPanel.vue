@@ -96,53 +96,110 @@
           </div>
         </div>
 
-        <div class="analysis-player-table">
-          <div class="analysis-player-row analysis-player-header" aria-hidden="true">
-            <span>{{ t('analysis.player') }}</span><span>{{ t('analysis.win') }}</span><span>{{ t('analysis.dealIn') }}</span><span>{{ t('analysis.kyokuDelta') }}</span><span>{{ t('analysis.matchPlacement') }}</span><span>{{ t('analysis.matchScore') }}</span>
-          </div>
-          <div v-for="player in playerRows" :key="player.seat" class="analysis-player-row">
-            <strong class="analysis-player-name">{{ player.label }}</strong>
-            <div
-              class="analysis-player-probability is-win"
-              @mouseenter="hoveredWinnerSeat = player.seat"
-              @mouseleave="hoveredWinnerSeat = null"
-            >
-              <span :style="{ width: `${player.winProbability * 100}%` }" />
-              <small>{{ formatProbability(player.winProbability) }}</small>
-              <div v-if="hoveredWinnerSeat === player.seat" class="analysis-target-popover">
-                <strong>{{ t('analysis.winTarget', { player: player.label }) }}</strong>
-                <div v-for="target in player.targets" :key="target.seat">
-                  <small>{{ target.label }}</small>
-                  <i><span :style="{ width: `${target.probability * 100}%` }" /></i>
-                  <em>{{ formatProbability(target.probability) }}</em>
-                </div>
+        <div class="analysis-player-groups">
+          <section class="analysis-player-group analysis-offense-group">
+            <div class="analysis-player-group-heading">
+              <strong>{{ t('analysis.winDealIn') }}</strong>
+              <div class="analysis-offense-headings" aria-hidden="true">
+                <span>{{ t('analysis.dealIn') }} →</span>
+                <span>← {{ t('analysis.win') }}</span>
               </div>
             </div>
-            <div class="analysis-player-probability is-deal-in" :title="formatProbability(player.dealInProbability)">
-              <span :style="{ width: `${player.dealInProbability * 100}%` }" />
-              <small>{{ formatProbability(player.dealInProbability) }}</small>
+            <div
+              v-for="player in playerRows"
+              :key="player.seat"
+              class="analysis-comparison-row analysis-offense-row"
+            >
+              <span class="analysis-player-name">{{ player.label }}</span>
+              <div
+                :ref="(element) => setOffenseTrackElement(player.seat, element)"
+                class="analysis-offense-track"
+                :class="{ 'labels-measured': offenseLabelPositions.has(player.seat) }"
+              >
+                <div
+                  class="analysis-offense-segment is-win"
+                  tabindex="0"
+                  :style="{ width: `${player.winProbability * 100}%` }"
+                  :title="formatProbability(player.winProbability)"
+                  @mouseenter="hoveredWinnerSeat = player.seat"
+                  @mouseleave="hoveredWinnerSeat = null"
+                  @focus="hoveredWinnerSeat = player.seat"
+                  @blur="hoveredWinnerSeat = null"
+                >
+                  <div v-if="hoveredWinnerSeat === player.seat" class="analysis-target-popover">
+                    <strong>{{ t('analysis.winTarget', { player: player.label }) }}</strong>
+                    <div v-for="target in player.targets" :key="target.seat">
+                      <small>{{ target.label }}</small>
+                      <i><span :style="{ width: `${target.probability * 100}%` }" /></i>
+                      <em>{{ formatProbability(target.probability) }}</em>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  class="analysis-offense-segment is-deal-in"
+                  :style="{ width: `${player.dealInProbability * 100}%` }"
+                  :title="formatProbability(player.dealInProbability)"
+                >
+                </div>
+                <small
+                  class="analysis-offense-value is-win"
+                  :style="offenseLabelStyle(player.seat, 'win')"
+                >{{ formatProbability(player.winProbability) }}</small>
+                <small
+                  class="analysis-offense-value is-deal-in"
+                  :style="offenseLabelStyle(player.seat, 'dealIn')"
+                >{{ formatProbability(player.dealInProbability) }}</small>
+              </div>
             </div>
-            <div class="analysis-delta-cell" :title="formatPoints(player.kyokuDelta)">
-              <div class="analysis-zero-axis" />
-              <span
-                :class="player.kyokuDelta >= 0 ? 'positive' : 'negative'"
-                :style="deltaBarStyle(player.kyokuDelta)"
-              />
-              <small>{{ formatSignedCompactPoints(player.kyokuDelta) }}</small>
+          </section>
+
+          <section class="analysis-player-group analysis-delta-group">
+            <div class="analysis-player-group-heading">
+              <strong>{{ t('analysis.kyokuDelta') }}</strong>
             </div>
-            <div class="analysis-placement-cell" :title="player.placementTitle">
-              <div class="analysis-placement-bar">
+            <div
+              v-for="player in playerRows"
+              :key="player.seat"
+              class="analysis-comparison-row analysis-delta-row"
+            >
+              <span class="analysis-player-name">{{ player.label }}</span>
+              <div class="analysis-delta-cell" :title="formatPoints(player.kyokuDelta)">
+                <div class="analysis-zero-axis" />
                 <span
-                  v-for="segment in player.placement"
-                  :key="segment.value"
-                  :class="`rank-${segment.value}`"
-                  :style="{ width: `${segment.probability * 100}%` }"
+                  :class="player.kyokuDelta >= 0 ? 'positive' : 'negative'"
+                  :style="deltaBarStyle(player.kyokuDelta)"
                 />
               </div>
-              <small>{{ player.expectedPlacement }}</small>
+              <small class="analysis-delta-value">{{ formatSignedCompactPoints(player.kyokuDelta) }}</small>
             </div>
-            <span class="analysis-score-cell" :title="formatPoints(player.matchScore)">{{ formatPlainPoints(player.matchScore) }}</span>
-          </div>
+          </section>
+
+          <section class="analysis-player-group analysis-match-group">
+            <div class="analysis-player-group-heading analysis-match-heading">
+              <strong>{{ t('analysis.matchProjection') }}</strong>
+              <span>{{ t('analysis.matchPlacement') }}</span>
+              <span>{{ t('analysis.matchScore') }}</span>
+            </div>
+            <div
+              v-for="player in playerRows"
+              :key="player.seat"
+              class="analysis-comparison-row analysis-match-row"
+            >
+              <span class="analysis-player-name">{{ player.label }}</span>
+              <div class="analysis-placement-cell" :title="player.placementTitle">
+                <div class="analysis-placement-bar">
+                  <span
+                    v-for="segment in player.placement"
+                    :key="segment.value"
+                    :class="`rank-${segment.value}`"
+                    :style="{ width: `${segment.probability * 100}%` }"
+                  />
+                </div>
+                <small>{{ player.expectedPlacement }}</small>
+              </div>
+              <span class="analysis-score-cell" :title="formatPoints(player.matchScore)">{{ formatPlainPoints(player.matchScore) }}</span>
+            </div>
+          </section>
         </div>
       </section>
     </div>
@@ -257,7 +314,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
 import {
   parseNumericPrediction,
@@ -289,6 +346,10 @@ const activeView = ref<'situation' | 'tiles'>('situation')
 const tileMode = ref<'risk' | 'counts'>('risk')
 const hoverText = ref('')
 const hoveredWinnerSeat = ref<number | null>(null)
+const offenseTrackElements = new Map<number, HTMLElement>()
+const offenseLabelPositions = ref<Map<number, { win: number; dealIn: number }>>(new Map())
+let offenseResizeObserver: ResizeObserver | null = null
+let offenseMeasureFrame = 0
 const countTooltip = ref<{
   tile: string
   sourceLabel: string
@@ -476,7 +537,7 @@ const playerRows = computed(() => playerSeatOrder.value.map((seat) => {
   const delta = seatPrediction('kyoku-score-delta', seat)
   const placement = seatPrediction('match-placement', seat)
   const matchScore = seatPrediction('match-score', seat)
-  const normalizedPlacement = [1, 2, 3, 4].map((value) => ({
+  const normalizedPlacement = [4, 3, 2, 1].map((value) => ({
     value,
     probability: placement.distribution.find((entry) => entry.value === value)?.probability || 0,
   }))
@@ -505,6 +566,80 @@ function deltaBarStyle(value: number | null) {
     ? { right: '50%', width: `${normalized * 50}%` }
     : { left: '50%', width: `${normalized * 50}%` }
 }
+
+function measureOffenseLabels() {
+  const nextPositions = new Map<number, { win: number; dealIn: number }>()
+  for (const player of playerRows.value) {
+    const track = offenseTrackElements.get(player.seat)
+    if (!track) continue
+    const winLabel = track.querySelector<HTMLElement>('.analysis-offense-value.is-win')
+    const dealInLabel = track.querySelector<HTMLElement>('.analysis-offense-value.is-deal-in')
+    if (!winLabel || !dealInLabel) continue
+    const trackWidth = track.clientWidth
+    const winWidth = winLabel.scrollWidth
+    const dealInWidth = dealInLabel.scrollWidth
+    const edgeGap = Math.max(3, trackWidth * 0.008)
+    const minimumSeparation = Math.max(8, trackWidth * 0.016)
+    const dealInEnd = trackWidth * player.dealInProbability
+    const winStart = trackWidth * (1 - player.winProbability)
+    let dealInLeft = dealInEnd + edgeGap
+    let winLeft = winStart - edgeGap - winWidth
+
+    if (dealInLeft + dealInWidth + minimumSeparation > winLeft) {
+      dealInLeft = Math.max(0, dealInEnd - edgeGap - dealInWidth)
+      winLeft = Math.max(winStart + edgeGap, dealInLeft + dealInWidth + minimumSeparation)
+      const maximumWinLeft = Math.max(0, trackWidth - winWidth)
+      if (winLeft > maximumWinLeft) {
+        winLeft = maximumWinLeft
+        dealInLeft = Math.max(0, Math.min(dealInLeft, winLeft - minimumSeparation - dealInWidth))
+      }
+    }
+
+    nextPositions.set(player.seat, {
+      win: Math.max(0, Math.min(winLeft, trackWidth - winWidth)),
+      dealIn: Math.max(0, Math.min(dealInLeft, trackWidth - dealInWidth)),
+    })
+  }
+  offenseLabelPositions.value = nextPositions
+}
+
+function offenseLabelStyle(seat: number, kind: 'win' | 'dealIn') {
+  const position = offenseLabelPositions.value.get(seat)?.[kind] || 0
+  return { left: `${position}px` }
+}
+
+function scheduleOffenseLabelMeasurement() {
+  cancelAnimationFrame(offenseMeasureFrame)
+  offenseMeasureFrame = requestAnimationFrame(measureOffenseLabels)
+}
+
+function setOffenseTrackElement(seat: number, element: unknown) {
+  const previous = offenseTrackElements.get(seat)
+  if (previous && previous !== element) offenseResizeObserver?.unobserve(previous)
+  if (!(element instanceof HTMLElement)) {
+    offenseTrackElements.delete(seat)
+    return
+  }
+  offenseTrackElements.set(seat, element)
+  offenseResizeObserver?.observe(element)
+  scheduleOffenseLabelMeasurement()
+}
+
+onMounted(() => {
+  offenseResizeObserver = new ResizeObserver(scheduleOffenseLabelMeasurement)
+  for (const element of offenseTrackElements.values()) offenseResizeObserver.observe(element)
+  scheduleOffenseLabelMeasurement()
+})
+
+watch(playerRows, () => nextTick(scheduleOffenseLabelMeasurement), { deep: true })
+
+onBeforeUnmount(() => {
+  cancelAnimationFrame(offenseMeasureFrame)
+  offenseResizeObserver?.disconnect()
+  offenseResizeObserver = null
+  offenseTrackElements.clear()
+  offenseLabelPositions.value = new Map()
+})
 
 function showProbability(label: string, value: number) {
   hoverText.value = `${label} - ${formatProbability(value)}`
@@ -827,9 +962,8 @@ button {
 
 .analysis-outcome-strip {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content;
-  gap: calc(0.5rem * var(--floating-panel-scale));
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: calc(0.28rem * var(--floating-panel-scale));
   padding: calc(0.36rem * var(--floating-panel-scale)) calc(0.42rem * var(--floating-panel-scale));
   border-bottom: 1px solid var(--analysis-border);
 }
@@ -865,83 +999,148 @@ button {
 
 .analysis-outcome-legend {
   display: flex;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: calc(0.4rem * var(--floating-panel-scale));
   color: rgba(207, 226, 221, 0.72);
   font-size: var(--ui-text-caption);
 }
 
-.analysis-player-table {
-  padding: 0 calc(0.36rem * var(--floating-panel-scale)) calc(0.34rem * var(--floating-panel-scale));
-}
-
-.analysis-player-row {
+.analysis-player-groups {
   display: grid;
-  grid-template-columns:
-    calc(5.5rem * var(--floating-panel-scale))
-    minmax(calc(3.2rem * var(--floating-panel-scale)), 0.85fr)
-    minmax(calc(3.2rem * var(--floating-panel-scale)), 0.85fr)
-    minmax(calc(4.1rem * var(--floating-panel-scale)), 1fr)
-    minmax(calc(4.5rem * var(--floating-panel-scale)), 1.15fr)
-    calc(4.2rem * var(--floating-panel-scale));
-  gap: calc(0.32rem * var(--floating-panel-scale));
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'offense'
+    'delta'
+    'match';
+  gap: calc(0.48rem * var(--floating-panel-scale));
+  padding: calc(0.42rem * var(--floating-panel-scale));
+}
+
+.analysis-player-group {
+  min-width: 0;
+  border: 1px solid rgba(140, 195, 188, 0.12);
+  background: rgba(1, 42, 49, 0.28);
+}
+
+.analysis-offense-group { grid-area: offense; }
+.analysis-delta-group { grid-area: delta; }
+.analysis-match-group { grid-area: match; }
+
+.analysis-player-group-heading {
+  display: grid;
+  grid-template-columns: calc(6rem * var(--floating-panel-scale)) minmax(0, 1fr);
+  gap: calc(0.38rem * var(--floating-panel-scale));
   align-items: center;
-  min-height: calc(2.2rem * var(--ui-scale));
-  border-bottom: 1px solid rgba(140, 195, 188, 0.09);
-}
-
-.analysis-player-row:last-child {
-  border-bottom: 0;
-}
-
-.analysis-player-header {
   min-height: calc(1.8rem * var(--ui-scale));
-  color: rgba(190, 213, 209, 0.66);
-  font-size: var(--ui-text-caption);
-  text-align: center;
+  padding: 0 calc(0.36rem * var(--floating-panel-scale));
+  border-bottom: 1px solid rgba(140, 195, 188, 0.11);
 }
 
-.analysis-player-header span:first-child {
-  text-align: left;
+.analysis-player-group-heading strong {
+  color: rgba(217, 233, 229, 0.8);
+  font-size: var(--ui-text-body);
+  font-weight: 600;
+}
+
+.analysis-offense-headings {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  color: rgba(190, 213, 209, 0.68);
+  font-size: var(--ui-text-caption);
+}
+
+.analysis-offense-headings span:first-child { text-align: left; }
+.analysis-offense-headings span:last-child { text-align: right; }
+
+.analysis-comparison-row {
+  display: grid;
+  gap: calc(0.38rem * var(--floating-panel-scale));
+  align-items: center;
+  min-height: calc(1.48rem * var(--ui-scale));
+  padding: 0 calc(0.36rem * var(--floating-panel-scale));
+  border-bottom: 1px solid rgba(140, 195, 188, 0.08);
+}
+
+.analysis-comparison-row:last-child { border-bottom: 0; }
+
+.analysis-offense-row {
+  grid-template-columns: calc(6rem * var(--floating-panel-scale)) minmax(0, 1fr);
 }
 
 .analysis-player-name {
   overflow: hidden;
-  color: rgba(232, 243, 240, 0.86);
+  color: rgba(226, 239, 235, 0.82);
   font-size: var(--ui-text-body);
-  font-weight: 600;
+  font-weight: 400;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.analysis-player-probability {
+.analysis-offense-track {
   position: relative;
   height: calc(1rem * var(--ui-scale));
+  overflow: visible;
   background: rgba(255, 255, 255, 0.055);
 }
 
-.analysis-player-probability > span {
-  display: block;
-  height: 100%;
+.analysis-offense-track::before {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid rgba(203, 224, 219, 0.16);
+  content: '';
+  pointer-events: none;
+}
+
+.analysis-offense-segment {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  min-width: 0;
+  outline: none;
   transition: width var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.analysis-player-probability > small {
+.analysis-offense-segment.is-win {
+  right: 0;
+  background: #4aa957;
+}
+
+.analysis-offense-segment.is-deal-in {
+  left: 0;
+  background: #c9554d;
+}
+
+.analysis-offense-value {
   position: absolute;
-  inset: 0;
+  z-index: 4;
+  top: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
+  opacity: 0;
   color: rgba(240, 248, 246, 0.86);
   font-size: var(--ui-text-caption);
   font-variant-numeric: tabular-nums;
   line-height: 1;
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
   pointer-events: none;
+  white-space: nowrap;
 }
 
-.analysis-player-probability.is-win > span { background: #2f9bd6; }
-.analysis-player-probability.is-deal-in > span { background: #c95d43; }
+.analysis-offense-track.labels-measured .analysis-offense-value {
+  opacity: 1;
+  transition: left var(--ui-motion-duration) var(--ui-motion-easing);
+}
+
+.analysis-offense-segment:focus-visible {
+  box-shadow: inset 0 0 0 1px rgba(224, 241, 236, 0.58);
+}
 
 .analysis-target-popover,
 .analysis-count-tooltip {
@@ -1012,47 +1211,67 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-.analysis-delta-cell,
-.analysis-placement-cell {
+.analysis-delta-row {
+  grid-template-columns:
+    calc(6rem * var(--floating-panel-scale))
+    minmax(0, 1fr)
+    calc(4.2rem * var(--floating-panel-scale));
+}
+
+.analysis-delta-cell {
   position: relative;
-  display: flex;
-  align-items: center;
   height: calc(1rem * var(--ui-scale));
   background: rgba(255, 255, 255, 0.045);
 }
 
 .analysis-zero-axis {
   position: absolute;
+  z-index: 2;
   left: 50%;
   top: 0;
   bottom: 0;
-  border-left: 1px solid rgba(205, 225, 221, 0.22);
+  border-left: 1px solid rgba(222, 238, 234, 0.62);
+  pointer-events: none;
 }
 
 .analysis-delta-cell > span {
   position: absolute;
-  top: calc(0.17rem * var(--floating-panel-scale));
-  bottom: calc(0.17rem * var(--floating-panel-scale));
+  z-index: 1;
+  top: 0;
+  bottom: 0;
 }
 
 .analysis-delta-cell > span.positive { background: #55ae65; }
 .analysis-delta-cell > span.negative { background: #cf544e; }
 
-.analysis-delta-cell small {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  color: rgba(246, 250, 249, 0.9);
+.analysis-delta-value {
+  color: rgba(229, 241, 237, 0.84);
   font-size: var(--ui-text-caption);
-  line-height: 1;
-  transform: translate(-50%, -50%);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
   font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
+.analysis-match-heading,
+.analysis-match-row {
+  grid-template-columns:
+    calc(6rem * var(--floating-panel-scale))
+    minmax(0, 1fr)
+    calc(5rem * var(--floating-panel-scale));
+}
+
+.analysis-match-heading span {
+  color: rgba(190, 213, 209, 0.68);
+  font-size: var(--ui-text-caption);
+}
+
+.analysis-match-heading span:last-child { text-align: right; }
+
 .analysis-placement-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
   gap: calc(0.24rem * var(--floating-panel-scale));
-  background: none;
+  height: calc(1rem * var(--ui-scale));
 }
 
 .analysis-placement-bar {
@@ -1064,10 +1283,10 @@ button {
 }
 
 .analysis-placement-bar span { height: 100%; }
-.rank-1 { background: #238ec8; }
-.rank-2 { background: #4aa7d5; }
-.rank-3 { background: #78b9d5; }
-.rank-4 { background: #9baeb2; }
+.rank-1 { background: #d7e6e2; }
+.rank-2 { background: #8cc8dc; }
+.rank-3 { background: #50abd3; }
+.rank-4 { background: #248fc8; }
 
 .analysis-placement-cell small,
 .analysis-score-cell {
