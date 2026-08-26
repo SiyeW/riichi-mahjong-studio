@@ -32,7 +32,15 @@
               @slice-enter="(label, probability) => showProbability(`${opponent.label} - ${label}`, probability)"
               @slice-leave="clearHover"
             />
-            <div class="analysis-opponent-predictions">
+          </div>
+        </div>
+        <div class="analysis-shanten-legend" :aria-label="t('analysis.shantenLegend')">
+          <span v-for="(label, index) in shantenLabels" :key="label">
+            <i :style="{ backgroundColor: shantenColors[index] }" />{{ label }}
+          </span>
+        </div>
+        <div class="analysis-opponent-prediction-grid">
+          <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-predictions">
               <div class="analysis-opponent-prediction" :title="opponent.doraTitle">
                 <div class="analysis-prediction-heading">
                   <small>{{ t('analysis.dora') }}</small>
@@ -67,39 +75,35 @@
                   </span>
                 </div>
               </div>
-            </div>
           </div>
-        </div>
-        <div class="analysis-shanten-legend" :aria-label="t('analysis.shantenLegend')">
-          <span v-for="(label, index) in shantenLabels" :key="label">
-            <i :style="{ backgroundColor: shantenColors[index] }" />{{ label }}
-          </span>
         </div>
       </section>
 
       <section class="analysis-player-section">
         <div class="analysis-section-heading">{{ t('analysis.players') }}</div>
-        <div class="analysis-outcome-strip" :aria-label="t('analysis.outcome')">
-          <div class="analysis-outcome-bar">
-            <span
-              v-for="segment in outcomeSegments"
-              :key="segment.key"
-              :class="`is-${segment.key}`"
-              :style="{ width: `${segment.displayProbability * 100}%` }"
-              :title="`${segment.label} ${formatProbability(segment.probability)}`"
-            ><small v-if="segment.displayProbability >= 0.08">{{ formatProbability(segment.probability) }}</small></span>
-          </div>
-          <div class="analysis-outcome-legend">
-            <span v-for="segment in outcomeSegments" :key="segment.key">
-              <i :class="`is-${segment.key}`" />{{ segment.label }}
-            </span>
-          </div>
-        </div>
-
         <div class="analysis-player-groups">
           <section class="analysis-player-group analysis-offense-group">
             <div class="analysis-player-group-heading">
               <strong>{{ t('analysis.winDealIn') }}</strong>
+            </div>
+            <div class="analysis-outcome-strip" :aria-label="t('analysis.outcome')">
+              <div class="analysis-outcome-bar">
+                <span
+                  v-for="segment in outcomeSegments"
+                  :key="segment.key"
+                  :class="`is-${segment.key}`"
+                  :style="{ width: `${segment.displayProbability * 100}%` }"
+                  :title="`${segment.label} ${formatProbability(segment.probability)}`"
+                ><small v-if="segment.displayProbability >= 0.08">{{ formatProbability(segment.probability) }}</small></span>
+              </div>
+              <div class="analysis-outcome-legend">
+                <span v-for="segment in outcomeSegments" :key="segment.key">
+                  <i :class="`is-${segment.key}`" />{{ segment.label }}
+                </span>
+              </div>
+            </div>
+            <div class="analysis-offense-axis-heading" aria-hidden="true">
+              <span />
               <div class="analysis-offense-headings" aria-hidden="true">
                 <span>{{ t('analysis.dealInProbability') }} →</span>
                 <span>← {{ t('analysis.winProbability') }}</span>
@@ -511,11 +515,14 @@ function targetRows(player: AnalysisRecord, winnerSeat: number) {
 
 const kyokuPlayers = computed(() => outputPlayers('kyoku-outcome'))
 const outcomeSegments = computed(() => {
-  const draw = probability(outputData('kyoku-outcome').drawProbability)
+  const outcome = outputData('kyoku-outcome')
   const self = kyokuPlayers.value.find((player) => Number(player.seat) === props.controlledSeat) || {}
-  const selfWin = probability(self.winProbability)
-  const selfDealIn = probability(self.dealInProbability)
-  const horizontal = Math.max(0, 1 - draw - selfWin - selfDealIn)
+  const hasCompleteOutcome = [outcome.drawProbability, self.winProbability, self.dealInProbability]
+    .every((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
+  const draw = hasCompleteOutcome ? probability(outcome.drawProbability) : 0
+  const selfWin = hasCompleteOutcome ? probability(self.winProbability) : 0
+  const selfDealIn = hasCompleteOutcome ? probability(self.dealInProbability) : 0
+  const horizontal = hasCompleteOutcome ? Math.max(0, 1 - draw - selfWin - selfDealIn) : 0
   const segments = [
     { key: 'draw', label: t('analysis.draw'), probability: draw },
     { key: 'self-win', label: t('analysis.selfWin'), probability: selfWin },
@@ -818,13 +825,20 @@ button {
   font-size: var(--ui-text-body);
 }
 
+.analysis-opponent-prediction-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .analysis-opponent-predictions {
   display: grid;
   gap: calc(0.28rem * var(--floating-panel-scale));
-  width: 100%;
-  margin-top: calc(0.24rem * var(--floating-panel-scale));
-  padding-top: calc(0.24rem * var(--floating-panel-scale));
-  border-top: 1px solid rgba(140, 195, 188, 0.11);
+  min-width: 0;
+  padding: calc(0.34rem * var(--floating-panel-scale)) calc(0.36rem * var(--floating-panel-scale));
+}
+
+.analysis-opponent-predictions + .analysis-opponent-predictions {
+  border-left: 1px solid var(--analysis-border);
 }
 
 .analysis-opponent-prediction {
@@ -841,9 +855,9 @@ button {
 }
 
 .analysis-prediction-heading strong {
-  color: rgba(244, 249, 247, 0.94);
+  color: rgba(229, 240, 237, 0.88);
   font-size: var(--ui-text-body);
-  font-weight: 600;
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
 }
 
@@ -938,6 +952,7 @@ button {
   gap: calc(0.18rem * var(--floating-panel-scale)) calc(0.48rem * var(--floating-panel-scale));
   padding: calc(0.3rem * var(--floating-panel-scale)) calc(0.38rem * var(--floating-panel-scale));
   border-top: 1px solid var(--analysis-border);
+  border-bottom: 1px solid var(--analysis-border);
   color: rgba(205, 224, 220, 0.7);
   font-size: var(--ui-text-caption);
 }
@@ -963,10 +978,11 @@ button {
 
 .analysis-outcome-strip {
   display: grid;
+  grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr);
   gap: calc(0.28rem * var(--floating-panel-scale));
-  padding: calc(0.36rem * var(--floating-panel-scale)) calc(0.42rem * var(--floating-panel-scale));
-  border-bottom: 1px solid var(--analysis-border);
+  padding: calc(0.36rem * var(--floating-panel-scale)) 0;
+  border-bottom: 1px solid rgba(140, 195, 188, 0.11);
 }
 
 .analysis-outcome-bar {
@@ -1055,6 +1071,15 @@ button {
   color: rgba(217, 233, 229, 0.8);
   font-size: var(--ui-text-body);
   font-weight: 600;
+}
+
+.analysis-offense-axis-heading {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-height: calc(1.5rem * var(--ui-scale));
+  border-bottom: 1px solid rgba(140, 195, 188, 0.11);
 }
 
 .analysis-offense-headings {
