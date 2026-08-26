@@ -1,25 +1,6 @@
 <template>
   <div class="unified-analysis" :class="{ 'reduce-motion': reduceMotion }">
-    <div class="analysis-view-tabs" role="tablist" :aria-label="t('analysis.view')">
-      <button
-        type="button"
-        role="tab"
-        :aria-selected="activeView === 'situation'"
-        :class="{ selected: activeView === 'situation' }"
-        @click="activeView = 'situation'"
-      >{{ t('analysis.situation') }}</button>
-      <button
-        type="button"
-        role="tab"
-        :aria-selected="activeView === 'tiles'"
-        :class="{ selected: activeView === 'tiles' }"
-        @click="activeView = 'tiles'"
-      >{{ t('analysis.tiles') }}</button>
-    </div>
-
-    <div v-if="activeView === 'situation'" class="analysis-situation-view">
-      <section class="analysis-opponent-section">
-        <div class="analysis-section-heading">{{ t('analysis.opponents') }}</div>
+    <section v-if="section === 'opponents'" class="analysis-opponent-section">
         <div class="analysis-opponent-grid">
           <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-card">
             <ShantenPieChart
@@ -77,10 +58,9 @@
               </div>
           </div>
         </div>
-      </section>
+    </section>
 
-      <section class="analysis-player-section">
-        <div class="analysis-section-heading">{{ t('analysis.players') }}</div>
+    <section v-else-if="section === 'game'" class="analysis-player-section">
         <div class="analysis-player-groups">
           <section class="analysis-player-group analysis-offense-group">
             <div class="analysis-player-group-heading">
@@ -206,16 +186,10 @@
             </div>
           </section>
         </div>
-      </section>
-    </div>
+    </section>
 
-    <div v-else class="analysis-tiles-view">
-      <div class="analysis-tile-mode-tabs" role="tablist" :aria-label="t('analysis.tileContent')">
-        <button :class="{ selected: tileMode === 'risk' }" @click="tileMode = 'risk'">{{ t('analysis.risk') }}</button>
-        <button :class="{ selected: tileMode === 'counts' }" @click="tileMode = 'counts'">{{ t('analysis.countDistribution') }}</button>
-      </div>
-
-      <div v-if="tileMode === 'risk'" class="analysis-risk-grid">
+    <div v-else-if="section === 'risk'" class="analysis-tiles-view">
+      <div class="analysis-risk-grid">
         <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-risk-row">
           <div class="analysis-tile-sequence">
             <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-risk-tile">
@@ -256,7 +230,10 @@
         </div>
       </div>
 
-      <div v-else class="analysis-count-grid">
+    </div>
+
+    <div v-else class="analysis-tiles-view">
+      <div class="analysis-count-grid">
         <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-count-row">
           <div class="analysis-tile-sequence">
             <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-count-tile">
@@ -335,6 +312,7 @@ type AnalysisRecord = Record<string, unknown>
 type TileSource = { key: string; label: string; seat: number | null }
 
 const props = defineProps<{
+  section: 'opponents' | 'game' | 'risk' | 'counts'
   analysis: AnalysisRecord | null | undefined
   shantenOpponents: Array<{ key: string; seat: number; label: string; probabilities: number[] }>
   shantenColors: string[]
@@ -347,8 +325,6 @@ const props = defineProps<{
   tileFaceLabel: (tile: string) => string
 }>()
 
-const activeView = ref<'situation' | 'tiles'>('situation')
-const tileMode = ref<'risk' | 'counts'>('risk')
 const hoverText = ref('')
 const hoveredWinnerSeat = ref<number | null>(null)
 const offenseTrackElements = new Map<number, HTMLElement>()
@@ -634,12 +610,15 @@ function setOffenseTrackElement(seat: number, element: unknown) {
 }
 
 onMounted(() => {
+  if (props.section !== 'game') return
   offenseResizeObserver = new ResizeObserver(scheduleOffenseLabelMeasurement)
   for (const element of offenseTrackElements.values()) offenseResizeObserver.observe(element)
   scheduleOffenseLabelMeasurement()
 })
 
-watch(playerRows, () => nextTick(scheduleOffenseLabelMeasurement), { deep: true })
+watch(playerRows, () => {
+  if (props.section === 'game') void nextTick(scheduleOffenseLabelMeasurement)
+}, { deep: true })
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(offenseMeasureFrame)
@@ -744,58 +723,10 @@ button {
   font: inherit;
 }
 
-.analysis-view-tabs,
-.analysis-tile-mode-tabs {
-  display: flex;
-  gap: calc(0.28rem * var(--floating-panel-scale));
-  padding: calc(0.45rem * var(--floating-panel-scale)) 0;
-  border-bottom: 1px solid var(--analysis-border);
-}
-
-.analysis-view-tabs button,
-.analysis-tile-mode-tabs button {
-  min-width: calc(4rem * var(--floating-panel-scale));
-  padding: calc(0.26rem * var(--floating-panel-scale)) calc(0.72rem * var(--floating-panel-scale));
-  border: 1px solid rgba(140, 195, 188, 0.2);
-  border-radius: calc(3px * var(--floating-panel-scale));
-  color: rgba(213, 232, 228, 0.78);
-  background: rgba(3, 48, 57, 0.68);
-  cursor: pointer;
-}
-
-.analysis-view-tabs button:hover,
-.analysis-tile-mode-tabs button:hover {
-  color: rgba(244, 250, 248, 0.96);
-  background: rgba(9, 74, 84, 0.78);
-}
-
-.analysis-view-tabs button.selected,
-.analysis-tile-mode-tabs button.selected {
-  border-color: rgba(61, 157, 99, 0.58);
-  color: #f5fbf8;
-  background: rgba(23, 122, 70, 0.88);
-}
-
-.analysis-situation-view {
-  display: grid;
-  grid-template-rows: auto auto;
-  gap: calc(0.48rem * var(--floating-panel-scale));
-  padding-top: calc(0.48rem * var(--floating-panel-scale));
-}
-
 .analysis-opponent-section,
 .analysis-player-section {
   min-width: 0;
-  border: 1px solid var(--analysis-border);
-  background: var(--analysis-surface);
-}
-
-.analysis-section-heading {
-  padding: calc(0.28rem * var(--floating-panel-scale)) calc(0.42rem * var(--floating-panel-scale));
-  border-bottom: 1px solid var(--analysis-border);
-  color: rgba(232, 243, 240, 0.88);
-  font-size: var(--ui-text-control);
-  font-weight: 600;
+  background: transparent;
 }
 
 .analysis-opponent-grid {
@@ -1332,10 +1263,6 @@ button {
 .analysis-tiles-view {
   position: relative;
   min-width: 0;
-}
-
-.analysis-tile-mode-tabs {
-  padding-top: calc(0.36rem * var(--floating-panel-scale));
 }
 
 .analysis-risk-grid,

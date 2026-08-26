@@ -9,6 +9,7 @@ const {
   discoverSoundPacks,
   publicSoundPackCatalog,
 } = require('./sound-pack-registry')
+const { createDefaultDockLayout, normalizeWorkspaceDockLayout } = require('./workspace-layout')
 
 const DEFAULT_WINDOW_SETTINGS = Object.freeze({ width: 1440, height: 920 })
 const DEFAULT_TRAINING_SETTINGS = Object.freeze({
@@ -19,8 +20,14 @@ const DEFAULT_TRAINING_SETTINGS = Object.freeze({
 })
 const DEFAULT_MODE_SETTINGS = Object.freeze({ autoAdvanceDelayMs: 250 })
 const DEFAULT_WORKSPACE_LAYOUT = Object.freeze({
-  order: Object.freeze(['table', 'analysis', 'console']),
+  layout: createDefaultDockLayout(),
   analysisVisible: false,
+  analysisPanels: Object.freeze({
+    opponents: true,
+    game: true,
+    risk: false,
+    counts: false,
+  }),
   consoleVisible: true,
 })
 const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
@@ -61,15 +68,18 @@ function normalizeTrainingSettings(training = {}) {
 }
 
 function normalizeWorkspaceLayout(workspaceLayout = {}) {
-  const validItems = ['analysis', 'table', 'console']
-  const requestedOrder = Array.isArray(workspaceLayout.order) ? workspaceLayout.order : []
-  const order = [...new Set(requestedOrder.filter((item) => validItems.includes(item)))]
-  for (const item of DEFAULT_WORKSPACE_LAYOUT.order) {
-    if (!order.includes(item)) order.push(item)
-  }
+  const sourcePanels = workspaceLayout.analysisPanels && typeof workspaceLayout.analysisPanels === 'object'
+    ? workspaceLayout.analysisPanels
+    : {}
   return {
-    order,
+    layout: normalizeWorkspaceDockLayout(workspaceLayout.layout, workspaceLayout.order),
     analysisVisible: workspaceLayout.analysisVisible === true,
+    analysisPanels: {
+      opponents: sourcePanels.opponents !== false,
+      game: sourcePanels.game !== false,
+      risk: sourcePanels.risk === true,
+      counts: sourcePanels.counts === true,
+    },
     consoleVisible: workspaceLayout.consoleVisible !== false,
   }
 }

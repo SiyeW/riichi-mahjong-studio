@@ -4,6 +4,22 @@ const os = require('node:os')
 const path = require('node:path')
 
 const { buildPortableDefaultSettings, loadSettings, saveSettings } = require('./settings')
+const { createDefaultDockLayout } = require('./workspace-layout')
+
+function expectedWorkspaceLayout({ legacyOrder, ...overrides } = {}) {
+  return {
+    layout: createDefaultDockLayout(legacyOrder),
+    analysisVisible: false,
+    analysisPanels: {
+      opponents: true,
+      game: true,
+      risk: false,
+      counts: false,
+    },
+    consoleVisible: true,
+    ...overrides,
+  }
+}
 
 function testPortableDefaultsHaveNoEngines() {
   const settings = buildPortableDefaultSettings()
@@ -14,11 +30,7 @@ function testPortableDefaultsHaveNoEngines() {
   assert.equal(settings.audio.soundPackId, '')
   assert.equal(settings.display.tablePosition, 'center')
   assert.equal(settings.display.language, 'system')
-  assert.deepEqual(settings.display.workspaceLayout, {
-    order: ['table', 'analysis', 'console'],
-    analysisVisible: false,
-    consoleVisible: true,
-  })
+  assert.deepEqual(settings.display.workspaceLayout, expectedWorkspaceLayout())
   assert.equal('voice' in settings.audio, false)
 }
 
@@ -41,8 +53,14 @@ function testUserProfilePersists() {
     settings.display.tablePosition = 'right'
     settings.display.language = 'ja-JP'
     settings.display.workspaceLayout = {
-      order: ['console', 'table', 'analysis'],
+      layout: createDefaultDockLayout(['console', 'table', 'analysis']),
       analysisVisible: true,
+      analysisPanels: {
+        opponents: true,
+        game: false,
+        risk: true,
+        counts: false,
+      },
       consoleVisible: false,
     }
     saveSettings(settings, options)
@@ -53,8 +71,14 @@ function testUserProfilePersists() {
     assert.equal(reloaded.display.tablePosition, 'right')
     assert.equal(reloaded.display.language, 'ja-JP')
     assert.deepEqual(reloaded.display.workspaceLayout, {
-      order: ['console', 'table', 'analysis'],
+      layout: createDefaultDockLayout(['console', 'table', 'analysis']),
       analysisVisible: true,
+      analysisPanels: {
+        opponents: true,
+        game: false,
+        risk: true,
+        counts: false,
+      },
       consoleVisible: false,
     })
   } finally {
@@ -101,11 +125,10 @@ function testInvalidWorkspaceLayoutUsesSafeDefaults() {
         },
       },
     }))
-    assert.deepEqual(loadSettings(options).display.workspaceLayout, {
-      order: ['console', 'table', 'analysis'],
-      analysisVisible: false,
-      consoleVisible: true,
-    })
+    assert.deepEqual(
+      loadSettings(options).display.workspaceLayout,
+      expectedWorkspaceLayout({ legacyOrder: ['console', 'table', 'analysis'] }),
+    )
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })
   }

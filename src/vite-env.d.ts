@@ -66,8 +66,14 @@ interface TrainerSettings {
     showTsumogiriInPlay: boolean
     tablePosition: 'left' | 'center' | 'right'
     workspaceLayout: {
-      order: Array<'analysis' | 'table' | 'console'>
+      layout: WorkspaceDockNode
       analysisVisible: boolean
+      analysisPanels: {
+        opponents: boolean
+        game: boolean
+        risk: boolean
+        counts: boolean
+      }
       consoleVisible: boolean
     }
   }
@@ -751,6 +757,23 @@ interface Window {
     onBeforeClose: (callback: () => void | Promise<void>) => () => void
   }
 }
+
+type WorkspaceDockItemId =
+  | 'table'
+  | 'console'
+  | 'analysis-opponents'
+  | 'analysis-game'
+  | 'analysis-risk'
+  | 'analysis-counts'
+
+type WorkspaceDockNode =
+  | { type: 'item'; id: WorkspaceDockItemId }
+  | {
+      type: 'split'
+      direction: 'horizontal' | 'vertical'
+      children: WorkspaceDockNode[]
+      weights: number[]
+    }
 
 declare module '*.json' {
   const value: Record<string, string>

@@ -91,12 +91,26 @@
             <button @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
           </span>
           <button @click="openWallView" :disabled="!gameView.table">{{ t('toolbar.wall') }}</button>
-          <button
-            :class="{ active: showAnalysisDock }"
-            :aria-pressed="showAnalysisDock"
-            @click="toggleAnalysisDock"
-            :disabled="!gameView.table"
-          >{{ t('toolbar.analysis') }}</button>
+          <span class="toolbar-panel-menu">
+            <button
+              :class="{ active: showAnalysisDock }"
+              :aria-pressed="showAnalysisDock"
+              aria-haspopup="menu"
+              @click="toggleAnalysisDock"
+              :disabled="!gameView.table"
+            >{{ t('toolbar.analysis') }}</button>
+            <span class="toolbar-panel-menu-items" role="menu" :aria-label="t('toolbar.analysis')">
+              <button
+                v-for="definition in ANALYSIS_PANEL_DEFINITIONS"
+                :key="definition.id"
+                role="menuitemcheckbox"
+                :aria-checked="analysisPanelIsSelected(definition.id)"
+                :class="{ active: analysisPanelIsSelected(definition.id) }"
+                :disabled="!gameView.table"
+                @click.stop="toggleAnalysisPanel(definition.key)"
+              >{{ t(definition.labelKey) }}</button>
+            </span>
+          </span>
           <button
             :class="{ active: showConsoleDock }"
             :aria-pressed="showConsoleDock"
@@ -118,8 +132,10 @@
       <button @click="refreshBootstrapState">{{ t('common.retry') }}</button>
     </div>
 
-    <main ref="workspaceRoot" class="workspace">
-      <section class="panel table-panel" :style="{ order: workspaceItemOrder('table') }">
+    <main ref="workspaceRoot" class="workspace" :class="{ 'is-dock-dragging': draggingDockPanel }">
+      <DockLayoutNode :node="visibleWorkspaceLayout">
+        <template #default="{ id: workspaceItemId }">
+      <section v-if="workspaceItemId === 'table'" class="panel table-panel">
         <div
           ref="tableStageEl"
           class="table-stage"
@@ -586,61 +602,36 @@
         </div>
       </section>
 
-      <section
-        v-if="showAnalysisDock"
-        class="panel dock-module analysis-dock"
-        :class="{
-          'reset-without-motion': suppressOpponentAnalysisTransitions,
-          'is-dragging': draggingDockPanel === 'analysis',
-        }"
-        :style="[
-          { '--floating-panel-scale': uiScale, order: workspaceItemOrder('analysis') },
-          colorSchemeCssVariables,
-        ]"
-        :aria-label="t('analysis.title')"
-      >
-        <div class="dock-module-header analysis-dock-header">
-          <div
-            class="dock-module-drag-handle"
-            :title="t('workspace.dragPanel', { panel: t('analysis.title') })"
-            @pointerdown="startDockPanelPointerDrag('analysis', $event)"
-          >
-            <h2>{{ t('analysis.title') }}</h2>
-          </div>
-          <button
-            v-if="hasOpponentGroundTruth"
-            class="analysis-dock-mode"
-            @click="shantenViewMode = shantenViewMode === 'predictions' ? 'ground_truth' : 'predictions'"
-          >
-            {{ shantenViewMode === 'predictions' ? t('analysis.predictions') : t('analysis.groundTruth') }}
-          </button>
-        </div>
-        <div class="analysis-dock-body">
-          <p v-if="opponentAnalysisIsLoading" class="shanten-panel-state">{{ t('common.loading') }}</p>
-          <template v-else>
-            <p v-if="opponentAnalysisLoadError" class="shanten-panel-state is-error">{{ opponentAnalysisLoadError }}</p>
-            <AnalysisPanel
-              v-else
-              :analysis="gameView.opponentAnalysis"
-              :shanten-opponents="shantenOpponents"
-              :shanten-colors="shantenColors"
-              :shanten-labels="SHANTEN_LABELS"
-              :shanten-short-labels="SHANTEN_SHORT_LABELS"
-              :reduce-motion="reduceMotionEnabled || suppressOpponentAnalysisTransitions"
-              :controlled-seat="status.controlledSeat"
-              :dealer="gameView.table?.dealer ?? 0"
-              :tile-image-src="tileImageSrc"
-              :tile-face-label="tileFaceLabel"
-            />
-          </template>
-        </div>
-      </section>
+      <AnalysisDockModule
+        v-else-if="isAnalysisPanelId(workspaceItemId)"
+        :section="analysisPanelSection(workspaceItemId)"
+        :title="analysisPanelTitle(workspaceItemId)"
+        :dragging="draggingDockPanel === workspaceItemId"
+        :suppress-transitions="suppressOpponentAnalysisTransitions"
+        :ui-scale="uiScale"
+        :color-scheme-css-variables="colorSchemeCssVariables"
+        :loading="opponentAnalysisIsLoading"
+        :load-error="opponentAnalysisLoadError"
+        :analysis="gameView.opponentAnalysis"
+        :shanten-opponents="shantenOpponents"
+        :shanten-colors="shantenColors"
+        :shanten-labels="SHANTEN_LABELS"
+        :shanten-short-labels="SHANTEN_SHORT_LABELS"
+        :reduce-motion="reduceMotionEnabled || suppressOpponentAnalysisTransitions"
+        :controlled-seat="status.controlledSeat"
+        :dealer="gameView.table?.dealer ?? 0"
+        :tile-image-src="tileImageSrc"
+        :tile-face-label="tileFaceLabel"
+        :has-opponent-ground-truth="hasOpponentGroundTruth"
+        :shanten-view-mode="shantenViewMode"
+        @drag-start="startDockPanelPointerDrag(workspaceItemId, $event)"
+        @toggle-mode="shantenViewMode = shantenViewMode === 'predictions' ? 'ground_truth' : 'predictions'"
+      />
 
       <aside
-        v-if="showConsoleDock"
+        v-else-if="workspaceItemId === 'console'"
         class="panel dock-module side-panel console-dock"
         :class="{ 'is-dragging': draggingDockPanel === 'console' }"
-        :style="{ order: workspaceItemOrder('console') }"
       >
         <div class="dock-module-header panel-header">
           <div
@@ -983,19 +974,21 @@
         </div>
         </div>
       </aside>
+        </template>
+      </DockLayoutNode>
 
       <div
         v-if="draggingDockPanel"
         class="dock-drop-overlay"
-        :style="{ gridTemplateColumns: `repeat(${dockDropZones.length}, minmax(0, 1fr))` }"
+        aria-live="polite"
       >
         <div
-          v-for="zone in dockDropZones"
-          :key="zone.position"
-          class="dock-drop-zone"
-          :class="{ active: activeDockDropPosition === zone.position }"
+          v-if="activeDockDropTarget"
+          class="dock-drop-indicator"
+          :class="`is-${activeDockDropTarget.edge}`"
+          :style="dockDropIndicatorStyle"
         >
-          <span>{{ t(zone.labelKey) }}</span>
+          <span class="visually-hidden">{{ dockDropLabel }}</span>
         </div>
       </div>
     </main>
@@ -1553,24 +1546,48 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
-import AnalysisPanel from './components/AnalysisPanel.vue'
+import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
+import DockLayoutNode from './components/DockLayoutNode.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import { normalizeLanguagePreference, setLanguagePreference, useI18n } from './i18n'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
+import {
+  moveDockItem,
+  normalizeWorkspaceDockLayout,
+  visibleDockLayout,
+  WORKSPACE_ITEM_IDS,
+  type AnalysisPanelId,
+  type DockEdge,
+  type WorkspaceItemId,
+} from './workspaceLayout'
 
 const { locale, numberLocale, t } = useI18n()
 
 const seats = [0, 1, 2, 3]
 type ColorSchemeId = TrainerSettings['display']['colorScheme']
 type TablePosition = TrainerSettings['display']['tablePosition']
-type WorkspaceItemId = TrainerSettings['display']['workspaceLayout']['order'][number]
 type DockPanelId = Exclude<WorkspaceItemId, 'table'>
-type DockDropPosition = 0 | 1 | 2
+type AnalysisPanelKey = keyof TrainerSettings['display']['workspaceLayout']['analysisPanels']
+type DockDropTarget = {
+  item: WorkspaceItemId
+  edge: DockEdge
+  bounds: { left: number; top: number; width: number; height: number }
+}
 
-const DEFAULT_WORKSPACE_ORDER: WorkspaceItemId[] = ['table', 'analysis', 'console']
+const ANALYSIS_PANEL_DEFINITIONS: Array<{
+  id: AnalysisPanelId
+  key: AnalysisPanelKey
+  section: 'opponents' | 'game' | 'risk' | 'counts'
+  labelKey: string
+}> = [
+  { id: 'analysis-opponents', key: 'opponents', section: 'opponents', labelKey: 'analysis.opponents' },
+  { id: 'analysis-game', key: 'game', section: 'game', labelKey: 'analysis.players' },
+  { id: 'analysis-risk', key: 'risk', section: 'risk', labelKey: 'analysis.riskPrediction' },
+  { id: 'analysis-counts', key: 'counts', section: 'counts', labelKey: 'analysis.countPrediction' },
+]
 
 const DEFAULT_SHANTEN_COLORS = [
   '#4CAF50',
@@ -1607,25 +1624,22 @@ function normalizeTablePosition(value: unknown): TablePosition {
   return value === 'left' || value === 'right' ? value : 'center'
 }
 
-function normalizeWorkspaceOrder(value: unknown): WorkspaceItemId[] {
-  const validItems: WorkspaceItemId[] = ['analysis', 'table', 'console']
-  const requested = Array.isArray(value) ? value : []
-  const order = requested.filter((item): item is WorkspaceItemId => (
-    typeof item === 'string' && validItems.includes(item as WorkspaceItemId)
-  )).filter((item, index, items) => items.indexOf(item) === index)
-  for (const item of DEFAULT_WORKSPACE_ORDER) {
-    if (!order.includes(item)) order.push(item)
-  }
-  return order
-}
-
 function normalizeWorkspaceLayout(value: unknown): TrainerSettings['display']['workspaceLayout'] {
   const source = value && typeof value === 'object'
-    ? value as Partial<TrainerSettings['display']['workspaceLayout']>
+    ? value as Partial<TrainerSettings['display']['workspaceLayout']> & { order?: unknown }
+    : {}
+  const sourcePanels = source.analysisPanels && typeof source.analysisPanels === 'object'
+    ? source.analysisPanels
     : {}
   return {
-    order: normalizeWorkspaceOrder(source.order),
+    layout: normalizeWorkspaceDockLayout(source.layout, source.order),
     analysisVisible: source.analysisVisible === true,
+    analysisPanels: {
+      opponents: sourcePanels.opponents !== false,
+      game: sourcePanels.game !== false,
+      risk: sourcePanels.risk === true,
+      counts: sourcePanels.counts === true,
+    },
     consoleVisible: source.consoleVisible !== false,
   }
 }
@@ -1764,10 +1778,6 @@ watchEffect(() => {
 const workspaceLayout = computed(() => normalizeWorkspaceLayout(settings.display.workspaceLayout))
 let workspaceLayoutSaveGeneration = 0
 
-function workspaceItemOrder(item: WorkspaceItemId): number {
-  return workspaceLayout.value.order.indexOf(item) + 1
-}
-
 function updateWorkspaceLayout(nextLayout: TrainerSettings['display']['workspaceLayout']) {
   const normalized = normalizeWorkspaceLayout(nextLayout)
   settings.display.workspaceLayout = normalized
@@ -1787,57 +1797,92 @@ function updateWorkspaceLayout(nextLayout: TrainerSettings['display']['workspace
   })
 }
 
-const showAnalysisDock = computed({
-  get: () => workspaceLayout.value.analysisVisible && Boolean(gameView.table),
-  set: (visible: boolean) => updateWorkspaceLayout({
-    ...workspaceLayout.value,
-    analysisVisible: visible,
-  }),
-})
-const showConsoleDock = computed({
-  get: () => workspaceLayout.value.consoleVisible,
-  set: (visible: boolean) => updateWorkspaceLayout({
-    ...workspaceLayout.value,
-    consoleVisible: visible,
-  }),
-})
-const workspaceRoot = ref<HTMLElement | null>(null)
-const draggingDockPanel = ref<DockPanelId | null>(null)
-const activeDockDropPosition = ref<DockDropPosition | null>(null)
-let dockDragPointerId: number | null = null
-const dockDropZones = computed<Array<{ position: DockDropPosition; labelKey: string }>>(() => {
-  const visiblePanelCount = Number(showAnalysisDock.value) + Number(showConsoleDock.value)
-  if (visiblePanelCount < 2) {
-    return [
-      { position: 0, labelKey: 'workspace.dockLeft' },
-      { position: 2, labelKey: 'workspace.dockRight' },
-    ]
+function analysisPanelDefinition(id: AnalysisPanelId) {
+  return ANALYSIS_PANEL_DEFINITIONS.find((definition) => definition.id === id)
+}
+
+function isAnalysisPanelId(id: WorkspaceItemId): id is AnalysisPanelId {
+  return id.startsWith('analysis-')
+}
+
+function analysisPanelSection(id: AnalysisPanelId): 'opponents' | 'game' | 'risk' | 'counts' {
+  return analysisPanelDefinition(id)?.section || 'opponents'
+}
+
+function analysisPanelTitle(id: AnalysisPanelId): string {
+  return t(analysisPanelDefinition(id)?.labelKey || 'analysis.opponents')
+}
+
+function analysisPanelIsSelected(id: AnalysisPanelId): boolean {
+  const definition = analysisPanelDefinition(id)
+  return definition ? workspaceLayout.value.analysisPanels[definition.key] : false
+}
+
+const hasSelectedAnalysisPanels = computed(() => (
+  ANALYSIS_PANEL_DEFINITIONS.some((definition) => workspaceLayout.value.analysisPanels[definition.key])
+))
+const showAnalysisDock = computed(() => (
+  workspaceLayout.value.analysisVisible
+  && hasSelectedAnalysisPanels.value
+  && Boolean(gameView.table)
+))
+const showConsoleDock = computed(() => workspaceLayout.value.consoleVisible)
+
+function showAnalysisPanel(id: AnalysisPanelId): boolean {
+  return showAnalysisDock.value && analysisPanelIsSelected(id)
+}
+
+const visibleWorkspaceLayout = computed(() => {
+  const visibleItems = new Set<WorkspaceItemId>(['table'])
+  if (showConsoleDock.value) visibleItems.add('console')
+  for (const definition of ANALYSIS_PANEL_DEFINITIONS) {
+    if (showAnalysisPanel(definition.id)) visibleItems.add(definition.id)
   }
-  return [
-    { position: 0, labelKey: 'workspace.dockLeft' },
-    { position: 1, labelKey: 'workspace.dockCenter' },
-    { position: 2, labelKey: 'workspace.dockRight' },
-  ]
+  return visibleDockLayout(workspaceLayout.value.layout, visibleItems)
+    || { type: 'item' as const, id: 'table' as const }
 })
 
-function dockDropPositionAt(clientX: number): DockDropPosition {
-  const bounds = workspaceRoot.value?.getBoundingClientRect()
-  if (!bounds || bounds.width <= 0) return 1
-  const ratio = Math.max(0, Math.min(0.999, (clientX - bounds.left) / bounds.width))
-  const zones = dockDropZones.value
-  return zones[Math.floor(ratio * zones.length)]?.position ?? zones[0]?.position ?? 0
+const workspaceRoot = ref<HTMLElement | null>(null)
+const draggingDockPanel = ref<DockPanelId | null>(null)
+const activeDockDropTarget = ref<DockDropTarget | null>(null)
+let dockDragPointerId: number | null = null
+
+function dockDropTargetAt(clientX: number, clientY: number): DockDropTarget | null {
+  const dragging = draggingDockPanel.value
+  if (!dragging) return null
+  const leaf = document.elementsFromPoint(clientX, clientY).flatMap((element) => {
+    const candidate = element.closest<HTMLElement>('.dock-layout-leaf[data-dock-target]')
+    return candidate && candidate.dataset.dockTarget !== dragging ? [candidate] : []
+  })[0]
+  if (!leaf) return null
+  const itemId = leaf.dataset.dockTarget
+  if (!itemId || !WORKSPACE_ITEM_IDS.includes(itemId as WorkspaceItemId)) return null
+  const rect = leaf.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return null
+  const distances: Array<{ edge: DockEdge; distance: number }> = [
+    { edge: 'left', distance: Math.abs(clientX - rect.left) / rect.width },
+    { edge: 'right', distance: Math.abs(rect.right - clientX) / rect.width },
+    { edge: 'top', distance: Math.abs(clientY - rect.top) / rect.height },
+    { edge: 'bottom', distance: Math.abs(rect.bottom - clientY) / rect.height },
+  ]
+  distances.sort((left, right) => left.distance - right.distance)
+  return {
+    item: itemId as WorkspaceItemId,
+    edge: distances[0].edge,
+    bounds: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+  }
 }
 
 function handleDockPanelPointerMove(event: PointerEvent) {
   if (event.pointerId !== dockDragPointerId || !draggingDockPanel.value) return
-  activeDockDropPosition.value = dockDropPositionAt(event.clientX)
+  activeDockDropTarget.value = dockDropTargetAt(event.clientX, event.clientY)
 }
 
 function finishDockPanelPointerDrag(event: PointerEvent) {
   if (event.pointerId !== dockDragPointerId) return
-  const position = activeDockDropPosition.value
+  const target = activeDockDropTarget.value
   removeDockPanelPointerListeners()
-  if (position !== null) dropDockPanel(position)
+  if (target) dropDockPanel(target)
   else endDockPanelDrag()
 }
 
@@ -1851,7 +1896,14 @@ function removeDockPanelPointerListeners() {
   window.removeEventListener('pointermove', handleDockPanelPointerMove)
   window.removeEventListener('pointerup', finishDockPanelPointerDrag)
   window.removeEventListener('pointercancel', cancelDockPanelPointerDrag)
+  window.removeEventListener('keydown', handleDockPanelDragKeydown)
   dockDragPointerId = null
+}
+
+function handleDockPanelDragKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape' || !draggingDockPanel.value) return
+  removeDockPanelPointerListeners()
+  endDockPanelDrag()
 }
 
 function startDockPanelPointerDrag(panel: DockPanelId, event: PointerEvent) {
@@ -1859,25 +1911,55 @@ function startDockPanelPointerDrag(panel: DockPanelId, event: PointerEvent) {
   event.preventDefault()
   dockDragPointerId = event.pointerId
   draggingDockPanel.value = panel
-  activeDockDropPosition.value = dockDropPositionAt(event.clientX)
+  activeDockDropTarget.value = null
   window.addEventListener('pointermove', handleDockPanelPointerMove)
   window.addEventListener('pointerup', finishDockPanelPointerDrag)
   window.addEventListener('pointercancel', cancelDockPanelPointerDrag)
+  window.addEventListener('keydown', handleDockPanelDragKeydown)
 }
 
 function endDockPanelDrag() {
   draggingDockPanel.value = null
-  activeDockDropPosition.value = null
+  activeDockDropTarget.value = null
 }
 
-function dropDockPanel(position: DockDropPosition) {
+function dropDockPanel(target: DockDropTarget) {
   const panel = draggingDockPanel.value
   if (!panel) return
-  const order = workspaceLayout.value.order.filter((item) => item !== panel)
-  order.splice(position, 0, panel)
-  updateWorkspaceLayout({ ...workspaceLayout.value, order })
+  const layout = moveDockItem(workspaceLayout.value.layout, panel, target.item, target.edge)
+  updateWorkspaceLayout({ ...workspaceLayout.value, layout })
   endDockPanelDrag()
 }
+
+const dockDropIndicatorStyle = computed(() => {
+  const target = activeDockDropTarget.value
+  const rootBounds = workspaceRoot.value?.getBoundingClientRect()
+  if (!target || !rootBounds) return {}
+  const thickness = Math.max(3, Math.round(3 * uiScale.value))
+  const left = target.bounds.left - rootBounds.left
+  const top = target.bounds.top - rootBounds.top
+  if (target.edge === 'left' || target.edge === 'right') {
+    return {
+      left: `${left + (target.edge === 'right' ? target.bounds.width - thickness : 0)}px`,
+      top: `${top}px`,
+      width: `${thickness}px`,
+      height: `${target.bounds.height}px`,
+    }
+  }
+  return {
+    left: `${left}px`,
+    top: `${top + (target.edge === 'bottom' ? target.bounds.height - thickness : 0)}px`,
+    width: `${target.bounds.width}px`,
+    height: `${thickness}px`,
+  }
+})
+
+const dockDropLabel = computed(() => t({
+  left: 'workspace.dockLeft',
+  right: 'workspace.dockRight',
+  top: 'workspace.dockTop',
+  bottom: 'workspace.dockBottom',
+}[activeDockDropTarget.value?.edge || 'right']))
 
 type FloatingPanelName = 'wall' | 'engine' | 'roundMap' | 'customExport'
 const floatingPanelZ = reactive<Record<FloatingPanelName, number>>({
@@ -1891,10 +1973,34 @@ function focusFloatingPanel(panel: FloatingPanelName) {
   floatingPanelZ[panel] = ++floatingPanelZCounter
 }
 function toggleAnalysisDock() {
-  showAnalysisDock.value = !showAnalysisDock.value
+  const nextVisible = !showAnalysisDock.value
+  const analysisPanels = hasSelectedAnalysisPanels.value
+    ? workspaceLayout.value.analysisPanels
+    : { opponents: true, game: true, risk: false, counts: false }
+  updateWorkspaceLayout({
+    ...workspaceLayout.value,
+    analysisVisible: nextVisible,
+    analysisPanels,
+  })
+}
+function toggleAnalysisPanel(key: AnalysisPanelKey) {
+  const nextSelected = !workspaceLayout.value.analysisPanels[key]
+  const analysisPanels = {
+    ...workspaceLayout.value.analysisPanels,
+    [key]: nextSelected,
+  }
+  const anySelected = Object.values(analysisPanels).some(Boolean)
+  updateWorkspaceLayout({
+    ...workspaceLayout.value,
+    analysisVisible: anySelected && (workspaceLayout.value.analysisVisible || nextSelected),
+    analysisPanels,
+  })
 }
 function toggleConsoleDock() {
-  showConsoleDock.value = !showConsoleDock.value
+  updateWorkspaceLayout({
+    ...workspaceLayout.value,
+    consoleVisible: !showConsoleDock.value,
+  })
 }
 type EngineRuntimeKind = 'decision' | 'opponent'
 type SupportedEngineOutputId =
