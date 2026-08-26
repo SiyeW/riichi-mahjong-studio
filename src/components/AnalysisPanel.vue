@@ -868,8 +868,9 @@ button {
 
 .analysis-dora-distribution {
   display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: calc(0.08rem * var(--floating-panel-scale));
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 0;
   height: calc(2.25rem * var(--floating-panel-scale));
 }
 
@@ -888,6 +889,10 @@ button {
   min-width: 0;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.045);
+}
+
+.analysis-dora-distribution > span + span i {
+  border-left: 1px solid rgba(1, 42, 49, 0.82);
 }
 
 .analysis-dora-distribution em,
@@ -912,7 +917,7 @@ button {
 .analysis-score-distribution {
   display: flex;
   align-items: stretch;
-  gap: 1px;
+  gap: 0;
   height: calc(1.65rem * var(--floating-panel-scale));
   overflow: hidden;
 }
