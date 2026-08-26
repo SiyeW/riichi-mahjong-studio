@@ -32,9 +32,41 @@
               @slice-enter="(label, probability) => showProbability(`${opponent.label} - ${label}`, probability)"
               @slice-leave="clearHover"
             />
-            <div class="analysis-opponent-estimates">
-              <span :title="opponent.doraTitle"><small>{{ t('analysis.dora') }}</small>{{ opponent.dora }}</span>
-              <span :title="opponent.scoreTitle"><small>{{ t('analysis.score') }}</small>{{ opponent.score }}</span>
+            <div class="analysis-opponent-predictions">
+              <div class="analysis-opponent-prediction" :title="opponent.doraTitle">
+                <div class="analysis-prediction-heading">
+                  <small>{{ t('analysis.dora') }}</small>
+                  <strong>{{ opponent.dora }}</strong>
+                </div>
+                <div v-if="opponent.doraPrediction.distribution.length" class="analysis-dora-distribution">
+                  <span
+                    v-for="entry in opponent.doraPrediction.distribution"
+                    :key="entry.value"
+                    :title="`${entry.value}${t('unit.tile')} ${formatProbability(entry.probability)}`"
+                  >
+                    <i><em :style="{ height: distributionBarHeight(entry.probability, doraDistributionScale) }" /></i>
+                    <small>{{ entry.value }}</small>
+                  </span>
+                </div>
+              </div>
+              <div class="analysis-opponent-prediction" :title="opponent.scoreTitle">
+                <div class="analysis-prediction-heading">
+                  <small>{{ t('analysis.score') }}</small>
+                  <strong>{{ opponent.score }}</strong>
+                </div>
+                <div v-if="opponent.scorePrediction.distribution.length" class="analysis-score-distribution">
+                  <i
+                    v-for="entry in opponent.scorePrediction.distribution"
+                    :key="entry.value"
+                    :title="`${formatDistributionPoints(entry.value)} ${formatProbability(entry.probability)}`"
+                  ><span :style="{ height: distributionBarHeight(entry.probability, scoreDistributionScale) }" /></i>
+                </div>
+                <div v-if="opponent.scoreModes.length" class="analysis-score-modes">
+                  <span v-for="entry in opponent.scoreModes" :key="entry.value" :title="formatProbability(entry.probability)">
+                    {{ formatDistributionPoints(entry.value) }}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -122,17 +154,39 @@
       </div>
 
       <div v-if="tileMode === 'risk'" class="analysis-risk-grid">
-        <div v-for="row in tileRows" :key="row[0]" class="analysis-risk-row">
-          <div v-for="tile in row" :key="tile" class="analysis-risk-tile">
-            <img :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
-            <div class="analysis-risk-bars">
-              <i
-                v-for="source in opponentSources"
-                :key="source.key"
-                :class="`source-${source.key}`"
-                :title="`${source.label} - ${tileFaceLabel(tile)} - ${formatProbability(riskProbability(source.seat, tile))}`"
-              ><span :style="{ height: `${riskBarHeight(riskProbability(source.seat, tile))}%` }" /></i>
+        <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-risk-row">
+          <div class="analysis-tile-sequence">
+            <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-risk-tile">
+              <img class="analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
+              <div
+                class="analysis-risk-bars"
+                :class="{ 'has-adaptive-threshold': showRiskAdaptiveThreshold }"
+                :style="{ '--analysis-risk-threshold': riskScalePosition(RISK_ADAPTIVE_MIN) }"
+              >
+                <i
+                  v-for="source in opponentSources"
+                  :key="source.key"
+                  :class="`source-${source.key}`"
+                  :title="`${source.label} - ${tileFaceLabel(tile)} - ${formatProbability(riskProbability(source.seat, tile))}`"
+                  @mouseenter="showProbability(`${source.label} - ${tileFaceLabel(tile)}`, riskProbability(source.seat, tile))"
+                  @mouseleave="clearHover"
+                ><span :style="{ transform: `scaleY(${riskBarScale(riskProbability(source.seat, tile))})` }" /></i>
+              </div>
+              <span
+                v-if="tileIndex < row.length - 1"
+                class="analysis-risk-bridge"
+                :class="{ 'has-adaptive-threshold': showRiskAdaptiveThreshold }"
+                :style="{ '--analysis-risk-threshold': riskScalePosition(RISK_ADAPTIVE_MIN) }"
+                aria-hidden="true"
+              />
             </div>
+          </div>
+          <div class="analysis-risk-scale" aria-hidden="true">
+            <span
+              v-for="tick in riskScaleTicks"
+              :key="tick.value"
+              :style="{ top: riskScalePosition(tick.value) }"
+            ><i /><small>{{ tick.label }}</small></span>
           </div>
         </div>
         <div class="analysis-source-legend">
@@ -141,27 +195,41 @@
       </div>
 
       <div v-else class="analysis-count-grid">
-        <div v-for="row in tileRows" :key="row[0]" class="analysis-count-row">
-          <div v-for="tile in row" :key="tile" class="analysis-count-tile">
-            <img :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
-            <div class="analysis-count-bars">
-              <button
-                v-for="source in countSources"
-                :key="source.key"
-                type="button"
-                :class="`source-${source.key}`"
-                :aria-label="t('analysis.tileCountDistribution', { source: source.label, tile: tileFaceLabel(tile) })"
-                @mouseenter="showCountTooltip(tile, source)"
-                @mouseleave="countTooltip = null"
-              >
-                <span
-                  v-for="segment in countSegments(tile, source)"
-                  :key="segment.value"
-                  :class="`count-${segment.value}`"
-                  :style="{ height: `${segment.probability * 100}%` }"
-                />
-              </button>
+        <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-count-row">
+          <div class="analysis-tile-sequence">
+            <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-count-tile">
+              <div class="analysis-count-bars">
+                <button
+                  v-for="source in countSources"
+                  :key="source.key"
+                  type="button"
+                  :class="`source-${source.key}`"
+                  :aria-label="t('analysis.tileCountDistribution', { source: source.label, tile: tileFaceLabel(tile) })"
+                  @mouseenter="showCountTooltip(tile, source)"
+                  @mouseleave="countTooltip = null"
+                  @focus="showCountTooltip(tile, source)"
+                  @blur="countTooltip = null"
+                >
+                  <span
+                    v-for="segment in countSegments(tile, source)"
+                    :key="segment.value"
+                    :class="`count-${segment.value}`"
+                    :style="{ height: `${segment.probability * 100}%` }"
+                  />
+                </button>
+              </div>
+              <span
+                v-if="tileIndex < row.length - 1"
+                class="analysis-count-bridge"
+                aria-hidden="true"
+              />
+              <img class="analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
             </div>
+          </div>
+          <div class="analysis-count-scale" aria-hidden="true">
+            <span class="is-maximum"><i /><small>100%</small></span>
+            <span class="is-middle"><i /><small>50%</small></span>
+            <span class="is-zero"><i /><small>0%</small></span>
           </div>
         </div>
         <div class="analysis-count-legends">
@@ -191,7 +259,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { useI18n } from '../i18n'
-import { parseNumericPrediction, type DistributionEntry, type NumericPrediction } from '../numericPrediction'
+import {
+  parseNumericPrediction,
+  type DistributionEntry,
+  type DistributionValue,
+  type NumericPrediction,
+} from '../numericPrediction'
 import ShantenPieChart from './ShantenPieChart.vue'
 
 const { t, numberLocale } = useI18n()
@@ -290,6 +363,11 @@ function formatSignedCompactPoints(value: number | null): string {
   return `${value > 0 ? '+' : value < 0 ? '−' : ''}${absolute}`
 }
 
+function formatDistributionPoints(value: DistributionValue): string {
+  if (typeof value !== 'number') return String(value)
+  return formatCompactPoints(value)
+}
+
 function formatProbability(value: number): string {
   const percentage = probability(value) * 100
   if (percentage === 0) return '0%'
@@ -318,10 +396,33 @@ const opponentCards = computed(() => props.shantenOpponents.map((opponent) => {
     ...opponent,
     dora: dora.scalarValue === null ? '—' : dora.scalarValue.toFixed(1),
     score: formatCompactPoints(score.scalarValue),
+    doraPrediction: dora,
+    scorePrediction: score,
+    scoreModes: [...score.distribution]
+      .sort((left, right) => right.probability - left.probability)
+      .slice(0, 3),
     doraTitle: predictionTitle(dora, t('unit.tile')),
     scoreTitle: predictionTitle(score, t('unit.point')),
   }
 }))
+
+function maximumDistributionProbability(predictions: NumericPrediction[]): number {
+  return Math.max(
+    0.01,
+    ...predictions.flatMap((prediction) => prediction.distribution.map((entry) => entry.probability)),
+  )
+}
+
+const doraDistributionScale = computed(() => maximumDistributionProbability(
+  opponentCards.value.map((opponent) => opponent.doraPrediction),
+))
+const scoreDistributionScale = computed(() => maximumDistributionProbability(
+  opponentCards.value.map((opponent) => opponent.scorePrediction),
+))
+
+function distributionBarHeight(value: number, scale: number): string {
+  return `${Math.min(1, probability(value) / Math.max(0.01, scale)) * 100}%`
+}
 
 function relativeLabel(seat: number): string {
   const offset = (seat - props.controlledSeat + 4) % 4
@@ -429,15 +530,30 @@ function riskProbability(seat: number | null, tile: string): number {
   return probability(objectValue(player.tiles)[tile])
 }
 
+const RISK_ADAPTIVE_MIN = 0.2
+const RISK_TICK_STEP = 0.05
 const riskScale = computed(() => Math.max(
-  0.2,
+  RISK_ADAPTIVE_MIN,
   ...opponentSources.value.flatMap((source) => tileRows.flatMap((row) => (
     row.map((tile) => riskProbability(source.seat, tile))
   ))),
 ))
 
-function riskBarHeight(value: number): number {
-  return Math.min(100, (probability(value) / riskScale.value) * 100)
+const showRiskAdaptiveThreshold = computed(() => riskScale.value > RISK_ADAPTIVE_MIN)
+const riskScaleTicks = computed(() => {
+  const stepCount = Math.floor((riskScale.value + Number.EPSILON) / RISK_TICK_STEP)
+  return Array.from({ length: stepCount + 1 }, (_, index) => ({
+    value: index * RISK_TICK_STEP,
+    label: index % 2 === 0 ? `${index * 5}%` : '',
+  }))
+})
+
+function riskBarScale(value: number): number {
+  return Math.min(1, probability(value) / riskScale.value)
+}
+
+function riskScalePosition(value: number): string {
+  return `${riskBarScale(value) * 100}%`
 }
 
 function tilePrediction(tile: string, source: TileSource): NumericPrediction {
@@ -566,33 +682,117 @@ button {
   font-size: var(--ui-text-body);
 }
 
-.analysis-opponent-estimates {
+.analysis-opponent-predictions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: calc(0.28rem * var(--floating-panel-scale));
   width: 100%;
   margin-top: calc(0.24rem * var(--floating-panel-scale));
+  padding-top: calc(0.24rem * var(--floating-panel-scale));
   border-top: 1px solid rgba(140, 195, 188, 0.11);
 }
 
-.analysis-opponent-estimates span {
+.analysis-opponent-prediction {
+  min-width: 0;
+}
+
+.analysis-prediction-heading {
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
   align-items: baseline;
   gap: calc(0.22rem * var(--floating-panel-scale));
   min-width: 0;
-  padding-top: calc(0.24rem * var(--floating-panel-scale));
+  margin-bottom: calc(0.16rem * var(--floating-panel-scale));
+}
+
+.analysis-prediction-heading strong {
   color: rgba(244, 249, 247, 0.94);
   font-size: var(--ui-text-body);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
-.analysis-opponent-estimates span + span {
-  border-left: 1px solid rgba(140, 195, 188, 0.1);
-}
-
-.analysis-opponent-estimates small {
+.analysis-prediction-heading small {
   color: rgba(186, 211, 207, 0.68);
   font-size: var(--ui-text-caption);
+}
+
+.analysis-dora-distribution {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: calc(0.08rem * var(--floating-panel-scale));
+  height: calc(2.25rem * var(--floating-panel-scale));
+}
+
+.analysis-dora-distribution > span {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: calc(0.06rem * var(--floating-panel-scale));
+  min-width: 0;
+}
+
+.analysis-dora-distribution i,
+.analysis-score-distribution i {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.analysis-dora-distribution em,
+.analysis-score-distribution span {
+  display: block;
+  width: 100%;
+  background: #3c9ed2;
+  transition: height var(--ui-motion-duration) var(--ui-motion-easing);
+}
+
+.analysis-dora-distribution small {
+  overflow: hidden;
+  color: rgba(198, 219, 214, 0.72);
+  font-size: var(--ui-text-caption);
+  font-style: normal;
+  line-height: 1;
+  text-align: center;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.analysis-score-distribution {
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  height: calc(1.65rem * var(--floating-panel-scale));
+  overflow: hidden;
+}
+
+.analysis-score-distribution i {
+  flex: 1 1 0;
+}
+
+.analysis-score-distribution span {
+  background: #d39a3a;
+}
+
+.analysis-score-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(0.12rem * var(--floating-panel-scale));
+  margin-top: calc(0.12rem * var(--floating-panel-scale));
+}
+
+.analysis-score-modes span {
+  overflow: hidden;
+  padding: calc(0.08rem * var(--floating-panel-scale)) calc(0.12rem * var(--floating-panel-scale));
+  color: rgba(220, 232, 228, 0.76);
+  background: rgba(211, 154, 58, 0.1);
+  font-size: var(--ui-text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .analysis-shanten-legend {
@@ -879,6 +1079,7 @@ button {
 
 .analysis-tiles-view {
   position: relative;
+  min-width: 0;
 }
 
 .analysis-tile-mode-tabs {
@@ -887,19 +1088,28 @@ button {
 
 .analysis-risk-grid,
 .analysis-count-grid {
+  --analysis-tile-width: calc(2.45rem * var(--floating-panel-scale));
+  --analysis-tile-height: calc(3.18rem * var(--floating-panel-scale));
+  --analysis-risk-height: calc(var(--analysis-tile-height) * 1.14);
+  --analysis-count-height: calc(var(--analysis-tile-height) * 1.14);
+  --analysis-risk-bars-width: calc(var(--analysis-tile-width) * 0.84);
+  --analysis-count-bars-width: calc(var(--analysis-tile-width) * 0.96);
+  --analysis-chart-gap: calc(var(--analysis-tile-width) * 0.035);
+  --analysis-scale-space: calc(2.45rem * var(--floating-panel-scale));
   position: relative;
   display: grid;
-  gap: calc(0.35rem * var(--floating-panel-scale));
+  gap: calc(var(--analysis-tile-width) * 0.1);
   padding-top: calc(0.45rem * var(--floating-panel-scale));
+  overflow-x: auto;
+  overflow-y: visible;
 }
 
-.analysis-risk-row,
-.analysis-count-row {
-  display: grid;
-  grid-template-columns: repeat(9, minmax(0, 1fr));
-  gap: calc(0.12rem * var(--floating-panel-scale));
-  min-height: calc(6rem * var(--floating-panel-scale));
-  padding-bottom: calc(0.28rem * var(--floating-panel-scale));
+.analysis-tile-chart-row {
+  position: relative;
+  display: flex;
+  width: max-content;
+  padding-right: var(--analysis-scale-space);
+  padding-bottom: calc(var(--analysis-tile-width) * 0.08);
   border-bottom: 1px solid rgba(140, 195, 188, 0.1);
 }
 
@@ -908,44 +1118,79 @@ button {
   border-bottom: 0;
 }
 
+.analysis-tile-sequence {
+  display: flex;
+  gap: 0;
+}
+
 .analysis-risk-tile,
 .analysis-count-tile {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: calc(0.12rem * var(--floating-panel-scale));
+  flex: 0 0 var(--analysis-tile-width);
+  width: var(--analysis-tile-width);
+  gap: var(--analysis-chart-gap);
 }
 
-.analysis-risk-tile img,
-.analysis-count-tile img {
+.analysis-tile-face {
+  display: block;
   box-sizing: border-box;
-  width: calc(2.35rem * var(--floating-panel-scale));
-  height: calc(3.05rem * var(--floating-panel-scale));
+  width: var(--analysis-tile-width);
+  height: var(--analysis-tile-height);
   padding: calc(0.14rem * var(--floating-panel-scale));
   border-radius: calc(0.22rem * var(--floating-panel-scale));
+  background: #fff;
+  filter: brightness(92%) saturate(80%);
   box-shadow: inset 0 0 calc(0.12rem * var(--floating-panel-scale)) rgba(0, 0, 0, 0.9);
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .analysis-risk-bars,
 .analysis-count-bars {
-  display: flex;
-  justify-content: center;
-  gap: calc(0.06rem * var(--floating-panel-scale));
-  height: calc(2.55rem * var(--floating-panel-scale));
-}
-
-.analysis-risk-bars > i,
-.analysis-count-bars > button {
   position: relative;
   display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  width: calc(0.44rem * var(--floating-panel-scale));
-  height: 100%;
-  margin: 0;
-  padding: 0;
+  justify-content: center;
+  gap: 0;
   overflow: hidden;
-  border: 0;
+}
+
+.analysis-risk-bars {
+  align-items: flex-start;
+  width: var(--analysis-risk-bars-width);
+  height: var(--analysis-risk-height);
+}
+
+.analysis-count-bars {
+  align-items: flex-end;
+  width: var(--analysis-count-bars-width);
+  height: var(--analysis-count-height);
+}
+
+.analysis-risk-bars.has-adaptive-threshold::before,
+.analysis-risk-bridge.has-adaptive-threshold::after {
+  position: absolute;
+  z-index: 0;
+  right: 0;
+  left: 0;
+  top: var(--analysis-risk-threshold);
+  border-top: 1px solid rgba(198, 214, 211, 0.42);
+  content: '';
+  pointer-events: none;
+}
+
+.analysis-risk-bars > i {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
   background: rgba(255, 255, 255, 0.05);
   cursor: default;
 }
@@ -953,7 +1198,66 @@ button {
 .analysis-risk-bars > i > span {
   display: block;
   width: 100%;
-  transition: height var(--ui-motion-duration) var(--ui-motion-easing);
+  height: 100%;
+  transform-origin: top center;
+  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
+}
+
+.analysis-risk-bridge,
+.analysis-count-bridge {
+  position: absolute;
+  z-index: 0;
+  left: calc(50% + (var(--analysis-risk-bars-width) / 2));
+  width: calc(var(--analysis-tile-width) - var(--analysis-risk-bars-width));
+  pointer-events: none;
+}
+
+.analysis-risk-bridge {
+  top: calc(var(--analysis-tile-height) + var(--analysis-chart-gap));
+  height: var(--analysis-risk-height);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.analysis-risk-scale,
+.analysis-count-scale {
+  position: absolute;
+  left: calc(100% - var(--analysis-scale-space) + (var(--analysis-tile-width) * 0.12));
+  width: calc(var(--analysis-scale-space) * 0.88);
+  color: rgba(210, 224, 221, 0.52);
+  pointer-events: none;
+}
+
+.analysis-risk-scale {
+  top: calc(var(--analysis-tile-height) + var(--analysis-chart-gap));
+  height: var(--analysis-risk-height);
+}
+
+.analysis-risk-scale > span,
+.analysis-count-scale > span {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 0;
+}
+
+.analysis-risk-scale > span i,
+.analysis-count-scale > span i {
+  position: absolute;
+  left: 0;
+  width: calc(var(--analysis-tile-width) * 0.12);
+  border-top: 1px solid rgba(198, 214, 211, 0.42);
+}
+
+.analysis-risk-scale > span small,
+.analysis-count-scale > span small {
+  position: absolute;
+  left: calc(var(--analysis-tile-width) * 0.2);
+  color: rgba(210, 224, 221, 0.56);
+  font-size: var(--ui-text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translateY(-50%);
 }
 
 .analysis-risk-bars > i.source-kamicha > span,
@@ -963,6 +1267,22 @@ button {
 .analysis-risk-bars > i.source-shimocha > span,
 .analysis-source-legend i.source-shimocha { background: var(--ron-shimocha-color); }
 .analysis-source-legend i.source-wall { background: rgba(211, 226, 223, 0.68); }
+
+.analysis-count-bars > button {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: default;
+}
 
 .analysis-count-bars > button > span {
   display: block;
@@ -979,6 +1299,23 @@ button {
   height: calc(0.12rem * var(--floating-panel-scale));
   content: '';
 }
+
+.analysis-count-bridge {
+  bottom: calc(var(--analysis-tile-height) + var(--analysis-chart-gap));
+  height: var(--analysis-count-height);
+  width: calc(var(--analysis-tile-width) - var(--analysis-count-bars-width));
+  left: calc(50% + (var(--analysis-count-bars-width) / 2));
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.analysis-count-scale {
+  top: 0;
+  height: var(--analysis-count-height);
+}
+
+.analysis-count-scale .is-maximum { top: 0; }
+.analysis-count-scale .is-middle { top: 50%; }
+.analysis-count-scale .is-zero { top: 100%; }
 
 .analysis-count-bars > button.source-kamicha::after { background: var(--ron-kamicha-color); }
 .analysis-count-bars > button.source-toimen::after { background: var(--ron-toimen-color); }
