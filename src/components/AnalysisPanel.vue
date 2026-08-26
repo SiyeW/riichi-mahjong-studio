@@ -169,8 +169,11 @@
                   :class="player.kyokuDelta >= 0 ? 'positive' : 'negative'"
                   :style="deltaBarStyle(player.kyokuDelta)"
                 />
+                <small
+                  class="analysis-delta-value"
+                  :class="player.kyokuDelta >= 0 ? 'opposite-positive' : 'opposite-negative'"
+                >{{ formatSignedCompactPoints(player.kyokuDelta) }}</small>
               </div>
-              <small class="analysis-delta-value">{{ formatSignedCompactPoints(player.kyokuDelta) }}</small>
             </div>
           </section>
 
@@ -1031,7 +1034,7 @@ button {
 
 .analysis-delta-group {
   grid-area: delta;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  grid-template-columns: max-content minmax(0, 1fr);
 }
 
 .analysis-match-group {
@@ -1230,7 +1233,7 @@ button {
   left: 50%;
   top: 0;
   bottom: 0;
-  border-left: 1px solid rgba(222, 238, 234, 0.62);
+  border-left: 1px solid #deeeea;
   pointer-events: none;
 }
 
@@ -1245,10 +1248,26 @@ button {
 .analysis-delta-cell > span.negative { background: #cf544e; }
 
 .analysis-delta-value {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
   color: rgba(229, 241, 237, 0.84);
   font-size: var(--ui-text-caption);
   font-variant-numeric: tabular-nums;
-  text-align: right;
+  line-height: 1;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+  white-space: nowrap;
+}
+
+.analysis-delta-value.opposite-negative {
+  left: calc(50% + (0.24rem * var(--floating-panel-scale)));
+}
+
+.analysis-delta-value.opposite-positive {
+  right: calc(50% + (0.24rem * var(--floating-panel-scale)));
 }
 
 .analysis-match-heading span {
