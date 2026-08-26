@@ -186,17 +186,15 @@
               class="analysis-comparison-row analysis-match-row"
             >
               <span class="analysis-player-name">{{ player.label }}</span>
-              <div class="analysis-placement-cell" :title="player.placementTitle">
-                <div class="analysis-placement-bar">
-                  <span
-                    v-for="segment in player.placement"
-                    :key="segment.value"
-                    :class="`rank-${segment.value}`"
-                    :style="{ width: `${segment.probability * 100}%` }"
-                  />
-                </div>
-                <small>{{ player.expectedPlacement }}</small>
+              <div class="analysis-placement-bar" :title="player.placementTitle">
+                <span
+                  v-for="segment in player.placement"
+                  :key="segment.value"
+                  :class="`rank-${segment.value}`"
+                  :style="{ width: `${segment.probability * 100}%` }"
+                />
               </div>
+              <small class="analysis-placement-value">{{ player.expectedPlacement }}</small>
               <span class="analysis-score-cell" :title="formatPoints(player.matchScore)">{{ formatPlainPoints(player.matchScore) }}</span>
             </div>
           </section>
@@ -1018,22 +1016,35 @@ button {
 }
 
 .analysis-player-group {
+  display: grid;
+  column-gap: calc(0.38rem * var(--floating-panel-scale));
   min-width: 0;
+  padding: 0 calc(0.36rem * var(--floating-panel-scale));
   border: 1px solid rgba(140, 195, 188, 0.12);
   background: rgba(1, 42, 49, 0.28);
 }
 
-.analysis-offense-group { grid-area: offense; }
-.analysis-delta-group { grid-area: delta; }
-.analysis-match-group { grid-area: match; }
+.analysis-offense-group {
+  grid-area: offense;
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
+.analysis-delta-group {
+  grid-area: delta;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+}
+
+.analysis-match-group {
+  grid-area: match;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+}
 
 .analysis-player-group-heading {
   display: grid;
-  grid-template-columns: calc(7rem * var(--floating-panel-scale)) minmax(0, 1fr);
-  gap: calc(0.38rem * var(--floating-panel-scale));
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   min-height: calc(1.8rem * var(--ui-scale));
-  padding: 0 calc(0.36rem * var(--floating-panel-scale));
   border-bottom: 1px solid rgba(140, 195, 188, 0.11);
 }
 
@@ -1055,18 +1066,14 @@ button {
 
 .analysis-comparison-row {
   display: grid;
-  gap: calc(0.38rem * var(--floating-panel-scale));
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   min-height: calc(1.48rem * var(--ui-scale));
-  padding: 0 calc(0.36rem * var(--floating-panel-scale));
   border-bottom: 1px solid rgba(140, 195, 188, 0.08);
 }
 
 .analysis-comparison-row:last-child { border-bottom: 0; }
-
-.analysis-offense-row {
-  grid-template-columns: calc(7rem * var(--floating-panel-scale)) minmax(0, 1fr);
-}
 
 .analysis-player-name {
   overflow: hidden;
@@ -1211,13 +1218,6 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
-.analysis-delta-row {
-  grid-template-columns:
-    calc(7rem * var(--floating-panel-scale))
-    minmax(0, 1fr)
-    calc(4.2rem * var(--floating-panel-scale));
-}
-
 .analysis-delta-cell {
   position: relative;
   height: calc(1rem * var(--ui-scale));
@@ -1251,33 +1251,17 @@ button {
   text-align: right;
 }
 
-.analysis-match-heading,
-.analysis-match-row {
-  grid-template-columns:
-    calc(7rem * var(--floating-panel-scale))
-    minmax(0, 1fr)
-    calc(5rem * var(--floating-panel-scale));
-}
-
 .analysis-match-heading span {
   color: rgba(190, 213, 209, 0.68);
   font-size: var(--ui-text-caption);
 }
 
+.analysis-match-heading span:first-of-type { grid-column: 2 / 4; }
 .analysis-match-heading span:last-child { text-align: right; }
-
-.analysis-placement-cell {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: calc(0.24rem * var(--floating-panel-scale));
-  height: calc(1rem * var(--ui-scale));
-}
 
 .analysis-placement-bar {
   display: flex;
-  flex: 1;
-  height: 100%;
+  height: calc(1rem * var(--ui-scale));
   overflow: hidden;
   background: rgba(255, 255, 255, 0.045);
 }
@@ -1288,7 +1272,7 @@ button {
 .rank-3 { background: #50abd3; }
 .rank-4 { background: #248fc8; }
 
-.analysis-placement-cell small,
+.analysis-placement-value,
 .analysis-score-cell {
   color: rgba(229, 241, 237, 0.84);
   font-size: var(--ui-text-caption);
