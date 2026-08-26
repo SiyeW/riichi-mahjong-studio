@@ -2312,11 +2312,12 @@ const engineFooterMessage = computed(() => {
 })
 
 function shouldShowEngineActionButton(profile: TrainerEngineProfile): boolean {
+  const loadOutputs = profileLoadOutputs(profile)
   return profileIsLoaded(profile)
     || (
       !profileIsLoading(profile)
-      && Boolean(profile.enginePath && profileAssignedOutputs(profile).length)
-      && requiredWeightsReady(profile)
+      && Boolean(profile.enginePath && loadOutputs.length)
+      && requiredWeightsReady(profile, loadOutputs)
       && !profileIsLoaded(profile)
     )
 }
@@ -2471,6 +2472,19 @@ function profileAssignedOutputs(profile: TrainerEngineProfile): SupportedEngineO
     .filter((outputId) => settingsDraft.engines.outputAssignments[outputId] === profile.id)
 }
 
+function profileLoadOutputs(profile: TrainerEngineProfile): SupportedEngineOutputId[] {
+  const assigned = profileAssignedOutputs(profile)
+  if (assigned.length) return assigned
+  return supportedOutputsForProfile(profile).map((output) => output.id)
+}
+
+function assignSupportedOutputsForLoading(profile: TrainerEngineProfile) {
+  if (profileAssignedOutputs(profile).length) return
+  for (const outputId of profileLoadOutputs(profile)) {
+    settingsDraft.engines.outputAssignments[outputId] = profile.id
+  }
+}
+
 function setEngineOutputAssignment(outputId: SupportedEngineOutputId, event: Event) {
   const profile = activeEngineProfile.value
   if (!profile || profileConfigurationLocked(profile)) return
@@ -2482,16 +2496,20 @@ function engineWeight(profile: TrainerEngineProfile, slotId: string) {
   return (profile.weights || []).find((weight) => weight.slotId === slotId)
 }
 
-function weightSlotIsActive(slot: TrainerEngineDescription['weightSlots'][number], profile: TrainerEngineProfile): boolean {
+function weightSlotIsActive(
+  slot: TrainerEngineDescription['weightSlots'][number],
+  profile: TrainerEngineProfile,
+  outputIds = profileAssignedOutputs(profile),
+): boolean {
   const required = slot.requiredForOutputs || []
   if (!required.length) return true
-  const assigned = new Set(profileAssignedOutputs(profile))
+  const assigned = new Set(outputIds)
   return required.some((output) => output.version === 1 && assigned.has(output.id as SupportedEngineOutputId))
 }
 
-function requiredWeightsReady(profile: TrainerEngineProfile): boolean {
+function requiredWeightsReady(profile: TrainerEngineProfile, outputIds = profileAssignedOutputs(profile)): boolean {
   return weightSlotsForProfile(profile)
-    .filter((slot) => weightSlotIsActive(slot, profile))
+    .filter((slot) => weightSlotIsActive(slot, profile, outputIds))
     .every((slot) => {
       const weight = engineWeight(profile, slot.id)
       return Boolean(weight?.path && weight.format)
@@ -2618,10 +2636,13 @@ async function flushEngineAutosave(): Promise<boolean> {
 
 async function loadEngineProfile(profileId: string) {
   if (!window.trainerAPI?.activateEngine || loadingEngineProfileId.value || unloadingEngineProfileId.value) return
+  const profile = activeEngineProfiles.value.find((item) => item.id === profileId)
+  if (!profile) return
   loadingEngineProfileId.value = profileId
   engineSaveMessage.value = ''
   delete engineLoadErrors[profileId]
   try {
+    assignSupportedOutputsForLoading(profile)
     if (!await flushEngineAutosave()) return
     const activationRevision = engineDraftRevision
     const engines = JSON.parse(JSON.stringify(settingsDraft.engines)) as TrainerEngineSettings

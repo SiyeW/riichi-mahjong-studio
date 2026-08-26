@@ -46,6 +46,28 @@ function normalizeActivityState(value) {
   return ['idle', 'loading', 'running', 'error'].includes(value) ? value : 'idle'
 }
 
+function normalizeRuntimeState(value = {}) {
+  const profileIds = Array.isArray(value.profileIds)
+    ? [...new Set(value.profileIds.map(String).filter(Boolean))]
+    : []
+  const profiles = value.profiles && typeof value.profiles === 'object'
+    ? Object.fromEntries(Object.entries(value.profiles).map(([profileId, state]) => [
+      String(profileId),
+      {
+        ready: Boolean(state?.ready),
+        unloaded: Boolean(state?.unloaded),
+      },
+    ]))
+    : {}
+  return {
+    profileId: String(value.profileId || ''),
+    profileIds,
+    profiles,
+    ready: Boolean(value.ready),
+    unloaded: Boolean(value.unloaded),
+  }
+}
+
 function normalizeSnapshot(payload = {}) {
   return {
     mode: payload.mode === 'research' ? 'research' : 'play',
@@ -71,16 +93,8 @@ function normalizeSnapshot(payload = {}) {
       },
     },
     modelRuntime: {
-      decision: {
-        profileId: String(payload.modelRuntime?.decision?.profileId || ''),
-        ready: Boolean(payload.modelRuntime?.decision?.ready),
-        unloaded: Boolean(payload.modelRuntime?.decision?.unloaded),
-      },
-      opponentAnalysis: {
-        profileId: String(payload.modelRuntime?.opponentAnalysis?.profileId || ''),
-        ready: Boolean(payload.modelRuntime?.opponentAnalysis?.ready),
-        unloaded: Boolean(payload.modelRuntime?.opponentAnalysis?.unloaded),
-      },
+      decision: normalizeRuntimeState(payload.modelRuntime?.decision),
+      opponentAnalysis: normalizeRuntimeState(payload.modelRuntime?.opponentAnalysis),
     },
     autoAnalysis: {
       status: String(payload.autoAnalysis?.status || 'idle'),
@@ -134,4 +148,4 @@ function createSessionStore(environmentGateway) {
   }
 }
 
-module.exports = { createSessionStore }
+module.exports = { createSessionStore, normalizeRuntimeState, normalizeSnapshot }
