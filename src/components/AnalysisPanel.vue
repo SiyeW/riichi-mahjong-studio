@@ -101,8 +101,8 @@
             <div class="analysis-player-group-heading">
               <strong>{{ t('analysis.winDealIn') }}</strong>
               <div class="analysis-offense-headings" aria-hidden="true">
-                <span>{{ t('analysis.dealIn') }} →</span>
-                <span>← {{ t('analysis.win') }}</span>
+                <span>{{ t('analysis.dealInProbability') }} →</span>
+                <span>← {{ t('analysis.winProbability') }}</span>
               </div>
             </div>
             <div
@@ -526,10 +526,10 @@ const outcomeSegments = computed(() => {
 })
 
 const playerSeatOrder = computed(() => [
-  props.controlledSeat,
   (props.controlledSeat + 3) % 4,
-  (props.controlledSeat + 2) % 4,
+  props.controlledSeat,
   (props.controlledSeat + 1) % 4,
+  (props.controlledSeat + 2) % 4,
 ])
 
 const playerRows = computed(() => playerSeatOrder.value.map((seat) => {
@@ -1029,7 +1029,7 @@ button {
 
 .analysis-player-group-heading {
   display: grid;
-  grid-template-columns: calc(6rem * var(--floating-panel-scale)) minmax(0, 1fr);
+  grid-template-columns: calc(7rem * var(--floating-panel-scale)) minmax(0, 1fr);
   gap: calc(0.38rem * var(--floating-panel-scale));
   align-items: center;
   min-height: calc(1.8rem * var(--ui-scale));
@@ -1065,7 +1065,7 @@ button {
 .analysis-comparison-row:last-child { border-bottom: 0; }
 
 .analysis-offense-row {
-  grid-template-columns: calc(6rem * var(--floating-panel-scale)) minmax(0, 1fr);
+  grid-template-columns: calc(7rem * var(--floating-panel-scale)) minmax(0, 1fr);
 }
 
 .analysis-player-name {
@@ -1213,7 +1213,7 @@ button {
 
 .analysis-delta-row {
   grid-template-columns:
-    calc(6rem * var(--floating-panel-scale))
+    calc(7rem * var(--floating-panel-scale))
     minmax(0, 1fr)
     calc(4.2rem * var(--floating-panel-scale));
 }
@@ -1254,7 +1254,7 @@ button {
 .analysis-match-heading,
 .analysis-match-row {
   grid-template-columns:
-    calc(6rem * var(--floating-panel-scale))
+    calc(7rem * var(--floating-panel-scale))
     minmax(0, 1fr)
     calc(5rem * var(--floating-panel-scale));
 }
