@@ -571,7 +571,27 @@ textarea {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 0 var(--floating-panel-inline-padding) calc(0.4rem * var(--floating-panel-scale));
+  padding:
+    calc(0.5rem * var(--floating-panel-scale))
+    0
+    calc(0.7rem * var(--floating-panel-scale))
+    calc(0.48rem * var(--floating-panel-scale));
+  scrollbar-color: rgba(165, 194, 190, 0.48) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+.analysis-dock-body::-webkit-scrollbar {
+  width: calc(0.48rem * var(--floating-panel-scale));
+  height: calc(0.48rem * var(--floating-panel-scale));
+}
+
+.analysis-dock-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.analysis-dock-body::-webkit-scrollbar-thumb {
+  background: rgba(165, 194, 190, 0.48);
 }
 
 .dock-drop-overlay {

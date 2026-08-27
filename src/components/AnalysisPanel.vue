@@ -966,8 +966,8 @@ button {
     'offense'
     'delta'
     'match';
-  gap: calc(0.48rem * var(--floating-panel-scale));
-  padding: calc(0.42rem * var(--floating-panel-scale));
+  gap: calc(0.36rem * var(--floating-panel-scale));
+  padding: 0;
 }
 
 .analysis-player-group {
@@ -1278,7 +1278,7 @@ button {
   position: relative;
   display: grid;
   gap: calc(var(--analysis-tile-width) * 0.1);
-  padding-top: calc(0.45rem * var(--floating-panel-scale));
+  padding-top: 0;
   overflow-x: auto;
   overflow-y: visible;
 }
