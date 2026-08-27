@@ -19,13 +19,20 @@
       >
         <h2>{{ title }}</h2>
       </div>
-      <button
-        v-if="section === 'opponents' && hasOpponentGroundTruth"
-        class="analysis-dock-mode"
-        @click="emit('toggle-mode')"
-      >
-        {{ shantenViewMode === 'predictions' ? t('analysis.predictions') : t('analysis.groundTruth') }}
-      </button>
+      <div class="dock-module-header-actions">
+        <button
+          v-if="section === 'opponents' && hasOpponentGroundTruth"
+          class="analysis-dock-mode"
+          @click="emit('toggle-mode')"
+        >
+          {{ shantenViewMode === 'predictions' ? t('analysis.predictions') : t('analysis.groundTruth') }}
+        </button>
+        <button
+          class="floating-panel-close dock-module-close"
+          :aria-label="t('common.close')"
+          @click="emit('close')"
+        >&times;</button>
+      </div>
     </div>
     <div class="analysis-dock-body">
       <p v-if="loading" class="shanten-panel-state">{{ t('common.loading') }}</p>
@@ -83,5 +90,6 @@ defineProps<{
 const emit = defineEmits<{
   'drag-start': [event: PointerEvent]
   'toggle-mode': []
+  close: []
 }>()
 </script>

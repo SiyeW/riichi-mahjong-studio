@@ -21,6 +21,29 @@ export type WorkspaceDockNode =
       weights: number[]
     }
 
+export type WorkspaceDockViewNode =
+  | { type: 'item'; id: WorkspaceItemId }
+  | {
+      type: 'split'
+      direction: DockDirection
+      children: WorkspaceDockViewNode[]
+      weights: number[]
+      sourcePath: number[]
+      sourceChildIndexes: number[]
+    }
+
+export interface DockResizeRequest {
+  direction: DockDirection
+  sourcePath: number[]
+  beforeIndex: number
+  afterIndex: number
+  beforeItems: WorkspaceItemId[]
+  afterItems: WorkspaceItemId[]
+  beforeSize: number
+  afterSize: number
+  event: PointerEvent
+}
+
 const item = (id: WorkspaceItemId): WorkspaceDockNode => ({ type: 'item', id })
 
 function split(
@@ -39,6 +62,17 @@ function split(
 function positiveWeight(value: unknown): number {
   const numeric = Number(value)
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 1
+}
+
+function preferredDockWeight(id: WorkspaceItemId, direction: DockDirection): number {
+  if (direction === 'horizontal') {
+    if (id === 'table') return 1.8
+    if (id === 'console') return 0.78
+    return 1.2
+  }
+  if (id === 'table') return 2
+  if (id === 'console') return 0.8
+  return 1
 }
 
 function legacyWorkspaceOrder(value: unknown): Array<'table' | 'analysis' | 'console'> {
@@ -128,7 +162,11 @@ function insertDockItem(
   const insertBefore = edge === 'left' || edge === 'top'
   if (node.type === 'item') {
     if (node.id !== target) return null
-    return split(direction, insertBefore ? [inserted, node] : [node, inserted])
+    const insertedId = inserted.type === 'item' ? inserted.id : target
+    const weights = insertBefore
+      ? [preferredDockWeight(insertedId, direction), preferredDockWeight(node.id, direction)]
+      : [preferredDockWeight(node.id, direction), preferredDockWeight(insertedId, direction)]
+    return split(direction, insertBefore ? [inserted, node] : [node, inserted], weights)
   }
 
   const targetIndex = node.children.findIndex((child) => dockLayoutContains(child, target))
@@ -138,8 +176,13 @@ function insertDockItem(
     const children = [...node.children]
     const weights = [...node.weights]
     const insertionIndex = targetIndex + (insertBefore ? 0 : 1)
+    const targetWeight = positiveWeight(node.weights[targetIndex])
+    const insertedId = inserted.type === 'item' ? inserted.id : target
+    const insertedWeight = targetWeight
+      * preferredDockWeight(insertedId, direction)
+      / preferredDockWeight(target, direction)
     children.splice(insertionIndex, 0, inserted)
-    weights.splice(insertionIndex, 0, positiveWeight(node.weights[targetIndex]))
+    weights.splice(insertionIndex, 0, insertedWeight)
     return split(direction, children, weights)
   }
 
@@ -162,6 +205,39 @@ export function moveDockItem(
   const withoutItem = removeDockItem(layout, id)
   if (!withoutItem || !dockLayoutContains(withoutItem, target)) return layout
   return insertDockItem(withoutItem, item(id), target, edge) || layout
+}
+
+export function resizeDockSplit(
+  layout: WorkspaceDockNode,
+  sourcePath: readonly number[],
+  beforeIndex: number,
+  afterIndex: number,
+  beforeFraction: number,
+): WorkspaceDockNode {
+  if (!sourcePath.length) {
+    if (layout.type !== 'split') return layout
+    if (!layout.children[beforeIndex] || !layout.children[afterIndex]) return layout
+    const pairWeight = positiveWeight(layout.weights[beforeIndex]) + positiveWeight(layout.weights[afterIndex])
+    const fraction = Math.max(0.01, Math.min(0.99, Number(beforeFraction) || 0.5))
+    const weights = [...layout.weights]
+    weights[beforeIndex] = pairWeight * fraction
+    weights[afterIndex] = pairWeight * (1 - fraction)
+    return split(layout.direction, layout.children, weights)
+  }
+  if (layout.type !== 'split') return layout
+  const [childIndex, ...remainingPath] = sourcePath
+  if (!layout.children[childIndex]) return layout
+  const resizedChild = resizeDockSplit(
+    layout.children[childIndex],
+    remainingPath,
+    beforeIndex,
+    afterIndex,
+    beforeFraction,
+  )
+  if (resizedChild === layout.children[childIndex]) return layout
+  const children = [...layout.children]
+  children[childIndex] = resizedChild
+  return split(layout.direction, children, layout.weights)
 }
 
 function addMissingDockItems(layout: WorkspaceDockNode): WorkspaceDockNode {
@@ -190,13 +266,21 @@ export function normalizeWorkspaceDockLayout(value: unknown, legacyOrder?: unkno
 export function visibleDockLayout(
   node: WorkspaceDockNode,
   visibleItems: ReadonlySet<WorkspaceItemId>,
-): WorkspaceDockNode | null {
+  sourcePath: number[] = [],
+): WorkspaceDockViewNode | null {
   if (node.type === 'item') return visibleItems.has(node.id) ? node : null
   const entries = node.children.flatMap((child, index) => {
-    const visible = visibleDockLayout(child, visibleItems)
-    return visible ? [{ node: visible, weight: node.weights[index] }] : []
+    const visible = visibleDockLayout(child, visibleItems, [...sourcePath, index])
+    return visible ? [{ node: visible, weight: node.weights[index], sourceIndex: index }] : []
   })
   if (!entries.length) return null
   if (entries.length === 1) return entries[0].node
-  return split(node.direction, entries.map((entry) => entry.node), entries.map((entry) => entry.weight))
+  return {
+    type: 'split',
+    direction: node.direction,
+    children: entries.map((entry) => entry.node),
+    weights: entries.map((entry) => positiveWeight(entry.weight)),
+    sourcePath,
+    sourceChildIndexes: entries.map((entry) => entry.sourceIndex),
+  }
 }

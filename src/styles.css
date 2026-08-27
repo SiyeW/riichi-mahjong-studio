@@ -361,6 +361,7 @@ textarea {
 }
 
 .dock-layout-split,
+.dock-layout-child,
 .dock-layout-leaf {
   flex: 1 1 0;
   min-width: 0;
@@ -376,6 +377,17 @@ textarea {
 
 .dock-layout-split {
   display: flex;
+}
+
+.dock-layout-child {
+  display: flex;
+  flex-basis: 0;
+}
+
+.dock-layout-child > .dock-layout-split,
+.dock-layout-child > .dock-layout-leaf {
+  width: 100%;
+  height: 100%;
 }
 
 .dock-layout-split.is-horizontal {
@@ -395,6 +407,58 @@ textarea {
   flex: 1 1 0;
   width: 100%;
   height: 100%;
+}
+
+.dock-layout-resizer {
+  position: relative;
+  z-index: 30;
+  flex: 0 0 1px;
+  background: rgba(140, 195, 188, 0.16);
+  touch-action: none;
+}
+
+.dock-layout-resizer::before {
+  position: absolute;
+  content: '';
+}
+
+.dock-layout-resizer.is-horizontal {
+  align-self: stretch;
+  cursor: col-resize;
+}
+
+.dock-layout-resizer.is-horizontal::before {
+  inset: 0 -4px;
+}
+
+.dock-layout-resizer.is-vertical {
+  width: 100%;
+  cursor: row-resize;
+}
+
+.dock-layout-resizer.is-vertical::before {
+  inset: -4px 0;
+}
+
+.dock-layout-resizer:hover,
+.workspace.is-dock-resizing .dock-layout-resizer {
+  background: rgba(89, 218, 145, 0.82);
+  box-shadow: 0 0 calc(0.45rem * var(--chrome-scale)) rgba(89, 218, 145, 0.42);
+}
+
+.workspace.is-dock-resizing,
+.workspace.is-dock-resizing * {
+  user-select: none !important;
+}
+
+.workspace.is-horizontal-resize,
+.workspace.is-horizontal-resize * {
+  cursor: col-resize !important;
+}
+
+.workspace.is-vertical-resize,
+.workspace.is-vertical-resize * {
+  cursor: row-resize !important;
 }
 
 .table-panel {
@@ -455,6 +519,20 @@ textarea {
   font-weight: 600;
   line-height: 1.15;
   letter-spacing: 0.02em;
+}
+
+.dock-module-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: calc(0.28rem * var(--dock-module-scale));
+}
+
+.floating-panel-close.dock-module-close {
+  flex: 0 0 auto;
+  margin-right: calc(-0.2rem * var(--dock-module-scale));
+  padding: 0 calc(0.15rem * var(--dock-module-scale));
+  font-size: calc(1.5rem * var(--dock-module-scale));
 }
 
 .analysis-dock {

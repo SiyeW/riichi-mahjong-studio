@@ -16,6 +16,17 @@ function positiveWeight(value) {
   return Number.isFinite(numeric) && numeric > 0 ? numeric : 1
 }
 
+function preferredDockWeight(id, direction) {
+  if (direction === 'horizontal') {
+    if (id === 'table') return 1.8
+    if (id === 'console') return 0.78
+    return 1.2
+  }
+  if (id === 'table') return 2
+  if (id === 'console') return 0.8
+  return 1
+}
+
 function split(direction, children, weights = children.map(() => 1)) {
   return {
     type: 'split',
@@ -85,7 +96,11 @@ function insertDockItem(node, inserted, target, edge) {
   const insertBefore = edge === 'left' || edge === 'top'
   if (node.type === 'item') {
     if (node.id !== target) return null
-    return split(direction, insertBefore ? [inserted, node] : [node, inserted])
+    const insertedId = inserted.type === 'item' ? inserted.id : target
+    const weights = insertBefore
+      ? [preferredDockWeight(insertedId, direction), preferredDockWeight(node.id, direction)]
+      : [preferredDockWeight(node.id, direction), preferredDockWeight(insertedId, direction)]
+    return split(direction, insertBefore ? [inserted, node] : [node, inserted], weights)
   }
   const targetIndex = node.children.findIndex((child) => containsDockItem(child, target))
   if (targetIndex < 0) return null
@@ -94,8 +109,13 @@ function insertDockItem(node, inserted, target, edge) {
     const children = [...node.children]
     const weights = [...node.weights]
     const insertionIndex = targetIndex + (insertBefore ? 0 : 1)
+    const targetWeight = positiveWeight(node.weights[targetIndex])
+    const insertedId = inserted.type === 'item' ? inserted.id : target
+    const insertedWeight = targetWeight
+      * preferredDockWeight(insertedId, direction)
+      / preferredDockWeight(target, direction)
     children.splice(insertionIndex, 0, inserted)
-    weights.splice(insertionIndex, 0, positiveWeight(node.weights[targetIndex]))
+    weights.splice(insertionIndex, 0, insertedWeight)
     return split(direction, children, weights)
   }
   const nested = insertDockItem(targetChild, inserted, target, edge)

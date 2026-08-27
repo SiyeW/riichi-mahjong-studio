@@ -132,8 +132,17 @@
       <button @click="refreshBootstrapState">{{ t('common.retry') }}</button>
     </div>
 
-    <main ref="workspaceRoot" class="workspace" :class="{ 'is-dock-dragging': draggingDockPanel }">
-      <DockLayoutNode :node="visibleWorkspaceLayout">
+    <main
+      ref="workspaceRoot"
+      class="workspace"
+      :class="{
+        'is-dock-dragging': draggingDockPanel,
+        'is-dock-resizing': dockResizeDrag,
+        'is-horizontal-resize': dockResizeDrag?.direction === 'horizontal',
+        'is-vertical-resize': dockResizeDrag?.direction === 'vertical',
+      }"
+    >
+      <DockLayoutNode :node="visibleWorkspaceLayout" @resize-start="startDockResize">
         <template #default="{ id: workspaceItemId }">
       <section v-if="workspaceItemId === 'table'" class="panel table-panel">
         <div
@@ -626,6 +635,7 @@
         :shanten-view-mode="shantenViewMode"
         @drag-start="startDockPanelPointerDrag(workspaceItemId, $event)"
         @toggle-mode="shantenViewMode = shantenViewMode === 'predictions' ? 'ground_truth' : 'predictions'"
+        @close="closeAnalysisPanel(workspaceItemId)"
       />
 
       <aside
@@ -641,6 +651,11 @@
           >
             <h2>{{ t('console.title') }}</h2>
           </div>
+          <button
+            class="floating-panel-close dock-module-close"
+            :aria-label="t('common.close')"
+            @click="closeConsoleDock"
+          >&times;</button>
         </div>
         <div class="console-dock-body">
         <div v-if="status.mode === 'research'" class="settings-preview auto-analysis-panel">
@@ -1557,10 +1572,14 @@ import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 import {
   moveDockItem,
   normalizeWorkspaceDockLayout,
+  resizeDockSplit,
   visibleDockLayout,
   WORKSPACE_ITEM_IDS,
   type AnalysisPanelId,
+  type DockDirection,
   type DockEdge,
+  type DockResizeRequest,
+  type WorkspaceDockNode,
   type WorkspaceItemId,
 } from './workspaceLayout'
 
@@ -1778,11 +1797,16 @@ watchEffect(() => {
 const workspaceLayout = computed(() => normalizeWorkspaceLayout(settings.display.workspaceLayout))
 let workspaceLayoutSaveGeneration = 0
 
-function updateWorkspaceLayout(nextLayout: TrainerSettings['display']['workspaceLayout']) {
+function applyWorkspaceLayoutLocally(nextLayout: TrainerSettings['display']['workspaceLayout']) {
   const normalized = normalizeWorkspaceLayout(nextLayout)
   settings.display.workspaceLayout = normalized
   if (showSettingsPanel.value) settingsDraft.display.workspaceLayout = JSON.parse(JSON.stringify(normalized))
   void nextTick(() => scheduleTableZoomRecalc())
+  return normalized
+}
+
+function updateWorkspaceLayout(nextLayout: TrainerSettings['display']['workspaceLayout']) {
+  const normalized = applyWorkspaceLayoutLocally(nextLayout)
   const generation = ++workspaceLayoutSaveGeneration
   void window.trainerAPI?.saveSettings({
     display: {
@@ -1847,6 +1871,126 @@ const draggingDockPanel = ref<DockPanelId | null>(null)
 const activeDockDropTarget = ref<DockDropTarget | null>(null)
 let dockDragPointerId: number | null = null
 
+interface DockResizeDragState {
+  pointerId: number
+  direction: DockDirection
+  sourcePath: number[]
+  beforeIndex: number
+  afterIndex: number
+  startCoordinate: number
+  beforeSize: number
+  afterSize: number
+  minBeforeSize: number
+  minAfterSize: number
+  initialLayout: WorkspaceDockNode
+}
+
+const dockResizeDrag = ref<DockResizeDragState | null>(null)
+
+function dockResizeMinimum(items: readonly WorkspaceItemId[], direction: DockDirection): number {
+  const scale = uiScale.value
+  if (direction === 'horizontal') {
+    if (items.includes('table')) return 360 * scale
+    if (items.includes('console')) return 230 * scale
+    return 250 * scale
+  }
+  if (items.includes('table')) return 260 * scale
+  return 96 * scale
+}
+
+function normalizedDockResizeMinimums(
+  pairSize: number,
+  beforeMinimum: number,
+  afterMinimum: number,
+): [number, number] {
+  const usableSize = Math.max(2, pairSize - 2)
+  const requestedSize = beforeMinimum + afterMinimum
+  if (requestedSize <= usableSize) return [beforeMinimum, afterMinimum]
+  const scale = usableSize / Math.max(1, requestedSize)
+  return [beforeMinimum * scale, afterMinimum * scale]
+}
+
+function handleDockResizePointerMove(event: PointerEvent) {
+  const drag = dockResizeDrag.value
+  if (!drag || event.pointerId !== drag.pointerId) return
+  const coordinate = drag.direction === 'horizontal' ? event.clientX : event.clientY
+  const pairSize = drag.beforeSize + drag.afterSize
+  const desiredBeforeSize = Math.max(
+    drag.minBeforeSize,
+    Math.min(pairSize - drag.minAfterSize, drag.beforeSize + coordinate - drag.startCoordinate),
+  )
+  const layout = resizeDockSplit(
+    drag.initialLayout,
+    drag.sourcePath,
+    drag.beforeIndex,
+    drag.afterIndex,
+    desiredBeforeSize / Math.max(1, pairSize),
+  )
+  applyWorkspaceLayoutLocally({ ...workspaceLayout.value, layout })
+}
+
+function removeDockResizePointerListeners() {
+  window.removeEventListener('pointermove', handleDockResizePointerMove)
+  window.removeEventListener('pointerup', finishDockResize)
+  window.removeEventListener('pointercancel', cancelDockResize)
+  window.removeEventListener('keydown', handleDockResizeKeydown)
+}
+
+function finishDockResize(event: PointerEvent) {
+  const drag = dockResizeDrag.value
+  if (!drag || event.pointerId !== drag.pointerId) return
+  const finalLayout = workspaceLayout.value
+  removeDockResizePointerListeners()
+  dockResizeDrag.value = null
+  updateWorkspaceLayout(finalLayout)
+}
+
+function cancelDockResize(event?: PointerEvent) {
+  const drag = dockResizeDrag.value
+  if (!drag || (event && event.pointerId !== drag.pointerId)) return
+  removeDockResizePointerListeners()
+  dockResizeDrag.value = null
+  applyWorkspaceLayoutLocally({ ...workspaceLayout.value, layout: drag.initialLayout })
+}
+
+function handleDockResizeKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Escape') return
+  cancelDockResize()
+}
+
+function startDockResize(request: DockResizeRequest) {
+  if (request.event.button !== 0) return
+  if (draggingDockPanel.value) {
+    removeDockPanelPointerListeners()
+    endDockPanelDrag()
+  }
+  if (dockResizeDrag.value) cancelDockResize()
+  workspaceLayoutSaveGeneration += 1
+  const pairSize = request.beforeSize + request.afterSize
+  const [minBeforeSize, minAfterSize] = normalizedDockResizeMinimums(
+    pairSize,
+    dockResizeMinimum(request.beforeItems, request.direction),
+    dockResizeMinimum(request.afterItems, request.direction),
+  )
+  dockResizeDrag.value = {
+    pointerId: request.event.pointerId,
+    direction: request.direction,
+    sourcePath: [...request.sourcePath],
+    beforeIndex: request.beforeIndex,
+    afterIndex: request.afterIndex,
+    startCoordinate: request.direction === 'horizontal' ? request.event.clientX : request.event.clientY,
+    beforeSize: request.beforeSize,
+    afterSize: request.afterSize,
+    minBeforeSize,
+    minAfterSize,
+    initialLayout: workspaceLayout.value.layout,
+  }
+  window.addEventListener('pointermove', handleDockResizePointerMove)
+  window.addEventListener('pointerup', finishDockResize)
+  window.addEventListener('pointercancel', cancelDockResize)
+  window.addEventListener('keydown', handleDockResizeKeydown)
+}
+
 function dockDropTargetAt(clientX: number, clientY: number): DockDropTarget | null {
   const dragging = draggingDockPanel.value
   if (!dragging) return null
@@ -1908,6 +2052,7 @@ function handleDockPanelDragKeydown(event: KeyboardEvent) {
 
 function startDockPanelPointerDrag(panel: DockPanelId, event: PointerEvent) {
   if (event.button !== 0) return
+  if (dockResizeDrag.value) cancelDockResize()
   event.preventDefault()
   dockDragPointerId = event.pointerId
   draggingDockPanel.value = panel
@@ -1996,10 +2141,29 @@ function toggleAnalysisPanel(key: AnalysisPanelKey) {
     analysisPanels,
   })
 }
+function closeAnalysisPanel(id: AnalysisPanelId) {
+  const definition = analysisPanelDefinition(id)
+  if (!definition) return
+  const analysisPanels = {
+    ...workspaceLayout.value.analysisPanels,
+    [definition.key]: false,
+  }
+  updateWorkspaceLayout({
+    ...workspaceLayout.value,
+    analysisVisible: Object.values(analysisPanels).some(Boolean) && workspaceLayout.value.analysisVisible,
+    analysisPanels,
+  })
+}
 function toggleConsoleDock() {
   updateWorkspaceLayout({
     ...workspaceLayout.value,
     consoleVisible: !showConsoleDock.value,
+  })
+}
+function closeConsoleDock() {
+  updateWorkspaceLayout({
+    ...workspaceLayout.value,
+    consoleVisible: false,
   })
 }
 type EngineRuntimeKind = 'decision' | 'opponent'
@@ -8432,6 +8596,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   removeDockPanelPointerListeners()
+  removeDockResizePointerListeners()
   cancelEngineAutosaveTimer()
   flushNodeCommentInBackground()
   if (deleteEngineConfirmationTimer !== null) {
