@@ -143,13 +143,17 @@ textarea {
 }
 
 .title-block > div {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   width: 100%;
   min-width: 0;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .title-block .eyebrow {
   font-size: var(--ui-text-caption);
+  line-height: 1.1;
   color: var(--text-dim);
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -161,14 +165,10 @@ textarea {
   width: 100%;
   min-width: 0;
   font-size: var(--ui-text-title);
-  line-height: 1.15;
+  line-height: 1.1;
   letter-spacing: 0.02em;
   white-space: nowrap;
-  overflow: visible;
-}
-
-.title-block.app-title-only h1 {
-  transform: translateY(calc(-0.25rem * var(--chrome-scale)));
+  overflow: hidden;
 }
 
 .record-title-button,
@@ -176,8 +176,8 @@ textarea {
   display: block;
   width: 100%;
   min-width: 0;
-  padding-bottom: 0.25em;
-  margin-bottom: -0.65em;
+  line-height: inherit;
+  padding-bottom: 0.2em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
