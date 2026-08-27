@@ -154,6 +154,7 @@ textarea {
 .title-block .eyebrow {
   font-size: var(--ui-text-caption);
   line-height: 1.1;
+  padding-bottom: 0.2em;
   color: var(--text-dim);
   letter-spacing: 0.04em;
   white-space: nowrap;
