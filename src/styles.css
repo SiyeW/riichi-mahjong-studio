@@ -3101,7 +3101,7 @@ textarea {
   padding: calc(0.65rem * var(--chrome-scale)) calc(0.75rem * var(--chrome-scale));
   border: 1px solid rgba(154, 184, 181, 0.35);
   color: var(--text-dim);
-  background: #063943;
+  background: #012c34;
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
