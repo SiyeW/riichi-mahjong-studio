@@ -472,7 +472,7 @@ textarea {
 .dock-module {
   --dock-module-scale: var(--floating-panel-scale, var(--chrome-scale));
   --dock-module-background: #073e48;
-  --dock-module-surface: #052f38;
+  --dock-module-surface: #0a4a55;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -496,8 +496,8 @@ textarea {
   align-items: center;
   min-height: calc(2rem * var(--dock-module-scale));
   padding: calc(0.2rem * var(--dock-module-scale)) calc(0.6rem * var(--dock-module-scale));
-  border-top: 1px solid rgba(140, 195, 188, 0.24);
-  border-bottom: 1px solid rgba(140, 195, 188, 0.24);
+  border-top: 1px solid rgba(177, 218, 211, 0.28);
+  border-bottom: 1px solid rgba(0, 20, 25, 0.58);
   background: var(--dock-module-surface);
 }
 
