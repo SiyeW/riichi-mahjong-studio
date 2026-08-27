@@ -443,8 +443,7 @@ textarea {
 
 .dock-layout-resizer:hover,
 .workspace.is-dock-resizing .dock-layout-resizer {
-  background: rgba(89, 218, 145, 0.82);
-  box-shadow: 0 0 calc(0.45rem * var(--chrome-scale)) rgba(89, 218, 145, 0.42);
+  background: #59da91;
 }
 
 .workspace.is-dock-resizing,
@@ -585,10 +584,7 @@ textarea {
 .dock-drop-indicator {
   position: absolute;
   border-radius: 2px;
-  background: rgba(89, 218, 145, 0.98);
-  box-shadow:
-    0 0 calc(0.75rem * var(--chrome-scale)) rgba(89, 218, 145, 0.7),
-    0 0 0 1px rgba(223, 255, 237, 0.58);
+  background: #59da91;
 }
 
 .visually-hidden {
