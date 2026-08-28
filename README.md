@@ -17,7 +17,7 @@
 - 可以在对局模式中与引擎练习，实时获取引擎指导
 - 可以在研究模式中回看牌局、建立分支并记录评注
 - 可以导入 [Mortal 在线分析](https://mjai.ekyu.moe/zh-cn.html)报告和[天凤自定义牌谱](https://tenhou.net/6/)
-- 可以打开和保存 `.mjtrain` 存档，与他人分享牌局
+- 可以打开和保存 `.mjstudio` 存档，与他人分享牌局
 - 可以自由安装外部引擎，分析决策、对手向听、牌张放铳率等信息
 - 可以自由安装外部音效包
 - 界面支持简体中文、日文和英文
@@ -29,10 +29,10 @@
 ### 基本使用
 
 - **新建牌局：** 点击“新建”，从一副随机生成的完整牌山开始练习。对局中的其他玩家由引擎控制。
-- **打开存档：** 点击“打开”，选择此前保存的 `.mjtrain` 文件。
+- **打开存档：** 点击“打开”，选择此前保存的 `.mjstudio` 文件。旧 `.mjtrain` 存档也可以打开。
 - **导入牌谱：** 点击“导入”，粘贴 [Mortal 在线分析](https://mjai.ekyu.moe/zh-cn.html)报告地址，或[天凤自定义牌谱](https://tenhou.net/6/)的地址或内容。导入后可以随机重建未知牌山并进入对局模式。
 - **研究牌局：** 在研究模式中在牌局分支、节点间跳转，也可以为节点添加评注。
-- **保存存档：** 使用“保存”或“另存为”将当前牌局及其分支写入 `.mjtrain` 存档。
+- **保存存档：** 使用“保存”或“另存为”将当前牌局及其分支写入 `.mjstudio` 存档。
 
 ### 外部引擎与音效
 
@@ -81,7 +81,7 @@
 - 対局モードでエンジンを相手に練習し、リアルタイムで助言を受けられます
 - 検討モードで対局を振り返り、分岐を作成してコメントを記録できます
 - [Mortal オンライン解析](https://mjai.ekyu.moe/zh-cn.html)レポートと[天鳳カスタム牌譜](https://tenhou.net/6/)をインポートできます
-- `.mjtrain` 形式の牌譜を開いて保存し、他の人と対局を共有できます
+- `.mjstudio` 形式の牌譜を開いて保存し、他の人と対局を共有できます
 - 外部エンジンを自由に導入し、行動選択、対戦相手のシャンテン状態、各牌の放銃率などを解析できます
 - 外部効果音パックを自由に導入できます
 - 中国語（簡体字）、日本語、英語で表示できます
@@ -93,10 +93,10 @@
 ### 基本的な使い方
 
 - **新しい対局：** 「新規」をクリックすると、ランダムに生成された完全な牌山から練習を始めます。他のプレイヤーはエンジンが操作します。
-- **牌譜を開く：** 「開く」をクリックし、保存済みの `.mjtrain` ファイルを選択します。
+- **牌譜を開く：** 「開く」をクリックし、保存済みの `.mjstudio` ファイルを選択します。旧 `.mjtrain` 形式のファイルも開けます。
 - **牌譜をインポート：** 「インポート」をクリックし、[Mortal オンライン解析](https://mjai.ekyu.moe/zh-cn.html)レポートの URL、または[天鳳カスタム牌譜](https://tenhou.net/6/)の URL や内容を貼り付けます。インポート後は、未確定部分の牌山をランダムに再構築して対局モードへ移ることもできます。
 - **牌譜を検討：** 検討モードでは対局の分岐やノードを行き来し、ノードにコメントを付けることもできます。
-- **牌譜を保存：** 「保存」または「名前を付けて保存」を使用し、現在の対局と分岐を `.mjtrain` 形式で保存します。
+- **牌譜を保存：** 「保存」または「名前を付けて保存」を使用し、現在の対局と分岐を `.mjstudio` 形式で保存します。
 
 ### 外部エンジンと効果音
 
@@ -145,7 +145,7 @@ A desktop application for studying game records and practicing Riichi Mahjong. I
 - Practice against engines in play mode with real-time guidance
 - Review games, create branches, and record comments in research mode
 - Import [Mortal online analysis](https://mjai.ekyu.moe/zh-cn.html) reports and [Tenhou custom game records](https://tenhou.net/6/)
-- Open and save `.mjtrain` records to share games with others
+- Open and save `.mjstudio` records to share games with others
 - Install external engines of your choice to analyze decisions, opponent shanten, tile-specific deal-in probability, and more
 - Install external sound packs of your choice
 - Use the interface in Simplified Chinese, Japanese, or English
@@ -157,10 +157,10 @@ Visit [Releases](https://github.com/SiyeW/riichi-mahjong-studio/releases) to dow
 ### Basic use
 
 - **Create a game:** Select “New” to start from a randomly generated complete wall. The other players are controlled by engines.
-- **Open a record:** Select “Open” and choose a saved `.mjtrain` file.
+- **Open a record:** Select “Open” and choose a saved `.mjstudio` file. Legacy `.mjtrain` records are also supported.
 - **Import a record:** Select “Import” and paste a [Mortal online analysis](https://mjai.ekyu.moe/zh-cn.html) report URL or the URL or content of a [Tenhou custom game record](https://tenhou.net/6/). After importing, the unknown wall can be reconstructed at random so that the game can be continued in play mode.
 - **Study a game:** In research mode, move between game branches and nodes, and add comments to individual nodes.
-- **Save a record:** Use “Save” or “Save as” to write the current game and its branches to a `.mjtrain` record.
+- **Save a record:** Use “Save” or “Save as” to write the current game and its branches to a `.mjstudio` record.
 
 ### External engines and sound
 

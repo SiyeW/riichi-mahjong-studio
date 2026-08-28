@@ -29,15 +29,29 @@ function sanitizeSourceName(value) {
     .replace(/[.\-\s]+$/g, '')
 }
 
+const RECORD_FILE_EXTENSION = '.mjstudio'
+const LEGACY_RECORD_FILE_EXTENSION = '.mjtrain'
+
+function isNativeRecordPath(filePath) {
+  return path.extname(String(filePath || '')).toLowerCase() === RECORD_FILE_EXTENSION
+}
+
+function normalizeRecordSavePath(filePath) {
+  const parsed = path.parse(filePath)
+  if (parsed.ext === RECORD_FILE_EXTENSION) return filePath
+  return path.join(parsed.dir, `${parsed.name}${RECORD_FILE_EXTENSION}`)
+}
+
 function buildSuggestedFileName(sourceName = '', date = new Date()) {
   const cleanSourceName = sanitizeSourceName(sourceName)
   const suffix = cleanSourceName ? `-${cleanSourceName}` : ''
-  return `${buildTimestamp(date)}${suffix}.mjtrain`
+  return `${buildTimestamp(date)}${suffix}${RECORD_FILE_EXTENSION}`
 }
 
 const RECOVERY_DIRECTORY_NAME = '.recovery'
 const RECOVERY_DISPLAY_NAME = '未保存的对局'
-const RECOVERY_FILE_NAME = `${RECOVERY_DISPLAY_NAME}.mjtrain`
+const RECOVERY_FILE_NAME = `${RECOVERY_DISPLAY_NAME}${RECORD_FILE_EXTENSION}`
+const PREVIOUS_RECOVERY_FILE_NAME = `${RECOVERY_DISPLAY_NAME}${LEGACY_RECORD_FILE_EXTENSION}`
 const LEGACY_RECOVERY_FILE_NAME = '未保存的恢复存档.mjtrain'
 const RECOVERY_SESSION_FILE_NAME = 'session.json'
 
@@ -74,6 +88,15 @@ function createGameFileStore(baseDir) {
 
   function legacyRecoveryPath() {
     return path.join(baseDir, 'records', LEGACY_RECOVERY_FILE_NAME)
+  }
+
+  function previousRecoveryPath() {
+    return path.join(baseDir, 'records', RECOVERY_DIRECTORY_NAME, PREVIOUS_RECOVERY_FILE_NAME)
+  }
+
+  function isManagedRecoveryPath(filePath) {
+    return [recoveryPath(), previousRecoveryPath(), legacyRecoveryPath()]
+      .some((candidate) => pathsEqual(filePath, candidate))
   }
 
   function recoverySessionPath() {
@@ -116,7 +139,7 @@ function createGameFileStore(baseDir) {
       const sessionPath = recoverySessionPath()
       const normalized = typeof sourcePath === 'string'
         && path.isAbsolute(sourcePath)
-        && !pathsEqual(sourcePath, recoveryPath())
+        && !isManagedRecoveryPath(sourcePath)
         ? path.resolve(sourcePath)
         : ''
       if (!normalized) {
@@ -133,7 +156,7 @@ function createGameFileStore(baseDir) {
       try {
         const sourcePath = JSON.parse(fs.readFileSync(sessionPath, 'utf8'))?.sourcePath
         if (typeof sourcePath !== 'string' || !path.isAbsolute(sourcePath)) return ''
-        if (pathsEqual(sourcePath, recoveryPath()) || pathsEqual(sourcePath, legacyRecoveryPath())) return ''
+        if (isManagedRecoveryPath(sourcePath)) return ''
         return path.resolve(sourcePath)
       } catch {
         return ''
@@ -143,20 +166,22 @@ function createGameFileStore(baseDir) {
       const targetPath = recoveryPath()
       if (fs.existsSync(targetPath)) return targetPath
 
-      const legacyPath = legacyRecoveryPath()
-      if (!fs.existsSync(legacyPath)) return targetPath
-      try {
-        fs.mkdirSync(path.dirname(targetPath), { recursive: true })
-        fs.renameSync(legacyPath, targetPath)
-        return targetPath
-      } catch {
-        // A locked legacy file can still be restored and will be replaced at
-        // the new location on the next exit save.
-        return legacyPath
+      for (const oldPath of [previousRecoveryPath(), legacyRecoveryPath()]) {
+        if (!fs.existsSync(oldPath)) continue
+        try {
+          fs.mkdirSync(path.dirname(targetPath), { recursive: true })
+          fs.renameSync(oldPath, targetPath)
+          return targetPath
+        } catch {
+          // A locked legacy file can still be restored and will be replaced at
+          // the new location on the next exit save.
+          return oldPath
+        }
       }
+      return targetPath
     },
     isRecoveryPath(filePath) {
-      return pathsEqual(filePath, recoveryPath()) || pathsEqual(filePath, legacyRecoveryPath())
+      return isManagedRecoveryPath(filePath)
     },
     prepareUnsavedRecord(sourceName = '', date = new Date()) {
       currentPath = null
@@ -237,12 +262,17 @@ function createGameFileStore(baseDir) {
 
 module.exports = {
   LEGACY_RECOVERY_FILE_NAME,
+  LEGACY_RECORD_FILE_EXTENSION,
+  PREVIOUS_RECOVERY_FILE_NAME,
+  RECORD_FILE_EXTENSION,
   RECOVERY_DIRECTORY_NAME,
   RECOVERY_DISPLAY_NAME,
   RECOVERY_FILE_NAME,
   RECOVERY_SESSION_FILE_NAME,
   buildSuggestedFileName,
   createGameFileStore,
+  isNativeRecordPath,
+  normalizeRecordSavePath,
   pathsEqual,
   sanitizeSourceName,
 }

@@ -432,7 +432,6 @@
   "native.saveRecord": "牌譜を保存",
   "native.openRecord": "牌譜を開く",
   "native.recordFilter": "Riichi Mahjong Studio 牌譜",
-  "native.legacyRecordFilter": "旧形式の JSON 牌譜",
   "native.restoreFailed.title": "前回の内容を復元できませんでした",
   "native.restoreFailed.message": "終了時に保存された内容を読み込めませんでした。通常どおり起動を続けます。",
   "native.recoverySaveFailed.title": "復元用データを保存できませんでした",

@@ -19,7 +19,13 @@ const { buildRuntimeMetrics } = require('./runtime-metrics')
 const { loadSettings, saveSettings } = require('./state/settings')
 const { discoverSoundPacks, resolveSoundPackFile } = require('./state/sound-pack-registry')
 const { createSessionStore } = require('./state/session-store')
-const { createGameFileStore } = require('./state/game-file-store')
+const {
+  LEGACY_RECORD_FILE_EXTENSION,
+  RECORD_FILE_EXTENSION,
+  createGameFileStore,
+  isNativeRecordPath,
+  normalizeRecordSavePath,
+} = require('./state/game-file-store')
 const { normalizeMortalReportUrl } = require('./mortal-report-url')
 const { createTranslator } = require('./i18n')
 const {
@@ -205,8 +211,7 @@ async function saveGameAs() {
     title: t('native.saveRecord'),
     defaultPath: suggestedPath,
     filters: [
-      { name: t('native.recordFilter'), extensions: ['mjtrain'] },
-      { name: t('native.legacyRecordFilter'), extensions: ['json'] },
+      { name: t('native.recordFilter'), extensions: [RECORD_FILE_EXTENSION.slice(1)] },
     ],
   })
 
@@ -214,7 +219,7 @@ async function saveGameAs() {
     return null
   }
 
-  return writeCurrentGameRecord(result.filePath)
+  return writeCurrentGameRecord(normalizeRecordSavePath(result.filePath))
 }
 
 async function saveGame() {
@@ -228,7 +233,7 @@ async function saveGame() {
 async function importGameRecordFile(filePath) {
   const record = decodeGameRecord(fs.readFileSync(filePath))
   const response = await environmentBackend.environmentGateway.importGameRecord(record)
-  const isNativeRecord = path.extname(filePath).toLowerCase() === '.mjtrain'
+  const isNativeRecord = isNativeRecordPath(filePath)
   const managedRecoveryRecord = gameFileStore.isRecoveryPath(filePath)
   const recoveryRecord = managedRecoveryRecord || isRecoveryGameRecord(record)
   const storedSourcePath = managedRecoveryRecord
@@ -239,7 +244,13 @@ async function importGameRecordFile(filePath) {
     ? storedSourcePath
     : ''
   if (recoveryRecord) {
-    gameFileStore.openRecoveryRecord(recoverySourcePath, t('record.unsavedName'))
+    const nativeRecoverySourcePath = isNativeRecordPath(recoverySourcePath)
+      ? recoverySourcePath
+      : ''
+    const recoveryDisplayName = recoverySourcePath
+      ? path.parse(recoverySourcePath).name
+      : t('record.unsavedName')
+    gameFileStore.openRecoveryRecord(nativeRecoverySourcePath, recoveryDisplayName)
   } else if (isNativeRecord) {
     gameFileStore.setCurrentPath(filePath)
   } else {
@@ -251,7 +262,7 @@ async function importGameRecordFile(filePath) {
     nodeId: response.view?.currentNodeId,
   })
   return {
-    path: recoveryRecord ? recoverySourcePath : (isNativeRecord ? filePath : ''),
+    path: recoveryRecord ? gameFileStore.getCurrentPath() || '' : (isNativeRecord ? filePath : ''),
     state: response.state,
     view: response.view,
     recordDirty,
@@ -264,7 +275,11 @@ async function openGame() {
     title: t('native.openRecord'),
     defaultPath: gameFileStore.getDefaultDirectory(),
     properties: ['openFile'],
-    filters: [{ name: t('native.recordFilter'), extensions: ['mjtrain', 'json'] }],
+    filters: [{
+      name: t('native.recordFilter'),
+      extensions: [RECORD_FILE_EXTENSION, LEGACY_RECORD_FILE_EXTENSION, '.json']
+        .map((extension) => extension.slice(1)),
+    }],
   })
 
   if (result.canceled || !result.filePaths.length) {

@@ -432,7 +432,6 @@
   "native.saveRecord": "Save game record",
   "native.openRecord": "Open game record",
   "native.recordFilter": "Riichi Mahjong Studio record",
-  "native.legacyRecordFilter": "Legacy JSON record",
   "native.restoreFailed.title": "Could not restore your previous session",
   "native.restoreFailed.message": "The saved recovery data could not be opened. The app will continue to start normally.",
   "native.recoverySaveFailed.title": "Could not save recovery data",

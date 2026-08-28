@@ -9,6 +9,7 @@ incompatible changes.
 
 ### 中文
 
+- 存档格式改为 `.mjstudio`，仍可打开旧 `.mjtrain` 存档。
 - 支持立直麻将引擎协议 2.2。分析面板可以显示独立预测值和开放区间分布；无法从分布确定数值时，不再自行推算。
 - 界面支持简体中文、日文和英文，可以在设置中切换；默认跟随系统语言。
 - 修复无法加载声明立直麻将引擎协议 2.1 的引擎程序包的问题。同一引擎中无法使用的输出不再影响其他兼容输出。
@@ -21,6 +22,7 @@ incompatible changes.
 
 ### 日本語
 
+- 牌譜の保存形式を `.mjstudio` に変更しました。旧 `.mjtrain` 形式のファイルも引き続き開けます。
 - リーチ麻雀エンジンプロトコル 2.2 に対応しました。解析パネルで独立した予測値と上限のない区間を含む分布を表示でき、分布から値を確定できない場合は推定しません。
 - 中国語（簡体字）、日本語、英語の表示に対応しました。設定から切り替えられ、初期設定ではシステムの言語に合わせます。
 - リーチ麻雀エンジンプロトコル 2.1 を宣言するエンジンパッケージを読み込めない問題を修正しました。同じエンジンに利用できない出力が含まれていても、対応するほかの出力は引き続き使用できます。
@@ -33,6 +35,7 @@ incompatible changes.
 
 ### English
 
+- Change the record format to `.mjstudio`. Legacy `.mjtrain` records can still be opened.
 - Add support for Riichi Engine Protocol 2.2. The analysis panel can show predicted values and open-ended distributions, without deriving a value when the distribution does not determine one.
 - Add Simplified Chinese, Japanese, and English interface languages. The app follows the system language by default and can be changed in Settings.
 - Fix loading of engine packages that declare Riichi Engine Protocol 2.1. Unsupported outputs no longer prevent other compatible outputs from the same engine from being used.
