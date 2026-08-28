@@ -62,12 +62,10 @@
 
 欢迎试用、提交 [Issue](https://github.com/SiyeW/riichi-mahjong-studio/issues) 或参与开发。主程序的构建、调试和测试方法请见 [开发文档](docs/development.md)。第三方引擎协议请见 [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)，自定义音效包的制作方法请见 [音效包文档](docs/sound-packs.md)。更多问题欢迎联系。
 
-### 相关项目与许可证
+### 相关项目
 
 - [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)：引擎通信协议和程序包格式
 - [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis)：一款与本程序兼容的对手分析引擎，提供对手向听预测和牌张铳率预测的输出。训练完成的模型权重将在相关权利和许可证全部确认后提供
-
-主程序采用 [Apache License 2.0](LICENSE)。第三方代码和素材适用各自的许可条款，详见 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
 </div>
 
@@ -126,12 +124,10 @@
 
 ぜひお試しいただき、[Issue](https://github.com/SiyeW/riichi-mahjong-studio/issues) の投稿や開発への参加もご検討ください。アプリケーション本体のビルド、デバッグ、テストについては [開発者向けドキュメント](docs/development.md) を参照してください。サードパーティー製エンジンのプロトコルについては [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)、カスタム効果音パックの制作方法については [効果音パックのドキュメント](docs/sound-packs.md) を参照してください。ご不明な点があれば、お気軽にお問い合わせください。
 
-### 関連プロジェクトとライセンス
+### 関連プロジェクト
 
 - [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol)：エンジン通信プロトコルとパッケージ形式
 - [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis)：本アプリケーションと互換性のある対戦相手解析エンジンで、対戦相手のシャンテン予測と牌ごとの放銃率予測を出力します。学習済みのモデルの重みは、関連する権利とライセンスをすべて確認した後に提供する予定です
-
-本体は [Apache License 2.0](LICENSE) で提供されます。第三者のコードと素材にはそれぞれのライセンス条件が適用されます。詳しくは [第三者通知](THIRD_PARTY_NOTICES.md) を参照してください。
 
 </div>
 
@@ -190,11 +186,9 @@ The project is still under development. Some features are incomplete, and the in
 
 You are welcome to try the application, submit an [issue](https://github.com/SiyeW/riichi-mahjong-studio/issues), or contribute to its development. For instructions on building, debugging, and testing the main application, see the [development documentation](docs/development.md). For the third-party engine protocol, see [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol). For instructions on creating custom sound packs, see the [sound pack documentation](docs/sound-packs.md). Questions are welcome.
 
-### Related projects and licenses
+### Related projects
 
 - [riichi-engine-protocol](https://github.com/SiyeW/riichi-engine-protocol): engine communication protocol and package format
 - [riichi-opponent-analysis](https://github.com/SiyeW/riichi-opponent-analysis): an opponent-analysis engine compatible with this application, providing opponent shanten predictions and tile-specific deal-in probability predictions; trained model weights will be provided after all related rights and licenses have been confirmed
-
-The application is licensed under the [Apache License 2.0](LICENSE). Third-party code and assets retain their respective licenses; see the [third-party notices](THIRD_PARTY_NOTICES.md).
 
 </div>
