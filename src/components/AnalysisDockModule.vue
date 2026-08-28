@@ -5,10 +5,7 @@
       'reset-without-motion': suppressTransitions,
       'is-dragging': dragging,
     }"
-    :style="[
-      { '--floating-panel-scale': uiScale },
-      colorSchemeCssVariables,
-    ]"
+    :style="{ '--floating-panel-scale': uiScale }"
     :aria-label="title"
   >
     <div class="dock-module-header analysis-dock-header">
@@ -51,6 +48,7 @@
           :dealer="dealer"
           :tile-image-src="tileImageSrc"
           :tile-face-label="tileFaceLabel"
+          :perceptual-color-palette="perceptualColorPalette"
         />
       </template>
     </div>
@@ -58,8 +56,8 @@
 </template>
 
 <script setup lang="ts">
-import type { CSSProperties } from 'vue'
 import { useI18n } from '../i18n'
+import type { PerceptualColorPalette } from '../perceptualSurface'
 import AnalysisPanel from './AnalysisPanel.vue'
 
 const { t } = useI18n()
@@ -70,7 +68,7 @@ defineProps<{
   dragging: boolean
   suppressTransitions: boolean
   uiScale: number
-  colorSchemeCssVariables: CSSProperties
+  perceptualColorPalette: PerceptualColorPalette
   loading: boolean
   loadError: string
   analysis: Record<string, unknown> | null | undefined

@@ -6,7 +6,11 @@
       'is-count-section': section === 'counts',
     }"
   >
-    <section v-if="section === 'opponents'" class="analysis-opponent-section">
+    <section
+      v-if="section === 'opponents'"
+      v-perceptual-surface="perceptualColorPalette"
+      class="analysis-opponent-section"
+    >
         <div class="analysis-opponent-grid">
           <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-card">
             <ShantenPieChart
@@ -68,7 +72,10 @@
 
     <section v-else-if="section === 'game'" class="analysis-player-section">
         <div class="analysis-player-groups">
-          <section class="analysis-player-group analysis-offense-group">
+          <section
+            v-perceptual-surface="perceptualColorPalette"
+            class="analysis-player-group analysis-offense-group"
+          >
             <div class="analysis-player-group-heading">
               <strong>{{ t('analysis.winDealIn') }}</strong>
             </div>
@@ -143,7 +150,10 @@
             </div>
           </section>
 
-          <section class="analysis-player-group analysis-delta-group">
+          <section
+            v-perceptual-surface="perceptualColorPalette"
+            class="analysis-player-group analysis-delta-group"
+          >
             <div class="analysis-player-group-heading">
               <strong>{{ t('analysis.kyokuDelta') }}</strong>
             </div>
@@ -167,7 +177,10 @@
             </div>
           </section>
 
-          <section class="analysis-player-group analysis-match-group">
+          <section
+            v-perceptual-surface="perceptualColorPalette"
+            class="analysis-player-group analysis-match-group"
+          >
             <div class="analysis-player-group-heading analysis-match-heading">
               <strong>{{ t('analysis.matchProjection') }}</strong>
               <span>{{ t('analysis.matchPlacement') }}</span>
@@ -195,7 +208,7 @@
     </section>
 
     <div v-else-if="section === 'risk'" class="analysis-tiles-view">
-      <div class="analysis-risk-grid">
+      <div v-perceptual-surface="perceptualColorPalette" class="analysis-risk-grid">
         <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-risk-row">
           <div class="analysis-tile-sequence">
             <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-risk-tile">
@@ -239,7 +252,12 @@
     </div>
 
     <div v-else class="analysis-tiles-view">
-      <div ref="countGridElement" class="analysis-count-grid">
+      <div
+        ref="countGridElement"
+        v-perceptual-surface="perceptualColorPalette"
+        class="analysis-count-grid"
+        @perceptual-surface-change="scheduleCountBarGeometry"
+      >
         <div v-for="row in countTileRows" :key="row.tiles.join('-')" class="analysis-tile-chart-row analysis-count-row">
           <div class="analysis-tile-sequence">
             <canvas
@@ -319,6 +337,7 @@ import {
   scaleOklab,
   type RgbColor,
 } from '../perceptualColor'
+import { vPerceptualSurface, type PerceptualColorPalette } from '../perceptualSurface'
 import ShantenPieChart from './ShantenPieChart.vue'
 
 const { t, numberLocale } = useI18n()
@@ -338,6 +357,7 @@ const props = defineProps<{
   dealer: number
   tileImageSrc: (tile: string) => string
   tileFaceLabel: (tile: string) => string
+  perceptualColorPalette: PerceptualColorPalette
 }>()
 
 const hoverText = ref('')

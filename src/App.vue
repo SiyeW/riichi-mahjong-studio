@@ -162,7 +162,7 @@
             role="status"
             aria-live="polite"
           >{{ tileArtworkLoadingLabel }}</div>
-          <div class="grid-main">
+          <div v-perceptual-surface="activePerceptualColorPalette" class="grid-main">
             <!-- 用户手牌（屏幕下方，south 方位） -->
             <div class="grid-hand-p0-container" :style="southLaneStyle">
               <div class="south-command-stack">
@@ -618,7 +618,7 @@
         :dragging="draggingDockPanel === workspaceItemId"
         :suppress-transitions="suppressOpponentAnalysisTransitions"
         :ui-scale="uiScale"
-        :color-scheme-css-variables="colorSchemeCssVariables"
+        :perceptual-color-palette="activePerceptualColorPalette"
         :loading="opponentAnalysisIsLoading"
         :load-error="opponentAnalysisLoadError"
         :analysis="gameView.opponentAnalysis"
@@ -1568,7 +1568,13 @@ import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import { normalizeLanguagePreference, setLanguagePreference, useI18n } from './i18n'
-import { mixOklab, mostDistinctOklabColor, parseCssColor, rgbString, type RgbColor } from './perceptualColor'
+import { mostDistinctOklabColor, parseCssColor, type RgbColor } from './perceptualColor'
+import {
+  PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
+  perceptualSurfaceVariables,
+  vPerceptualSurface,
+  type PerceptualColorPalette,
+} from './perceptualSurface'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 import {
@@ -1776,7 +1782,7 @@ const settings = reactive<TrainerSettings>({
 })
 const reduceMotionEnabled = computed(() => Boolean(settings.display.reduceMotion))
 const activeColorScheme = computed(() => COLOR_SCHEMES[normalizeColorScheme(settings.display.colorScheme)])
-const colorSchemeCssVariables = computed(() => {
+const activePerceptualColorPalette = computed<PerceptualColorPalette>(() => {
   const scheme = activeColorScheme.value
   const fallback: RgbColor = [128, 128, 128]
   const kamicha = parseCssColor(scheme.ronWait.kamicha, fallback)
@@ -1785,24 +1791,18 @@ const colorSchemeCssVariables = computed(() => {
   const selfDealIn = scheme.selfDealIn
     ? parseCssColor(scheme.selfDealIn, [201, 85, 77])
     : mostDistinctOklabColor([kamicha, toimen, shimocha])
-  const placementFirst: RgbColor = [235, 235, 235]
   return {
-    '--decision-recommendation-color': scheme.decisionRecommendation,
-    '--ron-kamicha-color': rgbString(kamicha),
-    '--ron-toimen-color': rgbString(toimen),
-    '--ron-shimocha-color': rgbString(shimocha),
-    '--analysis-draw-color': rgbString(kamicha),
-    '--analysis-self-win-color': rgbString(shimocha),
-    '--analysis-horizontal-color': rgbString(toimen),
-    '--analysis-self-deal-in-color': rgbString(selfDealIn),
-    '--analysis-dora-color': rgbString(kamicha),
-    '--analysis-score-color': rgbString(toimen),
-    '--analysis-rank-1-color': rgbString(placementFirst),
-    '--analysis-rank-2-color': rgbString(mixOklab(kamicha, placementFirst, 2 / 3)),
-    '--analysis-rank-3-color': rgbString(mixOklab(kamicha, placementFirst, 1 / 3)),
-    '--analysis-rank-4-color': rgbString(kamicha),
+    decisionRecommendation: parseCssColor(scheme.decisionRecommendation, [26, 147, 26]),
+    kamicha,
+    toimen,
+    shimocha,
+    selfDealIn,
   }
 })
+const colorSchemeCssVariables = computed(() => perceptualSurfaceVariables(
+  activePerceptualColorPalette.value,
+  PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
+))
 const shantenColors = computed(() => activeColorScheme.value.shanten)
 const UI_SCALE_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
 
