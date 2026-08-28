@@ -15,6 +15,23 @@ export type PerceptualColorPalette = Readonly<{
   selfDealIn: RgbColor
 }>
 
+export type PerceptualSurfaceTuning = Readonly<{
+  lightnessCompensation: number
+  chromaticCompensation: number
+  surfaceChromaGain: number
+}>
+
+export type PerceptualSurfaceBinding = Readonly<{
+  palette: PerceptualColorPalette
+  tuning: PerceptualSurfaceTuning
+}>
+
+export const DEFAULT_PERCEPTUAL_SURFACE_TUNING: PerceptualSurfaceTuning = Object.freeze({
+  lightnessCompensation: 0.8,
+  chromaticCompensation: 0,
+  surfaceChromaGain: 0,
+})
+
 export const PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND: RgbColor = [5, 57, 66]
 
 const PERCEPTUAL_SURFACE_VARIABLES = [
@@ -34,26 +51,38 @@ const PERCEPTUAL_SURFACE_VARIABLES = [
   '--analysis-rank-4-color',
 ] as const
 
-function surfaceAdjustedColor(color: RgbColor, surface: RgbColor): RgbColor {
+function surfaceAdjustedColor(
+  color: RgbColor,
+  surface: RgbColor,
+  tuning: PerceptualSurfaceTuning,
+): RgbColor {
   const canonical = rgbToOklab(color)
   const calibration = rgbToOklab(PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND)
   const background = rgbToOklab(surface)
+  const lightnessDelta = calibration.l - background.l
+  const aDelta = calibration.a - background.a
+  const bDelta = calibration.b - background.b
+  const adjustedA = canonical.a + (aDelta * tuning.chromaticCompensation)
+  const adjustedB = canonical.b + (bDelta * tuning.chromaticCompensation)
+  const surfaceDistance = Math.hypot(lightnessDelta, aDelta, bDelta)
+  const chromaMultiplier = Math.max(0, 1 + (surfaceDistance * tuning.surfaceChromaGain))
   return oklabToRgb({
-    l: canonical.l + calibration.l - background.l,
-    a: canonical.a + calibration.a - background.a,
-    b: canonical.b + calibration.b - background.b,
+    l: canonical.l + (lightnessDelta * tuning.lightnessCompensation),
+    a: adjustedA * chromaMultiplier,
+    b: adjustedB * chromaMultiplier,
   })
 }
 
 export function perceptualSurfaceVariables(
   palette: PerceptualColorPalette,
   surface: RgbColor,
+  tuning: PerceptualSurfaceTuning = DEFAULT_PERCEPTUAL_SURFACE_TUNING,
 ): Record<(typeof PERCEPTUAL_SURFACE_VARIABLES)[number], string> {
-  const decisionRecommendation = surfaceAdjustedColor(palette.decisionRecommendation, surface)
-  const kamicha = surfaceAdjustedColor(palette.kamicha, surface)
-  const toimen = surfaceAdjustedColor(palette.toimen, surface)
-  const shimocha = surfaceAdjustedColor(palette.shimocha, surface)
-  const selfDealIn = surfaceAdjustedColor(palette.selfDealIn, surface)
+  const decisionRecommendation = surfaceAdjustedColor(palette.decisionRecommendation, surface, tuning)
+  const kamicha = surfaceAdjustedColor(palette.kamicha, surface, tuning)
+  const toimen = surfaceAdjustedColor(palette.toimen, surface, tuning)
+  const shimocha = surfaceAdjustedColor(palette.shimocha, surface, tuning)
+  const selfDealIn = surfaceAdjustedColor(palette.selfDealIn, surface, tuning)
   const placementFirst: RgbColor = [235, 235, 235]
   return {
     '--decision-recommendation-color': rgbString(decisionRecommendation),
@@ -109,7 +138,7 @@ export function effectiveBackgroundColor(element: HTMLElement): RgbColor {
 }
 
 type PerceptualSurfaceState = {
-  palette: PerceptualColorPalette
+  binding: PerceptualSurfaceBinding
   frame: number
   observer: MutationObserver
   headObserver: MutationObserver
@@ -120,7 +149,11 @@ const surfaceStates = new WeakMap<HTMLElement, PerceptualSurfaceState>()
 
 function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceState) {
   state.frame = 0
-  const variables = perceptualSurfaceVariables(state.palette, effectiveBackgroundColor(element))
+  const variables = perceptualSurfaceVariables(
+    state.binding.palette,
+    effectiveBackgroundColor(element),
+    state.binding.tuning,
+  )
   let changed = false
   for (const variable of PERCEPTUAL_SURFACE_VARIABLES) {
     const value = variables[variable]
@@ -143,10 +176,10 @@ function observeSurfaceAncestors(element: HTMLElement, state: PerceptualSurfaceS
   }
 }
 
-export const vPerceptualSurface: Directive<HTMLElement, PerceptualColorPalette> = {
+export const vPerceptualSurface: Directive<HTMLElement, PerceptualSurfaceBinding> = {
   mounted(element, binding) {
     const state: PerceptualSurfaceState = {
-      palette: binding.value,
+      binding: binding.value,
       frame: 0,
       observer: new MutationObserver(() => schedulePerceptualSurface(element, state)),
       headObserver: new MutationObserver(() => schedulePerceptualSurface(element, state)),
@@ -161,7 +194,7 @@ export const vPerceptualSurface: Directive<HTMLElement, PerceptualColorPalette> 
   updated(element, binding) {
     const state = surfaceStates.get(element)
     if (!state) return
-    state.palette = binding.value
+    state.binding = binding.value
     observeSurfaceAncestors(element, state)
     schedulePerceptualSurface(element, state)
   },

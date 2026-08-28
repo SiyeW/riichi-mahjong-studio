@@ -162,7 +162,7 @@
             role="status"
             aria-live="polite"
           >{{ tileArtworkLoadingLabel }}</div>
-          <div v-perceptual-surface="activePerceptualColorPalette" class="grid-main">
+          <div v-perceptual-surface="activePerceptualSurfaceBinding" class="grid-main">
             <!-- 用户手牌（屏幕下方，south 方位） -->
             <div class="grid-hand-p0-container" :style="southLaneStyle">
               <div class="south-command-stack">
@@ -618,7 +618,7 @@
         :dragging="draggingDockPanel === workspaceItemId"
         :suppress-transitions="suppressOpponentAnalysisTransitions"
         :ui-scale="uiScale"
-        :perceptual-color-palette="activePerceptualColorPalette"
+        :perceptual-surface="activePerceptualSurfaceBinding"
         :loading="opponentAnalysisIsLoading"
         :load-error="opponentAnalysisLoadError"
         :analysis="gameView.opponentAnalysis"
@@ -1570,10 +1570,13 @@ import RecordImportDialog from './components/RecordImportDialog.vue'
 import { normalizeLanguagePreference, setLanguagePreference, useI18n } from './i18n'
 import { mostDistinctOklabColor, parseCssColor, type RgbColor } from './perceptualColor'
 import {
+  DEFAULT_PERCEPTUAL_SURFACE_TUNING,
   PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
   perceptualSurfaceVariables,
   vPerceptualSurface,
   type PerceptualColorPalette,
+  type PerceptualSurfaceBinding,
+  type PerceptualSurfaceTuning,
 } from './perceptualSurface'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
@@ -1799,10 +1802,17 @@ const activePerceptualColorPalette = computed<PerceptualColorPalette>(() => {
     selfDealIn,
   }
 })
+const perceptualSurfaceTuning: PerceptualSurfaceTuning = DEFAULT_PERCEPTUAL_SURFACE_TUNING
+const activePerceptualSurfaceBinding = computed<PerceptualSurfaceBinding>(() => ({
+  palette: activePerceptualColorPalette.value,
+  tuning: perceptualSurfaceTuning,
+}))
 const colorSchemeCssVariables = computed(() => perceptualSurfaceVariables(
   activePerceptualColorPalette.value,
   PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
+  perceptualSurfaceTuning,
 ))
+
 const shantenColors = computed(() => activeColorScheme.value.shanten)
 const UI_SCALE_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
 

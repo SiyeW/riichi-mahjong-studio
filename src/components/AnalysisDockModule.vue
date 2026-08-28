@@ -48,7 +48,7 @@
           :dealer="dealer"
           :tile-image-src="tileImageSrc"
           :tile-face-label="tileFaceLabel"
-          :perceptual-color-palette="perceptualColorPalette"
+          :perceptual-surface="perceptualSurface"
         />
       </template>
     </div>
@@ -57,7 +57,7 @@
 
 <script setup lang="ts">
 import { useI18n } from '../i18n'
-import type { PerceptualColorPalette } from '../perceptualSurface'
+import type { PerceptualSurfaceBinding } from '../perceptualSurface'
 import AnalysisPanel from './AnalysisPanel.vue'
 
 const { t } = useI18n()
@@ -68,7 +68,7 @@ defineProps<{
   dragging: boolean
   suppressTransitions: boolean
   uiScale: number
-  perceptualColorPalette: PerceptualColorPalette
+  perceptualSurface: PerceptualSurfaceBinding
   loading: boolean
   loadError: string
   analysis: Record<string, unknown> | null | undefined

@@ -8,7 +8,7 @@
   >
     <section
       v-if="section === 'opponents'"
-      v-perceptual-surface="perceptualColorPalette"
+      v-perceptual-surface="perceptualSurface"
       class="analysis-opponent-section"
     >
         <div class="analysis-opponent-grid">
@@ -73,7 +73,7 @@
     <section v-else-if="section === 'game'" class="analysis-player-section">
         <div class="analysis-player-groups">
           <section
-            v-perceptual-surface="perceptualColorPalette"
+            v-perceptual-surface="perceptualSurface"
             class="analysis-player-group analysis-offense-group"
           >
             <div class="analysis-player-group-heading">
@@ -151,7 +151,7 @@
           </section>
 
           <section
-            v-perceptual-surface="perceptualColorPalette"
+            v-perceptual-surface="perceptualSurface"
             class="analysis-player-group analysis-delta-group"
           >
             <div class="analysis-player-group-heading">
@@ -178,7 +178,7 @@
           </section>
 
           <section
-            v-perceptual-surface="perceptualColorPalette"
+            v-perceptual-surface="perceptualSurface"
             class="analysis-player-group analysis-match-group"
           >
             <div class="analysis-player-group-heading analysis-match-heading">
@@ -208,7 +208,7 @@
     </section>
 
     <div v-else-if="section === 'risk'" class="analysis-tiles-view">
-      <div v-perceptual-surface="perceptualColorPalette" class="analysis-risk-grid">
+      <div v-perceptual-surface="perceptualSurface" class="analysis-risk-grid">
         <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-risk-row">
           <div class="analysis-tile-sequence">
             <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-risk-tile">
@@ -254,7 +254,7 @@
     <div v-else class="analysis-tiles-view">
       <div
         ref="countGridElement"
-        v-perceptual-surface="perceptualColorPalette"
+        v-perceptual-surface="perceptualSurface"
         class="analysis-count-grid"
         @perceptual-surface-change="scheduleCountBarGeometry"
       >
@@ -337,7 +337,7 @@ import {
   scaleOklab,
   type RgbColor,
 } from '../perceptualColor'
-import { vPerceptualSurface, type PerceptualColorPalette } from '../perceptualSurface'
+import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
 import ShantenPieChart from './ShantenPieChart.vue'
 
 const { t, numberLocale } = useI18n()
@@ -357,7 +357,7 @@ const props = defineProps<{
   dealer: number
   tileImageSrc: (tile: string) => string
   tileFaceLabel: (tile: string) => string
-  perceptualColorPalette: PerceptualColorPalette
+  perceptualSurface: PerceptualSurfaceBinding
 }>()
 
 const hoverText = ref('')
