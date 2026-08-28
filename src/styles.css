@@ -181,7 +181,8 @@ textarea {
   width: 100%;
   min-width: 0;
   overflow: hidden;
-  transform: translateY(calc(0.1rem * var(--chrome-scale)));
+  font-size: var(--ui-text-title);
+  transform: translateY(0.077em);
 }
 
 .title-block .eyebrow {
@@ -530,7 +531,7 @@ textarea {
   min-height: calc(1.7rem * var(--dock-module-scale));
   padding: 0 calc(0.45rem * var(--dock-module-scale));
   background: none;
-  border-bottom: 1px solid rgba(140, 195, 188, 0.18);
+  border-top: 1px solid rgba(140, 195, 188, 0.18);
 }
 
 .dock-module-drag-handle {
