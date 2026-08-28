@@ -89,11 +89,13 @@ test('a panel can dock beside an entire sibling column', () => {
     ],
     weights: [2, 1, 1, 1],
   }
-  const moved = moveDockItemBesideNode(layout, 'analysis-counts', [1], 'right')
+  const moved = moveDockItemBesideNode(layout, 'analysis-counts', [1], 'right', 0.2)
   assert.equal(moved.type, 'split')
   assert.equal(moved.direction, 'horizontal')
   assert.deepEqual(flattenItems(moved.children[1]), ['analysis-opponents', 'analysis-game'])
   assert.deepEqual(flattenItems(moved.children[2]), ['analysis-counts'])
+  const totalWeight = moved.weights.reduce((total, weight) => total + weight, 0)
+  assert.ok(Math.abs(moved.weights[2] / totalWeight - 0.2) < 0.0001)
   assert.deepEqual(flattenItems(moved).sort(), [...WORKSPACE_ITEM_IDS].sort())
 })
 
@@ -108,6 +110,24 @@ test('repeated docking restores a sensible console-to-table width ratio', () => 
   const tableIndex = parent.children.findIndex((child) => child.type === 'item' && child.id === 'table')
   assert.ok(consoleIndex >= 0 && tableIndex >= 0)
   assert.ok(Math.abs(parent.weights[consoleIndex] / parent.weights[tableIndex] - 0.78 / 1.8) < 0.0001)
+})
+
+test('a remembered width is restored when a panel returns to a side', () => {
+  let layout = createDefaultDockLayout()
+  layout = moveDockItem(layout, 'analysis-counts', 'table', 'bottom', 0.31)
+  layout = moveDockItem(layout, 'analysis-counts', 'table', 'right', 0.22)
+  assert.equal(layout.type, 'split')
+  const row = layout.children.find((child) => (
+    child.type === 'split'
+      && child.direction === 'horizontal'
+      && dockLayoutContains(child, 'table')
+      && dockLayoutContains(child, 'analysis-counts')
+  ))
+  assert.ok(row && row.type === 'split')
+  const totalWeight = row.weights.reduce((total, weight) => total + weight, 0)
+  const panelIndex = row.children.findIndex((child) => dockLayoutContains(child, 'analysis-counts'))
+  assert.ok(panelIndex >= 0)
+  assert.ok(Math.abs(row.weights[panelIndex] / totalWeight - 0.22) < 0.0001)
 })
 
 test('split resizing preserves the pair total and changes only the selected weights', () => {

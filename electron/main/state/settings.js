@@ -29,6 +29,7 @@ const DEFAULT_WORKSPACE_LAYOUT = Object.freeze({
     counts: false,
   }),
   consoleVisible: true,
+  panelSizeFractions: Object.freeze({}),
 })
 const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
   language: 'system',
@@ -81,7 +82,33 @@ function normalizeWorkspaceLayout(workspaceLayout = {}) {
       counts: sourcePanels.counts === true,
     },
     consoleVisible: workspaceLayout.consoleVisible !== false,
+    panelSizeFractions: normalizeDockPanelSizeFractions(workspaceLayout.panelSizeFractions),
   }
+}
+
+function normalizeDockPanelSizeFractions(value) {
+  if (!value || typeof value !== 'object') return {}
+  const normalized = {}
+  const panelIds = [
+    'console',
+    'analysis-opponents',
+    'analysis-game',
+    'analysis-risk',
+    'analysis-counts',
+  ]
+  for (const panelId of panelIds) {
+    const source = value[panelId]
+    if (!source || typeof source !== 'object') continue
+    const panel = {}
+    for (const direction of ['horizontal', 'vertical']) {
+      const fraction = Number(source[direction])
+      if (Number.isFinite(fraction) && fraction > 0 && fraction < 1) {
+        panel[direction] = Math.max(0.08, Math.min(0.8, fraction))
+      }
+    }
+    if (Object.keys(panel).length) normalized[panelId] = panel
+  }
+  return normalized
 }
 
 function normalizeDisplaySettings(display = {}) {

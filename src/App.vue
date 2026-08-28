@@ -1591,6 +1591,7 @@ type ColorSchemeId = TrainerSettings['display']['colorScheme']
 type TablePosition = TrainerSettings['display']['tablePosition']
 type DockPanelId = Exclude<WorkspaceItemId, 'table'>
 type AnalysisPanelKey = keyof TrainerSettings['display']['workspaceLayout']['analysisPanels']
+type DockPanelSizeFractions = TrainerSettings['display']['workspaceLayout']['panelSizeFractions']
 type DockDropTarget = {
   edge: DockEdge
   bounds: { left: number; top: number; width: number; height: number }
@@ -1598,6 +1599,14 @@ type DockDropTarget = {
   | { kind: 'item'; item: WorkspaceItemId }
   | { kind: 'group'; sourcePath: number[] }
 )
+
+const DOCK_PANEL_IDS: readonly DockPanelId[] = [
+  'console',
+  'analysis-opponents',
+  'analysis-game',
+  'analysis-risk',
+  'analysis-counts',
+]
 
 const ANALYSIS_PANEL_DEFINITIONS: Array<{
   id: AnalysisPanelId
@@ -1646,6 +1655,30 @@ function normalizeTablePosition(value: unknown): TablePosition {
   return value === 'left' || value === 'right' ? value : 'center'
 }
 
+function normalizeDockPanelFraction(value: unknown): number | null {
+  const numeric = Number(value)
+  return Number.isFinite(numeric) && numeric > 0 && numeric < 1
+    ? Math.max(0.08, Math.min(0.8, numeric))
+    : null
+}
+
+function normalizeDockPanelSizeFractions(value: unknown): DockPanelSizeFractions {
+  if (!value || typeof value !== 'object') return {}
+  const source = value as Partial<Record<DockPanelId, Record<DockDirection, unknown>>>
+  const normalized: DockPanelSizeFractions = {}
+  for (const panelId of DOCK_PANEL_IDS) {
+    const sourcePanel = source[panelId]
+    if (!sourcePanel || typeof sourcePanel !== 'object') continue
+    const panel: { horizontal?: number; vertical?: number } = {}
+    for (const direction of ['horizontal', 'vertical'] as const) {
+      const fraction = normalizeDockPanelFraction(sourcePanel[direction])
+      if (fraction !== null) panel[direction] = fraction
+    }
+    if (Object.keys(panel).length) normalized[panelId] = panel
+  }
+  return normalized
+}
+
 function normalizeWorkspaceLayout(value: unknown): TrainerSettings['display']['workspaceLayout'] {
   const source = value && typeof value === 'object'
     ? value as Partial<TrainerSettings['display']['workspaceLayout']> & { order?: unknown }
@@ -1663,6 +1696,7 @@ function normalizeWorkspaceLayout(value: unknown): TrainerSettings['display']['w
       counts: sourcePanels.counts === true,
     },
     consoleVisible: source.consoleVisible !== false,
+    panelSizeFractions: normalizeDockPanelSizeFractions(source.panelSizeFractions),
   }
 }
 
@@ -1873,6 +1907,7 @@ const workspaceRoot = ref<HTMLElement | null>(null)
 const draggingDockPanel = ref<DockPanelId | null>(null)
 const activeDockDropTarget = ref<DockDropTarget | null>(null)
 let dockDragPointerId: number | null = null
+let dockDragPanelSizeFractions: DockPanelSizeFractions | null = null
 
 interface DockResizeDragState {
   pointerId: number
@@ -2082,11 +2117,50 @@ function handleDockPanelDragKeydown(event: KeyboardEvent) {
   endDockPanelDrag()
 }
 
+function measureDockPanelFraction(panel: DockPanelId, direction: DockDirection): number | null {
+  const leaf = document.querySelector<HTMLElement>(`.dock-layout-leaf[data-dock-target="${panel}"]`)
+  if (!leaf) return null
+  for (let element = leaf.parentElement; element; element = element.parentElement) {
+    if (!element.classList.contains('dock-layout-child')) continue
+    const split = element.parentElement
+    if (!split?.classList.contains('dock-layout-split')) continue
+    if (!split.classList.contains(`is-${direction}`)) continue
+    const siblings = [...split.children].filter((child): child is HTMLElement => (
+      child instanceof HTMLElement && child.classList.contains('dock-layout-child')
+    ))
+    const size = direction === 'horizontal'
+      ? element.getBoundingClientRect().width
+      : element.getBoundingClientRect().height
+    const totalSize = siblings.reduce((total, sibling) => {
+      const bounds = sibling.getBoundingClientRect()
+      return total + (direction === 'horizontal' ? bounds.width : bounds.height)
+    }, 0)
+    return normalizeDockPanelFraction(size / Math.max(1, totalSize))
+  }
+  return null
+}
+
+function captureDockPanelSizeFractions(panel: DockPanelId): DockPanelSizeFractions {
+  const captured = normalizeDockPanelSizeFractions(workspaceLayout.value.panelSizeFractions)
+  const panelFractions = { ...captured[panel] }
+  for (const direction of ['horizontal', 'vertical'] as const) {
+    const fraction = measureDockPanelFraction(panel, direction)
+    if (fraction !== null) panelFractions[direction] = fraction
+  }
+  if (Object.keys(panelFractions).length) captured[panel] = panelFractions
+  return captured
+}
+
+function defaultDockPanelFraction(direction: DockDirection): number {
+  return direction === 'horizontal' ? 0.24 : 0.32
+}
+
 function startDockPanelPointerDrag(panel: DockPanelId, event: PointerEvent) {
   if (event.button !== 0) return
   if (dockResizeDrag.value) cancelDockResize()
   event.preventDefault()
   dockDragPointerId = event.pointerId
+  dockDragPanelSizeFractions = captureDockPanelSizeFractions(panel)
   draggingDockPanel.value = panel
   activeDockDropTarget.value = null
   window.addEventListener('pointermove', handleDockPanelPointerMove)
@@ -2098,15 +2172,40 @@ function startDockPanelPointerDrag(panel: DockPanelId, event: PointerEvent) {
 function endDockPanelDrag() {
   draggingDockPanel.value = null
   activeDockDropTarget.value = null
+  dockDragPanelSizeFractions = null
 }
 
 function dropDockPanel(target: DockDropTarget) {
   const panel = draggingDockPanel.value
   if (!panel) return
+  const direction: DockDirection = target.edge === 'left' || target.edge === 'right'
+    ? 'horizontal'
+    : 'vertical'
+  const panelSizeFractions = normalizeDockPanelSizeFractions(
+    dockDragPanelSizeFractions ?? workspaceLayout.value.panelSizeFractions,
+  )
+  const insertedFraction = panelSizeFractions[panel]?.[direction]
+    ?? defaultDockPanelFraction(direction)
+  panelSizeFractions[panel] = {
+    ...panelSizeFractions[panel],
+    [direction]: insertedFraction,
+  }
   const layout = target.kind === 'group'
-    ? moveDockItemBesideNode(workspaceLayout.value.layout, panel, target.sourcePath, target.edge)
-    : moveDockItem(workspaceLayout.value.layout, panel, target.item, target.edge)
-  updateWorkspaceLayout({ ...workspaceLayout.value, layout })
+    ? moveDockItemBesideNode(
+        workspaceLayout.value.layout,
+        panel,
+        target.sourcePath,
+        target.edge,
+        insertedFraction,
+      )
+    : moveDockItem(
+        workspaceLayout.value.layout,
+        panel,
+        target.item,
+        target.edge,
+        insertedFraction,
+      )
+  updateWorkspaceLayout({ ...workspaceLayout.value, layout, panelSizeFractions })
   endDockPanelDrag()
 }
 

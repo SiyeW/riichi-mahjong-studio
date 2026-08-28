@@ -17,6 +17,7 @@ function expectedWorkspaceLayout({ legacyOrder, ...overrides } = {}) {
       counts: false,
     },
     consoleVisible: true,
+    panelSizeFractions: {},
     ...overrides,
   }
 }
@@ -62,6 +63,10 @@ function testUserProfilePersists() {
         counts: false,
       },
       consoleVisible: false,
+      panelSizeFractions: {
+        console: { horizontal: 0.19, vertical: 0.31 },
+        'analysis-game': { horizontal: 0.24 },
+      },
     }
     saveSettings(settings, options)
     const reloaded = loadSettings(options)
@@ -80,6 +85,10 @@ function testUserProfilePersists() {
         counts: false,
       },
       consoleVisible: false,
+      panelSizeFractions: {
+        console: { horizontal: 0.19, vertical: 0.31 },
+        'analysis-game': { horizontal: 0.24 },
+      },
     })
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })
@@ -122,12 +131,23 @@ function testInvalidWorkspaceLayoutUsesSafeDefaults() {
           order: ['console', 'unknown', 'console'],
           analysisVisible: 'yes',
           consoleVisible: 'no',
+          panelSizeFractions: {
+            console: { horizontal: 2, vertical: 0.03 },
+            'analysis-game': { horizontal: 0.9, vertical: '0.4' },
+            unknown: { horizontal: 0.5 },
+          },
         },
       },
     }))
     assert.deepEqual(
       loadSettings(options).display.workspaceLayout,
-      expectedWorkspaceLayout({ legacyOrder: ['console', 'table', 'analysis'] }),
+      expectedWorkspaceLayout({
+        legacyOrder: ['console', 'table', 'analysis'],
+        panelSizeFractions: {
+          console: { vertical: 0.08 },
+          'analysis-game': { horizontal: 0.8, vertical: 0.4 },
+        },
+      }),
     )
   } finally {
     fs.rmSync(portableDir, { recursive: true, force: true })

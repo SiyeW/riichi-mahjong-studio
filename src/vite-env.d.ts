@@ -75,6 +75,10 @@ interface TrainerSettings {
         counts: boolean
       }
       consoleVisible: boolean
+      panelSizeFractions: Partial<Record<
+        'console' | 'analysis-opponents' | 'analysis-game' | 'analysis-risk' | 'analysis-counts',
+        { horizontal?: number; vertical?: number }
+      >>
     }
   }
   records: {
