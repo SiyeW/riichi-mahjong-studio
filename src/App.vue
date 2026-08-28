@@ -1919,6 +1919,11 @@ const workspaceRoot = ref<HTMLElement | null>(null)
 const activeDockDropTarget = ref<DockDropTarget | null>(null)
 let dockDragPointerId: number | null = null
 let dockDragPanelSizeFractions: DockPanelSizeFractions | null = null
+let dockPanelPointerCandidate: {
+  panel: DockPanelId
+  startX: number
+  startY: number
+} | null = null
 
 interface DockResizeDragState {
   pointerId: number
@@ -2096,15 +2101,33 @@ function dockDropTargetAt(clientX: number, clientY: number): DockDropTarget | nu
 }
 
 function handleDockPanelPointerMove(event: PointerEvent) {
-  if (event.pointerId !== dockDragPointerId || !draggingDockPanel.value) return
+  if (event.pointerId !== dockDragPointerId || !dockPanelPointerCandidate) return
+  if (!draggingDockPanel.value) {
+    const distance = Math.hypot(
+      event.clientX - dockPanelPointerCandidate.startX,
+      event.clientY - dockPanelPointerCandidate.startY,
+    )
+    const threshold = Math.max(4, Math.round(4 * uiScale.value))
+    if (distance < threshold) return
+    const panel = dockPanelPointerCandidate.panel
+    dockDragPanelSizeFractions = captureDockPanelSizeFractions(panel)
+    draggingDockPanel.value = panel
+    activeDockDropTarget.value = null
+    void nextTick(() => {
+      if (event.pointerId !== dockDragPointerId || draggingDockPanel.value !== panel) return
+      activeDockDropTarget.value = dockDropTargetAt(event.clientX, event.clientY)
+    })
+    return
+  }
   activeDockDropTarget.value = dockDropTargetAt(event.clientX, event.clientY)
 }
 
 function finishDockPanelPointerDrag(event: PointerEvent) {
   if (event.pointerId !== dockDragPointerId) return
+  const wasDragging = Boolean(draggingDockPanel.value)
   const target = activeDockDropTarget.value
   removeDockPanelPointerListeners()
-  if (target) dropDockPanel(target)
+  if (wasDragging && target) dropDockPanel(target)
   else endDockPanelDrag()
 }
 
@@ -2120,10 +2143,11 @@ function removeDockPanelPointerListeners() {
   window.removeEventListener('pointercancel', cancelDockPanelPointerDrag)
   window.removeEventListener('keydown', handleDockPanelDragKeydown)
   dockDragPointerId = null
+  dockPanelPointerCandidate = null
 }
 
 function handleDockPanelDragKeydown(event: KeyboardEvent) {
-  if (event.key !== 'Escape' || !draggingDockPanel.value) return
+  if (event.key !== 'Escape' || dockDragPointerId === null) return
   removeDockPanelPointerListeners()
   endDockPanelDrag()
 }
@@ -2176,10 +2200,18 @@ function defaultDockPanelFraction(direction: DockDirection): number {
 function startDockPanelPointerDrag(panel: DockPanelId, event: PointerEvent) {
   if (event.button !== 0) return
   if (dockResizeDrag.value) cancelDockResize()
+  if (dockDragPointerId !== null) {
+    removeDockPanelPointerListeners()
+    endDockPanelDrag()
+  }
   event.preventDefault()
   dockDragPointerId = event.pointerId
-  dockDragPanelSizeFractions = captureDockPanelSizeFractions(panel)
-  draggingDockPanel.value = panel
+  dockPanelPointerCandidate = {
+    panel,
+    startX: event.clientX,
+    startY: event.clientY,
+  }
+  dockDragPanelSizeFractions = null
   activeDockDropTarget.value = null
   window.addEventListener('pointermove', handleDockPanelPointerMove)
   window.addEventListener('pointerup', finishDockPanelPointerDrag)
@@ -2191,6 +2223,7 @@ function endDockPanelDrag() {
   draggingDockPanel.value = null
   activeDockDropTarget.value = null
   dockDragPanelSizeFractions = null
+  dockPanelPointerCandidate = null
 }
 
 function dropDockPanel(target: DockDropTarget) {
