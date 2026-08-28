@@ -185,6 +185,10 @@ textarea {
   transform: translateY(0.077em);
 }
 
+.title-block.app-title-only > div {
+  transform: translateY(0.1em);
+}
+
 .title-block .eyebrow {
   font-size: var(--ui-text-caption);
   line-height: 1.1;
