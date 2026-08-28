@@ -239,9 +239,14 @@
     </div>
 
     <div v-else class="analysis-tiles-view">
-      <div class="analysis-count-grid">
+      <div ref="countGridElement" class="analysis-count-grid">
         <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-count-row">
           <div class="analysis-tile-sequence">
+            <canvas
+              :ref="(element) => setCountCanvasElement(row[0], row, element)"
+              class="analysis-count-row-canvas"
+              aria-hidden="true"
+            />
             <div v-for="tile in row" :key="tile" class="analysis-count-tile">
               <div class="analysis-count-bars">
                 <button
@@ -254,14 +259,7 @@
                   @mouseleave="countTooltip = null"
                   @focus="showCountTooltip(tile, source)"
                   @blur="countTooltip = null"
-                >
-                  <span
-                    v-for="segment in countSegments(tile, source)"
-                    :key="segment.value"
-                    :class="`count-${segment.value}`"
-                    :style="{ height: `${segment.probability * 100}%` }"
-                  />
-                </button>
+                />
               </div>
               <img class="analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
             </div>
@@ -327,6 +325,11 @@ const offenseTrackElements = new Map<number, HTMLElement>()
 const offenseLabelPositions = ref<Map<number, { win: number; dealIn: number }>>(new Map())
 let offenseResizeObserver: ResizeObserver | null = null
 let offenseMeasureFrame = 0
+const countGridElement = ref<HTMLElement | null>(null)
+const countCanvasElements = new Map<string, { canvas: HTMLCanvasElement; row: string[] }>()
+let countGeometryFrame = 0
+let countResizeObserver: ResizeObserver | null = null
+let countStyleObserver: MutationObserver | null = null
 const countTooltip = ref<{
   tile: string
   sourceLabel: string
@@ -605,12 +608,136 @@ function setOffenseTrackElement(seat: number, element: unknown) {
   scheduleOffenseLabelMeasurement()
 }
 
+function updateCountBarGeometry() {
+  const grid = countGridElement.value
+  if (!grid) return
+  const rootRem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  const floatingScale = Number.parseFloat(getComputedStyle(grid).getPropertyValue('--floating-panel-scale')) || 1
+  const ratio = Math.max(1, window.devicePixelRatio || 1)
+  const desiredTilePixels = Math.max(8, Math.round(2.45 * rootRem * floatingScale * ratio))
+  const tilePixels = Math.max(8, Math.round(desiredTilePixels / 4) * 4)
+  const gapPixels = Math.max(1, Math.round(ratio))
+  const barGroupPixels = Math.max(4, tilePixels - gapPixels)
+  grid.style.setProperty('--analysis-tile-width', `${tilePixels / ratio}px`)
+  grid.style.setProperty('--analysis-count-bars-width', `${barGroupPixels / ratio}px`)
+  grid.style.setProperty('--analysis-count-bar-gap', `${gapPixels / ratio}px`)
+}
+
+const COUNT_SEGMENT_COLORS = ['#cfe9ff', '#8fcfff', '#39a6ff', '#0077cc', '#004f80']
+
+function countSourceColor(source: TileSource, style: CSSStyleDeclaration): string {
+  if (source.key === 'kamicha') return style.getPropertyValue('--ron-kamicha-color').trim() || '#2196f3'
+  if (source.key === 'toimen') return style.getPropertyValue('--ron-toimen-color').trim() || '#ff9800'
+  if (source.key === 'shimocha') return style.getPropertyValue('--ron-shimocha-color').trim() || '#4caf50'
+  return 'rgba(211, 226, 223, 0.68)'
+}
+
+function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
+  const rect = canvas.getBoundingClientRect()
+  const ratio = Math.max(1, window.devicePixelRatio || 1)
+  const width = Math.max(1, Math.round(rect.width * ratio))
+  const height = Math.max(1, Math.round(rect.height * ratio))
+  if (canvas.width !== width) canvas.width = width
+  if (canvas.height !== height) canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) return
+  context.clearRect(0, 0, width, height)
+
+  const sources = countSources.value
+  const laneCount = sources.length * row.length
+  if (!laneCount) return
+  const style = getComputedStyle(canvas)
+  const gap = Math.max(1, Math.round(ratio))
+  const availableWidth = Math.max(laneCount, width - (gap * (laneCount - 1)))
+  const rootRem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  const floatingScale = Number.parseFloat(style.getPropertyValue('--floating-panel-scale')) || 1
+  const sourceStripHeight = Math.max(1, Math.round(0.12 * rootRem * floatingScale * ratio))
+
+  for (let laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
+    const tile = row[Math.floor(laneIndex / sources.length)]
+    const source = sources[laneIndex % sources.length]
+    const left = Math.floor((laneIndex * availableWidth) / laneCount) + (laneIndex * gap)
+    const right = Math.floor(((laneIndex + 1) * availableWidth) / laneCount) + (laneIndex * gap)
+    const laneWidth = Math.max(1, right - left)
+    context.fillStyle = 'rgba(255, 255, 255, 0.05)'
+    context.fillRect(left, 0, laneWidth, height)
+
+    const segments = countSegments(tile, source)
+    let cumulative = 0
+    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+      const top = Math.round(cumulative * height)
+      cumulative += segments[segmentIndex].probability
+      const bottom = segmentIndex === segments.length - 1
+        ? height
+        : Math.round(cumulative * height)
+      if (bottom <= top) continue
+      context.fillStyle = COUNT_SEGMENT_COLORS[segmentIndex]
+      context.fillRect(left, top, laneWidth, bottom - top)
+    }
+
+    context.fillStyle = countSourceColor(source, style)
+    context.fillRect(left, Math.max(0, height - sourceStripHeight), laneWidth, sourceStripHeight)
+  }
+}
+
+function renderCountCanvases() {
+  for (const { canvas, row } of countCanvasElements.values()) renderCountCanvas(row, canvas)
+}
+
+function scheduleCountBarGeometry() {
+  if (countGeometryFrame) return
+  countGeometryFrame = requestAnimationFrame(() => {
+    countGeometryFrame = 0
+    updateCountBarGeometry()
+    renderCountCanvases()
+  })
+}
+
+function setCountCanvasElement(key: string, row: string[], element: unknown) {
+  const previous = countCanvasElements.get(key)
+  if (previous) countResizeObserver?.unobserve(previous.canvas)
+  if (!(element instanceof HTMLCanvasElement)) {
+    countCanvasElements.delete(key)
+    return
+  }
+  countCanvasElements.set(key, { canvas: element, row })
+  countResizeObserver?.observe(element)
+  scheduleCountBarGeometry()
+}
+
+function connectCountGeometry(grid: HTMLElement | null) {
+  countResizeObserver?.disconnect()
+  countStyleObserver?.disconnect()
+  countResizeObserver = null
+  countStyleObserver = null
+  if (!grid) return
+  countResizeObserver = new ResizeObserver(scheduleCountBarGeometry)
+  countResizeObserver.observe(grid)
+  for (const { canvas } of countCanvasElements.values()) countResizeObserver.observe(canvas)
+  const dock = grid.closest('.dock-module')
+  if (dock) {
+    countStyleObserver = new MutationObserver(scheduleCountBarGeometry)
+    countStyleObserver.observe(dock, { attributes: true, attributeFilter: ['style', 'class'] })
+  }
+  scheduleCountBarGeometry()
+}
+
 onMounted(() => {
-  if (props.section !== 'game') return
-  offenseResizeObserver = new ResizeObserver(scheduleOffenseLabelMeasurement)
-  for (const element of offenseTrackElements.values()) offenseResizeObserver.observe(element)
-  scheduleOffenseLabelMeasurement()
+  if (props.section === 'game') {
+    offenseResizeObserver = new ResizeObserver(scheduleOffenseLabelMeasurement)
+    for (const element of offenseTrackElements.values()) offenseResizeObserver.observe(element)
+    scheduleOffenseLabelMeasurement()
+  }
+  if (props.section === 'counts') {
+    window.addEventListener('resize', scheduleCountBarGeometry)
+  }
 })
+
+watch(countGridElement, connectCountGeometry, { flush: 'post', immediate: true })
+
+watch(() => props.analysis, () => {
+  if (props.section === 'counts') void nextTick(scheduleCountBarGeometry)
+}, { deep: true })
 
 watch(playerRows, () => {
   if (props.section === 'game') void nextTick(scheduleOffenseLabelMeasurement)
@@ -618,8 +745,15 @@ watch(playerRows, () => {
 
 onBeforeUnmount(() => {
   cancelAnimationFrame(offenseMeasureFrame)
+  cancelAnimationFrame(countGeometryFrame)
   offenseResizeObserver?.disconnect()
   offenseResizeObserver = null
+  countResizeObserver?.disconnect()
+  countResizeObserver = null
+  countStyleObserver?.disconnect()
+  countStyleObserver = null
+  window.removeEventListener('resize', scheduleCountBarGeometry)
+  countCanvasElements.clear()
   offenseTrackElements.clear()
   offenseLabelPositions.value = new Map()
 })
@@ -1325,6 +1459,7 @@ button {
 }
 
 .analysis-count-row .analysis-tile-sequence {
+  position: relative;
   height: 100%;
 }
 
@@ -1378,12 +1513,24 @@ button {
 }
 
 .analysis-count-bars {
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   flex: 1 1 var(--analysis-tile-height);
   width: var(--analysis-count-bars-width);
   min-height: var(--analysis-tile-height);
   max-height: calc(var(--analysis-tile-height) * 3);
-  gap: 1px;
+  gap: var(--analysis-count-bar-gap, 1px);
+}
+
+.analysis-count-row-canvas {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  left: 0;
+  display: block;
+  width: calc(100% - var(--analysis-count-bar-gap, 1px));
+  height: calc(100% - var(--analysis-tile-height) - var(--analysis-chart-gap));
+  pointer-events: none;
 }
 
 .analysis-risk-bars.has-adaptive-threshold::before,
@@ -1482,40 +1629,20 @@ button {
 
 .analysis-count-bars > button {
   position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
-  flex: 1 1 0;
+  width: 100%;
   min-width: 0;
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   border: 0;
-  background: rgba(255, 255, 255, 0.05);
+  background: transparent;
   cursor: default;
 }
-
-.analysis-count-bars > button > span {
-  display: block;
-  flex: 0 0 auto;
-  width: 100%;
-  min-height: 0;
-}
-
-.analysis-count-bars > button::after {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: calc(0.12rem * var(--floating-panel-scale));
-  content: '';
-}
-
-.analysis-count-bars > button.source-kamicha::after { background: var(--ron-kamicha-color); }
-.analysis-count-bars > button.source-toimen::after { background: var(--ron-toimen-color); }
-.analysis-count-bars > button.source-shimocha::after { background: var(--ron-shimocha-color); }
-.analysis-count-bars > button.source-wall::after { background: rgba(211, 226, 223, 0.68); }
 
 .count-0 { background: #cfe9ff !important; }
 .count-1 { background: #8fcfff !important; }
