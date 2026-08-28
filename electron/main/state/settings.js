@@ -29,6 +29,7 @@ const DEFAULT_WORKSPACE_LAYOUT = Object.freeze({
     counts: false,
   }),
   consoleVisible: true,
+  panelSizeFractionsVersion: 2,
   panelSizeFractions: Object.freeze({}),
 })
 const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
@@ -82,7 +83,10 @@ function normalizeWorkspaceLayout(workspaceLayout = {}) {
       counts: sourcePanels.counts === true,
     },
     consoleVisible: workspaceLayout.consoleVisible !== false,
-    panelSizeFractions: normalizeDockPanelSizeFractions(workspaceLayout.panelSizeFractions),
+    panelSizeFractionsVersion: 2,
+    panelSizeFractions: workspaceLayout.panelSizeFractionsVersion === 2
+      ? normalizeDockPanelSizeFractions(workspaceLayout.panelSizeFractions)
+      : {},
   }
 }
 

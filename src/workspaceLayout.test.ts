@@ -99,6 +99,58 @@ test('a panel can dock beside an entire sibling column', () => {
   assert.deepEqual(flattenItems(moved).sort(), [...WORKSPACE_ITEM_IDS].sort())
 })
 
+test('both sides of the same boundary produce the same layout after removing the dragged panel', () => {
+  const layout: WorkspaceDockNode = {
+    type: 'split',
+    direction: 'horizontal',
+    children: [
+      {
+        type: 'split',
+        direction: 'vertical',
+        children: [
+          { type: 'item', id: 'analysis-risk' },
+          { type: 'item', id: 'table' },
+        ],
+        weights: [0.35, 0.65],
+      },
+      {
+        type: 'split',
+        direction: 'vertical',
+        children: [
+          { type: 'item', id: 'analysis-counts' },
+          { type: 'item', id: 'analysis-game' },
+        ],
+        weights: [0.6, 0.4],
+      },
+      { type: 'item', id: 'console' },
+      { type: 'item', id: 'analysis-opponents' },
+    ],
+    weights: [2, 0.8, 0.5, 0.5],
+  }
+  const visibleItems = new Set<WorkspaceItemId>([
+    'table',
+    'analysis-risk',
+    'analysis-counts',
+    'analysis-game',
+  ])
+  const besideTable = moveDockItem(layout, 'analysis-risk', 'table', 'right', 0.2, visibleItems)
+  const besideRightColumn = moveDockItemBesideNode(
+    layout,
+    'analysis-risk',
+    [1],
+    'left',
+    0.2,
+    visibleItems,
+  )
+  assert.deepEqual(besideTable, besideRightColumn)
+  const visible = visibleDockLayout(besideTable, visibleItems)
+  assert.ok(visible && visible.type === 'split')
+  const riskIndex = visible.children.findIndex((child) => dockLayoutContains(child, 'analysis-risk'))
+  const visibleWeight = visible.weights.reduce((total, weight) => total + weight, 0)
+  assert.ok(riskIndex >= 0)
+  assert.ok(Math.abs(visible.weights[riskIndex] / visibleWeight - 0.2) < 0.0001)
+})
+
 test('repeated docking restores a sensible console-to-table width ratio', () => {
   let layout = createDefaultDockLayout()
   layout = moveDockItem(layout, 'console', 'table', 'left')

@@ -1696,7 +1696,10 @@ function normalizeWorkspaceLayout(value: unknown): TrainerSettings['display']['w
       counts: sourcePanels.counts === true,
     },
     consoleVisible: source.consoleVisible !== false,
-    panelSizeFractions: normalizeDockPanelSizeFractions(source.panelSizeFractions),
+    panelSizeFractionsVersion: 2,
+    panelSizeFractions: source.panelSizeFractionsVersion === 2
+      ? normalizeDockPanelSizeFractions(source.panelSizeFractions)
+      : {},
   }
 }
 
@@ -1893,18 +1896,26 @@ function showAnalysisPanel(id: AnalysisPanelId): boolean {
   return showAnalysisDock.value && analysisPanelIsSelected(id)
 }
 
-const visibleWorkspaceLayout = computed(() => {
+const draggingDockPanel = ref<DockPanelId | null>(null)
+
+function visibleWorkspaceItemIds(excludedPanel: DockPanelId | null = null): Set<WorkspaceItemId> {
   const visibleItems = new Set<WorkspaceItemId>(['table'])
-  if (showConsoleDock.value) visibleItems.add('console')
+  if (showConsoleDock.value && excludedPanel !== 'console') visibleItems.add('console')
   for (const definition of ANALYSIS_PANEL_DEFINITIONS) {
-    if (showAnalysisPanel(definition.id)) visibleItems.add(definition.id)
+    if (showAnalysisPanel(definition.id) && excludedPanel !== definition.id) {
+      visibleItems.add(definition.id)
+    }
   }
+  return visibleItems
+}
+
+const visibleWorkspaceLayout = computed(() => {
+  const visibleItems = visibleWorkspaceItemIds(draggingDockPanel.value)
   return visibleDockLayout(workspaceLayout.value.layout, visibleItems)
     || { type: 'item' as const, id: 'table' as const }
 })
 
 const workspaceRoot = ref<HTMLElement | null>(null)
-const draggingDockPanel = ref<DockPanelId | null>(null)
 const activeDockDropTarget = ref<DockDropTarget | null>(null)
 let dockDragPointerId: number | null = null
 let dockDragPanelSizeFractions: DockPanelSizeFractions | null = null
@@ -2117,36 +2128,43 @@ function handleDockPanelDragKeydown(event: KeyboardEvent) {
   endDockPanelDrag()
 }
 
-function measureDockPanelFraction(panel: DockPanelId, direction: DockDirection): number | null {
+function measureDockPanelFraction(panel: DockPanelId): {
+  direction: DockDirection
+  fraction: number
+} | null {
   const leaf = document.querySelector<HTMLElement>(`.dock-layout-leaf[data-dock-target="${panel}"]`)
-  if (!leaf) return null
-  for (let element = leaf.parentElement; element; element = element.parentElement) {
-    if (!element.classList.contains('dock-layout-child')) continue
-    const split = element.parentElement
-    if (!split?.classList.contains('dock-layout-split')) continue
-    if (!split.classList.contains(`is-${direction}`)) continue
-    const siblings = [...split.children].filter((child): child is HTMLElement => (
-      child instanceof HTMLElement && child.classList.contains('dock-layout-child')
-    ))
-    const size = direction === 'horizontal'
-      ? element.getBoundingClientRect().width
-      : element.getBoundingClientRect().height
-    const totalSize = siblings.reduce((total, sibling) => {
-      const bounds = sibling.getBoundingClientRect()
-      return total + (direction === 'horizontal' ? bounds.width : bounds.height)
-    }, 0)
-    return normalizeDockPanelFraction(size / Math.max(1, totalSize))
+  const tableLeaf = document.querySelector<HTMLElement>('.dock-layout-leaf[data-dock-target="table"]')
+  if (!leaf || !tableLeaf) return null
+  let split = leaf.parentElement?.closest<HTMLElement>('.dock-layout-split') || null
+  while (split && !split.contains(tableLeaf)) {
+    split = split.parentElement?.closest<HTMLElement>('.dock-layout-split') || null
   }
-  return null
+  if (!split) return null
+  const direction: DockDirection = split.classList.contains('is-horizontal')
+    ? 'horizontal'
+    : 'vertical'
+  let branch: HTMLElement | null = leaf
+  while (branch && branch.parentElement !== split) branch = branch.parentElement
+  if (!branch?.classList.contains('dock-layout-child')) return null
+  const siblings = [...split.children].filter((child): child is HTMLElement => (
+    child instanceof HTMLElement && child.classList.contains('dock-layout-child')
+  ))
+  const size = direction === 'horizontal'
+    ? branch.getBoundingClientRect().width
+    : branch.getBoundingClientRect().height
+  const totalSize = siblings.reduce((total, sibling) => {
+    const bounds = sibling.getBoundingClientRect()
+    return total + (direction === 'horizontal' ? bounds.width : bounds.height)
+  }, 0)
+  const fraction = normalizeDockPanelFraction(size / Math.max(1, totalSize))
+  return fraction === null ? null : { direction, fraction }
 }
 
 function captureDockPanelSizeFractions(panel: DockPanelId): DockPanelSizeFractions {
   const captured = normalizeDockPanelSizeFractions(workspaceLayout.value.panelSizeFractions)
   const panelFractions = { ...captured[panel] }
-  for (const direction of ['horizontal', 'vertical'] as const) {
-    const fraction = measureDockPanelFraction(panel, direction)
-    if (fraction !== null) panelFractions[direction] = fraction
-  }
+  const measured = measureDockPanelFraction(panel)
+  if (measured) panelFractions[measured.direction] = measured.fraction
   if (Object.keys(panelFractions).length) captured[panel] = panelFractions
   return captured
 }
@@ -2186,6 +2204,7 @@ function dropDockPanel(target: DockDropTarget) {
   )
   const insertedFraction = panelSizeFractions[panel]?.[direction]
     ?? defaultDockPanelFraction(direction)
+  const visibleItems = visibleWorkspaceItemIds(panel)
   panelSizeFractions[panel] = {
     ...panelSizeFractions[panel],
     [direction]: insertedFraction,
@@ -2197,6 +2216,7 @@ function dropDockPanel(target: DockDropTarget) {
         target.sourcePath,
         target.edge,
         insertedFraction,
+        visibleItems,
       )
     : moveDockItem(
         workspaceLayout.value.layout,
@@ -2204,6 +2224,7 @@ function dropDockPanel(target: DockDropTarget) {
         target.item,
         target.edge,
         insertedFraction,
+        visibleItems,
       )
   updateWorkspaceLayout({ ...workspaceLayout.value, layout, panelSizeFractions })
   endDockPanelDrag()
@@ -2217,16 +2238,46 @@ const dockDropIndicatorStyle = computed(() => {
   const left = target.bounds.left - rootBounds.left
   const top = target.bounds.top - rootBounds.top
   if (target.edge === 'left' || target.edge === 'right') {
+    const rawBoundary = target.bounds.left + (target.edge === 'right' ? target.bounds.width : 0)
+    const matchingResizer = [...document.querySelectorAll<HTMLElement>('.dock-layout-resizer.is-horizontal')]
+      .map((element) => element.getBoundingClientRect())
+      .filter((bounds) => (
+        Math.abs(bounds.left + (bounds.width / 2) - rawBoundary) <= Math.max(2, thickness)
+        && bounds.bottom > target.bounds.top
+        && bounds.top < target.bounds.top + target.bounds.height
+      ))
+      .sort((first, second) => (
+        Math.abs(first.left + (first.width / 2) - rawBoundary)
+        - Math.abs(second.left + (second.width / 2) - rawBoundary)
+      ))[0]
+    const boundary = matchingResizer
+      ? matchingResizer.left + (matchingResizer.width / 2)
+      : rawBoundary
     return {
-      left: `${left + (target.edge === 'right' ? target.bounds.width - thickness : 0)}px`,
+      left: `${boundary - rootBounds.left - (thickness / 2)}px`,
       top: `${top}px`,
       width: `${thickness}px`,
       height: `${target.bounds.height}px`,
     }
   }
+  const rawBoundary = target.bounds.top + (target.edge === 'bottom' ? target.bounds.height : 0)
+  const matchingResizer = [...document.querySelectorAll<HTMLElement>('.dock-layout-resizer.is-vertical')]
+    .map((element) => element.getBoundingClientRect())
+    .filter((bounds) => (
+      Math.abs(bounds.top + (bounds.height / 2) - rawBoundary) <= Math.max(2, thickness)
+      && bounds.right > target.bounds.left
+      && bounds.left < target.bounds.left + target.bounds.width
+    ))
+    .sort((first, second) => (
+      Math.abs(first.top + (first.height / 2) - rawBoundary)
+      - Math.abs(second.top + (second.height / 2) - rawBoundary)
+    ))[0]
+  const boundary = matchingResizer
+    ? matchingResizer.top + (matchingResizer.height / 2)
+    : rawBoundary
   return {
     left: `${left}px`,
-    top: `${top + (target.edge === 'bottom' ? target.bounds.height - thickness : 0)}px`,
+    top: `${boundary - rootBounds.top - (thickness / 2)}px`,
     width: `${target.bounds.width}px`,
     height: `${thickness}px`,
   }

@@ -71,10 +71,19 @@ function dockSizeFraction(value: unknown): number | null {
     : null
 }
 
-function insertedDockWeight(weights: readonly number[], insertedFraction: unknown): number | null {
+function insertedDockWeight(
+  children: readonly WorkspaceDockNode[],
+  weights: readonly number[],
+  insertedFraction: unknown,
+  visibleItems?: ReadonlySet<WorkspaceItemId>,
+): number | null {
   const fraction = dockSizeFraction(insertedFraction)
   if (fraction === null) return null
-  const existingWeight = weights.reduce((total, weight) => total + positiveWeight(weight), 0)
+  const existingWeight = weights.reduce((total, weight, index) => {
+    const child = children[index]
+    if (visibleItems && child && !dockNodeItemIds(child).some((id) => visibleItems.has(id))) return total
+    return total + positiveWeight(weight)
+  }, 0)
   return existingWeight * fraction / (1 - fraction)
 }
 
@@ -200,6 +209,7 @@ function insertDockItemBesideGroup(
   targetItems: ReadonlySet<WorkspaceItemId>,
   edge: DockEdge,
   insertedFraction?: number,
+  visibleItems?: ReadonlySet<WorkspaceItemId>,
 ): WorkspaceDockNode | null {
   const direction: DockDirection = edge === 'left' || edge === 'right' ? 'horizontal' : 'vertical'
   const insertBefore = edge === 'left' || edge === 'top'
@@ -224,7 +234,12 @@ function insertDockItemBesideGroup(
     const children = [...node.children]
     const weights = [...node.weights]
     const insertionIndex = targetIndex + (insertBefore ? 0 : 1)
-    const rememberedWeight = insertedDockWeight(node.weights, insertedFraction)
+    const rememberedWeight = insertedDockWeight(
+      node.children,
+      node.weights,
+      insertedFraction,
+      visibleItems,
+    )
     const targetWeight = positiveWeight(node.weights[targetIndex])
     const targetPreferredWeight = preferredDockNodeWeight(node.children[targetIndex], direction)
     const insertedWeight = rememberedWeight ?? (
@@ -241,6 +256,7 @@ function insertDockItemBesideGroup(
       targetItems,
       edge,
       insertedFraction,
+      visibleItems,
     )
     if (!nested) continue
     const children = [...node.children]
@@ -256,6 +272,7 @@ function insertDockItem(
   target: WorkspaceItemId,
   edge: DockEdge,
   insertedFraction?: number,
+  visibleItems?: ReadonlySet<WorkspaceItemId>,
 ): WorkspaceDockNode | null {
   const direction: DockDirection = edge === 'left' || edge === 'right' ? 'horizontal' : 'vertical'
   const insertBefore = edge === 'left' || edge === 'top'
@@ -278,7 +295,12 @@ function insertDockItem(
     const children = [...node.children]
     const weights = [...node.weights]
     const insertionIndex = targetIndex + (insertBefore ? 0 : 1)
-    const rememberedWeight = insertedDockWeight(node.weights, insertedFraction)
+    const rememberedWeight = insertedDockWeight(
+      node.children,
+      node.weights,
+      insertedFraction,
+      visibleItems,
+    )
     const targetWeight = positiveWeight(node.weights[targetIndex])
     const insertedId = inserted.type === 'item' ? inserted.id : target
     const insertedWeight = rememberedWeight ?? (
@@ -289,7 +311,14 @@ function insertDockItem(
     return split(direction, children, weights)
   }
 
-  const nested = insertDockItem(targetChild, inserted, target, edge, insertedFraction)
+  const nested = insertDockItem(
+    targetChild,
+    inserted,
+    target,
+    edge,
+    insertedFraction,
+    visibleItems,
+  )
   if (!nested) return null
   const children = [...node.children]
   children[targetIndex] = nested
@@ -302,13 +331,21 @@ export function moveDockItem(
   target: WorkspaceItemId,
   edge: DockEdge,
   insertedFraction?: number,
+  visibleItems?: ReadonlySet<WorkspaceItemId>,
 ): WorkspaceDockNode {
   if (id === 'table' || id === target || !dockLayoutContains(layout, id) || !dockLayoutContains(layout, target)) {
     return layout
   }
   const withoutItem = removeDockItem(layout, id)
   if (!withoutItem || !dockLayoutContains(withoutItem, target)) return layout
-  return insertDockItem(withoutItem, item(id), target, edge, insertedFraction) || layout
+  return insertDockItem(
+    withoutItem,
+    item(id),
+    target,
+    edge,
+    insertedFraction,
+    visibleItems,
+  ) || layout
 }
 
 export function moveDockItemBesideNode(
@@ -317,6 +354,7 @@ export function moveDockItemBesideNode(
   targetPath: readonly number[],
   edge: DockEdge,
   insertedFraction?: number,
+  visibleItems?: ReadonlySet<WorkspaceItemId>,
 ): WorkspaceDockNode {
   if (id === 'table' || !dockLayoutContains(layout, id)) return layout
   const targetNode = dockNodeAtPath(layout, targetPath)
@@ -331,6 +369,7 @@ export function moveDockItemBesideNode(
     targetItems,
     edge,
     insertedFraction,
+    visibleItems,
   ) || layout
 }
 

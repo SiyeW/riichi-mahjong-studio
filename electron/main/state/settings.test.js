@@ -17,6 +17,7 @@ function expectedWorkspaceLayout({ legacyOrder, ...overrides } = {}) {
       counts: false,
     },
     consoleVisible: true,
+    panelSizeFractionsVersion: 2,
     panelSizeFractions: {},
     ...overrides,
   }
@@ -63,6 +64,7 @@ function testUserProfilePersists() {
         counts: false,
       },
       consoleVisible: false,
+      panelSizeFractionsVersion: 2,
       panelSizeFractions: {
         console: { horizontal: 0.19, vertical: 0.31 },
         'analysis-game': { horizontal: 0.24 },
@@ -85,6 +87,7 @@ function testUserProfilePersists() {
         counts: false,
       },
       consoleVisible: false,
+      panelSizeFractionsVersion: 2,
       panelSizeFractions: {
         console: { horizontal: 0.19, vertical: 0.31 },
         'analysis-game': { horizontal: 0.24 },
@@ -143,10 +146,7 @@ function testInvalidWorkspaceLayoutUsesSafeDefaults() {
       loadSettings(options).display.workspaceLayout,
       expectedWorkspaceLayout({
         legacyOrder: ['console', 'table', 'analysis'],
-        panelSizeFractions: {
-          console: { vertical: 0.08 },
-          'analysis-game': { horizontal: 0.8, vertical: 0.4 },
-        },
+        panelSizeFractions: {},
       }),
     )
   } finally {
