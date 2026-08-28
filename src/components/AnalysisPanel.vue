@@ -240,14 +240,19 @@
 
     <div v-else class="analysis-tiles-view">
       <div ref="countGridElement" class="analysis-count-grid">
-        <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-count-row">
+        <div v-for="row in countTileRows" :key="row.tiles.join('-')" class="analysis-tile-chart-row analysis-count-row">
           <div class="analysis-tile-sequence">
             <canvas
-              :ref="(element) => setCountCanvasElement(row[0], row, element)"
+              :ref="(element) => setCountCanvasElement(row.key, row.tiles, element)"
               class="analysis-count-row-canvas"
               aria-hidden="true"
             />
-            <div v-for="tile in row" :key="tile" class="analysis-count-tile">
+            <div
+              v-for="tile in row.tiles"
+              :key="tile"
+              class="analysis-count-tile"
+              :class="{ 'is-red-five': isRedFive(tile) }"
+            >
               <div class="analysis-count-bars">
                 <button
                   v-for="source in countSources"
@@ -272,13 +277,17 @@
           <div class="analysis-count-legend">
             <span v-for="value in [0, 1, 2, 3, 4]" :key="value"><i :class="`count-${value}`" />{{ t('analysis.countUnit', { value }) }}</span>
           </div>
+          <div v-if="hasRedFivePredictions" class="analysis-count-legend analysis-red-count-legend">
+            <small>{{ t('analysis.redFive') }}</small>
+            <span v-for="value in [0, 1]" :key="value"><i :class="`red-count-${value}`" />{{ t('analysis.countUnit', { value }) }}</span>
+          </div>
         </div>
         <div v-if="countTooltip" class="analysis-count-tooltip">
           <strong>{{ countTooltip.sourceLabel }} · {{ tileFaceLabel(countTooltip.tile) }}</strong>
           <span v-if="countTooltip.scalarValue !== null">{{ t('analysis.predictedCount', { value: countTooltip.scalarValue.toFixed(2) }) }}</span>
           <div v-for="segment in countTooltip.segments" :key="segment.value">
             <small>{{ t('analysis.countUnit', { value: segment.value }) }}</small>
-            <i><span :class="`count-${segment.value}`" :style="{ width: `${segment.probability * 100}%` }" /></i>
+            <i><span :class="countSegmentClass(countTooltip.tile, segment.value)" :style="{ width: `${segment.probability * 100}%` }" /></i>
             <em>{{ formatProbability(segment.probability) }}</em>
           </div>
         </div>
@@ -292,6 +301,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
+import { hasRedFiveCountPredictions, RED_FIVE_TILES } from '../analysisTileCounts'
 import {
   parseNumericPrediction,
   type DistributionEntry,
@@ -344,6 +354,10 @@ const tileRows = [
   ['E', 'S', 'W', 'N', 'P', 'F', 'C'],
 ]
 
+function isRedFive(tile: string): boolean {
+  return tile === '5mr' || tile === '5pr' || tile === '5sr'
+}
+
 function objectValue(value: unknown): AnalysisRecord {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as AnalysisRecord : {}
 }
@@ -367,6 +381,20 @@ function outputPlayers(outputId: string): AnalysisRecord[] {
   const players = outputData(outputId).players
   return Array.isArray(players) ? players.map(objectValue) : []
 }
+
+const hasRedFivePredictions = computed(() => {
+  return hasRedFiveCountPredictions(
+    outputData('wall-tile-count'),
+    outputPlayers('opponent-concealed-tile-count'),
+  )
+})
+
+const countTileRows = computed(() => [
+  { key: 'm', tiles: hasRedFivePredictions.value ? [...tileRows[0], RED_FIVE_TILES[0]] : tileRows[0] },
+  { key: 'p', tiles: hasRedFivePredictions.value ? [...tileRows[1], RED_FIVE_TILES[1]] : tileRows[1] },
+  { key: 's', tiles: hasRedFivePredictions.value ? [...tileRows[2], RED_FIVE_TILES[2]] : tileRows[2] },
+  { key: 'z', tiles: tileRows[3] },
+])
 
 function playerOutput(outputId: string, seat: number): AnalysisRecord {
   return outputPlayers(outputId).find((player) => Number(player.seat) === seat) || {}
@@ -615,15 +643,16 @@ function updateCountBarGeometry() {
   const floatingScale = Number.parseFloat(getComputedStyle(grid).getPropertyValue('--floating-panel-scale')) || 1
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const desiredTilePixels = Math.max(8, Math.round(2.45 * rootRem * floatingScale * ratio))
-  const tilePixels = Math.max(8, Math.round(desiredTilePixels / 4) * 4)
-  const gapPixels = Math.max(1, Math.round(ratio))
-  const barGroupPixels = Math.max(4, tilePixels - gapPixels)
+  const sourceGapPixels = 1
+  const tilePixels = Math.max(7, Math.round((desiredTilePixels - (sourceGapPixels * 3)) / 4) * 4 + (sourceGapPixels * 3))
+  const tileGapPixels = 2
   grid.style.setProperty('--analysis-tile-width', `${tilePixels / ratio}px`)
-  grid.style.setProperty('--analysis-count-bars-width', `${barGroupPixels / ratio}px`)
-  grid.style.setProperty('--analysis-count-bar-gap', `${gapPixels / ratio}px`)
+  grid.style.setProperty('--analysis-count-source-gap', `${sourceGapPixels / ratio}px`)
+  grid.style.setProperty('--analysis-count-tile-gap', `${tileGapPixels / ratio}px`)
 }
 
 const COUNT_SEGMENT_COLORS = ['#cfe9ff', '#8fcfff', '#39a6ff', '#0077cc', '#004f80']
+const RED_COUNT_SEGMENT_COLORS = ['#f8dce4', '#f29ab3']
 
 function countSourceColor(source: TileSource, style: CSSStyleDeclaration): string {
   if (source.key === 'kamicha') return style.getPropertyValue('--ron-kamicha-color').trim() || '#2196f3'
@@ -644,39 +673,43 @@ function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
   context.clearRect(0, 0, width, height)
 
   const sources = countSources.value
-  const laneCount = sources.length * row.length
-  if (!laneCount) return
+  if (!sources.length || !row.length) return
   const style = getComputedStyle(canvas)
-  const gap = Math.max(1, Math.round(ratio))
-  const availableWidth = Math.max(laneCount, width - (gap * (laneCount - 1)))
+  const sourceGap = 1
+  const tileGap = 2
+  const tileWidth = Math.max(7, Math.floor((width - (tileGap * (row.length - 1))) / row.length))
+  const laneWidth = Math.max(1, Math.floor((tileWidth - (sourceGap * (sources.length - 1))) / sources.length))
   const rootRem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
   const floatingScale = Number.parseFloat(style.getPropertyValue('--floating-panel-scale')) || 1
   const sourceStripHeight = Math.max(1, Math.round(0.12 * rootRem * floatingScale * ratio))
 
-  for (let laneIndex = 0; laneIndex < laneCount; laneIndex += 1) {
-    const tile = row[Math.floor(laneIndex / sources.length)]
-    const source = sources[laneIndex % sources.length]
-    const left = Math.floor((laneIndex * availableWidth) / laneCount) + (laneIndex * gap)
-    const right = Math.floor(((laneIndex + 1) * availableWidth) / laneCount) + (laneIndex * gap)
-    const laneWidth = Math.max(1, right - left)
-    context.fillStyle = 'rgba(255, 255, 255, 0.05)'
-    context.fillRect(left, 0, laneWidth, height)
+  for (let tileIndex = 0; tileIndex < row.length; tileIndex += 1) {
+    const tile = row[tileIndex]
+    const blockLeft = tileIndex * (tileWidth + tileGap)
+    const blockWidth = (laneWidth * sources.length) + (sourceGap * (sources.length - 1))
+    const palette = isRedFive(tile) ? RED_COUNT_SEGMENT_COLORS : COUNT_SEGMENT_COLORS
+    context.fillStyle = palette[0]
+    context.fillRect(blockLeft, 0, blockWidth, height)
 
-    const segments = countSegments(tile, source)
-    let cumulative = 0
-    for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
-      const top = Math.round(cumulative * height)
-      cumulative += segments[segmentIndex].probability
-      const bottom = segmentIndex === segments.length - 1
-        ? height
-        : Math.round(cumulative * height)
-      if (bottom <= top) continue
-      context.fillStyle = COUNT_SEGMENT_COLORS[segmentIndex]
-      context.fillRect(left, top, laneWidth, bottom - top)
+    for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
+      const source = sources[sourceIndex]
+      const left = blockLeft + (sourceIndex * (laneWidth + sourceGap))
+      const segments = countSegments(tile, source)
+      let cumulative = 0
+      for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
+        const top = Math.round(cumulative * height)
+        cumulative += segments[segmentIndex].probability
+        const bottom = segmentIndex === segments.length - 1
+          ? height
+          : Math.round(cumulative * height)
+        if (bottom <= top) continue
+        context.fillStyle = palette[segmentIndex]
+        context.fillRect(left, top, laneWidth, bottom - top)
+      }
+
+      context.fillStyle = countSourceColor(source, style)
+      context.fillRect(left, Math.max(0, height - sourceStripHeight), laneWidth, sourceStripHeight)
     }
-
-    context.fillStyle = countSourceColor(source, style)
-    context.fillRect(left, Math.max(0, height - sourceStripHeight), laneWidth, sourceStripHeight)
   }
 }
 
@@ -809,22 +842,27 @@ function riskScalePosition(value: number): string {
 }
 
 function tilePrediction(tile: string, source: TileSource): NumericPrediction {
+  const property = isRedFive(tile) ? 'redTiles' : 'tiles'
   if (source.seat === null) {
-    return parsePrediction(objectValue(outputData('wall-tile-count').tiles)[tile])
+    return parsePrediction(objectValue(outputData('wall-tile-count')[property])[tile])
   }
   const player = playerOutput('opponent-concealed-tile-count', source.seat)
-  return parsePrediction(objectValue(player.tiles)[tile])
+  return parsePrediction(objectValue(player[property])[tile])
 }
 
 function countSegments(tile: string, source: TileSource): DistributionEntry[] {
   const prediction = tilePrediction(tile, source)
-  const values = [0, 1, 2, 3, 4].map((value) => ({
+  const values = (isRedFive(tile) ? [0, 1] : [0, 1, 2, 3, 4]).map((value) => ({
     value,
     probability: prediction.distribution.find((entry) => entry.value === value)?.probability || 0,
   }))
   const total = values.reduce((sum, entry) => sum + entry.probability, 0)
   if (total > 0) return values.map((entry) => ({ ...entry, probability: entry.probability / total }))
   return values
+}
+
+function countSegmentClass(tile: string, value: DistributionValue): string {
+  return `${isRedFive(tile) ? 'red-count' : 'count'}-${value}`
 }
 
 function showCountTooltip(tile: string, source: TileSource) {
@@ -1461,6 +1499,7 @@ button {
 .analysis-count-row .analysis-tile-sequence {
   position: relative;
   height: 100%;
+  gap: var(--analysis-count-tile-gap, 1px);
 }
 
 .analysis-tile-sequence {
@@ -1516,10 +1555,10 @@ button {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   flex: 1 1 var(--analysis-tile-height);
-  width: var(--analysis-count-bars-width);
+  width: 100%;
   min-height: var(--analysis-tile-height);
   max-height: calc(var(--analysis-tile-height) * 3);
-  gap: var(--analysis-count-bar-gap, 1px);
+  gap: var(--analysis-count-source-gap, 1px);
 }
 
 .analysis-count-row-canvas {
@@ -1528,7 +1567,7 @@ button {
   top: 0;
   left: 0;
   display: block;
-  width: calc(100% - var(--analysis-count-bar-gap, 1px));
+  width: 100%;
   height: calc(100% - var(--analysis-tile-height) - var(--analysis-chart-gap));
   pointer-events: none;
 }
@@ -1649,6 +1688,8 @@ button {
 .count-2 { background: #39a6ff !important; }
 .count-3 { background: #0077cc !important; }
 .count-4 { background: #004f80 !important; }
+.red-count-0 { background: #f8dce4 !important; }
+.red-count-1 { background: #f29ab3 !important; }
 
 .analysis-source-legend,
 .analysis-count-legend,
@@ -1663,6 +1704,15 @@ button {
 .analysis-count-legends {
   justify-content: space-between;
   padding: 0 calc(0.65rem * var(--floating-panel-scale));
+}
+
+.analysis-red-count-legend {
+  gap: calc(0.38rem * var(--floating-panel-scale));
+}
+
+.analysis-red-count-legend small {
+  color: rgba(221, 232, 229, 0.82);
+  font: inherit;
 }
 
 .analysis-count-tooltip {
