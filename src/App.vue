@@ -1571,6 +1571,7 @@ import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 import {
   moveDockItem,
+  moveDockItemBesideNode,
   normalizeWorkspaceDockLayout,
   resizeDockSplit,
   visibleDockLayout,
@@ -1591,10 +1592,12 @@ type TablePosition = TrainerSettings['display']['tablePosition']
 type DockPanelId = Exclude<WorkspaceItemId, 'table'>
 type AnalysisPanelKey = keyof TrainerSettings['display']['workspaceLayout']['analysisPanels']
 type DockDropTarget = {
-  item: WorkspaceItemId
   edge: DockEdge
   bounds: { left: number; top: number; width: number; height: number }
-}
+} & (
+  | { kind: 'item'; item: WorkspaceItemId }
+  | { kind: 'group'; sourcePath: number[] }
+)
 
 const ANALYSIS_PANEL_DEFINITIONS: Array<{
   id: AnalysisPanelId
@@ -1996,11 +1999,39 @@ function dockDropTargetAt(clientX: number, clientY: number): DockDropTarget | nu
   if (!dragging) return null
   const leaf = document.elementsFromPoint(clientX, clientY).flatMap((element) => {
     const candidate = element.closest<HTMLElement>('.dock-layout-leaf[data-dock-target]')
-    return candidate && candidate.dataset.dockTarget !== dragging ? [candidate] : []
+    return candidate ? [candidate] : []
   })[0]
   if (!leaf) return null
+  const groupEdgeBand = Math.max(10, Math.round(12 * uiScale.value))
+  let group = leaf.parentElement?.closest<HTMLElement>('.dock-layout-split[data-dock-path]') || null
+  while (group) {
+    const rect = group.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) {
+      const groupDistances: Array<{ edge: DockEdge; distance: number }> = [
+        { edge: 'left', distance: Math.abs(clientX - rect.left) },
+        { edge: 'right', distance: Math.abs(rect.right - clientX) },
+        { edge: 'top', distance: Math.abs(clientY - rect.top) },
+        { edge: 'bottom', distance: Math.abs(rect.bottom - clientY) },
+      ]
+      groupDistances.sort((left, right) => left.distance - right.distance)
+      if (groupDistances[0].distance <= groupEdgeBand) {
+        const sourcePath = group.dataset.dockPath === ''
+          ? []
+          : String(group.dataset.dockPath).split('.').map(Number)
+        if (sourcePath.every((index) => Number.isInteger(index) && index >= 0)) {
+          return {
+            kind: 'group',
+            sourcePath,
+            edge: groupDistances[0].edge,
+            bounds: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+          }
+        }
+      }
+    }
+    group = group.parentElement?.closest<HTMLElement>('.dock-layout-split[data-dock-path]') || null
+  }
   const itemId = leaf.dataset.dockTarget
-  if (!itemId || !WORKSPACE_ITEM_IDS.includes(itemId as WorkspaceItemId)) return null
+  if (!itemId || itemId === dragging || !WORKSPACE_ITEM_IDS.includes(itemId as WorkspaceItemId)) return null
   const rect = leaf.getBoundingClientRect()
   if (rect.width <= 0 || rect.height <= 0) return null
   const distances: Array<{ edge: DockEdge; distance: number }> = [
@@ -2011,6 +2042,7 @@ function dockDropTargetAt(clientX: number, clientY: number): DockDropTarget | nu
   ]
   distances.sort((left, right) => left.distance - right.distance)
   return {
+    kind: 'item',
     item: itemId as WorkspaceItemId,
     edge: distances[0].edge,
     bounds: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
@@ -2071,7 +2103,9 @@ function endDockPanelDrag() {
 function dropDockPanel(target: DockDropTarget) {
   const panel = draggingDockPanel.value
   if (!panel) return
-  const layout = moveDockItem(workspaceLayout.value.layout, panel, target.item, target.edge)
+  const layout = target.kind === 'group'
+    ? moveDockItemBesideNode(workspaceLayout.value.layout, panel, target.sourcePath, target.edge)
+    : moveDockItem(workspaceLayout.value.layout, panel, target.item, target.edge)
   updateWorkspaceLayout({ ...workspaceLayout.value, layout })
   endDockPanelDrag()
 }

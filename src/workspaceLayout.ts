@@ -152,6 +152,76 @@ function removeDockItem(node: WorkspaceDockNode, id: WorkspaceItemId): Workspace
   return split(node.direction, entries.map((entry) => entry.node), entries.map((entry) => entry.weight))
 }
 
+function dockNodeItemIds(node: WorkspaceDockNode): WorkspaceItemId[] {
+  return node.type === 'item' ? [node.id] : node.children.flatMap(dockNodeItemIds)
+}
+
+function dockNodeAtPath(
+  node: WorkspaceDockNode,
+  sourcePath: readonly number[],
+): WorkspaceDockNode | null {
+  if (!sourcePath.length) return node
+  if (node.type !== 'split') return null
+  const [childIndex, ...remainingPath] = sourcePath
+  const child = node.children[childIndex]
+  return child ? dockNodeAtPath(child, remainingPath) : null
+}
+
+function sameDockItems(node: WorkspaceDockNode, expectedItems: ReadonlySet<WorkspaceItemId>): boolean {
+  const nodeItems = dockNodeItemIds(node)
+  return nodeItems.length === expectedItems.size
+    && nodeItems.every((id) => expectedItems.has(id))
+}
+
+function preferredDockNodeWeight(node: WorkspaceDockNode, direction: DockDirection): number {
+  const ids = dockNodeItemIds(node)
+  if (ids.includes('table')) return preferredDockWeight('table', direction)
+  if (ids.includes('console')) return preferredDockWeight('console', direction)
+  return preferredDockWeight(ids[0] || 'analysis-opponents', direction)
+}
+
+function insertDockItemBesideGroup(
+  node: WorkspaceDockNode,
+  inserted: WorkspaceDockNode,
+  targetItems: ReadonlySet<WorkspaceItemId>,
+  edge: DockEdge,
+): WorkspaceDockNode | null {
+  const direction: DockDirection = edge === 'left' || edge === 'right' ? 'horizontal' : 'vertical'
+  const insertBefore = edge === 'left' || edge === 'top'
+  if (sameDockItems(node, targetItems)) {
+    const targetWeight = preferredDockNodeWeight(node, direction)
+    const insertedWeight = preferredDockNodeWeight(inserted, direction)
+    return split(
+      direction,
+      insertBefore ? [inserted, node] : [node, inserted],
+      insertBefore ? [insertedWeight, targetWeight] : [targetWeight, insertedWeight],
+    )
+  }
+  if (node.type === 'item') return null
+  const targetIndex = node.children.findIndex((child) => sameDockItems(child, targetItems))
+  if (targetIndex >= 0 && node.direction === direction) {
+    const children = [...node.children]
+    const weights = [...node.weights]
+    const insertionIndex = targetIndex + (insertBefore ? 0 : 1)
+    const targetWeight = positiveWeight(node.weights[targetIndex])
+    const targetPreferredWeight = preferredDockNodeWeight(node.children[targetIndex], direction)
+    const insertedWeight = targetWeight
+      * preferredDockNodeWeight(inserted, direction)
+      / targetPreferredWeight
+    children.splice(insertionIndex, 0, inserted)
+    weights.splice(insertionIndex, 0, insertedWeight)
+    return split(direction, children, weights)
+  }
+  for (let index = 0; index < node.children.length; index += 1) {
+    const nested = insertDockItemBesideGroup(node.children[index], inserted, targetItems, edge)
+    if (!nested) continue
+    const children = [...node.children]
+    children[index] = nested
+    return split(node.direction, children, node.weights)
+  }
+  return null
+}
+
 function insertDockItem(
   node: WorkspaceDockNode,
   inserted: WorkspaceDockNode,
@@ -205,6 +275,22 @@ export function moveDockItem(
   const withoutItem = removeDockItem(layout, id)
   if (!withoutItem || !dockLayoutContains(withoutItem, target)) return layout
   return insertDockItem(withoutItem, item(id), target, edge) || layout
+}
+
+export function moveDockItemBesideNode(
+  layout: WorkspaceDockNode,
+  id: WorkspaceItemId,
+  targetPath: readonly number[],
+  edge: DockEdge,
+): WorkspaceDockNode {
+  if (id === 'table' || !dockLayoutContains(layout, id)) return layout
+  const targetNode = dockNodeAtPath(layout, targetPath)
+  if (!targetNode) return layout
+  const targetItems = new Set(dockNodeItemIds(targetNode).filter((targetId) => targetId !== id))
+  if (!targetItems.size) return layout
+  const withoutItem = removeDockItem(layout, id)
+  if (!withoutItem || [...targetItems].some((targetId) => !dockLayoutContains(withoutItem, targetId))) return layout
+  return insertDockItemBesideGroup(withoutItem, item(id), targetItems, edge) || layout
 }
 
 export function resizeDockSplit(

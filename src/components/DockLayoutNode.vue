@@ -3,6 +3,7 @@
     v-if="node.type === 'split'"
     class="dock-layout-split"
     :class="`is-${node.direction}`"
+    :data-dock-path="node.sourcePath.join('.')"
   >
     <template v-for="(child, index) in node.children" :key="dockNodeKey(child)">
       <div

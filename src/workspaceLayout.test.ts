@@ -6,6 +6,7 @@ import {
   createDefaultDockLayout,
   dockLayoutContains,
   moveDockItem,
+  moveDockItemBesideNode,
   normalizeWorkspaceDockLayout,
   resizeDockSplit,
   visibleDockLayout,
@@ -65,6 +66,35 @@ test('a panel can dock relative to another panel', () => {
   assert.ok(parent && parent.type === 'split')
   assert.equal(parent.direction, 'vertical')
   assert.deepEqual(flattenItems(parent), ['analysis-opponents', 'analysis-game', 'console'])
+})
+
+test('a panel can dock beside an entire sibling column', () => {
+  const layout: WorkspaceDockNode = {
+    type: 'split',
+    direction: 'horizontal',
+    children: [
+      { type: 'item', id: 'table' },
+      {
+        type: 'split',
+        direction: 'vertical',
+        children: [
+          { type: 'item', id: 'analysis-opponents' },
+          { type: 'item', id: 'analysis-game' },
+          { type: 'item', id: 'analysis-counts' },
+        ],
+        weights: [1, 1, 1],
+      },
+      { type: 'item', id: 'console' },
+      { type: 'item', id: 'analysis-risk' },
+    ],
+    weights: [2, 1, 1, 1],
+  }
+  const moved = moveDockItemBesideNode(layout, 'analysis-counts', [1], 'right')
+  assert.equal(moved.type, 'split')
+  assert.equal(moved.direction, 'horizontal')
+  assert.deepEqual(flattenItems(moved.children[1]), ['analysis-opponents', 'analysis-game'])
+  assert.deepEqual(flattenItems(moved.children[2]), ['analysis-counts'])
+  assert.deepEqual(flattenItems(moved).sort(), [...WORKSPACE_ITEM_IDS].sort())
 })
 
 test('repeated docking restores a sensible console-to-table width ratio', () => {
