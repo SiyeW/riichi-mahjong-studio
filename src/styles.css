@@ -162,8 +162,8 @@ textarea {
   align-items: center;
   justify-content: space-between;
   min-height: var(--topbar-min-h);
-  padding: calc(0.40rem * var(--chrome-scale)) calc(0.90rem * var(--chrome-scale));
-  background: #073e48;
+  padding: 0 calc(0.90rem * var(--chrome-scale));
+  background: #094855;
   border-bottom: 1px solid rgba(0, 0, 0, 0.30);
 }
 
@@ -181,6 +181,7 @@ textarea {
   width: 100%;
   min-width: 0;
   overflow: hidden;
+  transform: translateY(calc(0.1rem * var(--chrome-scale)));
 }
 
 .title-block .eyebrow {
@@ -526,9 +527,10 @@ textarea {
   flex: 0 0 auto;
   justify-content: space-between;
   align-items: center;
-  min-height: calc(2rem * var(--dock-module-scale));
-  padding: calc(0.2rem * var(--dock-module-scale)) calc(0.6rem * var(--dock-module-scale));
-  background: var(--dock-module-surface);
+  min-height: calc(1.7rem * var(--dock-module-scale));
+  padding: 0 calc(0.45rem * var(--dock-module-scale));
+  background: none;
+  border-bottom: 1px solid rgba(140, 195, 188, 0.18);
 }
 
 .dock-module-drag-handle {
@@ -564,9 +566,11 @@ textarea {
 
 .floating-panel-close.dock-module-close {
   flex: 0 0 auto;
-  margin-right: calc(-0.2rem * var(--dock-module-scale));
-  padding: 0 calc(0.15rem * var(--dock-module-scale));
-  font-size: calc(1.5rem * var(--dock-module-scale));
+  width: calc(1.25rem * var(--dock-module-scale));
+  height: calc(1.25rem * var(--dock-module-scale));
+  margin: 0;
+  padding: 0;
+  font-size: calc(1.25rem * var(--dock-module-scale));
 }
 
 .analysis-dock {
