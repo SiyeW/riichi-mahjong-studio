@@ -1,5 +1,11 @@
 <template>
-  <div class="unified-analysis" :class="{ 'reduce-motion': reduceMotion }">
+  <div
+    class="unified-analysis"
+    :class="{
+      'reduce-motion': reduceMotion,
+      'is-count-section': section === 'counts',
+    }"
+  >
     <section v-if="section === 'opponents'" class="analysis-opponent-section">
         <div class="analysis-opponent-grid">
           <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-card">
@@ -236,7 +242,7 @@
       <div class="analysis-count-grid">
         <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-count-row">
           <div class="analysis-tile-sequence">
-            <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-count-tile">
+            <div v-for="tile in row" :key="tile" class="analysis-count-tile">
               <div class="analysis-count-bars">
                 <button
                   v-for="source in countSources"
@@ -257,18 +263,8 @@
                   />
                 </button>
               </div>
-              <span
-                v-if="tileIndex < row.length - 1"
-                class="analysis-count-bridge"
-                aria-hidden="true"
-              />
               <img class="analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
             </div>
-          </div>
-          <div class="analysis-count-scale" aria-hidden="true">
-            <span class="is-maximum"><i /><small>100%</small></span>
-            <span class="is-middle"><i /><small>50%</small></span>
-            <span class="is-zero"><i /><small>0%</small></span>
           </div>
         </div>
         <div class="analysis-count-legends">
@@ -717,6 +713,10 @@ function showCountTooltip(tile: string, source: TileSource) {
   max-width: none;
   color: rgba(238, 247, 244, 0.92);
   font-size: var(--ui-text-body);
+}
+
+.unified-analysis.is-count-section {
+  height: 100%;
 }
 
 button {
@@ -1270,9 +1270,8 @@ button {
   --analysis-tile-width: calc(2.45rem * var(--floating-panel-scale));
   --analysis-tile-height: calc(3.18rem * var(--floating-panel-scale));
   --analysis-risk-height: calc(var(--analysis-tile-height) * 1.14);
-  --analysis-count-height: calc(var(--analysis-tile-height) * 1.14);
   --analysis-risk-bars-width: calc(var(--analysis-tile-width) * 0.84);
-  --analysis-count-bars-width: calc(var(--analysis-tile-width) * 0.96);
+  --analysis-count-bars-width: calc(var(--analysis-tile-width) - 1px);
   --analysis-chart-gap: calc(var(--analysis-tile-width) * 0.035);
   --analysis-scale-space: calc(2.45rem * var(--floating-panel-scale));
   position: relative;
@@ -1281,6 +1280,25 @@ button {
   padding-top: 0;
   overflow-x: auto;
   overflow-y: visible;
+}
+
+.is-count-section .analysis-tiles-view,
+.analysis-count-grid {
+  height: 100%;
+}
+
+.analysis-count-grid {
+  --analysis-count-row-min-height: calc((var(--analysis-tile-height) * 2) + var(--analysis-chart-gap));
+  --analysis-count-row-max-height: calc((var(--analysis-tile-height) * 4) + var(--analysis-chart-gap));
+  grid-template-rows:
+    repeat(4, minmax(var(--analysis-count-row-min-height), var(--analysis-count-row-max-height)))
+    auto;
+  align-content: center;
+  min-height: calc(
+    (var(--analysis-count-row-min-height) * 4)
+    + (var(--analysis-tile-width) * 0.5)
+    + (var(--ui-text-caption) * 1.2)
+  );
 }
 
 .analysis-tile-chart-row {
@@ -1297,6 +1315,19 @@ button {
   border-bottom: 0;
 }
 
+.analysis-count-row {
+  justify-content: center;
+  width: max(100%, calc(var(--analysis-tile-width) * 9));
+  height: 100%;
+  padding-right: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.analysis-count-row .analysis-tile-sequence {
+  height: 100%;
+}
+
 .analysis-tile-sequence {
   display: flex;
   gap: 0;
@@ -1311,6 +1342,10 @@ button {
   flex: 0 0 var(--analysis-tile-width);
   width: var(--analysis-tile-width);
   gap: var(--analysis-chart-gap);
+}
+
+.analysis-count-tile {
+  height: 100%;
 }
 
 .analysis-tile-face {
@@ -1344,8 +1379,11 @@ button {
 
 .analysis-count-bars {
   align-items: flex-end;
+  flex: 1 1 var(--analysis-tile-height);
   width: var(--analysis-count-bars-width);
-  height: var(--analysis-count-height);
+  min-height: var(--analysis-tile-height);
+  max-height: calc(var(--analysis-tile-height) * 3);
+  gap: 1px;
 }
 
 .analysis-risk-bars.has-adaptive-threshold::before,
@@ -1382,8 +1420,7 @@ button {
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.analysis-risk-bridge,
-.analysis-count-bridge {
+.analysis-risk-bridge {
   position: absolute;
   z-index: 0;
   left: calc(50% + (var(--analysis-risk-bars-width) / 2));
@@ -1397,8 +1434,7 @@ button {
   background: rgba(255, 255, 255, 0.05);
 }
 
-.analysis-risk-scale,
-.analysis-count-scale {
+.analysis-risk-scale {
   position: absolute;
   left: calc(100% - var(--analysis-scale-space) + (var(--analysis-tile-width) * 0.12));
   width: calc(var(--analysis-scale-space) * 0.88);
@@ -1411,24 +1447,21 @@ button {
   height: var(--analysis-risk-height);
 }
 
-.analysis-risk-scale > span,
-.analysis-count-scale > span {
+.analysis-risk-scale > span {
   position: absolute;
   left: 0;
   width: 100%;
   height: 0;
 }
 
-.analysis-risk-scale > span i,
-.analysis-count-scale > span i {
+.analysis-risk-scale > span i {
   position: absolute;
   left: 0;
   width: calc(var(--analysis-tile-width) * 0.12);
   border-top: 1px solid rgba(198, 214, 211, 0.42);
 }
 
-.analysis-risk-scale > span small,
-.analysis-count-scale > span small {
+.analysis-risk-scale > span small {
   position: absolute;
   left: calc(var(--analysis-tile-width) * 0.2);
   color: rgba(210, 224, 221, 0.56);
@@ -1478,23 +1511,6 @@ button {
   height: calc(0.12rem * var(--floating-panel-scale));
   content: '';
 }
-
-.analysis-count-bridge {
-  bottom: calc(var(--analysis-tile-height) + var(--analysis-chart-gap));
-  height: var(--analysis-count-height);
-  width: calc(var(--analysis-tile-width) - var(--analysis-count-bars-width));
-  left: calc(50% + (var(--analysis-count-bars-width) / 2));
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.analysis-count-scale {
-  top: 0;
-  height: var(--analysis-count-height);
-}
-
-.analysis-count-scale .is-maximum { top: 0; }
-.analysis-count-scale .is-middle { top: 50%; }
-.analysis-count-scale .is-zero { top: 100%; }
 
 .analysis-count-bars > button.source-kamicha::after { background: var(--ron-kamicha-color); }
 .analysis-count-bars > button.source-toimen::after { background: var(--ron-toimen-color); }
