@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements-release.txt
+
+      - name: Run Node.js tests
+        shell: pwsh
+        run: |
+          $tests = Get-ChildItem -Path electron, locales, src -File -Recurse |
+            Where-Object { $_.Name -match '\.test\.(js|ts)$' } |
+            Select-Object -ExpandProperty FullName
+          node --test $tests
+
+      - name: Run Python tests
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = (Resolve-Path 'python\environment').Path
+          python -m unittest discover -s python\environment -p 'test_*.py'
+
+      - name: Build renderer
+        run: npm run build
