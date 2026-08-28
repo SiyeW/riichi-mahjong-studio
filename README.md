@@ -1,5 +1,10 @@
 ### [中文](#%E4%B8%AD%E6%96%87) | [日本語](#%E6%97%A5%E6%9C%AC%E8%AA%9E) | [English](#english)
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/SiyeW/riichi-mahjong-studio?include_prereleases)](https://github.com/SiyeW/riichi-mahjong-studio/releases)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows11&logoColor=white)
+[![CI](https://github.com/SiyeW/riichi-mahjong-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/SiyeW/riichi-mahjong-studio/actions/workflows/ci.yml)
+
 ![Riichi Mahjong Studio main window](docs/images/riichi-mahjong-studio-main-window.png)
 
 ---
