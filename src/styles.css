@@ -59,9 +59,9 @@ body {
 .shell {
   --zoom: 1;
   --decision-recommendation-color: #1a931a;
-  --ron-kamicha-color: #2196F3;
-  --ron-toimen-color: #FF9800;
-  --ron-shimocha-color: #4CAF50;
+  --ron-kamicha-color: #2c8fc5;
+  --ron-toimen-color: #d39a3a;
+  --ron-shimocha-color: #4caf50;
   --zoom-tiles: calc(((34 * var(--zoom)) - 4) / (34 - 4));
   --tile-img-w: calc((var(--zoom-tiles) * 30px) + 4px);
   --tile-img-h: calc((var(--zoom-tiles) * 40px) + 4px);

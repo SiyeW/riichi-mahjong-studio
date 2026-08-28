@@ -111,6 +111,19 @@ function testInvalidTablePositionUsesCenter() {
   }
 }
 
+function testNagaColorSchemePersists() {
+  const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'riichi-studio-color-scheme-settings-'))
+  const options = { appDir: portableDir, portableDir, resourceDir: portableDir }
+  try {
+    fs.writeFileSync(path.join(portableDir, 'config.json'), JSON.stringify({
+      display: { colorScheme: 'naga' },
+    }))
+    assert.equal(loadSettings(options).display.colorScheme, 'naga')
+  } finally {
+    fs.rmSync(portableDir, { recursive: true, force: true })
+  }
+}
+
 function testInvalidLanguageUsesSystem() {
   const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'riichi-studio-language-settings-'))
   const options = { appDir: portableDir, portableDir, resourceDir: portableDir }
@@ -185,6 +198,7 @@ testPortableDefaultsHaveNoEngines()
 testUserProfilePersists()
 testSoundPackSelectionPersistsOnlyWhileAvailable()
 testInvalidTablePositionUsesCenter()
+testNagaColorSchemePersists()
 testInvalidLanguageUsesSystem()
 testInvalidWorkspaceLayoutUsesSafeDefaults()
 console.log('settings tests passed')

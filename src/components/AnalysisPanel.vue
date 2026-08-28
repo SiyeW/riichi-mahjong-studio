@@ -656,21 +656,19 @@ function updateCountBarGeometry() {
 }
 
 type RgbColor = readonly [number, number, number]
+type OklchColor = Readonly<{ l: number; c: number; h: number }>
 
-const COUNT_SOURCE_FALLBACKS: Record<string, RgbColor> = {
-  kamicha: [33, 150, 243],
-  toimen: [255, 152, 0],
+const COUNT_SOURCE_FALLBACKS: Record<'kamicha' | 'toimen' | 'shimocha', RgbColor> = {
+  kamicha: [44, 143, 197],
+  toimen: [211, 154, 58],
   shimocha: [76, 175, 80],
-  wall: [143, 174, 167],
 }
 
-const COUNT_SHADE_MIXES = [0.82, 0.58, 0.32, 0, -0.28] as const
-
 function countSourceColor(source: TileSource, style: CSSStyleDeclaration): string {
-  if (source.key === 'kamicha') return style.getPropertyValue('--ron-kamicha-color').trim() || '#2196f3'
-  if (source.key === 'toimen') return style.getPropertyValue('--ron-toimen-color').trim() || '#ff9800'
+  if (source.key === 'kamicha') return style.getPropertyValue('--ron-kamicha-color').trim() || '#2c8fc5'
+  if (source.key === 'toimen') return style.getPropertyValue('--ron-toimen-color').trim() || '#d39a3a'
   if (source.key === 'shimocha') return style.getPropertyValue('--ron-shimocha-color').trim() || '#4caf50'
-  return '#8faea7'
+  return ''
 }
 
 function parseCssColor(value: string, fallback: RgbColor): RgbColor {
@@ -684,22 +682,121 @@ function parseCssColor(value: string, fallback: RgbColor): RgbColor {
     ]
   }
   const rgb = value.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i)
-  return rgb
-    ? [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])]
-    : fallback
+  if (!rgb) return fallback
+  const clampChannel = (channel: string) => Math.max(0, Math.min(255, Number(channel)))
+  return [clampChannel(rgb[1]), clampChannel(rgb[2]), clampChannel(rgb[3])]
 }
 
-function mixCountShade(base: RgbColor, amount: number): string {
-  const target = amount >= 0 ? 255 : 0
-  const ratio = Math.abs(amount)
-  const channels = base.map((channel) => Math.round(channel + ((target - channel) * ratio)))
-  return `rgb(${channels[0]} ${channels[1]} ${channels[2]})`
+function srgbToLinear(channel: number): number {
+  const value = channel / 255
+  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+}
+
+function linearToSrgb(channel: number): number {
+  const value = Math.max(0, Math.min(1, channel))
+  const srgb = value <= 0.0031308
+    ? value * 12.92
+    : (1.055 * (value ** (1 / 2.4))) - 0.055
+  return Math.round(srgb * 255)
+}
+
+function rgbToOklch(rgb: RgbColor): OklchColor {
+  const [r, g, b] = rgb.map(srgbToLinear)
+  const lRoot = Math.cbrt((0.4122214708 * r) + (0.5363325363 * g) + (0.0514459929 * b))
+  const mRoot = Math.cbrt((0.2119034982 * r) + (0.6806995451 * g) + (0.1073969566 * b))
+  const sRoot = Math.cbrt((0.0883024619 * r) + (0.2817188376 * g) + (0.6299787005 * b))
+  const l = (0.2104542553 * lRoot) + (0.793617785 * mRoot) - (0.0040720468 * sRoot)
+  const a = (1.9779984951 * lRoot) - (2.428592205 * mRoot) + (0.4505937099 * sRoot)
+  const chromaB = (0.0259040371 * lRoot) + (0.7827717662 * mRoot) - (0.808675766 * sRoot)
+  const c = Math.hypot(a, chromaB)
+  return { l, c, h: c < 1e-7 ? 0 : Math.atan2(chromaB, a) }
+}
+
+function oklchToLinearRgb(color: OklchColor): [number, number, number] {
+  const a = color.c * Math.cos(color.h)
+  const b = color.c * Math.sin(color.h)
+  const lRoot = color.l + (0.3963377774 * a) + (0.2158037573 * b)
+  const mRoot = color.l - (0.1055613458 * a) - (0.0638541728 * b)
+  const sRoot = color.l - (0.0894841775 * a) - (1.291485548 * b)
+  const l = lRoot ** 3
+  const m = mRoot ** 3
+  const s = sRoot ** 3
+  return [
+    (4.0767416621 * l) - (3.3077115913 * m) + (0.2309699292 * s),
+    (-1.2684380046 * l) + (2.6097574011 * m) - (0.3413193965 * s),
+    (-0.0041960863 * l) - (0.7034186147 * m) + (1.707614701 * s),
+  ]
+}
+
+function isInSrgbGamut(channels: readonly number[]): boolean {
+  return channels.every((channel) => channel >= -1e-7 && channel <= 1 + 1e-7)
+}
+
+function oklchToRgb(color: OklchColor): RgbColor {
+  let mapped = color
+  if (!isInSrgbGamut(oklchToLinearRgb(mapped))) {
+    let low = 0
+    let high = color.c
+    for (let index = 0; index < 20; index += 1) {
+      const c = (low + high) / 2
+      if (isInSrgbGamut(oklchToLinearRgb({ ...color, c }))) low = c
+      else high = c
+    }
+    mapped = { ...color, c: low }
+  }
+  const [r, g, b] = oklchToLinearRgb(mapped)
+  return [linearToSrgb(r), linearToSrgb(g), linearToSrgb(b)]
+}
+
+function rgbString(rgb: RgbColor): string {
+  return `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})`
+}
+
+function playerCountBaseColors(style: CSSStyleDeclaration): Record<'kamicha' | 'toimen' | 'shimocha', RgbColor> {
+  return {
+    kamicha: parseCssColor(style.getPropertyValue('--ron-kamicha-color'), COUNT_SOURCE_FALLBACKS.kamicha),
+    toimen: parseCssColor(style.getPropertyValue('--ron-toimen-color'), COUNT_SOURCE_FALLBACKS.toimen),
+    shimocha: parseCssColor(style.getPropertyValue('--ron-shimocha-color'), COUNT_SOURCE_FALLBACKS.shimocha),
+  }
+}
+
+function wallCountBaseColor(style: CSSStyleDeclaration): RgbColor {
+  const players = Object.values(playerCountBaseColors(style)).map(rgbToOklch)
+  const meanLightness = players.reduce((sum, color) => sum + color.l, 0) / players.length
+  const meanChroma = players.reduce((sum, color) => sum + color.c, 0) / players.length
+  return oklchToRgb({
+    l: meanLightness,
+    c: Math.max(0.018, Math.min(0.04, meanChroma * 0.2)),
+    h: 170 * (Math.PI / 180),
+  })
+}
+
+function countSourceBaseColor(source: TileSource, style: CSSStyleDeclaration): RgbColor {
+  if (source.key === 'wall') return wallCountBaseColor(style)
+  const fallback = COUNT_SOURCE_FALLBACKS[source.key as keyof typeof COUNT_SOURCE_FALLBACKS]
+  return parseCssColor(countSourceColor(source, style), fallback || COUNT_SOURCE_FALLBACKS.kamicha)
 }
 
 function countSourcePalette(source: TileSource, style: CSSStyleDeclaration): string[] {
-  const fallback = COUNT_SOURCE_FALLBACKS[source.key] || COUNT_SOURCE_FALLBACKS.wall
-  const base = parseCssColor(countSourceColor(source, style), fallback)
-  return COUNT_SHADE_MIXES.map((amount) => mixCountShade(base, amount))
+  const baseRgb = countSourceBaseColor(source, style)
+  const base = rgbToOklch(baseRgb)
+  const emptyRgb: RgbColor = [235, 235, 235]
+  const empty = rgbToOklch(emptyRgb)
+  const colors = [rgbString(emptyRgb), ...[1, 2].map((value) => {
+    const ratio = value / 3
+    return rgbString(oklchToRgb({
+      l: empty.l + ((base.l - empty.l) * ratio),
+      c: empty.c + ((base.c - empty.c) * ratio),
+      h: base.h,
+    }))
+  })]
+  colors.push(rgbString(baseRgb))
+  colors.push(rgbString(oklchToRgb({
+    l: Math.max(0.26, base.l * 0.68),
+    c: base.c * 0.9,
+    h: base.h,
+  })))
+  return colors
 }
 
 function countPaletteVariable(sourceKey: string, value: number): string {

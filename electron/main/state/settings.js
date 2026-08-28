@@ -121,7 +121,9 @@ function normalizeDisplaySettings(display = {}) {
     language: ['system', 'zh-CN', 'ja-JP', 'en-US'].includes(display.language)
       ? display.language
       : DEFAULT_DISPLAY_SETTINGS.language,
-    colorScheme: display.colorScheme === 'killerducky' ? 'killerducky' : 'default',
+    colorScheme: ['default', 'killerducky', 'naga'].includes(display.colorScheme)
+      ? display.colorScheme
+      : DEFAULT_DISPLAY_SETTINGS.colorScheme,
     tablePosition: ['left', 'center', 'right'].includes(display.tablePosition)
       ? display.tablePosition
       : DEFAULT_DISPLAY_SETTINGS.tablePosition,

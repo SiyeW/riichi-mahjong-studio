@@ -60,7 +60,7 @@ interface TrainerSettings {
   }
   display: {
     language: 'system' | 'zh-CN' | 'ja-JP' | 'en-US'
-    colorScheme: 'default' | 'killerducky'
+    colorScheme: 'default' | 'killerducky' | 'naga'
     reduceMotion: boolean
     uiScale: number
     showTsumogiriInPlay: boolean

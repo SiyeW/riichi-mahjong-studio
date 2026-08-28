@@ -1084,6 +1084,7 @@
             <select v-model="settingsDraft.display.colorScheme">
               <option value="default">{{ t('common.default') }}</option>
               <option value="killerducky">killerducky</option>
+              <option value="naga">NAGA</option>
             </select>
           </label>
           <label>
@@ -1637,7 +1638,7 @@ const COLOR_SCHEMES: Record<ColorSchemeId, {
 }> = {
   default: {
     decisionRecommendation: '#1a931a',
-    ronWait: { kamicha: '#2196F3', toimen: '#FF9800', shimocha: '#4CAF50' },
+    ronWait: { kamicha: '#2c8fc5', toimen: '#d39a3a', shimocha: '#4caf50' },
     shanten: DEFAULT_SHANTEN_COLORS,
   },
   killerducky: {
@@ -1645,10 +1646,15 @@ const COLOR_SCHEMES: Record<ColorSchemeId, {
     ronWait: { kamicha: '#b34d4d', toimen: '#4db3b3', shimocha: '#804db3' },
     shanten: DEFAULT_SHANTEN_COLORS,
   },
+  naga: {
+    decisionRecommendation: '#1a931a',
+    ronWait: { kamicha: '#2196f3', toimen: '#ffeb3b', shimocha: '#4caf50' },
+    shanten: DEFAULT_SHANTEN_COLORS,
+  },
 }
 
 function normalizeColorScheme(value: unknown): ColorSchemeId {
-  return value === 'killerducky' ? 'killerducky' : 'default'
+  return value === 'killerducky' || value === 'naga' ? value : 'default'
 }
 
 function normalizeTablePosition(value: unknown): TablePosition {
