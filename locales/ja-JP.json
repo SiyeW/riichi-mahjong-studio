@@ -117,7 +117,6 @@
   "analysis.countPrediction": "枚数予測",
   "analysis.tileCountDistribution": "{source}・{tile}の枚数分布",
   "analysis.countUnit": "{value}枚",
-  "analysis.redFive": "赤5",
   "analysis.expectedCount": "期待値 {value} 枚",
   "analysis.predictedCount": "予測 {value} 枚",
   "analysis.noData": "データなし",

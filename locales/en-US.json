@@ -117,7 +117,6 @@
   "analysis.countPrediction": "Tile Counts",
   "analysis.tileCountDistribution": "{source} {tile} count distribution",
   "analysis.countUnit": "{value}",
-  "analysis.redFive": "Red five",
   "analysis.expectedCount": "Expected {value}",
   "analysis.predictedCount": "Predicted {value}",
   "analysis.noData": "No data",
