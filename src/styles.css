@@ -607,7 +607,7 @@ textarea {
   min-height: 0;
   overflow: auto;
   padding:
-    calc(0.5rem * var(--floating-panel-scale))
+    0
     0
     calc(0.7rem * var(--floating-panel-scale))
     calc(0.48rem * var(--floating-panel-scale));
