@@ -112,10 +112,42 @@ body {
   --side-panel-width: calc(19.625rem * var(--ui-scale));
   --topbar-min-h: calc(3.125rem * var(--ui-scale));
   --footer-min-h: calc(1.75rem * var(--ui-scale));
+  --scrollbar-size: calc(0.48rem * var(--chrome-scale));
+  --scrollbar-thumb: rgba(165, 194, 190, 0.48);
+  --scrollbar-thumb-hover: rgba(181, 211, 207, 0.68);
   display: flex;
   flex-direction: column;
   height: 100%;
   font-size: var(--ui-text-body);
+}
+
+.shell,
+.shell * {
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+  scrollbar-width: thin;
+}
+
+.shell::-webkit-scrollbar,
+.shell *::-webkit-scrollbar {
+  width: var(--scrollbar-size);
+  height: var(--scrollbar-size);
+}
+
+.shell::-webkit-scrollbar-track,
+.shell *::-webkit-scrollbar-track,
+.shell::-webkit-scrollbar-corner,
+.shell *::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.shell::-webkit-scrollbar-thumb,
+.shell *::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+
+.shell::-webkit-scrollbar-thumb:hover,
+.shell *::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
 }
 
 button,
@@ -576,22 +608,7 @@ textarea {
     0
     calc(0.7rem * var(--floating-panel-scale))
     calc(0.48rem * var(--floating-panel-scale));
-  scrollbar-color: rgba(165, 194, 190, 0.48) transparent;
   scrollbar-gutter: stable;
-  scrollbar-width: thin;
-}
-
-.analysis-dock-body::-webkit-scrollbar {
-  width: calc(0.48rem * var(--floating-panel-scale));
-  height: calc(0.48rem * var(--floating-panel-scale));
-}
-
-.analysis-dock-body::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.analysis-dock-body::-webkit-scrollbar-thumb {
-  background: rgba(165, 194, 190, 0.48);
 }
 
 .dock-drop-overlay {
@@ -2682,20 +2699,6 @@ textarea {
   overflow-x: auto;
   overflow-y: hidden;
   padding-bottom: calc(0.12rem * var(--chrome-scale));
-  scrollbar-color: rgba(165, 194, 190, 0.48) rgba(0, 17, 21, 0.34);
-  scrollbar-width: thin;
-}
-
-.analysis-table-scroll::-webkit-scrollbar {
-  height: calc(0.38rem * var(--chrome-scale));
-}
-
-.analysis-table-scroll::-webkit-scrollbar-track {
-  background: rgba(0, 17, 21, 0.34);
-}
-
-.analysis-table-scroll::-webkit-scrollbar-thumb {
-  background: rgba(165, 194, 190, 0.48);
 }
 
 .analysis-table {
