@@ -39,9 +39,9 @@ function surfaceAdjustedColor(color: RgbColor, surface: RgbColor): RgbColor {
   const calibration = rgbToOklab(PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND)
   const background = rgbToOklab(surface)
   return oklabToRgb({
-    l: canonical.l + background.l - calibration.l,
-    a: canonical.a + background.a - calibration.a,
-    b: canonical.b + background.b - calibration.b,
+    l: canonical.l + calibration.l - background.l,
+    a: canonical.a + calibration.a - background.a,
+    b: canonical.b + calibration.b - background.b,
   })
 }
 

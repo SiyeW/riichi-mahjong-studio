@@ -5,6 +5,7 @@ import {
   perceptualSurfaceVariables,
   type PerceptualColorPalette,
 } from './perceptualSurface.ts'
+import { parseCssColor, rgbToOklab } from './perceptualColor.ts'
 
 const palette: PerceptualColorPalette = {
   decisionRecommendation: [26, 147, 26],
@@ -22,15 +23,18 @@ test('calibration surface reproduces canonical analysis colors', () => {
   assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(201 85 77)')
 })
 
-test('every semantic color uses the same surface translation', () => {
+test('every semantic color uses the same inverse surface compensation', () => {
   const variables = perceptualSurfaceVariables(palette, [9, 72, 85])
-  assert.equal(variables['--ron-kamicha-color'], 'rgb(50 160 220)')
-  assert.equal(variables['--ron-toimen-color'], 'rgb(224 173 87)')
-  assert.equal(variables['--ron-shimocha-color'], 'rgb(82 194 104)')
-  assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(216 105 99)')
+  assert.equal(variables['--ron-kamicha-color'], 'rgb(38 126 175)')
+  assert.equal(variables['--ron-toimen-color'], 'rgb(198 135 15)')
+  assert.equal(variables['--ron-shimocha-color'], 'rgb(70 157 54)')
+  assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(186 64 54)')
   assert.equal(variables['--analysis-draw-color'], variables['--ron-kamicha-color'])
   assert.equal(variables['--analysis-self-win-color'], variables['--ron-shimocha-color'])
   assert.equal(variables['--analysis-horizontal-color'], variables['--ron-toimen-color'])
+
+  const adjustedGreen = parseCssColor(variables['--ron-shimocha-color'], palette.shimocha)
+  assert.ok(rgbToOklab(adjustedGreen).l < rgbToOklab(palette.shimocha).l)
 })
 
 test('neutral anchors remain fixed after surface translation', () => {
