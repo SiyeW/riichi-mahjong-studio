@@ -163,7 +163,7 @@ textarea {
   justify-content: space-between;
   min-height: var(--topbar-min-h);
   padding: calc(0.40rem * var(--chrome-scale)) calc(0.90rem * var(--chrome-scale));
-  background: linear-gradient(180deg, #0b5f6e 0%, #095360 100%);
+  background: #0a5967;
   border-bottom: 1px solid rgba(0, 0, 0, 0.30);
 }
 
