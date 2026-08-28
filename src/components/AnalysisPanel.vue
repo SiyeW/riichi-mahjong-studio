@@ -310,6 +310,15 @@ import {
   type DistributionValue,
   type NumericPrediction,
 } from '../numericPrediction'
+import {
+  mixOklab,
+  oklabToRgb,
+  parseCssColor,
+  rgbString,
+  rgbToOklab,
+  scaleOklab,
+  type RgbColor,
+} from '../perceptualColor'
 import ShantenPieChart from './ShantenPieChart.vue'
 
 const { t, numberLocale } = useI18n()
@@ -655,9 +664,6 @@ function updateCountBarGeometry() {
   updateCountPaletteVariables(grid)
 }
 
-type RgbColor = readonly [number, number, number]
-type OklchColor = Readonly<{ l: number; c: number; h: number }>
-
 const COUNT_SOURCE_FALLBACKS: Record<'kamicha' | 'toimen' | 'shimocha', RgbColor> = {
   kamicha: [44, 143, 197],
   toimen: [211, 154, 58],
@@ -671,87 +677,6 @@ function countSourceColor(source: TileSource, style: CSSStyleDeclaration): strin
   return ''
 }
 
-function parseCssColor(value: string, fallback: RgbColor): RgbColor {
-  const hex = value.trim().match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)?.[1]
-  if (hex) {
-    const expanded = hex.length === 3 ? [...hex].map((part) => part.repeat(2)).join('') : hex
-    return [
-      Number.parseInt(expanded.slice(0, 2), 16),
-      Number.parseInt(expanded.slice(2, 4), 16),
-      Number.parseInt(expanded.slice(4, 6), 16),
-    ]
-  }
-  const rgb = value.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i)
-  if (!rgb) return fallback
-  const clampChannel = (channel: string) => Math.max(0, Math.min(255, Number(channel)))
-  return [clampChannel(rgb[1]), clampChannel(rgb[2]), clampChannel(rgb[3])]
-}
-
-function srgbToLinear(channel: number): number {
-  const value = channel / 255
-  return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
-}
-
-function linearToSrgb(channel: number): number {
-  const value = Math.max(0, Math.min(1, channel))
-  const srgb = value <= 0.0031308
-    ? value * 12.92
-    : (1.055 * (value ** (1 / 2.4))) - 0.055
-  return Math.round(srgb * 255)
-}
-
-function rgbToOklch(rgb: RgbColor): OklchColor {
-  const [r, g, b] = rgb.map(srgbToLinear)
-  const lRoot = Math.cbrt((0.4122214708 * r) + (0.5363325363 * g) + (0.0514459929 * b))
-  const mRoot = Math.cbrt((0.2119034982 * r) + (0.6806995451 * g) + (0.1073969566 * b))
-  const sRoot = Math.cbrt((0.0883024619 * r) + (0.2817188376 * g) + (0.6299787005 * b))
-  const l = (0.2104542553 * lRoot) + (0.793617785 * mRoot) - (0.0040720468 * sRoot)
-  const a = (1.9779984951 * lRoot) - (2.428592205 * mRoot) + (0.4505937099 * sRoot)
-  const chromaB = (0.0259040371 * lRoot) + (0.7827717662 * mRoot) - (0.808675766 * sRoot)
-  const c = Math.hypot(a, chromaB)
-  return { l, c, h: c < 1e-7 ? 0 : Math.atan2(chromaB, a) }
-}
-
-function oklchToLinearRgb(color: OklchColor): [number, number, number] {
-  const a = color.c * Math.cos(color.h)
-  const b = color.c * Math.sin(color.h)
-  const lRoot = color.l + (0.3963377774 * a) + (0.2158037573 * b)
-  const mRoot = color.l - (0.1055613458 * a) - (0.0638541728 * b)
-  const sRoot = color.l - (0.0894841775 * a) - (1.291485548 * b)
-  const l = lRoot ** 3
-  const m = mRoot ** 3
-  const s = sRoot ** 3
-  return [
-    (4.0767416621 * l) - (3.3077115913 * m) + (0.2309699292 * s),
-    (-1.2684380046 * l) + (2.6097574011 * m) - (0.3413193965 * s),
-    (-0.0041960863 * l) - (0.7034186147 * m) + (1.707614701 * s),
-  ]
-}
-
-function isInSrgbGamut(channels: readonly number[]): boolean {
-  return channels.every((channel) => channel >= -1e-7 && channel <= 1 + 1e-7)
-}
-
-function oklchToRgb(color: OklchColor): RgbColor {
-  let mapped = color
-  if (!isInSrgbGamut(oklchToLinearRgb(mapped))) {
-    let low = 0
-    let high = color.c
-    for (let index = 0; index < 20; index += 1) {
-      const c = (low + high) / 2
-      if (isInSrgbGamut(oklchToLinearRgb({ ...color, c }))) low = c
-      else high = c
-    }
-    mapped = { ...color, c: low }
-  }
-  const [r, g, b] = oklchToLinearRgb(mapped)
-  return [linearToSrgb(r), linearToSrgb(g), linearToSrgb(b)]
-}
-
-function rgbString(rgb: RgbColor): string {
-  return `rgb(${rgb[0]} ${rgb[1]} ${rgb[2]})`
-}
-
 function playerCountBaseColors(style: CSSStyleDeclaration): Record<'kamicha' | 'toimen' | 'shimocha', RgbColor> {
   return {
     kamicha: parseCssColor(style.getPropertyValue('--ron-kamicha-color'), COUNT_SOURCE_FALLBACKS.kamicha),
@@ -761,13 +686,15 @@ function playerCountBaseColors(style: CSSStyleDeclaration): Record<'kamicha' | '
 }
 
 function wallCountBaseColor(style: CSSStyleDeclaration): RgbColor {
-  const players = Object.values(playerCountBaseColors(style)).map(rgbToOklch)
+  const players = Object.values(playerCountBaseColors(style)).map(rgbToOklab)
   const meanLightness = players.reduce((sum, color) => sum + color.l, 0) / players.length
-  const meanChroma = players.reduce((sum, color) => sum + color.c, 0) / players.length
-  return oklchToRgb({
+  const meanChroma = players.reduce((sum, color) => sum + Math.hypot(color.a, color.b), 0) / players.length
+  const hue = 170 * (Math.PI / 180)
+  const chroma = Math.max(0.018, Math.min(0.04, meanChroma * 0.2))
+  return oklabToRgb({
     l: meanLightness,
-    c: Math.max(0.018, Math.min(0.04, meanChroma * 0.2)),
-    h: 170 * (Math.PI / 180),
+    a: chroma * Math.cos(hue),
+    b: chroma * Math.sin(hue),
   })
 }
 
@@ -779,24 +706,14 @@ function countSourceBaseColor(source: TileSource, style: CSSStyleDeclaration): R
 
 function countSourcePalette(source: TileSource, style: CSSStyleDeclaration): string[] {
   const baseRgb = countSourceBaseColor(source, style)
-  const base = rgbToOklch(baseRgb)
   const emptyRgb: RgbColor = [235, 235, 235]
-  const empty = rgbToOklch(emptyRgb)
-  const colors = [rgbString(emptyRgb), ...[1, 2].map((value) => {
-    const ratio = value / 3
-    return rgbString(oklchToRgb({
-      l: empty.l + ((base.l - empty.l) * ratio),
-      c: empty.c + ((base.c - empty.c) * ratio),
-      h: base.h,
-    }))
-  })]
-  colors.push(rgbString(baseRgb))
-  colors.push(rgbString(oklchToRgb({
-    l: Math.max(0.26, base.l * 0.68),
-    c: base.c * 0.9,
-    h: base.h,
-  })))
-  return colors
+  return [
+    rgbString(emptyRgb),
+    rgbString(mixOklab(emptyRgb, baseRgb, 0.5)),
+    rgbString(baseRgb),
+    rgbString(scaleOklab(baseRgb, 0.78)),
+    rgbString(scaleOklab(baseRgb, 0.56)),
+  ]
 }
 
 function countPaletteVariable(sourceKey: string, value: number): string {
@@ -1144,7 +1061,7 @@ button {
 .analysis-score-distribution span {
   display: block;
   width: 100%;
-  background: #3c9ed2;
+  background: var(--analysis-dora-color);
   transition: height var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
@@ -1172,7 +1089,7 @@ button {
 }
 
 .analysis-score-distribution span {
-  background: #d39a3a;
+  background: var(--analysis-score-color);
 }
 
 .analysis-score-modes {
@@ -1186,7 +1103,7 @@ button {
   overflow: hidden;
   padding: calc(0.08rem * var(--floating-panel-scale)) calc(0.12rem * var(--floating-panel-scale));
   color: rgba(220, 232, 228, 0.76);
-  background: rgba(211, 154, 58, 0.1);
+  background: color-mix(in srgb, var(--analysis-score-color) 10%, transparent);
   font-size: var(--ui-text-caption);
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
@@ -1259,10 +1176,10 @@ button {
   white-space: nowrap;
 }
 
-.is-draw { background: #2c8fc5; }
-.is-self-win { background: #4caf50; }
-.is-self-deal-in { background: #c9554d; }
-.is-horizontal { background: #d39a3a; }
+.is-draw { background: var(--analysis-draw-color); }
+.is-self-win { background: var(--analysis-self-win-color); }
+.is-self-deal-in { background: var(--analysis-self-deal-in-color); }
+.is-horizontal { background: var(--analysis-horizontal-color); }
 
 .analysis-outcome-legend {
   display: flex;
@@ -1393,12 +1310,12 @@ button {
 
 .analysis-offense-segment.is-win {
   right: 0;
-  background: #4aa957;
+  background: var(--analysis-self-win-color);
 }
 
 .analysis-offense-segment.is-deal-in {
   left: 0;
-  background: #c9554d;
+  background: var(--analysis-self-deal-in-color);
 }
 
 .analysis-offense-value {
@@ -1484,7 +1401,7 @@ button {
 .analysis-count-tooltip i span {
   display: block;
   height: 100%;
-  background: #2f9bd6;
+  background: var(--analysis-self-win-color);
 }
 
 .analysis-target-popover em,
@@ -1519,8 +1436,8 @@ button {
   bottom: 0;
 }
 
-.analysis-delta-cell > span.positive { background: #55ae65; }
-.analysis-delta-cell > span.negative { background: #cf544e; }
+.analysis-delta-cell > span.positive { background: var(--analysis-self-win-color); }
+.analysis-delta-cell > span.negative { background: var(--analysis-self-deal-in-color); }
 
 .analysis-delta-value {
   position: absolute;
@@ -1561,10 +1478,10 @@ button {
 }
 
 .analysis-placement-bar span { height: 100%; }
-.rank-1 { background: #d7e6e2; }
-.rank-2 { background: #8cc8dc; }
-.rank-3 { background: #50abd3; }
-.rank-4 { background: #248fc8; }
+.rank-1 { background: var(--analysis-rank-1-color); }
+.rank-2 { background: var(--analysis-rank-2-color); }
+.rank-3 { background: var(--analysis-rank-3-color); }
+.rank-4 { background: var(--analysis-rank-4-color); }
 
 .analysis-placement-value,
 .analysis-score-cell {

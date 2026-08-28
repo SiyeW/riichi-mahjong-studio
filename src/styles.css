@@ -62,6 +62,16 @@ body {
   --ron-kamicha-color: #2c8fc5;
   --ron-toimen-color: #d39a3a;
   --ron-shimocha-color: #4caf50;
+  --analysis-draw-color: var(--ron-kamicha-color);
+  --analysis-self-win-color: var(--ron-shimocha-color);
+  --analysis-horizontal-color: var(--ron-toimen-color);
+  --analysis-self-deal-in-color: #c9554d;
+  --analysis-dora-color: var(--ron-kamicha-color);
+  --analysis-score-color: var(--ron-toimen-color);
+  --analysis-rank-1-color: #ebebeb;
+  --analysis-rank-2-color: #a9cbdc;
+  --analysis-rank-3-color: #6badd0;
+  --analysis-rank-4-color: var(--ron-kamicha-color);
   --zoom-tiles: calc(((34 * var(--zoom)) - 4) / (34 - 4));
   --tile-img-w: calc((var(--zoom-tiles) * 30px) + 4px);
   --tile-img-h: calc((var(--zoom-tiles) * 40px) + 4px);
