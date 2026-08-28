@@ -726,7 +726,7 @@ function countSourceBaseColor(source: TileSource, style: CSSStyleDeclaration): R
 
 function countSourcePalette(source: TileSource, style: CSSStyleDeclaration): string[] {
   const baseRgb = countSourceBaseColor(source, style)
-  const emptyRgb: RgbColor = [235, 235, 235]
+  const emptyRgb: RgbColor = [20, 72, 81]
   return [
     rgbString(emptyRgb),
     rgbString(mixOklab(emptyRgb, baseRgb, 0.5)),
