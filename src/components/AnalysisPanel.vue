@@ -321,6 +321,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
+import { buildCountColorScale } from '../analysisCountPalette'
 import { hasRedFiveCountPredictions, RED_FIVE_TILES } from '../analysisTileCounts'
 import {
   parseNumericPrediction,
@@ -724,32 +725,7 @@ function countSourceBaseColor(source: TileSource, style: CSSStyleDeclaration): R
 
 function countSourcePalette(source: TileSource, style: CSSStyleDeclaration): string[] {
   const baseRgb = countSourceBaseColor(source, style)
-  const emptyRgb: RgbColor = [20, 72, 81]
-  const empty = rgbToOklab(emptyRgb)
-  const base = rgbToOklab(baseRgb)
-  return [0, 1, 2, 3, 4].map((value) => {
-    if (value <= 2) {
-      const amount = value / 2
-      return rgbString(oklabToRgb({
-        l: empty.l + ((base.l - empty.l) * amount),
-        a: empty.a + ((base.a - empty.a) * amount),
-        b: empty.b + ((base.b - empty.b) * amount),
-      }))
-    }
-    const chroma = Math.hypot(base.a, base.b)
-    const hue = Math.atan2(base.b, base.a)
-    const high = {
-      l: Math.min(0.86, base.l + 0.13),
-      a: chroma * 2.2 * Math.cos(hue),
-      b: chroma * 2.2 * Math.sin(hue),
-    }
-    const amount = value === 3 ? 0.65 : 1
-    return rgbString(oklabToRgb({
-      l: base.l + ((high.l - base.l) * amount),
-      a: base.a + ((high.a - base.a) * amount),
-      b: base.b + ((high.b - base.b) * amount),
-    }))
-  })
+  return buildCountColorScale(baseRgb).map(rgbString)
 }
 
 function countPaletteVariable(sourceKey: string, value: number): string {
