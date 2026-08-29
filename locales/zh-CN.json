@@ -110,6 +110,7 @@
   "analysis.matchPlacement": "终局顺位",
   "analysis.matchScore": "终局点数",
   "analysis.winTarget": "{player}和牌目标",
+  "analysis.dealInWinners": "{player}放铳对象",
   "analysis.tileContent": "牌张分析内容",
   "analysis.risk": "铳率",
   "analysis.riskPrediction": "铳率预测",

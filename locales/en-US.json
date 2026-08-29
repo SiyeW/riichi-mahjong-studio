@@ -110,6 +110,7 @@
   "analysis.matchPlacement": "Final place",
   "analysis.matchScore": "Final score",
   "analysis.winTarget": "{player} win target",
+  "analysis.dealInWinners": "{player} deal-in winners",
   "analysis.tileContent": "Tile analysis",
   "analysis.risk": "Deal-in risk",
   "analysis.riskPrediction": "Deal-in Risk",

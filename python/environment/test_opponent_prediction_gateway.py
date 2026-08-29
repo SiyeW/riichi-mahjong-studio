@@ -186,19 +186,19 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                         "seat": seat,
                         "winProbability": 0.2,
                         "dealInProbability": 0.1,
-                        "targetGivenWin": [
-                            {"seat": target, "probability": 0.25}
-                            for target in range(4)
-                        ],
                     }
                     for seat in range(4)
+                ],
+                "outcomes": [
+                    {"type": "draw", "probability": 0.25},
+                    {"type": "tsumo", "winner": 0, "probability": 0.75},
                 ],
             }
             players = gateway._validate_protocol_prediction(
                 {
                     "outputs": [{
                         "id": "kyoku-outcome",
-                        "version": 1,
+                        "version": 2,
                         "data": output_data,
                     }],
                 },

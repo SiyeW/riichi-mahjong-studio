@@ -2445,7 +2445,7 @@ const SUPPORTED_ENGINE_OUTPUT_DEFINITIONS: Array<{ id: SupportedEngineOutputId; 
   { id: 'wall-tile-count', version: 1, labelKey: 'analysis.output.wallTiles' },
   { id: 'opponent-dora-count', version: 1, labelKey: 'analysis.output.dora' },
   { id: 'opponent-score', version: 1, labelKey: 'analysis.output.score' },
-  { id: 'kyoku-outcome', version: 1, labelKey: 'analysis.output.kyokuOutcome' },
+  { id: 'kyoku-outcome', version: 2, labelKey: 'analysis.output.kyokuOutcome' },
   { id: 'kyoku-score-delta', version: 1, labelKey: 'analysis.output.kyokuDelta' },
   { id: 'match-placement', version: 1, labelKey: 'analysis.output.matchPlacement' },
   { id: 'match-score', version: 1, labelKey: 'analysis.output.matchScore' },

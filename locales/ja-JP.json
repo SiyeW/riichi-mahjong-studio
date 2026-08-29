@@ -110,6 +110,7 @@
   "analysis.matchPlacement": "最終順位",
   "analysis.matchScore": "最終持ち点",
   "analysis.winTarget": "{player}の和了対象",
+  "analysis.dealInWinners": "{player}の放銃相手",
   "analysis.tileContent": "牌の解析内容",
   "analysis.risk": "放銃率",
   "analysis.riskPrediction": "放銃率予測",

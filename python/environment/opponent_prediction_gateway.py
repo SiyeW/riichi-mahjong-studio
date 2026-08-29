@@ -35,7 +35,7 @@ _ANALYSIS_OUTPUTS = (
     {"id": "wall-tile-count", "version": 1},
     {"id": "opponent-dora-count", "version": 1},
     {"id": "opponent-score", "version": 1},
-    {"id": "kyoku-outcome", "version": 1},
+    {"id": "kyoku-outcome", "version": 2},
     {"id": "kyoku-score-delta", "version": 1},
     {"id": "match-placement", "version": 1},
     {"id": "match-score", "version": 1},

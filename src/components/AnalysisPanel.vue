@@ -161,9 +161,9 @@
                   class="analysis-offense-segment is-win"
                   tabindex="0"
                   :style="{ width: `${player.winProbability * 100}%` }"
-                  @mouseenter="showTargetTooltip($event, player.label, player.targets)"
+                  @mouseenter="showWinTooltip($event, player)"
                   @mouseleave="clearHoverTooltip"
-                  @focus="showTargetTooltip($event, player.label, player.targets)"
+                  @focus="showWinTooltip($event, player)"
                   @blur="clearHoverTooltip"
                 >
                 </div>
@@ -171,9 +171,9 @@
                   class="analysis-offense-segment is-deal-in"
                   tabindex="0"
                   :style="{ width: `${player.dealInProbability * 100}%` }"
-                  @mouseenter="showProbabilityTooltip($event, player.label, t('analysis.dealInProbability'), player.dealInProbability)"
+                  @mouseenter="showDealInTooltip($event, player)"
                   @mouseleave="clearHoverTooltip"
-                  @focus="showProbabilityTooltip($event, player.label, t('analysis.dealInProbability'), player.dealInProbability)"
+                  @focus="showDealInTooltip($event, player)"
                   @blur="clearHoverTooltip"
                 >
                 </div>
@@ -400,6 +400,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
 import { buildCountColorScale } from '../analysisCountPalette'
 import { hasRedFiveCountPredictions, RED_FIVE_TILES } from '../analysisTileCounts'
+import { resolveKyokuOutcome } from '../kyokuOutcome'
 import {
   parseNumericPrediction,
   type DistributionEntry,
@@ -636,6 +637,7 @@ function windLabel(seat: number): string {
 
 function targetRows(player: AnalysisRecord, winnerSeat: number) {
   const raw = Array.isArray(player.targetGivenWin) ? player.targetGivenWin.map(objectValue) : []
+  if (!raw.length) return []
   return [winnerSeat, (winnerSeat + 1) % 4, (winnerSeat + 2) % 4, (winnerSeat + 3) % 4].map((seat) => {
     const entry = raw.find((item) => Number(item.seat) === seat)
     return {
@@ -646,16 +648,16 @@ function targetRows(player: AnalysisRecord, winnerSeat: number) {
   })
 }
 
-const kyokuPlayers = computed(() => outputPlayers('kyoku-outcome'))
+const kyokuOutcome = computed(() => resolveKyokuOutcome(outputData('kyoku-outcome')))
+const legacyKyokuPlayers = computed(() => outputPlayers('kyoku-outcome'))
 const outcomeSegments = computed(() => {
-  const outcome = outputData('kyoku-outcome')
-  const self = kyokuPlayers.value.find((player) => Number(player.seat) === props.controlledSeat) || {}
-  const hasCompleteOutcome = [outcome.drawProbability, self.winProbability, self.dealInProbability]
-    .every((value) => value !== null && value !== undefined && Number.isFinite(Number(value)))
-  const draw = hasCompleteOutcome ? probability(outcome.drawProbability) : 0
-  const selfWin = hasCompleteOutcome ? probability(self.winProbability) : 0
-  const selfDealIn = hasCompleteOutcome ? probability(self.dealInProbability) : 0
-  const horizontal = hasCompleteOutcome ? Math.max(0, 1 - draw - selfWin - selfDealIn) : 0
+  const self = kyokuOutcome.value.players.find((player) => player.seat === props.controlledSeat)
+  const draw = kyokuOutcome.value.drawProbability
+  const selfWin = self?.winProbability || 0
+  const selfDealIn = self?.dealInProbability || 0
+  const horizontal = kyokuOutcome.value.hasTotals
+    ? Math.max(0, 1 - draw - selfWin - selfDealIn)
+    : 0
   const segments = [
     { key: 'draw', label: t('analysis.draw'), probability: draw },
     { key: 'self-win', label: t('analysis.selfWin'), probability: selfWin },
@@ -674,7 +676,8 @@ const playerSeatOrder = computed(() => [
 ])
 
 const playerRows = computed(() => playerSeatOrder.value.map((seat) => {
-  const outcome = kyokuPlayers.value.find((player) => Number(player.seat) === seat) || {}
+  const outcome = kyokuOutcome.value.players.find((player) => player.seat === seat)!
+  const legacyOutcome = legacyKyokuPlayers.value.find((player) => Number(player.seat) === seat) || {}
   const delta = seatPrediction('kyoku-score-delta', seat)
   const placement = seatPrediction('match-placement', seat)
   const matchScore = seatPrediction('match-score', seat)
@@ -685,9 +688,13 @@ const playerRows = computed(() => playerSeatOrder.value.map((seat) => {
   return {
     seat,
     label: windLabel(seat),
-    winProbability: probability(outcome.winProbability),
-    dealInProbability: probability(outcome.dealInProbability),
-    targets: targetRows(outcome, seat),
+    winProbability: outcome.winProbability,
+    dealInProbability: outcome.dealInProbability,
+    targets: outcome.winTargets.length ? outcome.winTargets.map((target) => ({
+      ...target,
+      label: target.seat === seat ? t('action.tsumo') : windLabel(target.seat),
+    })) : targetRows(legacyOutcome, seat),
+    dealInWinnerSets: outcome.dealInWinnerSets,
     kyokuDelta: delta.scalarValue,
     placement: normalizedPlacement,
     expectedPlacement: placement.scalarValue === null ? '—' : placement.scalarValue.toFixed(2),
@@ -1091,19 +1098,51 @@ function showDistributionTooltip(
   })
 }
 
-function showTargetTooltip(
+function showWinTooltip(
   event: Event,
-  playerLabel: string,
-  targets: Array<{ label: string; probability: number }>,
+  player: {
+    label: string
+    winProbability: number
+    targets: Array<{ label: string; probability: number }>
+  },
 ) {
+  if (!player.targets.length) {
+    showProbabilityTooltip(event, player.label, t('analysis.winProbability'), player.winProbability)
+    return
+  }
   showHoverTooltip(event, {
-    title: t('analysis.winTarget', { player: playerLabel }),
+    title: t('analysis.winTarget', { player: player.label }),
     lines: [],
-    rows: targets.map((target) => ({
+    rows: player.targets.map((target) => ({
       label: target.label,
       value: formatProbability(target.probability),
       barWidth: `${target.probability * 100}%`,
       barColor: 'var(--analysis-self-win-color)',
+    })),
+  })
+}
+
+function showDealInTooltip(
+  event: Event,
+  player: {
+    label: string
+    dealInProbability: number
+    dealInWinnerSets: Array<{ winners: number[]; probability: number }>
+  },
+) {
+  if (!player.dealInWinnerSets.length) {
+    showProbabilityTooltip(event, player.label, t('analysis.dealInProbability'), player.dealInProbability)
+    return
+  }
+  const listFormatter = new Intl.ListFormat(numberLocale.value, { style: 'short', type: 'conjunction' })
+  showHoverTooltip(event, {
+    title: t('analysis.dealInWinners', { player: player.label }),
+    lines: [],
+    rows: player.dealInWinnerSets.map((detail) => ({
+      label: listFormatter.format(detail.winners.map(windLabel)),
+      value: formatProbability(detail.probability),
+      barWidth: `${detail.probability * 100}%`,
+      barColor: 'var(--analysis-self-deal-in-color)',
     })),
   })
 }
