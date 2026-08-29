@@ -27,7 +27,7 @@ export type PerceptualSurfaceBinding = Readonly<{
 }>
 
 export const DEFAULT_PERCEPTUAL_SURFACE_TUNING: PerceptualSurfaceTuning = Object.freeze({
-  lightnessCompensation: 0.8,
+  lightnessCompensation: 0.5,
   chromaticCompensation: 0,
   surfaceChromaGain: 0,
 })

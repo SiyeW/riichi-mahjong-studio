@@ -26,10 +26,10 @@ test('calibration surface reproduces canonical analysis colors', () => {
 
 test('every semantic color uses the tuned surface compensation', () => {
   const variables = perceptualSurfaceVariables(palette, [9, 72, 85])
-  assert.equal(variables['--ron-kamicha-color'], 'rgb(24 130 183)')
-  assert.equal(variables['--ron-toimen-color'], 'rgb(197 141 41)')
-  assert.equal(variables['--ron-shimocha-color'], 'rgb(61 161 67)')
-  assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(186 72 65)')
+  assert.equal(variables['--ron-kamicha-color'], 'rgb(32 135 188)')
+  assert.equal(variables['--ron-toimen-color'], 'rgb(202 146 48)')
+  assert.equal(variables['--ron-shimocha-color'], 'rgb(67 166 72)')
+  assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(192 77 69)')
   assert.equal(variables['--analysis-draw-color'], variables['--ron-kamicha-color'])
   assert.equal(variables['--analysis-self-win-color'], variables['--ron-shimocha-color'])
   assert.equal(variables['--analysis-horizontal-color'], variables['--ron-toimen-color'])
