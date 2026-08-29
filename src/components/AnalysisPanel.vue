@@ -307,7 +307,7 @@
           <span v-if="countTooltip.scalarValue !== null">{{ t('analysis.predictedCount', { value: countTooltip.scalarValue.toFixed(2) }) }}</span>
           <div v-for="segment in countTooltip.segments" :key="segment.value">
             <small>{{ t('analysis.countUnit', { value: segment.value }) }}</small>
-            <i><span :style="{ width: `${segment.probability * 100}%`, background: countSegmentColor(countTooltip.sourceKey, segment.value) }" /></i>
+            <i><span :style="{ width: `${segment.probability * 100}%`, background: countSegmentColor(countTooltip.sourceKey, segment.value, countTooltip.tile) }" /></i>
             <em>{{ formatProbability(segment.probability) }}</em>
           </div>
         </div>
@@ -329,12 +329,10 @@ import {
   type NumericPrediction,
 } from '../numericPrediction'
 import {
-  mixOklab,
   oklabToRgb,
   parseCssColor,
   rgbString,
   rgbToOklab,
-  scaleOklab,
   type RgbColor,
 } from '../perceptualColor'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
@@ -727,22 +725,41 @@ function countSourceBaseColor(source: TileSource, style: CSSStyleDeclaration): R
 function countSourcePalette(source: TileSource, style: CSSStyleDeclaration): string[] {
   const baseRgb = countSourceBaseColor(source, style)
   const emptyRgb: RgbColor = [20, 72, 81]
-  return [
-    rgbString(emptyRgb),
-    rgbString(mixOklab(emptyRgb, baseRgb, 0.5)),
-    rgbString(baseRgb),
-    rgbString(scaleOklab(baseRgb, 0.78)),
-    rgbString(scaleOklab(baseRgb, 0.56)),
-  ]
+  const empty = rgbToOklab(emptyRgb)
+  const base = rgbToOklab(baseRgb)
+  return [0, 1, 2, 3, 4].map((value) => {
+    if (value <= 2) {
+      const amount = value / 2
+      return rgbString(oklabToRgb({
+        l: empty.l + ((base.l - empty.l) * amount),
+        a: empty.a + ((base.a - empty.a) * amount),
+        b: empty.b + ((base.b - empty.b) * amount),
+      }))
+    }
+    const chroma = Math.hypot(base.a, base.b)
+    const hue = Math.atan2(base.b, base.a)
+    const high = {
+      l: Math.min(0.88, base.l + 0.12),
+      a: chroma * 1.25 * Math.cos(hue),
+      b: chroma * 1.25 * Math.sin(hue),
+    }
+    const amount = (value - 2) / 2
+    return rgbString(oklabToRgb({
+      l: base.l + ((high.l - base.l) * amount),
+      a: base.a + ((high.a - base.a) * amount),
+      b: base.b + ((high.b - base.b) * amount),
+    }))
+  })
 }
 
 function countPaletteVariable(sourceKey: string, value: number): string {
   return `--analysis-count-${sourceKey}-${value}`
 }
 
-function countSegmentColor(sourceKey: string, value: DistributionValue): string {
+function countSegmentColor(sourceKey: string, value: DistributionValue, tile = ''): string {
   const numericValue = Math.max(0, Math.min(4, Number(value) || 0))
-  return `var(${countPaletteVariable(sourceKey, numericValue)})`
+  const paletteValue = isRedFive(tile) && numericValue > 0 ? 2 : numericValue
+  return `var(${countPaletteVariable(sourceKey, paletteValue)})`
 }
 
 function updateCountPaletteVariables(grid: HTMLElement) {
@@ -788,7 +805,8 @@ function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
           ? height
           : Math.round(cumulative * height)
         if (bottom <= top) continue
-        context.fillStyle = palettes[sourceIndex][Number(segments[segmentIndex].value)]
+        const value = Number(segments[segmentIndex].value)
+        context.fillStyle = palettes[sourceIndex][isRedFive(tile) && value > 0 ? 2 : value]
         context.fillRect(left, top, laneWidth, bottom - top)
       }
     }
