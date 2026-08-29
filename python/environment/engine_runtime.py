@@ -8,9 +8,10 @@ from dataclasses import dataclass
 from typing import Any
 
 from engine_process_client import EngineProcessClient
+from engine_assignments import LEGACY_OUTPUT_VERSIONS
 
 
-OutputKey = tuple[str, int]
+OutputKey = str
 
 
 def _runtime_configuration_key(specification: dict[str, Any]) -> str:
@@ -37,11 +38,20 @@ class EngineInitialization:
     result: dict[str, Any]
     contracts: dict[OutputKey, dict[str, Any]]
     outputs: dict[OutputKey, dict[str, Any]]
+    references: dict[OutputKey, dict[str, Any]]
+    protocol_minor: int
     device: str
 
 
 def _output_key(value: dict[str, Any]) -> OutputKey:
-    return str(value.get("id") or ""), int(value.get("version") or 0)
+    return str(value.get("id") or "")
+
+
+def _output_reference(contract: dict[str, Any], protocol_minor: int) -> dict[str, Any]:
+    reference = {"id": _output_key(contract)}
+    if protocol_minor < 2:
+        reference["version"] = int(contract.get("version") or 0)
+    return reference
 
 
 def initialize_engine_client(
@@ -55,26 +65,33 @@ def initialize_engine_client(
 ) -> EngineInitialization:
     """Validate and initialize the outputs assigned to one engine configuration."""
     configured_outputs = [dict(output) for output in enabled_outputs]
-    configured_keys = {_output_key(output) for output in configured_outputs}
-    if len(configured_keys) != len(configured_outputs) or any(
-        not output_id or version <= 0 for output_id, version in configured_keys
-    ):
+    configured_ids = [_output_key(output) for output in configured_outputs]
+    configured_keys = set(configured_ids)
+    if len(configured_keys) != len(configured_outputs) or any(not key for key in configured_keys):
         raise RuntimeError("enabled engine outputs are invalid or duplicated")
 
     hello = client.describe()
+    protocol_minor = int((hello.get("protocol") or {}).get("minor") or 0)
     contracts = {
         _output_key(output): output
         for output in hello.get("outputContracts") or []
         if isinstance(output, dict)
     }
-    requested_outputs = [
-        output
-        for output in configured_outputs
-        if _output_key(output) in contracts
+    requested_keys = [
+        key
+        for key in configured_ids
+        if key in contracts
+        and (
+            protocol_minor >= 2
+            or contracts[key].get("version") == LEGACY_OUTPUT_VERSIONS.get(key)
+        )
     ]
-    requested_keys = {_output_key(output) for output in requested_outputs}
-    if not requested_outputs:
+    if not requested_keys:
         raise RuntimeError("engine does not provide any compatible enabled outputs")
+    references = {
+        key: _output_reference(contracts[key], protocol_minor)
+        for key in requested_keys
+    }
 
     slots = {
         str(slot.get("id") or ""): slot
@@ -91,7 +108,7 @@ def initialize_engine_client(
         slot_id
         for slot_id, slot in slots.items()
         if any(
-            _output_key(item) in requested_keys
+            _output_key(item) in references
             for item in slot.get("requiredForOutputs") or []
             if isinstance(item, dict)
         )
@@ -127,7 +144,7 @@ def initialize_engine_client(
         raise RuntimeError("engine did not declare a usable device")
 
     result = client.initialize(
-        requested_outputs,
+        [dict(references[key]) for key in requested_keys],
         [dict(configured_by_slot[slot_id]) for slot_id in slots if slot_id in configured_by_slot],
         device=selected_device,
         options=dict(options),
@@ -141,8 +158,15 @@ def initialize_engine_client(
         for output in initialized_outputs
         if isinstance(output, dict)
     }
-    if set(outputs) != requested_keys or len(outputs) != len(initialized_outputs):
+    if set(outputs) != set(requested_keys) or len(outputs) != len(initialized_outputs):
         raise RuntimeError("engine initialization returned unexpected outputs")
+    for output_id, output in outputs.items():
+        expected = references[output_id]
+        if protocol_minor < 2:
+            if output.get("version") != expected.get("version"):
+                raise RuntimeError("engine initialization returned unexpected outputs")
+        elif "version" in output:
+            raise RuntimeError("engine initialization returned unexpected outputs")
 
     actual_device = str((result.get("device") or {}).get("type") or selected_device)
     return EngineInitialization(
@@ -150,6 +174,8 @@ def initialize_engine_client(
         result=dict(result),
         contracts=contracts,
         outputs=outputs,
+        references=references,
+        protocol_minor=protocol_minor,
         device=actual_device,
     )
 
@@ -247,14 +273,9 @@ class EngineProfileRuntime:
                 )
             initialized = self._initialization
         result = dict(initialized.result)
-        unavailable = [
-            _output_key(output)
-            for output in requested_outputs
-            if _output_key(output) not in initialized.outputs
-        ]
+        unavailable = [_output_key(output) for output in requested_outputs if _output_key(output) not in initialized.outputs]
         if unavailable:
-            output_id, version = unavailable[0]
-            raise RuntimeError(f"engine does not provide {output_id} version {version}")
+            raise RuntimeError(f"engine does not provide {unavailable[0]}")
         result["outputs"] = [dict(initialized.outputs[_output_key(output)]) for output in requested_outputs]
         return result
 

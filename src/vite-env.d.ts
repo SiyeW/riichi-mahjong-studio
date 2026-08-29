@@ -131,7 +131,7 @@ interface TrainerEngineDescription {
   }
   outputContracts: Array<{
     id: string
-    version: number
+    version?: number
     representations?: string[]
     supportsRevealedHands?: boolean
     metrics?: TrainerDecisionMetricDefinition[]
@@ -140,7 +140,7 @@ interface TrainerEngineDescription {
     id: string
     title: string | Record<string, string>
     formats: Array<{ id: string; extensions?: string[] }>
-    requiredForOutputs?: Array<{ id: string; version: number }>
+    requiredForOutputs?: Array<{ id: string; version?: number }>
   }>
   devices: Array<{
     type: string

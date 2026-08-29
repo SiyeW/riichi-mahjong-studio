@@ -85,8 +85,8 @@ class EngineRuntimeTest(unittest.TestCase):
         )
 
         self.assertEqual(set(initialized.outputs), {
-            ("action-recommendation", 1),
-            ("opponent-shanten", 1),
+            "action-recommendation",
+            "opponent-shanten",
         })
         self.assertEqual(initialized.device, "cuda")
         self.assertEqual(client.initialize_calls, [(
@@ -149,7 +149,7 @@ class EngineRuntimeTest(unittest.TestCase):
             timeout=90,
         )
 
-        self.assertEqual(set(initialized.outputs), {("opponent-shanten", 1)})
+        self.assertEqual(set(initialized.outputs), {"opponent-shanten"})
         self.assertEqual(client.initialize_calls, [(
             [supported],
             [{"slotId": "supported", "format": "onnx", "path": "supported.onnx"}],
@@ -209,13 +209,47 @@ class EngineRuntimeTest(unittest.TestCase):
         FakeProcessClient.result = result
         with mock.patch("engine_runtime.EngineProcessClient", FakeProcessClient):
             runtime = EngineProfileRuntime(**self._runtime_specification())
-            with self.assertRaisesRegex(RuntimeError, "does not provide action-recommendation version 1"):
+            with self.assertRaisesRegex(RuntimeError, "does not provide action-recommendation"):
                 runtime.initialize([self.outputs[0]], self.weights)
             opponent = runtime.initialize([supported], self.weights)
 
         process = FakeProcessClient.instances[0]
         self.assertEqual(process.initialize_calls[0][0], [supported])
         self.assertEqual(opponent["outputs"], [supported])
+
+    def test_protocol_2_2_uses_versionless_output_references(self):
+        outputs = [
+            {"id": "action-recommendation"},
+            {"id": "opponent-shanten"},
+        ]
+        hello = {
+            **self.hello,
+            "protocol": {"name": "riichi-engine-protocol", "major": 2, "minor": 2},
+            "outputContracts": [dict(output) for output in outputs],
+            "weightSlots": [{
+                "id": "shared",
+                "formats": [{"id": "onnx"}],
+                "requiredForOutputs": [dict(output) for output in outputs],
+            }],
+        }
+        result = {
+            "outputs": [dict(output) for output in reversed(outputs)],
+            "device": {"type": "cpu"},
+        }
+        client = FakeClient(hello, result)
+
+        initialized = initialize_engine_client(
+            client,
+            enabled_outputs=outputs,
+            weights=self.weights,
+            device_preference="cpu",
+            options={},
+            timeout=90,
+        )
+
+        self.assertEqual(set(initialized.outputs), {"action-recommendation", "opponent-shanten"})
+        self.assertEqual(client.initialize_calls[0][0], outputs)
+        self.assertTrue(all("version" not in item for item in client.initialize_calls[0][0]))
 
     def test_registry_reuses_unchanged_profile_runtime(self):
         FakeProcessClient.instances = []

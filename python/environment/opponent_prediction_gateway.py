@@ -79,6 +79,11 @@ class OpponentPredictionGateway:
             for output in _ANALYSIS_OUTPUTS
             if output["id"] in requested_outputs
         )
+        self._output_references = {
+            output_id: {"id": output_id}
+            for output_id in self._enabled_outputs
+        }
+        self._protocol_minor = 2
         self._supported_input_modes = ("public",)
         self._model_hash_cache: Optional[tuple[str, int, int, str]] = None
         self._model_signature = self._read_model_signature()
@@ -179,6 +184,7 @@ class OpponentPredictionGateway:
             "engineId": self._engine_id,
             "version": self._engine_version,
             "protocolMajor": 2,
+            "protocolMinor": self._protocol_minor,
             "weights": [
                 {
                     "slotId": weight["slotId"],
@@ -342,6 +348,11 @@ class OpponentPredictionGateway:
         self._effective_options = {}
         self._actual_device = ""
         self._model_ready = False
+        self._output_references = {
+            output_id: {"id": output_id}
+            for output_id in self._enabled_outputs
+        }
+        self._protocol_minor = 2
         with self._activity_lock:
             self._error_latched = False
             self._unloaded = True
@@ -352,6 +363,12 @@ class OpponentPredictionGateway:
             dict(output)
             for output in _ANALYSIS_OUTPUTS
             if output["id"] in self._enabled_outputs
+        ]
+
+    def _analysis_output_references(self) -> list[Dict[str, Any]]:
+        return [
+            dict(self._output_references[output_id])
+            for output_id in self._enabled_outputs
         ]
 
     @staticmethod
@@ -514,13 +531,14 @@ class OpponentPredictionGateway:
                 options=self._engine_options,
                 timeout=180,
             )
+            self._output_references = {
+                output_id: dict(initialization.references[output_id])
+                for output_id in self._enabled_outputs
+            }
+            self._protocol_minor = initialization.protocol_minor
             revealed_supported = all(
-                bool(initialization.contracts[
-                    (output["id"], output["version"])
-                ].get("supportsRevealedHands"))
-                and bool(initialization.outputs[
-                    (output["id"], output["version"])
-                ].get("supportsRevealedHands"))
+                bool(initialization.contracts[output["id"]].get("supportsRevealedHands"))
+                and bool(initialization.outputs[output["id"]].get("supportsRevealedHands"))
                 for output in requested_outputs
             )
             self._supported_input_modes = (
@@ -568,18 +586,22 @@ class OpponentPredictionGateway:
         if not isinstance(outputs, list) or len(outputs) != len(self._enabled_outputs):
             raise RuntimeError("opponent prediction response has an unexpected output count")
         by_output = {
-            (str(output.get("id") or ""), output.get("version")): output.get("data")
+            str(output.get("id") or ""): output.get("data")
             for output in outputs
-            if isinstance(output, dict) and isinstance(output.get("data"), dict)
+            if isinstance(output, dict)
+            and isinstance(output.get("data"), dict)
+            and output.get("version") == self._output_references.get(
+                str(output.get("id") or ""), {}
+            ).get("version")
+            and ("version" in output) == (
+                "version" in self._output_references.get(str(output.get("id") or ""), {})
+            )
         }
-        expected_outputs = {
-            (output["id"], output["version"])
-            for output in self._requested_output_contracts()
-        }
+        expected_outputs = set(self._enabled_outputs)
         if set(by_output) != expected_outputs:
             raise RuntimeError("opponent prediction response has missing or unexpected outputs")
-        shanten_data = by_output.get((_SHANTEN_OUTPUT["id"], _SHANTEN_OUTPUT["version"]))
-        deal_in_data = by_output.get((_DEAL_IN_OUTPUT["id"], _DEAL_IN_OUTPUT["version"]))
+        shanten_data = by_output.get(_SHANTEN_OUTPUT["id"])
+        deal_in_data = by_output.get(_DEAL_IN_OUTPUT["id"])
         requested = set(self._enabled_outputs)
         if (_SHANTEN_OUTPUT["id"] in requested) != isinstance(shanten_data, dict):
             raise RuntimeError("opponent-shanten response is missing or unexpected")
@@ -959,7 +981,7 @@ class OpponentPredictionGateway:
                         "events": events,
                         "outputs": [
                             {**output, "parameters": {}}
-                            for output in self._requested_output_contracts()
+                            for output in self._analysis_output_references()
                         ],
                     },
                     timeout=180 if initializing else 30,

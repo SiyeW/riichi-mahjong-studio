@@ -2437,22 +2437,21 @@ type SupportedEngineOutputId =
   | 'kyoku-score-delta'
   | 'match-placement'
   | 'match-score'
-const SUPPORTED_ENGINE_OUTPUT_DEFINITIONS: Array<{ id: SupportedEngineOutputId; version: number; labelKey: string }> = [
-  { id: 'action-recommendation', version: 1, labelKey: 'analysis.output.action' },
-  { id: 'opponent-shanten', version: 1, labelKey: 'analysis.output.shanten' },
-  { id: 'opponent-deal-in-probability', version: 1, labelKey: 'analysis.output.dealIn' },
-  { id: 'opponent-concealed-tile-count', version: 1, labelKey: 'analysis.output.concealedTiles' },
-  { id: 'wall-tile-count', version: 1, labelKey: 'analysis.output.wallTiles' },
-  { id: 'opponent-dora-count', version: 1, labelKey: 'analysis.output.dora' },
-  { id: 'opponent-score', version: 1, labelKey: 'analysis.output.score' },
-  { id: 'kyoku-outcome', version: 2, labelKey: 'analysis.output.kyokuOutcome' },
-  { id: 'kyoku-score-delta', version: 1, labelKey: 'analysis.output.kyokuDelta' },
-  { id: 'match-placement', version: 1, labelKey: 'analysis.output.matchPlacement' },
-  { id: 'match-score', version: 1, labelKey: 'analysis.output.matchScore' },
+const SUPPORTED_ENGINE_OUTPUT_DEFINITIONS: Array<{ id: SupportedEngineOutputId; labelKey: string }> = [
+  { id: 'action-recommendation', labelKey: 'analysis.output.action' },
+  { id: 'opponent-shanten', labelKey: 'analysis.output.shanten' },
+  { id: 'opponent-deal-in-probability', labelKey: 'analysis.output.dealIn' },
+  { id: 'opponent-concealed-tile-count', labelKey: 'analysis.output.concealedTiles' },
+  { id: 'wall-tile-count', labelKey: 'analysis.output.wallTiles' },
+  { id: 'opponent-dora-count', labelKey: 'analysis.output.dora' },
+  { id: 'opponent-score', labelKey: 'analysis.output.score' },
+  { id: 'kyoku-outcome', labelKey: 'analysis.output.kyokuOutcome' },
+  { id: 'kyoku-score-delta', labelKey: 'analysis.output.kyokuDelta' },
+  { id: 'match-placement', labelKey: 'analysis.output.matchPlacement' },
+  { id: 'match-score', labelKey: 'analysis.output.matchScore' },
 ]
 const SUPPORTED_ENGINE_OUTPUTS = computed(() => SUPPORTED_ENGINE_OUTPUT_DEFINITIONS.map((output) => ({
   id: output.id,
-  version: output.version,
   label: t(output.labelKey),
 })))
 const OPPONENT_ENGINE_OUTPUT_IDS = SUPPORTED_ENGINE_OUTPUTS
@@ -2506,7 +2505,7 @@ const activeEngineDescription = computed(() => (
 function supportedOutputsForProfile(profile: TrainerEngineProfile) {
   const contracts = engineDescriptions[engineDescriptionKey(profile)]?.outputContracts || []
   return SUPPORTED_ENGINE_OUTPUTS.value.filter((supported) => contracts.some((contract) => (
-    contract.id === supported.id && contract.version === supported.version
+    contract.id === supported.id
   )))
 }
 const activeSupportedOutputs = computed(() => {
@@ -2515,9 +2514,9 @@ const activeSupportedOutputs = computed(() => {
 })
 function weightSlotsForProfile(profile: TrainerEngineProfile) {
   const description = engineDescriptions[engineDescriptionKey(profile)]
-  const supportedKeys = new Set(supportedOutputsForProfile(profile).map((output) => `${output.id}:${output.version}`))
+  const supportedIds = new Set(supportedOutputsForProfile(profile).map((output) => output.id))
   return (description?.weightSlots || []).filter((slot) => (
-    slot.requiredForOutputs?.some((output) => supportedKeys.has(`${output.id}:${output.version}`)) === true
+    slot.requiredForOutputs?.some((output) => supportedIds.has(output.id as SupportedEngineOutputId)) === true
   ))
 }
 const activeEngineWeightSlots = computed(() => {
@@ -2607,7 +2606,7 @@ function engineProfileSupportsOutput(
   const description = engineDescriptions[engineDescriptionKey(profile)]
   const supported = SUPPORTED_ENGINE_OUTPUTS.value.find((output) => output.id === outputId)
   return Boolean(supported && description?.outputContracts.some((contract) => (
-    contract.id === supported.id && contract.version === supported.version
+    contract.id === supported.id
   )))
 }
 
@@ -3040,7 +3039,7 @@ function weightSlotIsActive(
   const required = slot.requiredForOutputs || []
   if (!required.length) return true
   const assigned = new Set(outputIds)
-  return required.some((output) => output.version === 1 && assigned.has(output.id as SupportedEngineOutputId))
+  return required.some((output) => assigned.has(output.id as SupportedEngineOutputId))
 }
 
 function requiredWeightsReady(profile: TrainerEngineProfile, outputIds = profileAssignedOutputs(profile)): boolean {

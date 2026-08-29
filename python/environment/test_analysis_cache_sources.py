@@ -168,10 +168,10 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         self.assertEqual(
             specifications[0]["enabled_outputs"],
             [
-                {"id": "action-recommendation", "version": 1},
-                {"id": "opponent-shanten", "version": 1},
-                {"id": "opponent-deal-in-probability", "version": 1},
-                {"id": "kyoku-outcome", "version": 2},
+                {"id": "action-recommendation"},
+                {"id": "opponent-shanten"},
+                {"id": "opponent-deal-in-probability"},
+                {"id": "kyoku-outcome"},
             ],
         )
 

@@ -42,6 +42,7 @@ class ActionRecommendationGatewayTest(unittest.TestCase):
             ],
             "q-value",
             "recommendation-strength",
+            {"id": "action-recommendation", "version": 1},
         )
         self.assertEqual(result["choices"][0]["probability"], 1.0)
 

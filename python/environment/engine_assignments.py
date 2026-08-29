@@ -6,23 +6,27 @@ from typing import Any
 
 
 SUPPORTED_OUTPUT_CONTRACTS = (
-    {"id": "action-recommendation", "version": 1},
-    {"id": "opponent-shanten", "version": 1},
-    {"id": "opponent-deal-in-probability", "version": 1},
-    {"id": "opponent-concealed-tile-count", "version": 1},
-    {"id": "wall-tile-count", "version": 1},
-    {"id": "opponent-dora-count", "version": 1},
-    {"id": "opponent-score", "version": 1},
-    {"id": "kyoku-outcome", "version": 2},
-    {"id": "kyoku-score-delta", "version": 1},
-    {"id": "match-placement", "version": 1},
-    {"id": "match-score", "version": 1},
+    {"id": "action-recommendation"},
+    {"id": "opponent-shanten"},
+    {"id": "opponent-deal-in-probability"},
+    {"id": "opponent-concealed-tile-count"},
+    {"id": "wall-tile-count"},
+    {"id": "opponent-dora-count"},
+    {"id": "opponent-score"},
+    {"id": "kyoku-outcome"},
+    {"id": "kyoku-score-delta"},
+    {"id": "match-placement"},
+    {"id": "match-score"},
 )
 SUPPORTED_OUTPUT_IDS = tuple(contract["id"] for contract in SUPPORTED_OUTPUT_CONTRACTS)
 OUTPUT_CONTRACTS_BY_ID = {
     contract["id"]: contract
     for contract in SUPPORTED_OUTPUT_CONTRACTS
 }
+
+# Compatibility with protocol 2.0 and 2.1, whose output references carried a
+# separate version. Current protocol output references are identified by ID.
+LEGACY_OUTPUT_VERSIONS = {output_id: 1 for output_id in SUPPORTED_OUTPUT_IDS}
 
 
 def resolve_engine_assignments(

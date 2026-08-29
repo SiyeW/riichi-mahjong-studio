@@ -69,6 +69,31 @@ class EngineProtocolTest(unittest.TestCase):
 
         EngineProcessClient._validate_hello(hello)
 
+    def test_hello_accepts_versionless_protocol_2_2_outputs(self):
+        hello = {
+            "protocol": {"name": "riichi-engine-protocol", "major": 2, "minor": 2},
+            "engine": {"id": "test.engine", "name": "Test", "version": "1.0.0"},
+            "outputContracts": [{"id": "action-recommendation", "metrics": []}],
+            "weightSlots": [{
+                "id": "model",
+                "formats": [{"id": "test-format"}],
+                "requiredForOutputs": [{"id": "action-recommendation"}],
+            }],
+            "devices": [{"type": "cpu"}],
+            "runtimeCapabilities": {
+                "multipleSessions": False,
+                "concurrentRequests": False,
+                "cancellation": False,
+            },
+            "optionsSchema": {"type": "object"},
+        }
+
+        EngineProcessClient._validate_hello(hello)
+
+        hello["outputContracts"][0]["version"] = 1
+        with self.assertRaisesRegex(EngineProcessError, "invalid output contract"):
+            EngineProcessClient._validate_hello(hello)
+
     def test_custom_command_uses_external_json_rpc_engine(self):
         script = textwrap.dedent(
             """

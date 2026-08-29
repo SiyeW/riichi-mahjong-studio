@@ -210,23 +210,30 @@ class EngineProcessClient:
         contracts = hello.get("outputContracts")
         if not isinstance(contracts, list) or not contracts:
             raise EngineProcessError("engine hello must declare at least one output contract")
-        contract_keys = set()
+        protocol_minor = int((hello.get("protocol") or {}).get("minor") or 0)
+        legacy_output_versions = protocol_minor < 2
+        contract_versions: dict[str, int | None] = {}
         for contract in contracts:
             if not isinstance(contract, dict):
                 raise EngineProcessError("engine hello contains an invalid output contract")
             output_id = contract.get("id")
             version = contract.get("version")
-            key = (output_id, version)
             if (
                 not isinstance(output_id, str)
                 or not output_id
-                or isinstance(version, bool)
-                or not isinstance(version, int)
-                or version < 1
-                or key in contract_keys
+                or output_id in contract_versions
+                or (
+                    legacy_output_versions
+                    and (
+                        isinstance(version, bool)
+                        or not isinstance(version, int)
+                        or version < 1
+                    )
+                )
+                or (not legacy_output_versions and "version" in contract)
             ):
                 raise EngineProcessError("engine hello contains an invalid output contract")
-            contract_keys.add(key)
+            contract_versions[output_id] = version if legacy_output_versions else None
 
         slots = hello.get("weightSlots")
         if not isinstance(slots, list):
@@ -254,7 +261,17 @@ class EngineProcessClient:
             required = slot.get("requiredForOutputs") or []
             if not isinstance(required, list) or any(
                 not isinstance(item, dict)
-                or (item.get("id"), item.get("version")) not in contract_keys
+                or item.get("id") not in contract_versions
+                or (
+                    legacy_output_versions
+                    and (
+                        isinstance(item.get("version"), bool)
+                        or not isinstance(item.get("version"), int)
+                        or item.get("version") < 1
+                        or item.get("version") != contract_versions.get(item.get("id"))
+                    )
+                )
+                or (not legacy_output_versions and "version" in item)
                 for item in required
             ):
                 raise EngineProcessError("engine hello weight slot references an unknown output")

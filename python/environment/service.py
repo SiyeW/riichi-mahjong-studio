@@ -50,7 +50,7 @@ from analysis_cache import (
     register_analysis_source,
     same_analysis_context,
 )
-from engine_assignments import OUTPUT_CONTRACTS_BY_ID, resolve_engine_assignments
+from engine_assignments import resolve_engine_assignments
 from engine_runtime import EngineRuntimeRegistry
 from game_record_storage import (
     hydrate_game_structure,
@@ -338,7 +338,7 @@ def _current_decision_analysis_source(model_path=None, *, include_display_name=F
         "decision",
         ACTION_RECOMMENDATIONS.cache_identity(model_path),
         _DECISION_POSTPROCESSOR_VERSION,
-        "action-recommendation@1",
+        "action-recommendation",
         display_name=(
             _analysis_source_display_name("decision")
             if include_display_name
@@ -355,10 +355,10 @@ def _current_opponent_analysis_source(*, include_display_name=False):
         for output_id in assignment["outputs"]
     }
     output_signature = "+".join(
-        f"{output_id}@{OUTPUT_CONTRACTS_BY_ID[output_id]['version']}"
+        output_id
         for output_id in ANALYSIS_OUTPUT_IDS
         if output_id in assigned_outputs
-    ) or "opponent-analysis@1"
+    ) or "opponent-analysis"
     return build_analysis_source(
         "opponent",
         OPPONENT_PREDICTIONS.cache_identity(),

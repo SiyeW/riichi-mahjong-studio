@@ -118,7 +118,6 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                 {
                     "outputs": [{
                         "id": "opponent-shanten",
-                        "version": 1,
                         "data": {
                             "players": [
                                 {
@@ -151,7 +150,6 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                 {
                     "outputs": [{
                         "id": "opponent-deal-in-probability",
-                        "version": 1,
                         "data": {
                             "players": [
                                 {
@@ -215,7 +213,6 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                 {
                     "outputs": [{
                         "id": "kyoku-outcome",
-                        "version": 2,
                         "data": output_data,
                     }],
                 },

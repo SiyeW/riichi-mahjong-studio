@@ -37,6 +37,8 @@ class ActionRecommendationGateway:
         self._action_metrics: List[Dict[str, Any]] = []
         self._primary_metric_id = ""
         self._recommendation_metric_id = ""
+        self._output_reference = dict(self._OUTPUT)
+        self._protocol_minor = 2
         self._engine_kind = "decision"
         self._engine_command: Optional[List[str]] = None
         self._engine_cwd: Optional[str] = None
@@ -177,6 +179,8 @@ class ActionRecommendationGateway:
         self._action_metrics = []
         self._primary_metric_id = ""
         self._recommendation_metric_id = ""
+        self._output_reference = dict(self._OUTPUT)
+        self._protocol_minor = 2
         self._model_hash_cache = None
         with self._lock:
             self._response_times.clear()
@@ -198,10 +202,12 @@ class ActionRecommendationGateway:
             options=self._engine_options,
             timeout=timeout,
         )
-        output_key = (self._OUTPUT["id"], self._OUTPUT["version"])
+        output_key = self._OUTPUT["id"]
         result = initialization.result
         action_contract = initialization.contracts[output_key]
         initialized_output = initialization.outputs[output_key]
+        self._output_reference = dict(initialization.references[output_key])
+        self._protocol_minor = initialization.protocol_minor
         metrics = initialized_output.get("metrics")
         self._action_metrics = [dict(item) for item in metrics] if isinstance(metrics, list) else []
         self._primary_metric_id = str(initialized_output.get("primaryMetricId") or "")
@@ -269,6 +275,7 @@ class ActionRecommendationGateway:
         metric_definitions: List[Dict[str, Any]],
         primary_metric_id: str,
         recommendation_metric_id: str,
+        output_reference: Dict[str, Any],
     ) -> Dict[str, Any]:
         outputs = result.get("outputs")
         if not isinstance(outputs, list) or len(outputs) != 1:
@@ -277,7 +284,8 @@ class ActionRecommendationGateway:
         if (
             not isinstance(output, dict)
             or output.get("id") != "action-recommendation"
-            or output.get("version") != 1
+            or output.get("version") != output_reference.get("version")
+            or ("version" in output) != ("version" in output_reference)
             or not isinstance(output.get("data"), dict)
         ):
             raise RuntimeError("decision engine returned an unexpected output")
@@ -401,7 +409,7 @@ class ActionRecommendationGateway:
                     "inputMode": "standard",
                     "events": mjai_events,
                     "outputs": [{
-                        **self._OUTPUT,
+                        **self._output_reference,
                         "parameters": {"candidates": candidates},
                     }],
                 },
@@ -413,6 +421,7 @@ class ActionRecommendationGateway:
                 self._action_metrics,
                 self._primary_metric_id,
                 self._recommendation_metric_id,
+                self._output_reference,
             )
             normalized["engineFingerprint"] = self._last_fingerprint
             normalized["engineId"] = self._engine_id
@@ -487,6 +496,7 @@ class ActionRecommendationGateway:
             "engineId": self._engine_id,
             "version": self._engine_version,
             "protocolMajor": 2,
+            "protocolMinor": self._protocol_minor,
             "weights": [
                 {
                     "slotId": weight["slotId"],
