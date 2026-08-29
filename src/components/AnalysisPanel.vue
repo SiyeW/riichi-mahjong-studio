@@ -1523,8 +1523,7 @@ button {
   display: grid;
   gap: calc(var(--analysis-tile-width) * 0.1);
   padding-top: 0;
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: visible;
 }
 
 .is-count-section .analysis-tiles-view,
@@ -1552,12 +1551,6 @@ button {
   width: max-content;
   padding-right: var(--analysis-scale-space);
   padding-bottom: calc(var(--analysis-tile-width) * 0.08);
-  border-bottom: 1px solid rgba(140, 195, 188, 0.1);
-}
-
-.analysis-risk-row:last-of-type,
-.analysis-count-row:last-of-type {
-  border-bottom: 0;
 }
 
 .analysis-count-row {
