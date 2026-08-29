@@ -56,6 +56,7 @@ function normalizeRuntimeState(value = {}) {
       {
         ready: Boolean(state?.ready),
         unloaded: Boolean(state?.unloaded),
+        error: String(state?.error || ''),
       },
     ]))
     : {}

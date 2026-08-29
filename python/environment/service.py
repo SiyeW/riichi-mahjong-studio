@@ -50,7 +50,7 @@ from analysis_cache import (
     register_analysis_source,
     same_analysis_context,
 )
-from engine_assignments import resolve_engine_assignments
+from engine_assignments import OUTPUT_CONTRACTS_BY_ID, resolve_engine_assignments
 from engine_runtime import EngineRuntimeRegistry
 from game_record_storage import (
     hydrate_game_structure,
@@ -319,7 +319,7 @@ def _analysis_source_display_name(kind):
         else set(ANALYSIS_OUTPUT_IDS)
     )
     names = []
-    for assignment in resolve_engine_assignments(config):
+    for assignment in resolve_engine_assignments(config, loaded_only=True):
         if not output_ids.intersection(assignment["outputs"]):
             continue
         profile = assignment["profile"]
@@ -355,7 +355,7 @@ def _current_opponent_analysis_source(*, include_display_name=False):
         for output_id in assignment["outputs"]
     }
     output_signature = "+".join(
-        f"{output_id}@1"
+        f"{output_id}@{OUTPUT_CONTRACTS_BY_ID[output_id]['version']}"
         for output_id in ANALYSIS_OUTPUT_IDS
         if output_id in assigned_outputs
     ) or "opponent-analysis@1"

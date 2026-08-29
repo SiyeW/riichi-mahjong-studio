@@ -156,6 +156,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
                     "action-recommendation": "profile.unified",
                     "opponent-shanten": "profile.unified",
                     "opponent-deal-in-probability": "profile.unified",
+                    "kyoku-outcome": "profile.unified",
                 },
             },
         }
@@ -170,8 +171,40 @@ class AnalysisCacheSourceTest(unittest.TestCase):
                 {"id": "action-recommendation", "version": 1},
                 {"id": "opponent-shanten", "version": 1},
                 {"id": "opponent-deal-in-probability", "version": 1},
+                {"id": "kyoku-outcome", "version": 2},
             ],
         )
+
+    def test_unloaded_profile_is_not_added_to_runtime(self):
+        config = {
+            "engines": {
+                "profiles": [
+                    {
+                        "id": "profile.loaded",
+                        "engineId": "example.loaded",
+                        "enginePath": "C:\\loaded.exe",
+                    },
+                    {
+                        "id": "profile.unloaded",
+                        "engineId": "example.unloaded",
+                        "enginePath": "C:\\unloaded.exe",
+                    },
+                ],
+                "outputAssignments": {
+                    "opponent-shanten": "profile.loaded",
+                    "kyoku-outcome": "profile.unloaded",
+                },
+                "loadedProfileIds": ["profile.loaded"],
+            },
+        }
+
+        specifications = service._engine_runtime_specifications(config)
+
+        self.assertEqual(
+            [specification["profile_id"] for specification in specifications],
+            ["profile.loaded"],
+        )
+        self.assertIsNone(service._gateway_profile(config, "kyoku-outcome"))
 
     def test_unrecognized_cache_keys_are_discarded(self):
         game = service.create_empty_game(101010)

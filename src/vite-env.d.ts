@@ -188,6 +188,7 @@ interface TrainerModelRuntimeState {
   profiles?: Record<string, {
     ready: boolean
     unloaded: boolean
+    error?: string
   }>
   ready: boolean
   unloaded: boolean

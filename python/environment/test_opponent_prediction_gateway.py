@@ -10,6 +10,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
             self.profile_id = profile_id
             self.ready = False
             self.unloaded = True
+            self.error = ""
             self.prewarm_calls = 0
             self.prepare_calls = 0
             self.unload_calls = 0
@@ -19,6 +20,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                 "profileId": self.profile_id,
                 "ready": self.ready,
                 "unloaded": self.unloaded,
+                "error": self.error,
             }
 
         def prepare_reload(self):
@@ -79,6 +81,21 @@ class OpponentOutputCompositionTest(unittest.TestCase):
         self.assertFalse(status["profiles"]["profile.first"]["unloaded"])
         self.assertFalse(status["profiles"]["profile.second"]["ready"])
         self.assertTrue(status["profiles"]["profile.second"]["unloaded"])
+
+    def test_runtime_status_keeps_profile_errors_separate(self):
+        first = self._FakeGateway("profile.first")
+        second = self._FakeGateway("profile.second")
+        second.error = "second failed"
+        gateway = object.__new__(OpponentPredictionCoordinator)
+        gateway._active = [first, second]
+
+        status = gateway.runtime_status()
+
+        self.assertEqual(status["profiles"]["profile.first"]["error"], "")
+        self.assertEqual(
+            status["profiles"]["profile.second"]["error"],
+            "second failed",
+        )
 
     def test_unloaded_profiles_do_not_affect_available_results(self):
         first = self._FakeGateway("profile.first")

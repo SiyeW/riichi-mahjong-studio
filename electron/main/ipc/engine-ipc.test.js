@@ -106,8 +106,31 @@ async function testActivationDropsMissingWeightProfile() {
   }
 }
 
+async function testActivationMarksProfileLoadedBeforeReload() {
+  let fixture
+  fixture = createFixture(async () => {
+    assert.deepEqual(
+      loadSettings(fixture.appOptions).engines.loadedProfileIds,
+      [fixture.profile.id],
+    )
+    return {
+      reload: { warmed: { opponentAnalysis: true }, errors: {} },
+    }
+  })
+  try {
+    const activate = fixture.handlers.get('engine:activate')
+    const engines = loadSettings(fixture.appOptions).engines
+    engines.loadedProfileIds = []
+    const settings = await activate(null, { profileId: fixture.profile.id, engines })
+    assert.deepEqual(settings.engines.loadedProfileIds, [fixture.profile.id])
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true })
+  }
+}
+
 Promise.resolve()
   .then(testRestoreDropsFailedLoadedProfile)
   .then(testActivationDropsFailedLoadedProfile)
   .then(testActivationDropsMissingWeightProfile)
+  .then(testActivationMarksProfileLoadedBeforeReload)
   .then(() => console.log('engine IPC tests passed'))

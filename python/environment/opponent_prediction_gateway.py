@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, Optional
 
 import numpy as np
 
+from engine_assignments import OUTPUT_CONTRACTS_BY_ID
 from engine_process_client import EngineProcessClient  # noqa: E402
 from engine_runtime import initialize_engine_client
 
@@ -26,19 +27,21 @@ TILE34_NAMES = [
 _LATEST_OPPONENT_PREDICTION_MJAI: Dict[str, Any] = {}
 _PROBABILITY_TOLERANCE = 1e-4
 _ENGINE_POSTPROCESSOR_VERSION = "opponent-analysis-host-v2"
-_SHANTEN_OUTPUT = {"id": "opponent-shanten", "version": 1}
-_DEAL_IN_OUTPUT = {"id": "opponent-deal-in-probability", "version": 1}
+_SHANTEN_OUTPUT = dict(OUTPUT_CONTRACTS_BY_ID["opponent-shanten"])
+_DEAL_IN_OUTPUT = dict(OUTPUT_CONTRACTS_BY_ID["opponent-deal-in-probability"])
 _ANALYSIS_OUTPUTS = (
     _SHANTEN_OUTPUT,
     _DEAL_IN_OUTPUT,
-    {"id": "opponent-concealed-tile-count", "version": 1},
-    {"id": "wall-tile-count", "version": 1},
-    {"id": "opponent-dora-count", "version": 1},
-    {"id": "opponent-score", "version": 1},
-    {"id": "kyoku-outcome", "version": 2},
-    {"id": "kyoku-score-delta", "version": 1},
-    {"id": "match-placement", "version": 1},
-    {"id": "match-score", "version": 1},
+    *(dict(OUTPUT_CONTRACTS_BY_ID[output_id]) for output_id in (
+        "opponent-concealed-tile-count",
+        "wall-tile-count",
+        "opponent-dora-count",
+        "opponent-score",
+        "kyoku-outcome",
+        "kyoku-score-delta",
+        "match-placement",
+        "match-score",
+    )),
 )
 
 
@@ -402,6 +405,7 @@ class OpponentPredictionGateway:
             "profileId": self._profile_id,
             "ready": bool(self._model_ready),
             "unloaded": self._unloaded,
+            "error": self.activity_error(),
         }
 
     def accepts_requests(self) -> bool:

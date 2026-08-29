@@ -12,12 +12,13 @@ from typing import Any, Callable, Dict, List, Optional
 
 from engine_process_client import EngineProcessClient
 from engine_runtime import initialize_engine_client
+from engine_assignments import OUTPUT_CONTRACTS_BY_ID
 from action_recommendation_adapter import resolve_engine_weight_path
 
 
 class ActionRecommendationGateway:
     _RESULT_SEMANTICS_VERSION = "action-recommendation-host-v4"
-    _OUTPUT = {"id": "action-recommendation", "version": 1}
+    _OUTPUT = dict(OUTPUT_CONTRACTS_BY_ID["action-recommendation"])
 
     def __init__(self) -> None:
         self._device = "auto"

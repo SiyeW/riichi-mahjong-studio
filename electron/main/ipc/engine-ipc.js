@@ -131,6 +131,9 @@ function createEngineIpcController({
         saveLoadedProfileState(profileId, false)
         throw new Error(t('native.engine.noOutput'))
       }
+      engines.loadedProfileIds = [
+        ...new Set([...(engines.loadedProfileIds || []), profileId]),
+      ]
       saveSettings({ ...previous, engines }, appOptions)
       try {
         const response = await environmentGateway.reloadEngine(profileId)

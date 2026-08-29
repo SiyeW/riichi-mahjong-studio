@@ -2638,7 +2638,7 @@ function engineOutputAssignmentHasError(outputId: SupportedEngineOutputId): bool
   if (!profile) return false
   const kind = engineOutputRuntimeKind(outputId)
   return Boolean(engineLoadErrors[profile.id])
-    || (profileMatchesRuntime(profile, kind) && Boolean(runtimeEngineError(kind)))
+    || (profileMatchesRuntime(profile, kind) && Boolean(runtimeEngineError(kind, profile)))
 }
 
 async function describeEngineProfile(
@@ -2673,8 +2673,14 @@ async function describeEngineProfile(
   }
 }
 
-function runtimeEngineError(kind: EngineRuntimeKind): string {
+function runtimeEngineError(
+  kind: EngineRuntimeKind,
+  profile: TrainerEngineProfile | null = null,
+): string {
   if (kind === 'opponent') {
+    if (profile) {
+      return String(runtimeEngineState(kind).profiles?.[profile.id]?.error || '')
+    }
     return String(status.modelActivity?.errors?.opponentAnalysis || '')
   }
   return (status.modelActivity?.errors?.decision || []).find(Boolean) || ''
@@ -2792,7 +2798,7 @@ function profileIsLoading(profile: TrainerEngineProfile): boolean {
     return runtime !== null
       && !runtime.ready
       && !runtime.unloaded
-      && !runtimeEngineError(kind)
+      && !runtimeEngineError(kind, profile)
   })
 }
 
@@ -2812,7 +2818,9 @@ function engineProfileClasses(profile: TrainerEngineProfile) {
       profileRuntimeState(profile, kind)?.unloaded === true
     )),
     error: Boolean(engineLoadErrors[profile.id])
-      || runtimeGroups.some((kind) => profileMatchesRuntime(profile, kind) && Boolean(runtimeEngineError(kind))),
+      || runtimeGroups.some((kind) => (
+        profileMatchesRuntime(profile, kind) && Boolean(runtimeEngineError(kind, profile))
+      )),
     unavailable: !profile.enginePath || profileAssignedOutputs(profile).length === 0,
   }
 }
@@ -2822,7 +2830,7 @@ function engineProfileSubtitle(profile: TrainerEngineProfile): string {
   if (engineLoadErrors[profile.id]) return t('engine.status.failed')
   const runtimeGroups = profileRuntimeKinds(profile)
   if (!runtimeGroups.some((kind) => profileMatchesRuntime(profile, kind))) return ''
-  if (runtimeGroups.some((kind) => runtimeEngineError(kind))) return t('engine.status.failed')
+  if (runtimeGroups.some((kind) => runtimeEngineError(kind, profile))) return t('engine.status.failed')
   if (runtimeGroups.every((kind) => profileRuntimeState(profile, kind)?.unloaded === true)) return t('engine.status.notLoaded')
   if (!profileIsLoaded(profile)) return t('engine.status.loading')
   return t('engine.status.loaded')
@@ -2833,7 +2841,7 @@ const engineFooterMessage = computed(() => {
   const runtimeError = profile
     ? profileRuntimeKinds(profile)
       .filter((kind) => profileMatchesRuntime(profile, kind))
-      .map(runtimeEngineError)
+      .map((kind) => runtimeEngineError(kind, profile))
       .find(Boolean)
     : ''
   return runtimeError || engineSaveMessage.value

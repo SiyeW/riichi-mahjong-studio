@@ -1,7 +1,11 @@
 import copy
 from pathlib import Path
 
-from engine_assignments import profiles_by_output, resolve_engine_assignments
+from engine_assignments import (
+    OUTPUT_CONTRACTS_BY_ID,
+    profiles_by_output,
+    resolve_engine_assignments,
+)
 
 
 def normalize_training_mode(mode):
@@ -74,7 +78,7 @@ def resolve_cwd(profile, command, resource_resolver):
 
 
 def gateway_profile(config, output_id, resource_resolver):
-    profile = profiles_by_output(config).get(str(output_id or ""))
+    profile = profiles_by_output(config, loaded_only=True).get(str(output_id or ""))
     if not isinstance(profile, dict):
         return None
     weights = [
@@ -111,7 +115,7 @@ def gateway_profile(config, output_id, resource_resolver):
 
 
 def action_engine_weight_path(config, resource_resolver):
-    profile = profiles_by_output(config).get("action-recommendation")
+    profile = profiles_by_output(config, loaded_only=True).get("action-recommendation")
     weights = profile.get("weights") if isinstance(profile, dict) else None
     weights = weights if isinstance(weights, list) else []
     weight = next(
@@ -127,7 +131,7 @@ def action_engine_weight_path(config, resource_resolver):
 
 def runtime_specifications(config, resource_resolver):
     specifications = []
-    for assignment in resolve_engine_assignments(config):
+    for assignment in resolve_engine_assignments(config, loaded_only=True):
         output_ids = assignment["outputs"]
         selected = gateway_profile(config, output_ids[0], resource_resolver) if output_ids else None
         if not selected:
@@ -141,7 +145,7 @@ def runtime_specifications(config, resource_resolver):
             "command": selected["engine_command"],
             "cwd": selected["engine_cwd"],
             "enabled_outputs": [
-                {"id": output_id, "version": 1}
+                dict(OUTPUT_CONTRACTS_BY_ID[output_id])
                 for output_id in output_ids
             ],
             "weights": selected["weights"],

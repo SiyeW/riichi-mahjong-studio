@@ -8,8 +8,8 @@ const snapshot = normalizeSnapshot({
       profileId: 'profile.first+profile.second',
       profileIds: ['profile.first', 'profile.second'],
       profiles: {
-        'profile.first': { ready: true, unloaded: false },
-        'profile.second': { ready: false, unloaded: true },
+        'profile.first': { ready: true, unloaded: false, error: '' },
+        'profile.second': { ready: false, unloaded: true, error: 'failed' },
       },
       ready: false,
       unloaded: false,
@@ -21,8 +21,8 @@ assert.deepEqual(snapshot.modelRuntime.opponentAnalysis, {
   profileId: 'profile.first+profile.second',
   profileIds: ['profile.first', 'profile.second'],
   profiles: {
-    'profile.first': { ready: true, unloaded: false },
-    'profile.second': { ready: false, unloaded: true },
+    'profile.first': { ready: true, unloaded: false, error: '' },
+    'profile.second': { ready: false, unloaded: true, error: 'failed' },
   },
   ready: false,
   unloaded: false,

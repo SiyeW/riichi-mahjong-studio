@@ -253,6 +253,7 @@ class OpponentPredictionCoordinator:
             str(status.get("profileId") or ""): {
                 "ready": bool(status.get("ready")),
                 "unloaded": bool(status.get("unloaded")),
+                "error": str(status.get("error") or ""),
             }
             for status in statuses
             if status.get("profileId")
