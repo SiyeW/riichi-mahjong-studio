@@ -739,11 +739,11 @@ function countSourcePalette(source: TileSource, style: CSSStyleDeclaration): str
     const chroma = Math.hypot(base.a, base.b)
     const hue = Math.atan2(base.b, base.a)
     const high = {
-      l: Math.min(0.88, base.l + 0.12),
-      a: chroma * 1.25 * Math.cos(hue),
-      b: chroma * 1.25 * Math.sin(hue),
+      l: Math.min(0.86, base.l + 0.13),
+      a: chroma * 2.2 * Math.cos(hue),
+      b: chroma * 2.2 * Math.sin(hue),
     }
-    const amount = (value - 2) / 2
+    const amount = value === 3 ? 0.65 : 1
     return rgbString(oklabToRgb({
       l: base.l + ((high.l - base.l) * amount),
       a: base.a + ((high.a - base.a) * amount),
