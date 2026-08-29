@@ -23,7 +23,7 @@
           :stroke="slice.color"
           :stroke-width="slice.probability > 0 ? 0.012 : 0"
           stroke-linejoin="round"
-          @mouseenter="emit('slice-enter', slice.label, slice.probability)"
+          @mouseenter="emit('slice-enter', $event, slice.label, slice.probability)"
           @mouseleave="emit('slice-leave')"
         />
         <text
@@ -56,7 +56,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'slice-enter': [label: string, probability: number]
+  'slice-enter': [event: MouseEvent, label: string, probability: number]
   'slice-leave': []
 }>()
 

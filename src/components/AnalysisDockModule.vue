@@ -11,7 +11,7 @@
     <div class="dock-module-header analysis-dock-header">
       <div
         class="dock-module-drag-handle"
-        :title="t('workspace.dragPanel', { panel: title })"
+        v-ui-tooltip="t('workspace.dragPanel', { panel: title })"
         @pointerdown="emit('drag-start', $event)"
       >
         <h2>{{ title }}</h2>

@@ -86,7 +86,7 @@
         <span class="toolbar-section">
           <span
             class="toolbar-button-hint"
-            :title="isReadOnlyRecord ? READ_ONLY_RECORD_HINT : undefined"
+            v-ui-tooltip="isReadOnlyRecord ? READ_ONLY_RECORD_HINT : undefined"
           >
             <button @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
           </span>
@@ -213,7 +213,7 @@
                     :tabindex="canToggleDecisionRecommendations ? 0 : undefined"
                     :aria-pressed="canToggleDecisionRecommendations ? decisionRecommendationsEnabled : undefined"
                     :aria-label="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')) : undefined"
-                    :title="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')) : undefined"
+                    v-ui-tooltip="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')) : undefined"
                     @click.stop="toggleDecisionRecommendations"
                     @keydown.enter.prevent="toggleDecisionRecommendations"
                     @keydown.space.prevent="toggleDecisionRecommendations"
@@ -271,7 +271,7 @@
                               :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(southView.seat, southView.melds.length - 1 - mi)) }]"
                               :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)"
                               :alt="tileFaceLabel(item.tile)"
-                              :title="historicalJumpTitle(meldNodeId(southView.seat, southView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))"
+                              v-ui-tooltip="historicalJumpTitle(meldNodeId(southView.seat, southView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))"
                               @dblclick.stop="jumpToHistoricalNode(meldNodeId(southView.seat, southView.melds.length - 1 - mi))"
                             />
                             <img
@@ -279,7 +279,7 @@
                               :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(southView.seat, southView.melds.length - 1 - mi, 'kakan')) }]"
                               :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)"
                               :alt="tileFaceLabel(item.tile)"
-                              :title="historicalJumpTitle(meldNodeId(southView.seat, southView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))"
+                              v-ui-tooltip="historicalJumpTitle(meldNodeId(southView.seat, southView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))"
                               @dblclick.stop="jumpToHistoricalNode(meldNodeId(southView.seat, southView.melds.length - 1 - mi, 'kakan'))"
                             />
                           </div>
@@ -298,7 +298,7 @@
                     :tabindex="canToggleDecisionRecommendations ? 0 : undefined"
                     :aria-pressed="canToggleDecisionRecommendations ? decisionRecommendationsEnabled : undefined"
                     :aria-label="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')) : undefined"
-                    :title="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')) : undefined"
+                    v-ui-tooltip="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')) : undefined"
                     @click.stop="toggleDecisionRecommendations"
                     @keydown.enter.prevent="toggleDecisionRecommendations"
                     @keydown.space.prevent="toggleDecisionRecommendations"
@@ -343,7 +343,7 @@
                 role="button"
                 tabindex="0"
                 :aria-label="visibleHandsToggleLabel"
-                :title="visibleHandsToggleLabel"
+                v-ui-tooltip="visibleHandsToggleLabel"
                 @click.stop="toggleVisibleHands"
                 @keydown.enter.prevent="toggleVisibleHands"
                 @keydown.space.prevent="toggleVisibleHands"
@@ -365,8 +365,8 @@
               <span class="pov-p1 hand-calls-p1" v-if="eastView.melds.length">
                 <template v-for="(meld, mi) in eastView.melds.slice().reverse()" :key="'p1m-'+mi">
                   <div v-for="(item, ti) in meldDisplayTiles(meld, eastView.seat)" :key="'p1mt-'+ti" class="tileDiv">
-                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi))" />
-                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan'))" />
+                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi))" />
+                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan'))" />
                   </div>
                 </template>
               </span>
@@ -379,7 +379,7 @@
                 role="button"
                 tabindex="0"
                 :aria-label="visibleHandsToggleLabel"
-                :title="visibleHandsToggleLabel"
+                v-ui-tooltip="visibleHandsToggleLabel"
                 @click.stop="toggleVisibleHands"
                 @keydown.enter.prevent="toggleVisibleHands"
                 @keydown.space.prevent="toggleVisibleHands"
@@ -401,8 +401,8 @@
               <span class="pov-p2 hand-calls-p2" v-if="northView.melds.length">
                 <template v-for="(meld, mi) in northView.melds.slice().reverse()" :key="'p2m-'+mi">
                   <div v-for="(item, ti) in meldDisplayTiles(meld, northView.seat)" :key="'p2mt-'+ti" class="tileDiv">
-                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(northView.seat, northView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi))" />
-                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan'))" />
+                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(northView.seat, northView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi))" />
+                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan'))" />
                   </div>
                 </template>
               </span>
@@ -415,7 +415,7 @@
                 role="button"
                 tabindex="0"
                 :aria-label="visibleHandsToggleLabel"
-                :title="visibleHandsToggleLabel"
+                v-ui-tooltip="visibleHandsToggleLabel"
                 @click.stop="toggleVisibleHands"
                 @keydown.enter.prevent="toggleVisibleHands"
                 @keydown.space.prevent="toggleVisibleHands"
@@ -437,8 +437,8 @@
               <span class="pov-p3 hand-calls-p3" v-if="westView.melds.length">
                 <template v-for="(meld, mi) in westView.melds.slice().reverse()" :key="'p3m-'+mi">
                   <div v-for="(item, ti) in meldDisplayTiles(meld, westView.seat)" :key="'p3mt-'+ti" class="tileDiv">
-                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(westView.seat, westView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi))" />
-                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" :title="historicalJumpTitle(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan'))" />
+                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(westView.seat, westView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi))" />
+                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan'))" />
                   </div>
                 </template>
               </span>
@@ -452,7 +452,7 @@
                   :key="slot.key"
                   :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
                   :data-pending-discard-seat="slot.isPending ? southView.seat : undefined"
-                  :title="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
+                  v-ui-tooltip="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
                   @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
                 >
                   <img
@@ -470,7 +470,7 @@
                   :key="slot.key"
                   :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
                   :data-pending-discard-seat="slot.isPending ? westView.seat : undefined"
-                  :title="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
+                  v-ui-tooltip="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
                   @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
                 >
                   <img
@@ -488,7 +488,7 @@
                   :key="slot.key"
                   :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
                   :data-pending-discard-seat="slot.isPending ? northView.seat : undefined"
-                  :title="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
+                  v-ui-tooltip="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
                   @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
                 >
                   <img
@@ -506,7 +506,7 @@
                   :key="slot.key"
                   :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
                   :data-pending-discard-seat="slot.isPending ? eastView.seat : undefined"
-                  :title="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
+                  v-ui-tooltip="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
                   @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
                 >
                   <img
@@ -646,7 +646,7 @@
         <div class="dock-module-header panel-header">
           <div
             class="dock-module-drag-handle"
-            :title="t('workspace.dragPanel', { panel: t('console.title') })"
+            v-ui-tooltip="t('workspace.dragPanel', { panel: t('console.title') })"
             @pointerdown="startDockPanelPointerDrag('console', $event)"
           >
             <h2>{{ t('console.title') }}</h2>
@@ -750,8 +750,8 @@
                 <div class="quick-time-track">
                   <span class="quick-time-track-bg"></span>
                   <span class="quick-time-track-fill" :style="{ width: `${quickMaxThinkingPercent}%` }"></span>
-                  <span class="quick-time-marker quick-time-marker-min" :style="{ left: `${quickMinThinkingPercent}%` }" :title="t('console.minimumThinkingTime')"></span>
-                  <span class="quick-time-marker quick-time-marker-auto" :style="{ left: `${quickAutoAdvancePercent}%` }" :title="t('console.autoAdvanceUnit')"></span>
+                  <span class="quick-time-marker quick-time-marker-min" :style="{ left: `${quickMinThinkingPercent}%` }" v-ui-tooltip="t('console.minimumThinkingTime')"></span>
+                  <span class="quick-time-marker quick-time-marker-auto" :style="{ left: `${quickAutoAdvancePercent}%` }" v-ui-tooltip="t('console.autoAdvanceUnit')"></span>
                   <span class="quick-time-thumb" :style="{ left: `${quickMaxThinkingPercent}%` }"></span>
                 </div>
                 <input
@@ -811,7 +811,7 @@
                     class="tree-axis-label"
                     :class="{ 'is-controlled': row.isControlledAction }"
                     :style="{ top: `${row.y}px` }"
-                    :title="row.label"
+                    v-ui-tooltip="row.label"
                     @click="jumpToNode(row.nodeId)"
                   >
                     {{ row.label }}
@@ -912,7 +912,7 @@
                       :key="metric.id"
                       scope="col"
                       class="analysis-metric-heading"
-                      :title="localizedEngineText(metric.description, '')"
+                      v-ui-tooltip="localizedEngineText(metric.description, '')"
                     >
                       {{ localizedEngineText(metric.title, metric.id) }}
                     </th>
@@ -955,7 +955,7 @@
                       :key="metric.id"
                       scope="col"
                       class="analysis-metric-heading"
-                      :title="localizedEngineText(metric.description, '')"
+                      v-ui-tooltip="localizedEngineText(metric.description, '')"
                     >
                       {{ localizedEngineText(metric.title, metric.id) }}
                     </th>
@@ -1014,18 +1014,18 @@
           <span
             v-for="item in engineStatusItems"
             :key="item.id"
-            class="footer-model-dot"
-            :class="{ active: item.state === 'running', loading: item.state === 'loading', error: item.state === 'error' }"
-            :aria-label="item.label"
-            role="img"
-            tabindex="0"
-            @mouseenter="hoveredModelStatusId = item.id"
-            @mouseleave="hoveredModelStatusId = null"
-            @focus="hoveredModelStatusId = item.id"
-            @blur="hoveredModelStatusId = null"
-          />
+            class="footer-model-indicator"
+          >
+            <span
+              class="footer-model-dot"
+              :class="{ active: item.state === 'running', loading: item.state === 'loading', error: item.state === 'error' }"
+              :aria-label="item.label"
+              role="img"
+              tabindex="0"
+            />
+            <span class="ui-hover-tooltip footer-model-tooltip" role="tooltip">{{ item.label }}</span>
+          </span>
         </span>
-        <span class="footer-model-label">{{ hoveredModelStatusLabel }}</span>
       </div>
       <div
         class="footer-memory-status"
@@ -1036,8 +1036,8 @@
         <span>{{ t('status.applicationMemory', { value: formatMemorySize(runtimeMetrics?.applicationBytes) }) }}</span>
         <span class="footer-memory-separator" aria-hidden="true">·</span>
         <span>{{ t('status.systemAvailable', { value: formatMemorySize(runtimeMetrics?.systemAvailableBytes) }) }}</span>
-        <div id="runtime-memory-detail" class="footer-memory-tooltip" role="tooltip">
-          <div v-for="row in runtimeMemoryRows" :key="row.label" class="footer-memory-tooltip-row">
+        <div id="runtime-memory-detail" class="ui-hover-tooltip footer-memory-tooltip" role="tooltip">
+          <div v-for="row in runtimeMemoryRows" :key="row.label" class="ui-hover-tooltip-row">
             <span>{{ row.label }}</span>
             <span>{{ row.value }}</span>
           </div>
@@ -3850,7 +3850,6 @@ let gameplayResponseGeneration = 0
 const playPrefetchReady = ref(false)
 const playPrefetchWaiting = ref(false)
 const earlyPlayPrefetchReady = new Set<string>()
-const hoveredModelStatusId = ref<string | null>(null)
 function normalizeModelActivityState(value: unknown): TrainerModelActivityState {
   if (value === 'loading' || value === 'running' || value === 'error') return value
   return value === true ? 'running' : 'idle'
@@ -3948,9 +3947,6 @@ const engineStatusItems = computed(() => {
     }]
   })
 })
-const hoveredModelStatusLabel = computed(() => (
-  engineStatusItems.value.find((item) => item.id === hoveredModelStatusId.value)?.label || ''
-))
 const quickThinkingDragValue = ref<number | null>(null)
 const quickVolumeDragValue = ref<number | null>(null)
 const currentTrainingMode = computed(() => normalizeTrainingMode(settings.training.mode))

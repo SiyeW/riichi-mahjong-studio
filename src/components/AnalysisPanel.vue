@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="analysisRootElement"
     class="unified-analysis"
     :class="{
       'reduce-motion': reduceMotion,
@@ -20,8 +21,8 @@
               :slice-labels="shantenLabels"
               :short-labels="shantenShortLabels"
               :reduce-motion="reduceMotion"
-              @slice-enter="(label, probability) => showProbability(`${opponent.label} - ${label}`, probability)"
-              @slice-leave="clearHover"
+              @slice-enter="(event, label, probability) => showProbabilityTooltip(event, opponent.label, label, probability)"
+              @slice-leave="clearHoverTooltip"
             />
           </div>
         </div>
@@ -32,7 +33,14 @@
         </div>
         <div class="analysis-opponent-prediction-grid">
           <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-predictions">
-              <div class="analysis-opponent-prediction" :title="opponent.doraTitle">
+              <div
+                class="analysis-opponent-prediction"
+                tabindex="0"
+                @mouseenter="showPredictionTooltip($event, opponent.label, t('analysis.dora'), opponent.doraPrediction, t('unit.tile'))"
+                @mouseleave="clearHoverTooltip"
+                @focus="showPredictionTooltip($event, opponent.label, t('analysis.dora'), opponent.doraPrediction, t('unit.tile'))"
+                @blur="clearHoverTooltip"
+              >
                 <div class="analysis-prediction-heading">
                   <small>{{ t('analysis.dora') }}</small>
                   <strong>{{ opponent.dora }}</strong>
@@ -45,14 +53,25 @@
                   <span
                     v-for="entry in opponent.doraPrediction.distribution"
                     :key="entry.value"
-                    :title="`${entry.value}${t('unit.tile')} ${formatProbability(entry.probability)}`"
+                    tabindex="0"
+                    @mouseenter="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.dora')}`, `${entry.value}${t('unit.tile')}`, entry.probability)"
+                    @mouseleave="clearHoverTooltip"
+                    @focus="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.dora')}`, `${entry.value}${t('unit.tile')}`, entry.probability)"
+                    @blur="clearHoverTooltip"
                   >
                     <i><em :style="{ height: distributionBarHeight(entry.probability, doraDistributionScale) }" /></i>
                     <small>{{ entry.value }}</small>
                   </span>
                 </div>
               </div>
-              <div class="analysis-opponent-prediction" :title="opponent.scoreTitle">
+              <div
+                class="analysis-opponent-prediction"
+                tabindex="0"
+                @mouseenter="showPredictionTooltip($event, opponent.label, t('analysis.score'), opponent.scorePrediction, t('unit.point'))"
+                @mouseleave="clearHoverTooltip"
+                @focus="showPredictionTooltip($event, opponent.label, t('analysis.score'), opponent.scorePrediction, t('unit.point'))"
+                @blur="clearHoverTooltip"
+              >
                 <div class="analysis-prediction-heading">
                   <small>{{ t('analysis.score') }}</small>
                   <strong>{{ opponent.score }}</strong>
@@ -65,11 +84,23 @@
                   <i
                     v-for="entry in opponent.scorePrediction.distribution"
                     :key="entry.value"
-                    :title="`${formatDistributionPoints(entry.value)} ${formatProbability(entry.probability)}`"
+                    tabindex="0"
+                    @mouseenter="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.score')}`, formatDistributionPoints(entry.value), entry.probability)"
+                    @mouseleave="clearHoverTooltip"
+                    @focus="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.score')}`, formatDistributionPoints(entry.value), entry.probability)"
+                    @blur="clearHoverTooltip"
                   ><span :style="{ height: distributionBarHeight(entry.probability, scoreDistributionScale) }" /></i>
                 </div>
                 <div v-if="opponent.scoreModes.length" class="analysis-score-modes">
-                  <span v-for="entry in opponent.scoreModes" :key="entry.value" :title="formatProbability(entry.probability)">
+                  <span
+                    v-for="entry in opponent.scoreModes"
+                    :key="entry.value"
+                    tabindex="0"
+                    @mouseenter="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.score')}`, formatDistributionPoints(entry.value), entry.probability)"
+                    @mouseleave="clearHoverTooltip"
+                    @focus="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.score')}`, formatDistributionPoints(entry.value), entry.probability)"
+                    @blur="clearHoverTooltip"
+                  >
                     {{ formatDistributionPoints(entry.value) }}
                   </span>
                 </div>
@@ -94,7 +125,11 @@
                   :key="segment.key"
                   :class="`is-${segment.key}`"
                   :style="{ width: `${segment.displayProbability * 100}%` }"
-                  :title="`${segment.label} ${formatProbability(segment.probability)}`"
+                  tabindex="0"
+                  @mouseenter="showProbabilityTooltip($event, t('analysis.outcome'), segment.label, segment.probability)"
+                  @mouseleave="clearHoverTooltip"
+                  @focus="showProbabilityTooltip($event, t('analysis.outcome'), segment.label, segment.probability)"
+                  @blur="clearHoverTooltip"
                 ><small v-if="segment.displayProbability >= 0.08">{{ formatProbability(segment.probability) }}</small></span>
               </div>
               <div class="analysis-outcome-legend">
@@ -126,27 +161,20 @@
                   class="analysis-offense-segment is-win"
                   tabindex="0"
                   :style="{ width: `${player.winProbability * 100}%` }"
-                  :title="formatProbability(player.winProbability)"
-                  @mouseenter="hoveredWinnerSeat = player.seat"
-                  @mouseleave="hoveredWinnerSeat = null"
-                  @focus="hoveredWinnerSeat = player.seat"
-                  @blur="hoveredWinnerSeat = null"
+                  @mouseenter="showTargetTooltip($event, player.label, player.targets)"
+                  @mouseleave="clearHoverTooltip"
+                  @focus="showTargetTooltip($event, player.label, player.targets)"
+                  @blur="clearHoverTooltip"
                 >
-                  <div v-if="hoveredWinnerSeat === player.seat" class="analysis-target-popover">
-                    <strong>{{ t('analysis.winTarget', { player: player.label }) }}</strong>
-                    <div v-for="target in player.targets" :key="target.seat">
-                      <small>{{ target.label }}</small>
-                      <i v-perceptual-surface="popoverTrackSurface">
-                        <span :style="{ width: `${target.probability * 100}%` }" />
-                      </i>
-                      <em>{{ formatProbability(target.probability) }}</em>
-                    </div>
-                  </div>
                 </div>
                 <div
                   class="analysis-offense-segment is-deal-in"
+                  tabindex="0"
                   :style="{ width: `${player.dealInProbability * 100}%` }"
-                  :title="formatProbability(player.dealInProbability)"
+                  @mouseenter="showProbabilityTooltip($event, player.label, t('analysis.dealInProbability'), player.dealInProbability)"
+                  @mouseleave="clearHoverTooltip"
+                  @focus="showProbabilityTooltip($event, player.label, t('analysis.dealInProbability'), player.dealInProbability)"
+                  @blur="clearHoverTooltip"
                 >
                 </div>
                 <small
@@ -177,7 +205,11 @@
               <div
                 v-perceptual-surface="deltaTrackSurface"
                 class="analysis-delta-cell"
-                :title="formatPoints(player.kyokuDelta)"
+                tabindex="0"
+                @mouseenter="showValueTooltip($event, player.label, t('analysis.kyokuDelta'), formatPoints(player.kyokuDelta))"
+                @mouseleave="clearHoverTooltip"
+                @focus="showValueTooltip($event, player.label, t('analysis.kyokuDelta'), formatPoints(player.kyokuDelta))"
+                @blur="clearHoverTooltip"
               >
                 <div class="analysis-zero-axis" />
                 <span
@@ -210,7 +242,11 @@
               <div
                 v-perceptual-surface="placementTrackSurface"
                 class="analysis-placement-bar"
-                :title="player.placementTitle"
+                tabindex="0"
+                @mouseenter="showDistributionTooltip($event, player.label, t('analysis.matchPlacement'), player.placement, t('unit.place'))"
+                @mouseleave="clearHoverTooltip"
+                @focus="showDistributionTooltip($event, player.label, t('analysis.matchPlacement'), player.placement, t('unit.place'))"
+                @blur="clearHoverTooltip"
               >
                 <span
                   v-for="segment in player.placement"
@@ -220,7 +256,14 @@
                 />
               </div>
               <small class="analysis-placement-value">{{ player.expectedPlacement }}</small>
-              <span class="analysis-score-cell" :title="formatPoints(player.matchScore)">{{ formatPlainPoints(player.matchScore) }}</span>
+              <span
+                class="analysis-score-cell"
+                tabindex="0"
+                @mouseenter="showValueTooltip($event, player.label, t('analysis.matchScore'), formatPoints(player.matchScore))"
+                @mouseleave="clearHoverTooltip"
+                @focus="showValueTooltip($event, player.label, t('analysis.matchScore'), formatPoints(player.matchScore))"
+                @blur="clearHoverTooltip"
+              >{{ formatPlainPoints(player.matchScore) }}</span>
             </div>
           </section>
         </div>
@@ -241,9 +284,11 @@
                   v-for="source in opponentSources"
                   :key="source.key"
                   :class="`source-${source.key}`"
-                  :title="`${source.label} - ${tileFaceLabel(tile)} - ${formatProbability(riskProbability(source.seat, tile))}`"
-                  @mouseenter="showProbability(`${source.label} - ${tileFaceLabel(tile)}`, riskProbability(source.seat, tile))"
-                  @mouseleave="clearHover"
+                  tabindex="0"
+                  @mouseenter="showProbabilityTooltip($event, tileFaceLabel(tile), source.label, riskProbability(source.seat, tile))"
+                  @mouseleave="clearHoverTooltip"
+                  @focus="showProbabilityTooltip($event, tileFaceLabel(tile), source.label, riskProbability(source.seat, tile))"
+                  @blur="clearHoverTooltip"
                 ><span :style="{ transform: `scaleY(${riskBarScale(riskProbability(source.seat, tile))})` }" /></i>
               </div>
               <span
@@ -297,10 +342,10 @@
                   type="button"
                   :class="`source-${source.key}`"
                   :aria-label="t('analysis.tileCountDistribution', { source: source.label, tile: tileFaceLabel(tile) })"
-                  @mouseenter="showCountTooltip(tile, source)"
-                  @mouseleave="countTooltip = null"
-                  @focus="showCountTooltip(tile, source)"
-                  @blur="countTooltip = null"
+                  @mouseenter="showCountTooltip($event, tile, source)"
+                  @mouseleave="clearHoverTooltip"
+                  @focus="showCountTooltip($event, tile, source)"
+                  @blur="clearHoverTooltip"
                 />
               </div>
               <img class="analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
@@ -321,19 +366,32 @@
             </template>
           </div>
         </div>
-        <div v-if="countTooltip" class="analysis-count-tooltip">
-          <strong>{{ countTooltip.sourceLabel }} · {{ tileFaceLabel(countTooltip.tile) }}</strong>
-          <span v-if="countTooltip.scalarValue !== null">{{ t('analysis.predictedCount', { value: countTooltip.scalarValue.toFixed(2) }) }}</span>
-          <div v-for="segment in countTooltip.segments" :key="segment.value">
-            <small>{{ t('analysis.countUnit', { value: segment.value }) }}</small>
-            <i><span :style="{ width: `${segment.probability * 100}%`, background: countSegmentColor(countTooltip.sourceKey, segment.value, countTooltip.tile) }" /></i>
-            <em>{{ formatProbability(segment.probability) }}</em>
-          </div>
-        </div>
       </div>
     </div>
 
-    <p class="analysis-hover-readout" :class="{ visible: hoverText }">{{ hoverText || '\u00a0' }}</p>
+    <div
+      v-if="hoverTooltip"
+      ref="hoverTooltipElement"
+      class="ui-hover-tooltip analysis-floating-tooltip"
+      :class="{ 'is-positioned': hoverTooltip.positioned }"
+      :style="{ left: `${hoverTooltip.left}px`, top: `${hoverTooltip.top}px` }"
+      role="tooltip"
+    >
+      <strong>{{ hoverTooltip.title }}</strong>
+      <span v-for="line in hoverTooltip.lines" :key="line" class="analysis-floating-tooltip-line">{{ line }}</span>
+      <div
+        v-for="row in hoverTooltip.rows"
+        :key="`${row.label}-${row.value}`"
+        class="ui-hover-tooltip-row"
+        :class="{ 'has-bar': row.barWidth }"
+      >
+        <span>{{ row.label }}</span>
+        <i v-if="row.barWidth" class="analysis-tooltip-bar">
+          <span :style="{ width: row.barWidth, background: row.barColor }" />
+        </i>
+        <span>{{ row.value }}</span>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -362,6 +420,20 @@ const { t, numberLocale } = useI18n()
 
 type AnalysisRecord = Record<string, unknown>
 type TileSource = { key: string; label: string; seat: number | null }
+type HoverTooltipRow = {
+  label: string
+  value: string
+  barWidth?: string
+  barColor?: string
+}
+type HoverTooltipState = {
+  title: string
+  lines: string[]
+  rows: HoverTooltipRow[]
+  left: number
+  top: number
+  positioned: boolean
+}
 
 const props = defineProps<{
   section: 'opponents' | 'game' | 'risk' | 'counts'
@@ -397,7 +469,6 @@ const distributionTrackSurface = scopedPerceptualSurface(
 const offenseGroupSurface = scopedPerceptualSurface('game-offense-group')
 const outcomeTrackSurface = scopedPerceptualSurface('game-outcome-track')
 const offenseTrackSurface = scopedPerceptualSurface('game-offense-track')
-const popoverTrackSurface = scopedPerceptualSurface('game-target-popover-track')
 const deltaGroupSurface = scopedPerceptualSurface('game-delta-group')
 const deltaTrackSurface = scopedPerceptualSurface('game-delta-track')
 const matchGroupSurface = scopedPerceptualSurface('game-match-group')
@@ -409,8 +480,10 @@ const riskTrackSurface = scopedPerceptualSurface(
 const riskLegendSurface = scopedPerceptualSurface('analysis-risk-legend')
 const countSurface = scopedPerceptualSurface('analysis-count-panel')
 
-const hoverText = ref('')
-const hoveredWinnerSeat = ref<number | null>(null)
+const analysisRootElement = ref<HTMLElement | null>(null)
+const hoverTooltipElement = ref<HTMLElement | null>(null)
+const hoverTooltip = ref<HoverTooltipState | null>(null)
+let hoverTooltipPositionFrame = 0
 const offenseTrackElements = new Map<number, HTMLElement>()
 const offenseLabelPositions = ref<Map<number, { win: number; dealIn: number }>>(new Map())
 let offenseResizeObserver: ResizeObserver | null = null
@@ -420,14 +493,6 @@ const countCanvasElements = new Map<string, { canvas: HTMLCanvasElement; row: st
 let countGeometryFrame = 0
 let countResizeObserver: ResizeObserver | null = null
 let countStyleObserver: MutationObserver | null = null
-const countTooltip = ref<{
-  tile: string
-  sourceKey: string
-  sourceLabel: string
-  scalarValue: number | null
-  segments: DistributionEntry[]
-} | null>(null)
-
 const tileRows = [
   ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m'],
   ['1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p', '9p'],
@@ -525,20 +590,6 @@ function formatProbability(value: number): string {
   return `${percentage.toFixed(1)}%`
 }
 
-function predictionTitle(prediction: NumericPrediction, unit: string): string {
-  const scalar = prediction.scalarValue === null
-    ? ''
-    : t(
-      prediction.scalarSource === 'point-estimate' ? 'analysis.predictionValue' : 'analysis.expectedValue',
-      { value: prediction.scalarValue.toFixed(2), unit },
-    )
-  const distribution = prediction.distribution
-    .map((entry) => `${entry.value}${unit} ${formatProbability(entry.probability)}`)
-    .join('，')
-  if (scalar && distribution) return `${scalar}；${distribution}`
-  return scalar || distribution || t('analysis.noData')
-}
-
 const opponentCards = computed(() => props.shantenOpponents.map((opponent) => {
   const dora = seatPrediction('opponent-dora-count', opponent.seat)
   const score = seatPrediction('opponent-score', opponent.seat)
@@ -551,8 +602,6 @@ const opponentCards = computed(() => props.shantenOpponents.map((opponent) => {
     scoreModes: [...score.distribution]
       .sort((left, right) => right.probability - left.probability)
       .slice(0, 3),
-    doraTitle: predictionTitle(dora, t('unit.tile')),
-    scoreTitle: predictionTitle(score, t('unit.point')),
   }
 }))
 
@@ -642,7 +691,6 @@ const playerRows = computed(() => playerSeatOrder.value.map((seat) => {
     kyokuDelta: delta.scalarValue,
     placement: normalizedPlacement,
     expectedPlacement: placement.scalarValue === null ? '—' : placement.scalarValue.toFixed(2),
-    placementTitle: predictionTitle(placement, t('unit.place')),
     matchScore: matchScore.scalarValue,
   }
 }))
@@ -903,6 +951,7 @@ watch(playerRows, () => {
 }, { deep: true })
 
 onBeforeUnmount(() => {
+  cancelAnimationFrame(hoverTooltipPositionFrame)
   cancelAnimationFrame(offenseMeasureFrame)
   cancelAnimationFrame(countGeometryFrame)
   offenseResizeObserver?.disconnect()
@@ -917,12 +966,146 @@ onBeforeUnmount(() => {
   offenseLabelPositions.value = new Map()
 })
 
-function showProbability(label: string, value: number) {
-  hoverText.value = `${label} - ${formatProbability(value)}`
+function showHoverTooltip(
+  event: Event,
+  content: Pick<HoverTooltipState, 'title' | 'lines' | 'rows'>,
+) {
+  const root = analysisRootElement.value
+  const anchor = event.currentTarget
+  if (!root || !(anchor instanceof Element)) return
+  const rootRect = root.getBoundingClientRect()
+  const anchorRect = anchor.getBoundingClientRect()
+  hoverTooltip.value = {
+    ...content,
+    left: anchorRect.left + (anchorRect.width / 2) - rootRect.left,
+    top: anchorRect.top - rootRect.top,
+    positioned: false,
+  }
+  cancelAnimationFrame(hoverTooltipPositionFrame)
+  hoverTooltipPositionFrame = requestAnimationFrame(() => {
+    hoverTooltipPositionFrame = 0
+    const tooltip = hoverTooltipElement.value
+    const currentRoot = analysisRootElement.value
+    if (!tooltip || !currentRoot || !hoverTooltip.value) return
+    const currentRootRect = currentRoot.getBoundingClientRect()
+    const viewportRect = currentRoot.closest<HTMLElement>('.analysis-dock-body')?.getBoundingClientRect()
+      || currentRootRect
+    const currentAnchorRect = anchor.getBoundingClientRect()
+    const horizontalInset = 8
+    const verticalInset = 8
+    const verticalGap = 8
+    const halfWidth = tooltip.offsetWidth / 2
+    const unclampedLeft = currentAnchorRect.left + (currentAnchorRect.width / 2) - currentRootRect.left
+    const visibleLeft = Math.max(currentRootRect.left, viewportRect.left)
+    const visibleRight = Math.min(currentRootRect.right, viewportRect.right)
+    const visibleTop = Math.max(currentRootRect.top, viewportRect.top)
+    const visibleBottom = Math.min(currentRootRect.bottom, viewportRect.bottom)
+    const minimumLeft = visibleLeft - currentRootRect.left + halfWidth + horizontalInset
+    const maximumLeft = Math.max(
+      minimumLeft,
+      visibleRight - currentRootRect.left - halfWidth - horizontalInset,
+    )
+    const availableAbove = currentAnchorRect.top - visibleTop
+    const availableBelow = visibleBottom - currentAnchorRect.bottom
+    const placement = availableAbove >= tooltip.offsetHeight + verticalGap || availableAbove >= availableBelow
+      ? 'above'
+      : 'below'
+    const minimumTop = visibleTop - currentRootRect.top + verticalInset
+    const maximumTop = Math.max(
+      minimumTop,
+      visibleBottom - currentRootRect.top - tooltip.offsetHeight - verticalInset,
+    )
+    const preferredTop = placement === 'above'
+      ? currentAnchorRect.top - currentRootRect.top - tooltip.offsetHeight - verticalGap
+      : currentAnchorRect.bottom - currentRootRect.top + verticalGap
+    hoverTooltip.value = {
+      ...hoverTooltip.value,
+      left: Math.max(minimumLeft, Math.min(maximumLeft, unclampedLeft)),
+      top: Math.max(minimumTop, Math.min(maximumTop, preferredTop)),
+      positioned: true,
+    }
+  })
 }
 
-function clearHover() {
-  hoverText.value = ''
+function clearHoverTooltip() {
+  cancelAnimationFrame(hoverTooltipPositionFrame)
+  hoverTooltipPositionFrame = 0
+  hoverTooltip.value = null
+}
+
+function showProbabilityTooltip(
+  event: Event,
+  title: string,
+  label: string,
+  value: number,
+) {
+  showHoverTooltip(event, {
+    title,
+    lines: [],
+    rows: [{ label, value: formatProbability(value) }],
+  })
+}
+
+function showValueTooltip(event: Event, subject: string, label: string, value: string) {
+  showHoverTooltip(event, {
+    title: subject,
+    lines: [],
+    rows: [{ label, value }],
+  })
+}
+
+function showPredictionTooltip(
+  event: Event,
+  subject: string,
+  label: string,
+  prediction: NumericPrediction,
+  unit: string,
+) {
+  const scalar = prediction.scalarValue === null
+    ? t('analysis.noExpectedValue')
+    : t(
+      prediction.scalarSource === 'point-estimate' ? 'analysis.predictionValue' : 'analysis.expectedValue',
+      { value: prediction.scalarValue.toFixed(2), unit },
+    )
+  showHoverTooltip(event, {
+    title: `${subject} · ${label}`,
+    lines: [scalar],
+    rows: [],
+  })
+}
+
+function showDistributionTooltip(
+  event: Event,
+  subject: string,
+  label: string,
+  distribution: DistributionEntry[],
+  unit: string,
+) {
+  showHoverTooltip(event, {
+    title: `${subject} · ${label}`,
+    lines: distribution.length ? [] : [t('analysis.noData')],
+    rows: distribution.map((entry) => ({
+      label: `${entry.value}${unit}`,
+      value: formatProbability(entry.probability),
+    })),
+  })
+}
+
+function showTargetTooltip(
+  event: Event,
+  playerLabel: string,
+  targets: Array<{ label: string; probability: number }>,
+) {
+  showHoverTooltip(event, {
+    title: t('analysis.winTarget', { player: playerLabel }),
+    lines: [],
+    rows: targets.map((target) => ({
+      label: target.label,
+      value: formatProbability(target.probability),
+      barWidth: `${target.probability * 100}%`,
+      barColor: 'var(--analysis-self-win-color)',
+    })),
+  })
 }
 
 const opponentSources = computed<TileSource[]>(() => props.shantenOpponents.map((opponent) => ({
@@ -987,15 +1170,28 @@ function countSegments(tile: string, source: TileSource): DistributionEntry[] {
   return values
 }
 
-function showCountTooltip(tile: string, source: TileSource) {
+function showCountTooltip(event: Event, tile: string, source: TileSource) {
   const prediction = tilePrediction(tile, source)
-  countTooltip.value = {
-    tile,
-    sourceKey: source.key,
-    sourceLabel: source.label,
-    scalarValue: prediction.scalarValue,
-    segments: prediction.distribution.length ? countSegments(tile, source) : [],
-  }
+  const scalar = prediction.scalarValue === null
+    ? null
+    : t(
+      prediction.scalarSource === 'point-estimate' ? 'analysis.predictedCount' : 'analysis.expectedCount',
+      { value: prediction.scalarValue.toFixed(2) },
+    )
+  const segments = prediction.distribution.length ? countSegments(tile, source) : []
+  showHoverTooltip(event, {
+    title: t('analysis.tileCountDistribution', {
+      source: source.label,
+      tile: props.tileFaceLabel(tile),
+    }),
+    lines: scalar ? [scalar] : [],
+    rows: segments.map((entry) => ({
+      label: t('analysis.countUnit', { value: entry.value }),
+      value: formatProbability(entry.probability),
+      barWidth: `${entry.probability * 100}%`,
+      barColor: countSegmentColor(source.key, entry.value, tile),
+    })),
+  })
 }
 </script>
 
@@ -1004,6 +1200,7 @@ function showCountTooltip(tile: string, source: TileSource) {
   --analysis-border: rgba(140, 195, 188, 0.16);
   --analysis-surface: rgba(0, 29, 35, 0.28);
   --analysis-soft-surface: rgba(0, 20, 25, 0.26);
+  position: relative;
   width: 100%;
   max-width: none;
   color: rgba(238, 247, 244, 0.92);
@@ -1412,75 +1609,6 @@ button {
   box-shadow: inset 0 0 0 1px rgba(224, 241, 236, 0.58);
 }
 
-.analysis-target-popover,
-.analysis-count-tooltip {
-  position: absolute;
-  z-index: 12;
-  width: calc(13rem * var(--floating-panel-scale));
-  padding: calc(0.48rem * var(--floating-panel-scale));
-  border: 1px solid rgba(140, 195, 188, 0.34);
-  border-radius: calc(3px * var(--floating-panel-scale));
-  background: rgba(1, 34, 41, 0.98);
-  box-shadow: 0 calc(0.3rem * var(--floating-panel-scale)) calc(1rem * var(--floating-panel-scale)) rgba(0, 0, 0, 0.34);
-  color: rgba(230, 242, 238, 0.9);
-  pointer-events: none;
-}
-
-.analysis-target-popover {
-  left: 50%;
-  bottom: calc(100% + (0.35rem * var(--floating-panel-scale)));
-  transform: translateX(-50%);
-}
-
-.analysis-target-popover strong,
-.analysis-count-tooltip strong {
-  display: block;
-  margin-bottom: calc(0.35rem * var(--floating-panel-scale));
-  font-size: var(--ui-text-body);
-}
-
-.analysis-target-popover > div,
-.analysis-count-tooltip > div {
-  display: grid;
-  grid-template-columns: calc(3.2rem * var(--floating-panel-scale)) 1fr calc(2.9rem * var(--floating-panel-scale));
-  gap: calc(0.28rem * var(--floating-panel-scale));
-  align-items: center;
-  min-height: calc(1.1rem * var(--floating-panel-scale));
-}
-
-.analysis-target-popover small,
-.analysis-count-tooltip small {
-  overflow: hidden;
-  color: rgba(196, 219, 214, 0.76);
-  font-size: var(--ui-text-caption);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.analysis-target-popover i,
-.analysis-count-tooltip i {
-  display: block;
-  height: calc(0.42rem * var(--floating-panel-scale));
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.analysis-target-popover i span,
-.analysis-count-tooltip i span {
-  display: block;
-  height: 100%;
-  background: var(--analysis-self-win-color);
-}
-
-.analysis-target-popover em,
-.analysis-count-tooltip em {
-  color: rgba(225, 238, 234, 0.8);
-  font-size: var(--ui-text-caption);
-  font-style: normal;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
 .analysis-delta-cell {
   position: relative;
   height: calc(1rem * var(--ui-scale));
@@ -1857,29 +1985,48 @@ button {
   height: calc(0.64rem * var(--floating-panel-scale));
 }
 
-.analysis-count-tooltip {
-  right: calc(0.5rem * var(--floating-panel-scale));
-  bottom: calc(1.6rem * var(--floating-panel-scale));
-}
-
-.analysis-count-tooltip > span {
-  display: block;
-  margin-bottom: calc(0.25rem * var(--floating-panel-scale));
-  color: rgba(194, 218, 213, 0.76);
-  font-size: var(--ui-text-caption);
-}
-
-.analysis-hover-readout {
-  min-height: calc(1rem * var(--floating-panel-scale));
-  margin: calc(0.2rem * var(--floating-panel-scale)) 0 0;
-  color: rgba(224, 238, 234, 0.82);
-  font-size: var(--ui-text-caption);
-  line-height: 1;
-  text-align: center;
+.analysis-floating-tooltip {
+  max-width: calc(100% - 1rem);
+  transform: translateX(-50%);
   visibility: hidden;
 }
 
-.analysis-hover-readout.visible { visibility: visible; }
+.analysis-floating-tooltip.is-positioned {
+  visibility: visible;
+}
+
+.analysis-floating-tooltip-line {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.analysis-floating-tooltip .ui-hover-tooltip-row.has-bar {
+  grid-template-columns:
+    minmax(calc(4.5rem * var(--floating-panel-scale)), max-content)
+    minmax(calc(4rem * var(--floating-panel-scale)), 1fr)
+    calc(2.9rem * var(--floating-panel-scale));
+  gap: calc(0.28rem * var(--floating-panel-scale));
+  min-width: min(calc(14.5rem * var(--floating-panel-scale)), calc(100% - 1rem));
+}
+
+.analysis-floating-tooltip .ui-hover-tooltip-row.has-bar > :first-child {
+  overflow: hidden;
+  max-width: calc(7rem * var(--floating-panel-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-tooltip-bar {
+  display: block;
+  height: calc(0.42rem * var(--floating-panel-scale));
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.analysis-tooltip-bar > span {
+  display: block;
+  height: 100%;
+}
 
 .reduce-motion *,
 .reduce-motion *::before,
