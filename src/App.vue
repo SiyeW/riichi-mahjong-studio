@@ -1806,6 +1806,7 @@ const perceptualSurfaceTuning: PerceptualSurfaceTuning = DEFAULT_PERCEPTUAL_SURF
 const activePerceptualSurfaceBinding = computed<PerceptualSurfaceBinding>(() => ({
   palette: activePerceptualColorPalette.value,
   tuning: perceptualSurfaceTuning,
+  debugLabel: 'table-panel',
 }))
 const colorSchemeCssVariables = computed(() => perceptualSurfaceVariables(
   activePerceptualColorPalette.value,

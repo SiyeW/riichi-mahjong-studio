@@ -8,7 +8,7 @@
   >
     <section
       v-if="section === 'opponents'"
-      v-perceptual-surface="perceptualSurface"
+      v-perceptual-surface="opponentSurface"
       class="analysis-opponent-section"
     >
         <div class="analysis-opponent-grid">
@@ -37,7 +37,11 @@
                   <small>{{ t('analysis.dora') }}</small>
                   <strong>{{ opponent.dora }}</strong>
                 </div>
-                <div v-if="opponent.doraPrediction.distribution.length" class="analysis-dora-distribution">
+                <div
+                  v-if="opponent.doraPrediction.distribution.length"
+                  v-perceptual-surface="distributionTrackSurface"
+                  class="analysis-dora-distribution"
+                >
                   <span
                     v-for="entry in opponent.doraPrediction.distribution"
                     :key="entry.value"
@@ -53,7 +57,11 @@
                   <small>{{ t('analysis.score') }}</small>
                   <strong>{{ opponent.score }}</strong>
                 </div>
-                <div v-if="opponent.scorePrediction.distribution.length" class="analysis-score-distribution">
+                <div
+                  v-if="opponent.scorePrediction.distribution.length"
+                  v-perceptual-surface="distributionTrackSurface"
+                  class="analysis-score-distribution"
+                >
                   <i
                     v-for="entry in opponent.scorePrediction.distribution"
                     :key="entry.value"
@@ -73,14 +81,14 @@
     <section v-else-if="section === 'game'" class="analysis-player-section">
         <div class="analysis-player-groups">
           <section
-            v-perceptual-surface="perceptualSurface"
+            v-perceptual-surface="offenseGroupSurface"
             class="analysis-player-group analysis-offense-group"
           >
             <div class="analysis-player-group-heading">
               <strong>{{ t('analysis.winDealIn') }}</strong>
             </div>
             <div class="analysis-outcome-strip" :aria-label="t('analysis.outcome')">
-              <div class="analysis-outcome-bar">
+              <div v-perceptual-surface="outcomeTrackSurface" class="analysis-outcome-bar">
                 <span
                   v-for="segment in outcomeSegments"
                   :key="segment.key"
@@ -110,6 +118,7 @@
               <span class="analysis-player-name">{{ player.label }}</span>
               <div
                 :ref="(element) => setOffenseTrackElement(player.seat, element)"
+                v-perceptual-surface="offenseTrackSurface"
                 class="analysis-offense-track"
                 :class="{ 'labels-measured': offenseLabelPositions.has(player.seat) }"
               >
@@ -127,7 +136,9 @@
                     <strong>{{ t('analysis.winTarget', { player: player.label }) }}</strong>
                     <div v-for="target in player.targets" :key="target.seat">
                       <small>{{ target.label }}</small>
-                      <i><span :style="{ width: `${target.probability * 100}%` }" /></i>
+                      <i v-perceptual-surface="popoverTrackSurface">
+                        <span :style="{ width: `${target.probability * 100}%` }" />
+                      </i>
                       <em>{{ formatProbability(target.probability) }}</em>
                     </div>
                   </div>
@@ -151,7 +162,7 @@
           </section>
 
           <section
-            v-perceptual-surface="perceptualSurface"
+            v-perceptual-surface="deltaGroupSurface"
             class="analysis-player-group analysis-delta-group"
           >
             <div class="analysis-player-group-heading">
@@ -163,7 +174,11 @@
               class="analysis-comparison-row analysis-delta-row"
             >
               <span class="analysis-player-name">{{ player.label }}</span>
-              <div class="analysis-delta-cell" :title="formatPoints(player.kyokuDelta)">
+              <div
+                v-perceptual-surface="deltaTrackSurface"
+                class="analysis-delta-cell"
+                :title="formatPoints(player.kyokuDelta)"
+              >
                 <div class="analysis-zero-axis" />
                 <span
                   :class="player.kyokuDelta >= 0 ? 'positive' : 'negative'"
@@ -178,7 +193,7 @@
           </section>
 
           <section
-            v-perceptual-surface="perceptualSurface"
+            v-perceptual-surface="matchGroupSurface"
             class="analysis-player-group analysis-match-group"
           >
             <div class="analysis-player-group-heading analysis-match-heading">
@@ -192,7 +207,11 @@
               class="analysis-comparison-row analysis-match-row"
             >
               <span class="analysis-player-name">{{ player.label }}</span>
-              <div class="analysis-placement-bar" :title="player.placementTitle">
+              <div
+                v-perceptual-surface="placementTrackSurface"
+                class="analysis-placement-bar"
+                :title="player.placementTitle"
+              >
                 <span
                   v-for="segment in player.placement"
                   :key="segment.value"
@@ -208,7 +227,7 @@
     </section>
 
     <div v-else-if="section === 'risk'" class="analysis-tiles-view">
-      <div v-perceptual-surface="perceptualSurface" class="analysis-risk-grid">
+      <div v-perceptual-surface="riskTrackSurface" class="analysis-risk-grid">
         <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-risk-row">
           <div class="analysis-tile-sequence">
             <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-risk-tile">
@@ -244,7 +263,7 @@
             ><i /><small>{{ tick.label }}</small></span>
           </div>
         </div>
-        <div class="analysis-source-legend">
+        <div v-perceptual-surface="riskLegendSurface" class="analysis-source-legend">
           <span v-for="source in opponentSources" :key="source.key"><i :class="`source-${source.key}`" />{{ source.label }}</span>
         </div>
       </div>
@@ -254,7 +273,7 @@
     <div v-else class="analysis-tiles-view">
       <div
         ref="countGridElement"
-        v-perceptual-surface="perceptualSurface"
+        v-perceptual-surface="countSurface"
         class="analysis-count-grid"
         @perceptual-surface-change="scheduleCountBarGeometry"
       >
@@ -358,6 +377,37 @@ const props = defineProps<{
   tileFaceLabel: (tile: string) => string
   perceptualSurface: PerceptualSurfaceBinding
 }>()
+
+function scopedPerceptualSurface(
+  debugLabel: string,
+  surfaceLayerVariables: readonly string[] = [],
+) {
+  return computed<PerceptualSurfaceBinding>(() => ({
+    ...props.perceptualSurface,
+    debugLabel,
+    surfaceLayerVariables,
+  }))
+}
+
+const opponentSurface = scopedPerceptualSurface('opponent-panel')
+const distributionTrackSurface = scopedPerceptualSurface(
+  'opponent-distribution-track',
+  ['--analysis-distribution-track-surface'],
+)
+const offenseGroupSurface = scopedPerceptualSurface('game-offense-group')
+const outcomeTrackSurface = scopedPerceptualSurface('game-outcome-track')
+const offenseTrackSurface = scopedPerceptualSurface('game-offense-track')
+const popoverTrackSurface = scopedPerceptualSurface('game-target-popover-track')
+const deltaGroupSurface = scopedPerceptualSurface('game-delta-group')
+const deltaTrackSurface = scopedPerceptualSurface('game-delta-track')
+const matchGroupSurface = scopedPerceptualSurface('game-match-group')
+const placementTrackSurface = scopedPerceptualSurface('game-placement-track')
+const riskTrackSurface = scopedPerceptualSurface(
+  'analysis-risk-track',
+  ['--analysis-risk-track-surface'],
+)
+const riskLegendSurface = scopedPerceptualSurface('analysis-risk-legend')
+const countSurface = scopedPerceptualSurface('analysis-count-panel')
 
 const hoverText = ref('')
 const hoveredWinnerSeat = ref<number | null>(null)
@@ -974,6 +1024,10 @@ button {
   background: transparent;
 }
 
+.analysis-opponent-section {
+  --analysis-distribution-track-surface: rgba(255, 255, 255, 0.045);
+}
+
 .analysis-opponent-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1064,7 +1118,7 @@ button {
   align-items: flex-end;
   min-width: 0;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--analysis-distribution-track-surface);
 }
 
 .analysis-dora-distribution > span + span i {
@@ -1526,6 +1580,10 @@ button {
   overflow: visible;
 }
 
+.analysis-risk-grid {
+  --analysis-risk-track-surface: rgba(255, 255, 255, 0.05);
+}
+
 .is-count-section .analysis-tiles-view,
 .analysis-count-grid {
   height: 100%;
@@ -1660,7 +1718,7 @@ button {
   min-width: 0;
   height: 100%;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--analysis-risk-track-surface);
   cursor: default;
 }
 

@@ -24,6 +24,8 @@ export type PerceptualSurfaceTuning = Readonly<{
 export type PerceptualSurfaceBinding = Readonly<{
   palette: PerceptualColorPalette
   tuning: PerceptualSurfaceTuning
+  surfaceLayerVariables?: readonly string[]
+  debugLabel?: string
 }>
 
 export const DEFAULT_PERCEPTUAL_SURFACE_TUNING: PerceptualSurfaceTuning = Object.freeze({
@@ -114,19 +116,13 @@ function parsedBackgroundColor(value: string): readonly [number, number, number,
   ]
 }
 
-export function effectiveBackgroundColor(element: HTMLElement): RgbColor {
-  const ancestors: HTMLElement[] = []
-  for (let current: HTMLElement | null = element; current; current = current.parentElement) {
-    ancestors.unshift(current)
-  }
+export function compositeBackgroundColors(colors: readonly string[]): RgbColor {
   let red = 0
   let green = 0
   let blue = 0
   let alpha = 0
-  for (const ancestor of ancestors) {
-    const [nextRed, nextGreen, nextBlue, nextAlpha] = parsedBackgroundColor(
-      getComputedStyle(ancestor).backgroundColor,
-    )
+  for (const color of colors) {
+    const [nextRed, nextGreen, nextBlue, nextAlpha] = parsedBackgroundColor(color)
     const compositeAlpha = nextAlpha + (alpha * (1 - nextAlpha))
     if (compositeAlpha <= 0) continue
     red = ((nextRed * nextAlpha) + (red * alpha * (1 - nextAlpha))) / compositeAlpha
@@ -135,6 +131,22 @@ export function effectiveBackgroundColor(element: HTMLElement): RgbColor {
     alpha = compositeAlpha
   }
   return [Math.round(red), Math.round(green), Math.round(blue)]
+}
+
+export function effectiveBackgroundColor(
+  element: HTMLElement,
+  surfaceLayerVariables: readonly string[] = [],
+): RgbColor {
+  const ancestors: HTMLElement[] = []
+  for (let current: HTMLElement | null = element; current; current = current.parentElement) {
+    ancestors.unshift(current)
+  }
+  const colors = ancestors.map((ancestor) => getComputedStyle(ancestor).backgroundColor)
+  const elementStyle = getComputedStyle(element)
+  for (const variable of surfaceLayerVariables) {
+    colors.push(elementStyle.getPropertyValue(variable))
+  }
+  return compositeBackgroundColors(colors)
 }
 
 type PerceptualSurfaceState = {
@@ -149,9 +161,13 @@ const surfaceStates = new WeakMap<HTMLElement, PerceptualSurfaceState>()
 
 function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceState) {
   state.frame = 0
+  const surface = effectiveBackgroundColor(
+    element,
+    state.binding.surfaceLayerVariables,
+  )
   const variables = perceptualSurfaceVariables(
     state.binding.palette,
-    effectiveBackgroundColor(element),
+    surface,
     state.binding.tuning,
   )
   let changed = false
@@ -161,7 +177,23 @@ function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceS
     element.style.setProperty(variable, value)
     changed = true
   }
-  if (changed) element.dispatchEvent(new CustomEvent('perceptual-surface-change'))
+  element.dataset.perceptualSurfaceColor = rgbString(surface)
+  if (state.binding.debugLabel) element.dataset.perceptualSurfaceLabel = state.binding.debugLabel
+  else delete element.dataset.perceptualSurfaceLabel
+  if (state.binding.surfaceLayerVariables?.length) {
+    element.dataset.perceptualSurfaceLayers = state.binding.surfaceLayerVariables.join(',')
+  } else {
+    delete element.dataset.perceptualSurfaceLayers
+  }
+  if (changed) {
+    element.dispatchEvent(new CustomEvent('perceptual-surface-change', {
+      detail: {
+        label: state.binding.debugLabel || '',
+        surface,
+        variables,
+      },
+    }))
+  }
 }
 
 function schedulePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceState) {

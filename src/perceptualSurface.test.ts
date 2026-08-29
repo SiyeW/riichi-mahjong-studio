@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+  compositeBackgroundColors,
   DEFAULT_PERCEPTUAL_SURFACE_TUNING,
   PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
   perceptualSurfaceVariables,
@@ -15,6 +16,27 @@ const palette: PerceptualColorPalette = {
   shimocha: [76, 175, 80],
   selfDealIn: [201, 85, 77],
 }
+
+test('surface layers are composited from the outside in', () => {
+  assert.deepEqual(
+    compositeBackgroundColors([
+      'rgb(7 62 72)',
+      'rgba(255, 255, 255, 0.05)',
+    ]),
+    [19, 72, 81],
+  )
+})
+
+test('transparent component surfaces preserve their underlying background', () => {
+  assert.deepEqual(
+    compositeBackgroundColors([
+      'rgb(5 57 66)',
+      'rgba(1, 42, 49, 0.28)',
+      'rgba(255, 255, 255, 0.055)',
+    ]),
+    [18, 64, 72],
+  )
+})
 
 test('calibration surface reproduces canonical analysis colors', () => {
   const variables = perceptualSurfaceVariables(palette, PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND)
