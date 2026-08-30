@@ -398,7 +398,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
-import { buildCountColorScale } from '../analysisCountPalette'
+import { buildCountColorScale, COUNT_EMPTY_COLOR } from '../analysisCountPalette'
 import { hasRedFiveCountPredictions, RED_FIVE_TILES } from '../analysisTileCounts'
 import { resolveKyokuOutcome } from '../kyokuOutcome'
 import {
@@ -479,7 +479,11 @@ const riskTrackSurface = scopedPerceptualSurface(
   ['--analysis-risk-track-surface'],
 )
 const riskLegendSurface = scopedPerceptualSurface('analysis-risk-legend')
-const countSurface = scopedPerceptualSurface('analysis-count-panel')
+const countSurface = computed<PerceptualSurfaceBinding>(() => ({
+  ...props.perceptualSurface,
+  debugLabel: 'analysis-count-panel',
+  surfaceOverride: COUNT_EMPTY_COLOR,
+}))
 
 const analysisRootElement = ref<HTMLElement | null>(null)
 const hoverTooltipElement = ref<HTMLElement | null>(null)

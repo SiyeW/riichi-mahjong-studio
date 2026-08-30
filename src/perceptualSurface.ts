@@ -24,6 +24,7 @@ export type PerceptualSurfaceTuning = Readonly<{
 export type PerceptualSurfaceBinding = Readonly<{
   palette: PerceptualColorPalette
   tuning: PerceptualSurfaceTuning
+  surfaceOverride?: RgbColor
   surfaceLayerVariables?: readonly string[]
   debugLabel?: string
 }>
@@ -34,7 +35,10 @@ export const DEFAULT_PERCEPTUAL_SURFACE_TUNING: PerceptualSurfaceTuning = Object
   surfaceChromaGain: 0,
 })
 
-export const PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND: RgbColor = [5, 57, 66]
+// The canonical palette was approved on this rendered chart-track surface.
+// Keeping it as the transform's neutral point makes every tuning coefficient
+// leave that reference appearance unchanged.
+export const PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND: RgbColor = [18, 66, 75]
 
 const PERCEPTUAL_SURFACE_VARIABLES = [
   '--decision-recommendation-color',
@@ -161,7 +165,7 @@ const surfaceStates = new WeakMap<HTMLElement, PerceptualSurfaceState>()
 
 function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceState) {
   state.frame = 0
-  const surface = effectiveBackgroundColor(
+  const surface = state.binding.surfaceOverride || effectiveBackgroundColor(
     element,
     state.binding.surfaceLayerVariables,
   )

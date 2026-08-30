@@ -1556,6 +1556,15 @@
     </div>
 
     <AboutDialog v-if="showAboutPanel" @close="showAboutPanel = false" />
+    <PerceptualColorDebugger
+      v-if="showPerceptualColorDebugger"
+      :tuning="perceptualSurfaceTuning"
+      :bypassed="perceptualSurfaceBypassed"
+      @update:tuning="updatePerceptualSurfaceTuning"
+      @update:bypassed="perceptualSurfaceBypassed = $event"
+      @reset="resetPerceptualSurfaceTuning"
+      @close="showPerceptualColorDebugger = false"
+    />
   </div>
 
 </template>
@@ -1566,6 +1575,7 @@ import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
+import PerceptualColorDebugger from './components/PerceptualColorDebugger.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import { normalizeLanguagePreference, setLanguagePreference, useI18n } from './i18n'
 import { mostDistinctOklabColor, parseCssColor, type RgbColor } from './perceptualColor'
@@ -1802,17 +1812,37 @@ const activePerceptualColorPalette = computed<PerceptualColorPalette>(() => {
     selfDealIn,
   }
 })
-const perceptualSurfaceTuning: PerceptualSurfaceTuning = DEFAULT_PERCEPTUAL_SURFACE_TUNING
+const perceptualSurfaceTuning = reactive({ ...DEFAULT_PERCEPTUAL_SURFACE_TUNING })
+const perceptualSurfaceBypassed = ref(false)
+const showPerceptualColorDebugger = ref(import.meta.env.DEV)
+const effectivePerceptualSurfaceTuning = computed<PerceptualSurfaceTuning>(() => (
+  perceptualSurfaceBypassed.value
+    ? {
+        lightnessCompensation: 0,
+        chromaticCompensation: 0,
+        surfaceChromaGain: 0,
+      }
+    : perceptualSurfaceTuning
+))
 const activePerceptualSurfaceBinding = computed<PerceptualSurfaceBinding>(() => ({
   palette: activePerceptualColorPalette.value,
-  tuning: perceptualSurfaceTuning,
+  tuning: effectivePerceptualSurfaceTuning.value,
   debugLabel: 'table-panel',
 }))
 const colorSchemeCssVariables = computed(() => perceptualSurfaceVariables(
   activePerceptualColorPalette.value,
   PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
-  perceptualSurfaceTuning,
+  effectivePerceptualSurfaceTuning.value,
 ))
+
+function updatePerceptualSurfaceTuning(value: PerceptualSurfaceTuning) {
+  Object.assign(perceptualSurfaceTuning, value)
+}
+
+function resetPerceptualSurfaceTuning() {
+  Object.assign(perceptualSurfaceTuning, DEFAULT_PERCEPTUAL_SURFACE_TUNING)
+  perceptualSurfaceBypassed.value = false
+}
 
 const shantenColors = computed(() => activeColorScheme.value.shanten)
 const UI_SCALE_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
@@ -8812,6 +8842,11 @@ function onKeyDown(e: KeyboardEvent) {
       void changeUiScale('reset')
       return
     }
+  }
+  if (e.key === 'F8' && import.meta.env.DEV) {
+    e.preventDefault()
+    showPerceptualColorDebugger.value = !showPerceptualColorDebugger.value
+    return
   }
   if (e.key === 'F1') {
     e.preventDefault()

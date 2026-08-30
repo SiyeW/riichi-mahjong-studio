@@ -38,6 +38,17 @@ test('transparent component surfaces preserve their underlying background', () =
   )
 })
 
+test('calibration background matches the approved rendered track surface', () => {
+  assert.deepEqual(
+    compositeBackgroundColors([
+      'rgb(7 62 72)',
+      'rgba(1, 42, 49, 0.28)',
+      'rgba(255, 255, 255, 0.05)',
+    ]),
+    PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
+  )
+})
+
 test('calibration surface reproduces canonical analysis colors', () => {
   const variables = perceptualSurfaceVariables(palette, PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND)
   assert.equal(variables['--ron-kamicha-color'], 'rgb(44 143 197)')
@@ -48,10 +59,10 @@ test('calibration surface reproduces canonical analysis colors', () => {
 
 test('every semantic color uses the tuned surface compensation', () => {
   const variables = perceptualSurfaceVariables(palette, [9, 72, 85])
-  assert.equal(variables['--ron-kamicha-color'], 'rgb(32 135 188)')
-  assert.equal(variables['--ron-toimen-color'], 'rgb(202 146 48)')
-  assert.equal(variables['--ron-shimocha-color'], 'rgb(67 166 72)')
-  assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(192 77 69)')
+  assert.equal(variables['--ron-kamicha-color'], 'rgb(40 140 194)')
+  assert.equal(variables['--ron-toimen-color'], 'rgb(208 151 54)')
+  assert.equal(variables['--ron-shimocha-color'], 'rgb(73 172 77)')
+  assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(198 82 74)')
   assert.equal(variables['--analysis-draw-color'], variables['--ron-kamicha-color'])
   assert.equal(variables['--analysis-self-win-color'], variables['--ron-shimocha-color'])
   assert.equal(variables['--analysis-horizontal-color'], variables['--ron-toimen-color'])
@@ -83,9 +94,25 @@ test('negative compensation reproduces the former same-direction adjustment', ()
     chromaticCompensation: -1,
     surfaceChromaGain: 0,
   })
-  assert.equal(variables['--ron-kamicha-color'], 'rgb(50 160 220)')
-  assert.equal(variables['--ron-toimen-color'], 'rgb(224 173 87)')
-  assert.equal(variables['--ron-shimocha-color'], 'rgb(82 194 104)')
+  assert.equal(variables['--ron-kamicha-color'], 'rgb(34 150 209)')
+  assert.equal(variables['--ron-toimen-color'], 'rgb(213 162 76)')
+  assert.equal(variables['--ron-shimocha-color'], 'rgb(69 183 94)')
+})
+
+test('all tuning coefficients preserve the calibration appearance', () => {
+  const variables = perceptualSurfaceVariables(
+    palette,
+    PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
+    {
+      lightnessCompensation: 1.75,
+      chromaticCompensation: -2.4,
+      surfaceChromaGain: 7.5,
+    },
+  )
+  assert.equal(variables['--ron-kamicha-color'], 'rgb(44 143 197)')
+  assert.equal(variables['--ron-toimen-color'], 'rgb(211 154 58)')
+  assert.equal(variables['--ron-shimocha-color'], 'rgb(76 175 80)')
+  assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(201 85 77)')
 })
 
 test('surface chroma gain increases chroma away from the calibration surface', () => {
