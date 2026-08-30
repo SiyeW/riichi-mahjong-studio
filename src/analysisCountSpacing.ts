@@ -3,6 +3,8 @@ export type AnalysisCountSpacing = Readonly<{
   wallGapPixels: number
 }>
 
+export type AnalysisCountLayout = 'tile-groups' | 'source-rows'
+
 export const ANALYSIS_COUNT_TILE_GAP_MAX = 8
 export const ANALYSIS_COUNT_WALL_GAP_MAX = 12
 
@@ -10,6 +12,8 @@ export const DEFAULT_ANALYSIS_COUNT_SPACING: AnalysisCountSpacing = Object.freez
   tileGapPixels: 2,
   wallGapPixels: 2,
 })
+
+export const DEFAULT_ANALYSIS_COUNT_LAYOUT: AnalysisCountLayout = 'tile-groups'
 
 function normalizePhysicalPixels(value: unknown, maximum: number, fallback: number): number {
   const numeric = Number(value)

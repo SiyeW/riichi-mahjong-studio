@@ -50,6 +50,7 @@
           :tile-face-label="tileFaceLabel"
           :perceptual-surface="perceptualSurface"
           :count-spacing="countSpacing"
+          :count-layout="countLayout"
         />
       </template>
     </div>
@@ -58,7 +59,7 @@
 
 <script setup lang="ts">
 import { useI18n } from '../i18n'
-import type { AnalysisCountSpacing } from '../analysisCountSpacing'
+import type { AnalysisCountLayout, AnalysisCountSpacing } from '../analysisCountSpacing'
 import type { PerceptualSurfaceBinding } from '../perceptualSurface'
 import AnalysisPanel from './AnalysisPanel.vue'
 
@@ -86,6 +87,7 @@ defineProps<{
   hasOpponentGroundTruth: boolean
   shantenViewMode: 'predictions' | 'ground_truth'
   countSpacing: AnalysisCountSpacing
+  countLayout: AnalysisCountLayout
 }>()
 
 const emit = defineEmits<{

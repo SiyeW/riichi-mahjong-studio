@@ -320,8 +320,10 @@
         ref="countGridElement"
         v-perceptual-surface="countSurface"
         class="analysis-count-grid"
+        :class="{ 'is-source-row-layout': countLayout === 'source-rows' }"
         @perceptual-surface-change="scheduleCountBarGeometry"
       >
+        <template v-if="countLayout === 'tile-groups'">
         <div v-for="row in countTileRows" :key="row.tiles.join('-')" class="analysis-tile-chart-row analysis-count-row">
           <div class="analysis-tile-sequence">
             <canvas
@@ -349,6 +351,40 @@
                 />
               </div>
               <img class="analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
+            </div>
+          </div>
+        </div>
+        </template>
+        <div v-else class="analysis-count-source-layout">
+          <div v-for="source in countSources" :key="source.key" class="analysis-count-source-row">
+            <strong>{{ source.label }}</strong>
+            <div class="analysis-count-source-sequence-shell">
+              <div class="analysis-count-source-sequence">
+                <button
+                  v-for="entry in countSourceTiles"
+                  :key="entry.tile"
+                  type="button"
+                  class="analysis-count-source-tile"
+                  :class="{ 'is-group-start': entry.groupStart, 'is-red-five': isRedFive(entry.tile) }"
+                  :aria-label="t('analysis.tileCountDistribution', { source: source.label, tile: tileFaceLabel(entry.tile) })"
+                  @mouseenter="showCountTooltip($event, entry.tile, source)"
+                  @mouseleave="clearHoverTooltip"
+                  @focus="showCountTooltip($event, entry.tile, source)"
+                  @blur="clearHoverTooltip"
+                >
+                  <span class="analysis-count-source-bar">
+                    <i
+                      v-for="segment in countSegments(entry.tile, source)"
+                      :key="segment.value"
+                      :style="{
+                        height: `${segment.probability * 100}%`,
+                        background: countSegmentColor(source.key, segment.value, entry.tile),
+                      }"
+                    />
+                  </span>
+                  <img :src="tileImageSrc(entry.tile)" alt="" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -399,6 +435,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
 import {
+  type AnalysisCountLayout,
   normalizeAnalysisCountSpacing,
   type AnalysisCountSpacing,
 } from '../analysisCountSpacing'
@@ -457,6 +494,7 @@ const props = defineProps<{
   tileFaceLabel: (tile: string) => string
   perceptualSurface: PerceptualSurfaceBinding
   countSpacing: AnalysisCountSpacing
+  countLayout: AnalysisCountLayout
 }>()
 
 function scopedPerceptualSurface(
@@ -554,6 +592,18 @@ const countTileRows = computed(() => [
   { key: 's', tiles: hasRedFivePredictions.value ? [...tileRows[2], RED_FIVE_TILES[2]] : tileRows[2] },
   { key: 'z', tiles: tileRows[3] },
 ])
+
+const countSourceTiles = computed(() => {
+  const ordinary = tileRows.flatMap((row, rowIndex) => row.map((tile, tileIndex) => ({
+    tile,
+    groupStart: rowIndex > 0 && tileIndex === 0,
+  })))
+  if (!hasRedFivePredictions.value) return ordinary
+  return [
+    ...ordinary,
+    ...RED_FIVE_TILES.map((tile, index) => ({ tile, groupStart: index === 0 })),
+  ]
+})
 
 function playerOutput(outputId: string, seat: number): AnalysisRecord {
   return outputPlayers(outputId).find((player) => Number(player.seat) === seat) || {}
@@ -801,6 +851,25 @@ function updateCountBarGeometry() {
   grid.style.setProperty('--analysis-count-source-gap', '0px')
   grid.style.setProperty('--analysis-count-wall-gap', `${wallGapPixels / ratio}px`)
   grid.style.setProperty('--analysis-count-tile-gap', `${tileGapPixels / ratio}px`)
+  const sourceShell = grid.querySelector<HTMLElement>('.analysis-count-source-sequence-shell')
+  if (sourceShell && countSourceTiles.value.length) {
+    const availablePixels = Math.max(1, Math.floor(sourceShell.getBoundingClientRect().width * ratio))
+    const groupCount = countSourceTiles.value.filter((entry) => entry.groupStart).length
+    const groupGapPixels = Math.max(6, tileGapPixels * 2)
+    const ordinaryGapPixels = tileGapPixels * Math.max(0, countSourceTiles.value.length - 1)
+    const groupedGapPixels = groupGapPixels * groupCount
+    const sourceTilePixels = Math.max(
+      4,
+      Math.floor((availablePixels - ordinaryGapPixels - groupedGapPixels) / countSourceTiles.value.length),
+    )
+    const sourceContentPixels =
+      (sourceTilePixels * countSourceTiles.value.length)
+      + ordinaryGapPixels
+      + groupedGapPixels
+    grid.style.setProperty('--analysis-count-source-tile-width', `${sourceTilePixels / ratio}px`)
+    grid.style.setProperty('--analysis-count-source-group-gap', `${groupGapPixels / ratio}px`)
+    grid.style.setProperty('--analysis-count-source-content-width', `${sourceContentPixels / ratio}px`)
+  }
   updateCountPaletteVariables(grid)
 }
 
@@ -977,6 +1046,10 @@ watch(() => props.analysis, () => {
 watch(() => props.countSpacing, () => {
   if (props.section === 'counts') void nextTick(scheduleCountBarGeometry)
 }, { deep: true })
+
+watch(() => props.countLayout, () => {
+  if (props.section === 'counts') void nextTick(scheduleCountBarGeometry)
+})
 
 watch(playerRows, () => {
   if (props.section === 'game') void nextTick(scheduleOffenseLabelMeasurement)
@@ -1793,6 +1866,102 @@ button {
     + (var(--analysis-tile-width) * 0.5)
     + (var(--ui-text-caption) * 1.2)
   );
+}
+
+.analysis-count-grid.is-source-row-layout {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.analysis-count-source-layout {
+  display: grid;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: calc(var(--analysis-tile-width) * 0.12);
+  min-height: 0;
+}
+
+.analysis-count-source-row {
+  display: flex;
+  align-items: stretch;
+  gap: calc(0.38rem * var(--floating-panel-scale));
+  min-width: 0;
+  min-height: 0;
+}
+
+.analysis-count-source-row > strong {
+  display: flex;
+  flex: 0 0 calc(2.9rem * var(--floating-panel-scale));
+  align-items: center;
+  justify-content: flex-end;
+  overflow: hidden;
+  color: rgba(213, 229, 225, 0.82);
+  font-size: var(--ui-text-caption);
+  font-weight: 400;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-count-source-sequence-shell {
+  display: flex;
+  flex: 1 1 auto;
+  justify-content: center;
+  min-width: 0;
+  min-height: 0;
+}
+
+.analysis-count-source-sequence {
+  display: flex;
+  flex: 0 0 var(--analysis-count-source-content-width, 100%);
+  gap: var(--analysis-count-tile-gap, 1px);
+  width: var(--analysis-count-source-content-width, 100%);
+  min-height: 0;
+}
+
+.analysis-count-source-tile {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  flex: 0 0 var(--analysis-count-source-tile-width, 0.75rem);
+  gap: 1px;
+  width: var(--analysis-count-source-tile-width, 0.75rem);
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.analysis-count-source-tile.is-group-start {
+  margin-left: var(--analysis-count-source-group-gap, 0.35rem);
+}
+
+.analysis-count-source-bar {
+  display: flex;
+  flex-direction: column;
+  min-height: var(--analysis-tile-height);
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.analysis-count-source-bar > i {
+  display: block;
+  flex: 0 0 auto;
+  width: 100%;
+  min-height: 0;
+}
+
+.analysis-count-source-tile > img {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 2.45 / 3.18;
+  padding: 0;
+  border-radius: 1px;
+  background: #fff;
+  filter: brightness(92%) saturate(80%);
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .analysis-tile-chart-row {

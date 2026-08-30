@@ -46,7 +46,19 @@
       </div>
 
       <div class="perceptual-color-debugger-section">
-        <strong>枚数预测间距</strong>
+        <strong>枚数预测</strong>
+        <div class="perceptual-color-debugger-choice" role="group" aria-label="枚数预测布局">
+          <button
+            type="button"
+            :class="{ active: countLayout === 'tile-groups' }"
+            @click="$emit('update:countLayout', 'tile-groups')"
+          >按牌分组</button>
+          <button
+            type="button"
+            :class="{ active: countLayout === 'source-rows' }"
+            @click="$emit('update:countLayout', 'source-rows')"
+          >按来源分行</button>
+        </div>
         <label v-for="control in spacingControls" :key="control.key" class="perceptual-color-debugger-control">
           <span>{{ control.label }}</span>
           <input
@@ -66,7 +78,7 @@
             @change="setSpacingValue(control.key, Number(($event.target as HTMLInputElement).value))"
           >
         </label>
-        <small>单位为设备像素；牌山间距位于三名对手与牌山之间。</small>
+        <small>单位为设备像素；牌山间距仅用于按牌分组。</small>
       </div>
 
       <div class="perceptual-color-debugger-surfaces">
@@ -98,6 +110,7 @@ import {
   ANALYSIS_COUNT_WALL_GAP_MAX,
   normalizeAnalysisCountSpacing,
   type AnalysisCountSpacing,
+  type AnalysisCountLayout,
 } from '../analysisCountSpacing'
 import type { PerceptualSurfaceTuning } from '../perceptualSurface'
 
@@ -113,6 +126,7 @@ const props = defineProps<{
   tuning: PerceptualSurfaceTuning
   bypassed: boolean
   countSpacing: AnalysisCountSpacing
+  countLayout: AnalysisCountLayout
 }>()
 
 const emit = defineEmits<{
@@ -121,6 +135,7 @@ const emit = defineEmits<{
   'update:tuning': [value: PerceptualSurfaceTuning]
   'update:bypassed': [value: boolean]
   'update:countSpacing': [value: AnalysisCountSpacing]
+  'update:countLayout': [value: AnalysisCountLayout]
 }>()
 
 const controls: Array<{
@@ -361,6 +376,31 @@ onBeforeUnmount(() => {
 .perceptual-color-debugger-section > small {
   color: #a9c3c8;
   font-size: var(--ui-text-caption);
+}
+
+.perceptual-color-debugger-choice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  padding: 1px;
+  background: #2b6975;
+}
+
+.perceptual-color-debugger-choice button {
+  padding: 0.3rem 0.45rem;
+  color: #c5d9dd;
+  background: #053942;
+  border: 0;
+  font: inherit;
+}
+
+.perceptual-color-debugger-choice button:hover {
+  background: #0b5260;
+}
+
+.perceptual-color-debugger-choice button.active {
+  color: #fff;
+  background: #137a3d;
 }
 
 .perceptual-color-debugger-toggle {

@@ -634,6 +634,7 @@
         :has-opponent-ground-truth="hasOpponentGroundTruth"
         :shanten-view-mode="shantenViewMode"
         :count-spacing="analysisCountSpacing"
+        :count-layout="analysisCountLayout"
         @drag-start="startDockPanelPointerDrag(workspaceItemId, $event)"
         @toggle-mode="shantenViewMode = shantenViewMode === 'predictions' ? 'ground_truth' : 'predictions'"
         @close="closeAnalysisPanel(workspaceItemId)"
@@ -1562,9 +1563,11 @@
       :tuning="perceptualSurfaceTuning"
       :bypassed="perceptualSurfaceBypassed"
       :count-spacing="analysisCountSpacing"
+      :count-layout="analysisCountLayout"
       @update:tuning="updatePerceptualSurfaceTuning"
       @update:bypassed="perceptualSurfaceBypassed = $event"
       @update:count-spacing="updateAnalysisCountSpacing"
+      @update:count-layout="analysisCountLayout = $event"
       @reset="resetPerceptualSurfaceTuning"
       @close="showPerceptualColorDebugger = false"
     />
@@ -1576,7 +1579,9 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
 import {
   DEFAULT_ANALYSIS_COUNT_SPACING,
+  DEFAULT_ANALYSIS_COUNT_LAYOUT,
   normalizeAnalysisCountSpacing,
+  type AnalysisCountLayout,
   type AnalysisCountSpacing,
 } from './analysisCountSpacing'
 import AnalysisDockModule from './components/AnalysisDockModule.vue'
@@ -1823,6 +1828,7 @@ const activePerceptualColorPalette = computed<PerceptualColorPalette>(() => {
 const perceptualSurfaceTuning = reactive({ ...DEFAULT_PERCEPTUAL_SURFACE_TUNING })
 const perceptualSurfaceBypassed = ref(false)
 const analysisCountSpacing = reactive({ ...DEFAULT_ANALYSIS_COUNT_SPACING })
+const analysisCountLayout = ref<AnalysisCountLayout>(DEFAULT_ANALYSIS_COUNT_LAYOUT)
 const showPerceptualColorDebugger = ref(import.meta.env.DEV)
 const effectivePerceptualSurfaceTuning = computed<PerceptualSurfaceTuning>(() => (
   perceptualSurfaceBypassed.value
