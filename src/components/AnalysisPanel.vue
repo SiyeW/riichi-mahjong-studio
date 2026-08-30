@@ -408,7 +408,7 @@
                       :key="segment.value"
                       :style="{
                         height: `${segment.probability * 100}%`,
-                        background: countSegmentColor(source.key, segment.value, entry.tile),
+                        background: countSegmentColor(source.key, segment.value),
                       }"
                     />
                   </span>
@@ -874,10 +874,41 @@ function updateCountBarGeometry() {
   const sourceCount = Math.max(1, countSources.value.length)
   const spacing = ANALYSIS_COUNT_SPACING[props.countLayout]
   const wallGapPixels = sourceCount > 1 ? spacing.wallGapPixels : 0
-  const lanePixels = Math.max(2, Math.round((desiredTilePixels - wallGapPixels) / sourceCount))
-  const tilePixels = (lanePixels * sourceCount) + wallGapPixels
   const tileGapPixels = spacing.tileGapPixels
+  let requestedTilePixels = desiredTilePixels
+  if (props.countLayout === 'tile-groups') {
+    const gridRect = grid.getBoundingClientRect()
+    const longestGroupedRow = Math.max(1, ...countTileRows.value.map((row) => row.tiles.length))
+    const availableWidthPixels = Math.floor(gridRect.width * ratio)
+    const widthBoundPixels = Math.floor(
+      (availableWidthPixels - (tileGapPixels * Math.max(0, longestGroupedRow - 1)))
+      / longestGroupedRow,
+    )
+
+    const toggle = grid.querySelector<HTMLElement>('.analysis-count-layout-toggle')
+    const toggleHeightPixels = Math.ceil((toggle?.getBoundingClientRect().height || 0) * ratio)
+    const rowCount = countTileRows.value.length
+    const tileAspectRatio = 3.18 / 2.45
+    const minimumRowHeightFactor = (2 * tileAspectRatio) + 0.035
+    const gridGapFactor = 0.1
+    const heightFactor = (rowCount * minimumRowHeightFactor) + (rowCount * gridGapFactor)
+    const availableHeightPixels = Math.floor(gridRect.height * ratio) - toggleHeightPixels
+    const heightBoundPixels = Math.floor(availableHeightPixels / heightFactor)
+
+    requestedTilePixels = Math.max(
+      sourceCount,
+      Math.min(
+        widthBoundPixels > 0 ? widthBoundPixels : desiredTilePixels,
+        heightBoundPixels > 0 ? heightBoundPixels : desiredTilePixels,
+      ),
+    )
+  }
+  const tilePixels = Math.max(sourceCount + wallGapPixels, Math.floor(requestedTilePixels))
+  const tileHeightPixels = props.countLayout === 'tile-groups'
+    ? Math.max(1, Math.round(tilePixels * (3.18 / 2.45)))
+    : Math.max(1, Math.round(3.18 * rootRem * floatingScale * ratio))
   grid.style.setProperty('--analysis-tile-width', `${tilePixels / ratio}px`)
+  grid.style.setProperty('--analysis-tile-height', `${tileHeightPixels / ratio}px`)
   grid.style.setProperty('--analysis-count-source-gap', '0px')
   grid.style.setProperty('--analysis-count-wall-gap', `${wallGapPixels / ratio}px`)
   grid.style.setProperty('--analysis-count-tile-gap', `${tileGapPixels / ratio}px`)
@@ -957,10 +988,9 @@ function countPaletteVariable(sourceKey: string, value: number): string {
   return `--analysis-count-${sourceKey}-${value}`
 }
 
-function countSegmentColor(sourceKey: string, value: DistributionValue, tile = ''): string {
+function countSegmentColor(sourceKey: string, value: DistributionValue): string {
   const numericValue = Math.max(0, Math.min(4, Number(value) || 0))
-  const paletteValue = isRedFive(tile) && numericValue > 0 ? 2 : numericValue
-  return `var(${countPaletteVariable(sourceKey, paletteValue)})`
+  return `var(${countPaletteVariable(sourceKey, numericValue)})`
 }
 
 function updateCountPaletteVariables(grid: HTMLElement) {
@@ -990,7 +1020,7 @@ function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
   const wallGap = sources.length > 1
     ? Math.max(0, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-wall-gap')) * ratio))
     : 0
-  const laneWidth = Math.max(1, Math.floor((tileWidth - wallGap) / sources.length))
+  const sourceWidth = Math.max(sources.length, tileWidth - wallGap)
   const palettes = sources.map((source) => countSourcePalette(source, style))
 
   for (let tileIndex = 0; tileIndex < row.length; tileIndex += 1) {
@@ -999,9 +1029,12 @@ function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
 
     for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
       const source = sources[sourceIndex]
+      const sourceLeft = Math.round((sourceIndex * sourceWidth) / sources.length)
+      const sourceRight = Math.round(((sourceIndex + 1) * sourceWidth) / sources.length)
       const left = blockLeft
-        + (sourceIndex * laneWidth)
+        + sourceLeft
         + (sourceIndex === sources.length - 1 ? wallGap : 0)
+      const laneWidth = Math.max(1, sourceRight - sourceLeft)
       const segments = countSegments(tile, source)
       let cumulative = 0
       for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
@@ -1011,8 +1044,8 @@ function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
           ? height
           : Math.round(cumulative * height)
         if (bottom <= top) continue
-        const value = Number(segments[segmentIndex].value)
-        context.fillStyle = palettes[sourceIndex][isRedFive(tile) && value > 0 ? 2 : value]
+        const value = Math.max(0, Math.min(4, Number(segments[segmentIndex].value) || 0))
+        context.fillStyle = palettes[sourceIndex][value]
         context.fillRect(left, top, laneWidth, bottom - top)
       }
     }
@@ -1033,14 +1066,11 @@ function scheduleCountBarGeometry() {
 }
 
 function setCountCanvasElement(key: string, row: string[], element: unknown) {
-  const previous = countCanvasElements.get(key)
-  if (previous) countResizeObserver?.unobserve(previous.canvas)
   if (!(element instanceof HTMLCanvasElement)) {
     countCanvasElements.delete(key)
     return
   }
   countCanvasElements.set(key, { canvas: element, row })
-  countResizeObserver?.observe(element)
   scheduleCountBarGeometry()
 }
 
@@ -1052,7 +1082,8 @@ function connectCountGeometry(grid: HTMLElement | null) {
   if (!grid) return
   countResizeObserver = new ResizeObserver(scheduleCountBarGeometry)
   countResizeObserver.observe(grid)
-  for (const { canvas } of countCanvasElements.values()) countResizeObserver.observe(canvas)
+  const tilesView = grid.closest('.analysis-tiles-view')
+  if (tilesView) countResizeObserver.observe(tilesView)
   const dock = grid.closest('.dock-module')
   if (dock) {
     countStyleObserver = new MutationObserver(scheduleCountBarGeometry)
@@ -1069,6 +1100,7 @@ onMounted(() => {
   }
   if (props.section === 'counts') {
     window.addEventListener('resize', scheduleCountBarGeometry)
+    connectCountGeometry(countGridElement.value)
   }
 })
 
@@ -1357,7 +1389,7 @@ function showCountTooltip(event: Event, tile: string, source: TileSource) {
       label: t('analysis.countUnit', { value: entry.value }),
       value: formatProbability(entry.probability),
       barWidth: `${entry.probability * 100}%`,
-      barColor: countSegmentColor(source.key, entry.value, tile),
+      barColor: countSegmentColor(source.key, entry.value),
     })),
   })
 }
