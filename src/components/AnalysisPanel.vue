@@ -326,14 +326,14 @@
         <div class="analysis-count-layout-toggle" role="group" :aria-label="t('analysis.countLayout')">
           <button
             type="button"
-            :class="{ active: countLayout === 'tile-groups' }"
-            @click="emit('update:countLayout', 'tile-groups')"
-          >{{ t('analysis.countLayoutTiles') }}</button>
-          <button
-            type="button"
             :class="{ active: countLayout === 'source-rows' }"
             @click="emit('update:countLayout', 'source-rows')"
           >{{ t('analysis.countLayoutSources') }}</button>
+          <button
+            type="button"
+            :class="{ active: countLayout === 'tile-groups' }"
+            @click="emit('update:countLayout', 'tile-groups')"
+          >{{ t('analysis.countLayoutTiles') }}</button>
         </div>
         <template v-if="countLayout === 'tile-groups'">
           <div
@@ -864,6 +864,33 @@ function setOffenseTrackElement(seat: number, element: unknown) {
   scheduleOffenseLabelMeasurement()
 }
 
+const COUNT_TILE_ASPECT_RATIO = 3.18 / 2.45
+const COUNT_CHART_GAP_RATIO = 0.035
+const COUNT_GRID_GAP_RATIO = 0.1
+const COUNT_SOURCE_ROW_GAP_RATIO = 0.12
+
+function elementHeightPixels(element: Element | null, ratio: number): number {
+  return element ? element.getBoundingClientRect().height * ratio : 0
+}
+
+function groupedLegendHeightPixels(
+  grid: HTMLElement,
+  ratio: number,
+  rootRem: number,
+  floatingScale: number,
+): number {
+  const visibleLegend = grid.querySelector<HTMLElement>('.analysis-count-legends')
+  if (visibleLegend) return elementHeightPixels(visibleLegend, ratio)
+
+  const sourceLegend = grid.querySelector<HTMLElement>('.analysis-count-source-legend-group')
+  const sampleLabelHeight = elementHeightPixels(sourceLegend?.querySelector('small') || null, ratio)
+  const compactSwatchHeight = 0.54 * rootRem * floatingScale * ratio
+  const rowHeight = Math.max(sampleLabelHeight, compactSwatchHeight)
+  const rowGap = 0.12 * rootRem * floatingScale * ratio
+  const rowCount = countSources.value.length + 1
+  return (rowHeight * rowCount) + (rowGap * Math.max(0, rowCount - 1))
+}
+
 function updateCountBarGeometry() {
   const grid = countGridElement.value
   if (!grid) return
@@ -871,60 +898,45 @@ function updateCountBarGeometry() {
   const floatingScale = Number.parseFloat(getComputedStyle(grid).getPropertyValue('--floating-panel-scale')) || 1
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const desiredTilePixels = Math.max(8, Math.round(2.45 * rootRem * floatingScale * ratio))
+  const desiredTileHeightPixels = Math.max(1, Math.round(3.18 * rootRem * floatingScale * ratio))
   const sourceCount = Math.max(1, countSources.value.length)
   const spacing = ANALYSIS_COUNT_SPACING[props.countLayout]
   const wallGapPixels = sourceCount > 1 ? spacing.wallGapPixels : 0
   const tileGapPixels = spacing.tileGapPixels
-  let requestedTilePixels = desiredTilePixels
-  if (props.countLayout === 'tile-groups') {
-    const gridRect = grid.getBoundingClientRect()
-    const longestGroupedRow = Math.max(1, ...countTileRows.value.map((row) => row.tiles.length))
-    const availableWidthPixels = Math.floor(gridRect.width * ratio)
-    const widthBoundPixels = Math.floor(
-      (availableWidthPixels - (tileGapPixels * Math.max(0, longestGroupedRow - 1)))
+  const gridRect = grid.getBoundingClientRect()
+  const longestGroupedRow = Math.max(1, ...countTileRows.value.map((row) => row.tiles.length))
+  const groupedTileGapPixels = ANALYSIS_COUNT_SPACING['tile-groups'].tileGapPixels
+  const availableWidthPixels = Math.floor(gridRect.width * ratio)
+  const groupedTilePixels = Math.max(
+    sourceCount,
+    Math.floor(
+      (availableWidthPixels - (groupedTileGapPixels * Math.max(0, longestGroupedRow - 1)))
       / longestGroupedRow,
-    )
-
-    const toggle = grid.querySelector<HTMLElement>('.analysis-count-layout-toggle')
-    const toggleHeightPixels = Math.ceil((toggle?.getBoundingClientRect().height || 0) * ratio)
-    const rowCount = countTileRows.value.length
-    const tileAspectRatio = 3.18 / 2.45
-    const minimumRowHeightFactor = (2 * tileAspectRatio) + 0.035
-    const gridGapFactor = 0.1
-    const heightFactor = (rowCount * minimumRowHeightFactor) + (rowCount * gridGapFactor)
-    const availableHeightPixels = Math.floor(gridRect.height * ratio) - toggleHeightPixels
-    const heightBoundPixels = Math.floor(availableHeightPixels / heightFactor)
-
-    requestedTilePixels = Math.max(
-      sourceCount,
-      Math.min(
-        widthBoundPixels > 0 ? widthBoundPixels : desiredTilePixels,
-        heightBoundPixels > 0 ? heightBoundPixels : desiredTilePixels,
-      ),
-    )
-  }
-  const tilePixels = Math.max(sourceCount + wallGapPixels, Math.floor(requestedTilePixels))
+    ),
+  )
+  const groupedTileHeightPixels = Math.max(1, Math.round(groupedTilePixels * COUNT_TILE_ASPECT_RATIO))
+  const tilePixels = props.countLayout === 'tile-groups' ? groupedTilePixels : desiredTilePixels
   const tileHeightPixels = props.countLayout === 'tile-groups'
-    ? Math.max(1, Math.round(tilePixels * (3.18 / 2.45)))
-    : Math.max(1, Math.round(3.18 * rootRem * floatingScale * ratio))
+    ? groupedTileHeightPixels
+    : desiredTileHeightPixels
   grid.style.setProperty('--analysis-tile-width', `${tilePixels / ratio}px`)
   grid.style.setProperty('--analysis-tile-height', `${tileHeightPixels / ratio}px`)
   grid.style.setProperty('--analysis-count-source-gap', '0px')
   grid.style.setProperty('--analysis-count-wall-gap', `${wallGapPixels / ratio}px`)
   grid.style.setProperty('--analysis-count-tile-gap', `${tileGapPixels / ratio}px`)
-  const longestGroupedRow = Math.max(1, ...countTileRows.value.map((row) => row.tiles.length))
   const groupedRowPixels =
-    (tilePixels * longestGroupedRow)
-    + (tileGapPixels * Math.max(0, longestGroupedRow - 1))
+    (groupedTilePixels * longestGroupedRow)
+    + (groupedTileGapPixels * Math.max(0, longestGroupedRow - 1))
   grid.style.setProperty('--analysis-count-main-row-width', `${groupedRowPixels / ratio}px`)
   const sourceShell = grid.querySelector<HTMLElement>('.analysis-count-source-sequence-shell')
+  let sourceTilePixels = Math.max(4, Math.floor(desiredTilePixels * 0.3))
   if (sourceShell && countSourceTiles.value.length) {
     const availablePixels = Math.max(1, Math.floor(sourceShell.getBoundingClientRect().width * ratio))
     const groupCount = countSourceTiles.value.filter((entry) => entry.groupStart).length
     const groupGapPixels = Math.max(6, tileGapPixels * 2)
     const ordinaryGapPixels = tileGapPixels * Math.max(0, countSourceTiles.value.length - 1)
     const groupedGapPixels = groupGapPixels * groupCount
-    const sourceTilePixels = Math.max(
+    sourceTilePixels = Math.max(
       4,
       Math.floor((availablePixels - ordinaryGapPixels - groupedGapPixels) / countSourceTiles.value.length),
     )
@@ -936,6 +948,52 @@ function updateCountBarGeometry() {
     grid.style.setProperty('--analysis-count-source-group-gap', `${groupGapPixels / ratio}px`)
     grid.style.setProperty('--analysis-count-source-content-width', `${sourceContentPixels / ratio}px`)
   }
+
+  const toggleHeightPixels = elementHeightPixels(
+    grid.querySelector('.analysis-count-layout-toggle'),
+    ratio,
+  )
+  const groupedChartGapPixels = groupedTilePixels * COUNT_CHART_GAP_RATIO
+  const groupedGridGapPixels = groupedTilePixels * COUNT_GRID_GAP_RATIO
+  const groupedLegendPixels = groupedLegendHeightPixels(grid, ratio, rootRem, floatingScale)
+  const groupedRowMinimumPixels = Math.max(
+    groupedTileHeightPixels + groupedChartGapPixels,
+    groupedLegendPixels,
+  )
+  const groupedBarMinimumPixels = Math.max(
+    0,
+    groupedRowMinimumPixels - groupedTileHeightPixels - groupedChartGapPixels,
+  )
+  const rowCount = countTileRows.value.length
+  const groupedGridMinimumPixels =
+    toggleHeightPixels
+    + (groupedRowMinimumPixels * rowCount)
+    + (groupedGridGapPixels * rowCount)
+
+  const sourceLegendPixels = elementHeightPixels(
+    grid.querySelector('.analysis-count-source-legend'),
+    ratio,
+  )
+  const sourceTileHeightPixels = sourceTilePixels * COUNT_TILE_ASPECT_RATIO
+  const sourceTileInnerGapPixels = ratio
+  const sourceRowMinimumPixels =
+    groupedBarMinimumPixels + sourceTileInnerGapPixels + sourceTileHeightPixels
+  const sourceGridGapPixels = desiredTilePixels * COUNT_GRID_GAP_RATIO
+  const sourceRowGapPixels = desiredTilePixels * COUNT_SOURCE_ROW_GAP_RATIO
+  const sourceGridMinimumPixels =
+    toggleHeightPixels
+    + sourceLegendPixels
+    + (sourceGridGapPixels * 2)
+    + (sourceRowMinimumPixels * sourceCount)
+    + (sourceRowGapPixels * Math.max(0, sourceCount - 1))
+
+  grid.style.setProperty('--analysis-count-row-min-height', `${groupedRowMinimumPixels / ratio}px`)
+  grid.style.setProperty('--analysis-count-bar-min-height', `${groupedBarMinimumPixels / ratio}px`)
+  grid.style.setProperty('--analysis-count-source-row-min-height', `${sourceRowMinimumPixels / ratio}px`)
+  grid.style.setProperty(
+    '--analysis-count-grid-min-height',
+    `${(props.countLayout === 'tile-groups' ? groupedGridMinimumPixels : sourceGridMinimumPixels) / ratio}px`,
+  )
   updateCountPaletteVariables(grid)
 }
 
@@ -1918,17 +1976,11 @@ button {
 }
 
 .analysis-count-grid {
-  --analysis-count-row-min-height: calc((var(--analysis-tile-height) * 2) + var(--analysis-chart-gap));
-  --analysis-count-row-max-height: calc((var(--analysis-tile-height) * 4) + var(--analysis-chart-gap));
   grid-template-rows:
     auto
-    repeat(4, minmax(var(--analysis-count-row-min-height), var(--analysis-count-row-max-height)));
+    repeat(4, minmax(var(--analysis-count-row-min-height, 0px), 1fr));
   align-content: center;
-  min-height: calc(
-    (var(--analysis-count-row-min-height) * 4)
-    + (var(--analysis-tile-width) * 0.5)
-    + (var(--ui-text-caption) * 1.2)
-  );
+  min-height: var(--analysis-count-grid-min-height, 0px);
 }
 
 .analysis-count-grid.is-source-row-layout {
@@ -1971,7 +2023,7 @@ button {
 
 .analysis-count-source-layout {
   display: grid;
-  grid-template-rows: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(4, minmax(var(--analysis-count-source-row-min-height, 0px), 1fr));
   gap: calc(var(--analysis-tile-width) * 0.12);
   min-height: 0;
 }
@@ -2021,7 +2073,7 @@ button {
 .analysis-count-source-bar {
   display: flex;
   flex-direction: column;
-  min-height: var(--analysis-tile-height);
+  min-height: var(--analysis-count-bar-min-height, 0px);
   overflow: hidden;
   background: rgba(255, 255, 255, 0.04);
 }
@@ -2149,10 +2201,9 @@ button {
     repeat(3, minmax(0, 1fr))
     var(--analysis-count-wall-gap, 0px)
     minmax(0, 1fr);
-  flex: 1 1 var(--analysis-tile-height);
+  flex: 1 1 0;
   width: 100%;
-  min-height: var(--analysis-tile-height);
-  max-height: calc(var(--analysis-tile-height) * 3);
+  min-height: var(--analysis-count-bar-min-height, 0px);
   gap: 0;
 }
 
