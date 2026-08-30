@@ -433,6 +433,11 @@
       </div>
     </div>
 
+    <CountPredictionTooltip
+      v-if="countHoverTooltip"
+      v-bind="countHoverTooltip"
+      @close="clearHoverTooltip"
+    />
     <div
       v-if="hoverTooltip"
       ref="hoverTooltipElement"
@@ -487,6 +492,7 @@ import {
 } from '../perceptualColor'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
 import ShantenPieChart from './ShantenPieChart.vue'
+import CountPredictionTooltip from './CountPredictionTooltip.vue'
 
 const { t, numberLocale } = useI18n()
 
@@ -564,6 +570,15 @@ const countSurface = computed<PerceptualSurfaceBinding>(() => ({
 const analysisRootElement = ref<HTMLElement | null>(null)
 const hoverTooltipElement = ref<HTMLElement | null>(null)
 const hoverTooltip = ref<HoverTooltipState | null>(null)
+const countHoverTooltip = ref<{
+  anchor: Element
+  sourceLabel: string
+  tileImage: string
+  tileLabel: string
+  redFive: boolean
+  prediction: NumericPrediction
+  palette: string[]
+} | null>(null)
 let hoverTooltipPositionFrame = 0
 const offenseTrackElements = new Map<number, HTMLElement>()
 const offenseLabelPositions = ref<Map<number, { win: number; dealIn: number }>>(new Map())
@@ -1165,11 +1180,17 @@ onMounted(() => {
 watch(countGridElement, connectCountGeometry, { flush: 'post', immediate: true })
 
 watch(() => props.analysis, () => {
-  if (props.section === 'counts') void nextTick(scheduleCountBarGeometry)
+  if (props.section === 'counts') {
+    clearHoverTooltip()
+    void nextTick(scheduleCountBarGeometry)
+  }
 }, { deep: true })
 
 watch(() => props.countLayout, () => {
-  if (props.section === 'counts') void nextTick(scheduleCountBarGeometry)
+  if (props.section === 'counts') {
+    clearHoverTooltip()
+    void nextTick(scheduleCountBarGeometry)
+  }
 })
 
 watch(playerRows, () => {
@@ -1257,6 +1278,7 @@ function clearHoverTooltip() {
   cancelAnimationFrame(hoverTooltipPositionFrame)
   hoverTooltipPositionFrame = 0
   hoverTooltip.value = null
+  countHoverTooltip.value = null
 }
 
 function showProbabilityTooltip(
@@ -1429,27 +1451,20 @@ function countSegments(tile: string, source: TileSource): DistributionEntry[] {
 }
 
 function showCountTooltip(event: Event, tile: string, source: TileSource) {
-  const prediction = tilePrediction(tile, source)
-  const scalar = prediction.scalarValue === null
-    ? null
-    : t(
-      prediction.scalarSource === 'point-estimate' ? 'analysis.predictedCount' : 'analysis.expectedCount',
-      { value: prediction.scalarValue.toFixed(2) },
-    )
-  const segments = prediction.distribution.length ? countSegments(tile, source) : []
-  showHoverTooltip(event, {
-    title: t('analysis.tileCountDistribution', {
-      source: source.label,
-      tile: props.tileFaceLabel(tile),
-    }),
-    lines: scalar ? [scalar] : [],
-    rows: segments.map((entry) => ({
-      label: t('analysis.countUnit', { value: entry.value }),
-      value: formatProbability(entry.probability),
-      barWidth: `${entry.probability * 100}%`,
-      barColor: countSegmentColor(source.key, entry.value),
-    })),
-  })
+  const anchor = event.currentTarget
+  const grid = countGridElement.value
+  if (!(anchor instanceof Element) || !grid) return
+  clearHoverTooltip()
+  countHoverTooltip.value = {
+    anchor,
+    sourceLabel: source.label,
+    tileImage: props.tileImageSrc(tile),
+    tileLabel: props.tileFaceLabel(tile),
+    redFive: isRedFive(tile),
+    prediction: tilePrediction(tile, source),
+    // The floating layer lives outside the chart, so it needs resolved colors.
+    palette: countSourcePalette(source, getComputedStyle(grid)),
+  }
 }
 </script>
 
