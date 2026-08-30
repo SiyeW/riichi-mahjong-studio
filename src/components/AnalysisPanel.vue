@@ -400,7 +400,6 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
 import {
   buildCountColorScale,
-  buildWallCountColorScale,
   COUNT_EMPTY_COLOR,
 } from '../analysisCountPalette'
 import { hasRedFiveCountPredictions, RED_FIVE_TILES } from '../analysisTileCounts'
@@ -841,10 +840,7 @@ function countSourceBaseColor(source: TileSource, style: CSSStyleDeclaration): R
 
 function countSourcePalette(source: TileSource, style: CSSStyleDeclaration): string[] {
   const baseRgb = countSourceBaseColor(source, style)
-  const palette = source.key === 'wall'
-    ? buildWallCountColorScale(baseRgb)
-    : buildCountColorScale(baseRgb)
-  return palette.map(rgbString)
+  return buildCountColorScale(baseRgb).map(rgbString)
 }
 
 function countPaletteVariable(sourceKey: string, value: number): string {
