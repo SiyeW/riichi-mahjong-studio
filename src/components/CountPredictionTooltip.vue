@@ -12,23 +12,27 @@
         {{ sourceLabel }}
       </strong>
       <div class="count-tooltip-content">
-        <div v-if="entries.length" class="count-tooltip-stack" aria-hidden="true">
-          <i
-            v-for="entry in entries"
-            :key="entry.count"
-            :style="{ flexGrow: entry.probability, backgroundColor: entry.color }"
-          />
-        </div>
-        <div v-if="entries.length" class="count-tooltip-key">
-          <div v-for="entry in entries" :key="entry.count" class="count-tooltip-entry">
-            <i :style="{ backgroundColor: entry.color }" aria-hidden="true" />
-            <span>{{ t('analysis.countUnit', { value: entry.count }) }}</span>
-            <span>{{ formatProbability(entry.probability) }}</span>
+        <div class="count-tooltip-diagram">
+          <div v-if="entries.length" class="count-tooltip-stack" aria-hidden="true">
+            <i
+              v-for="entry in entries"
+              :key="entry.count"
+              :style="{ flexGrow: entry.probability, backgroundColor: entry.color }"
+            />
           </div>
+          <img class="count-tooltip-tile" :src="tileImage" :alt="tileLabel" />
         </div>
-        <img class="count-tooltip-tile" :src="tileImage" :alt="tileLabel" />
-        <span v-if="scalarLabel" class="count-tooltip-estimate">{{ scalarLabel }}</span>
-        <span v-else-if="!entries.length" class="count-tooltip-estimate">{{ t('analysis.noData') }}</span>
+        <div class="count-tooltip-details">
+          <div v-if="entries.length" class="count-tooltip-key">
+            <div v-for="entry in entries" :key="entry.count" class="count-tooltip-entry">
+              <i :style="{ backgroundColor: entry.color }" aria-hidden="true" />
+              <span>{{ t('analysis.countUnit', { value: entry.count }) }}</span>
+              <span>{{ formatProbability(entry.probability) }}</span>
+            </div>
+          </div>
+          <span v-if="scalarLabel" class="count-tooltip-estimate">{{ scalarLabel }}</span>
+          <span v-else-if="!entries.length" class="count-tooltip-estimate">{{ t('analysis.noData') }}</span>
+        </div>
       </div>
     </div>
   </Teleport>
@@ -153,17 +157,29 @@ onBeforeUnmount(() => {
 
 .count-tooltip-content {
   display: grid;
-  grid-template-columns: calc(2.45rem * var(--chrome-scale)) max-content;
+  grid-template-columns: calc(1.25rem * var(--chrome-scale)) max-content;
   align-items: center;
   column-gap: calc(0.65rem * var(--chrome-scale));
-  row-gap: calc(0.086rem * var(--chrome-scale));
+}
+
+.count-tooltip-diagram {
+  display: grid;
+  align-self: start;
+  gap: calc(0.086rem * var(--chrome-scale));
+}
+
+.count-tooltip-details {
+  display: grid;
+  align-self: stretch;
+  align-content: space-between;
+  gap: calc(0.4rem * var(--chrome-scale));
 }
 
 .count-tooltip-stack {
   display: flex;
   flex-direction: column;
-  align-self: stretch;
-  min-height: 0;
+  /* The same 100% chart for every tile, independent of legend row count. */
+  height: calc(6rem * var(--chrome-scale));
   overflow: hidden;
 }
 
@@ -178,7 +194,7 @@ onBeforeUnmount(() => {
   grid-template-columns: auto auto auto;
   align-items: center;
   column-gap: calc(0.4rem * var(--chrome-scale));
-  row-gap: calc(0.25rem * var(--chrome-scale));
+  row-gap: calc(0.125rem * var(--chrome-scale));
 }
 
 .count-tooltip-entry {
@@ -200,8 +216,8 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   width: 100%;
   aspect-ratio: 2.45 / 3.18;
-  padding: calc(0.14rem * var(--chrome-scale));
-  border-radius: calc(0.22rem * var(--chrome-scale));
+  padding: calc(0.07rem * var(--chrome-scale));
+  border-radius: calc(0.11rem * var(--chrome-scale));
   background: #fff;
   filter: brightness(92%) saturate(80%);
 }
