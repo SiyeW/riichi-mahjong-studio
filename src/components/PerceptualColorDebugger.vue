@@ -3,11 +3,11 @@
     ref="panelElement"
     class="perceptual-color-debugger"
     :style="panelStyle"
-    aria-label="界面调试"
+    aria-label="颜色矫正调试"
   >
     <header class="perceptual-color-debugger-header" @pointerdown="startDragging">
-      <strong>界面调试</strong>
-      <button type="button" aria-label="关闭界面调试" @pointerdown.stop @click="$emit('close')">×</button>
+      <strong>颜色矫正</strong>
+      <button type="button" aria-label="关闭颜色矫正调试" @pointerdown.stop @click="$emit('close')">×</button>
     </header>
 
     <div class="perceptual-color-debugger-body">
@@ -45,42 +45,6 @@
         <button type="button" @click="$emit('reset')">恢复默认值</button>
       </div>
 
-      <div class="perceptual-color-debugger-section">
-        <strong>枚数预测</strong>
-        <div class="perceptual-color-debugger-choice" role="group" aria-label="枚数预测布局">
-          <button
-            type="button"
-            :class="{ active: countLayout === 'tile-groups' }"
-            @click="$emit('update:countLayout', 'tile-groups')"
-          >按牌分组</button>
-          <button
-            type="button"
-            :class="{ active: countLayout === 'source-rows' }"
-            @click="$emit('update:countLayout', 'source-rows')"
-          >按来源分行</button>
-        </div>
-        <label v-for="control in spacingControls" :key="control.key" class="perceptual-color-debugger-control">
-          <span>{{ control.label }}</span>
-          <input
-            type="range"
-            :min="control.min"
-            :max="control.max"
-            :step="1"
-            :value="countSpacing[control.key]"
-            @input="setSpacingValue(control.key, Number(($event.target as HTMLInputElement).value))"
-          >
-          <input
-            type="number"
-            :min="control.min"
-            :max="control.max"
-            :step="1"
-            :value="countSpacing[control.key]"
-            @change="setSpacingValue(control.key, Number(($event.target as HTMLInputElement).value))"
-          >
-        </label>
-        <small>单位为设备像素；牌山间距仅用于按牌分组。</small>
-      </div>
-
       <div class="perceptual-color-debugger-surfaces">
         <div class="perceptual-color-debugger-surface-heading">
           <span>实际底色</span>
@@ -105,17 +69,9 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import {
-  ANALYSIS_COUNT_TILE_GAP_MAX,
-  ANALYSIS_COUNT_WALL_GAP_MAX,
-  normalizeAnalysisCountSpacing,
-  type AnalysisCountSpacing,
-  type AnalysisCountLayout,
-} from '../analysisCountSpacing'
 import type { PerceptualSurfaceTuning } from '../perceptualSurface'
 
 type TuningKey = keyof PerceptualSurfaceTuning
-type SpacingKey = keyof AnalysisCountSpacing
 type SurfaceSnapshot = {
   label: string
   surface: string
@@ -125,8 +81,6 @@ type SurfaceSnapshot = {
 const props = defineProps<{
   tuning: PerceptualSurfaceTuning
   bypassed: boolean
-  countSpacing: AnalysisCountSpacing
-  countLayout: AnalysisCountLayout
 }>()
 
 const emit = defineEmits<{
@@ -134,8 +88,6 @@ const emit = defineEmits<{
   reset: []
   'update:tuning': [value: PerceptualSurfaceTuning]
   'update:bypassed': [value: boolean]
-  'update:countSpacing': [value: AnalysisCountSpacing]
-  'update:countLayout': [value: AnalysisCountLayout]
 }>()
 
 const controls: Array<{
@@ -148,16 +100,6 @@ const controls: Array<{
   { key: 'lightnessCompensation', label: '亮度补偿', min: -2, max: 2, step: 0.01 },
   { key: 'chromaticCompensation', label: '色度位移', min: -3, max: 3, step: 0.01 },
   { key: 'surfaceChromaGain', label: '表面色度增益', min: -8, max: 8, step: 0.05 },
-]
-
-const spacingControls: Array<{
-  key: SpacingKey
-  label: string
-  min: number
-  max: number
-}> = [
-  { key: 'tileGapPixels', label: '牌张间距', min: 0, max: ANALYSIS_COUNT_TILE_GAP_MAX },
-  { key: 'wallGapPixels', label: '牌山间距', min: 0, max: ANALYSIS_COUNT_WALL_GAP_MAX },
 ]
 
 const panelElement = ref<HTMLElement | null>(null)
@@ -206,13 +148,6 @@ function setTuningValue(key: TuningKey, value: number) {
 
 function setBypassed(value: boolean) {
   emit('update:bypassed', value)
-}
-
-function setSpacingValue(key: SpacingKey, value: number) {
-  emit('update:countSpacing', normalizeAnalysisCountSpacing({
-    ...props.countSpacing,
-    [key]: value,
-  }))
 }
 
 function scheduleCollectSurfaces() {
@@ -360,47 +295,6 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 0.55rem;
   padding: 0.7rem;
-}
-
-.perceptual-color-debugger-section {
-  display: grid;
-  gap: 0.45rem;
-  padding-top: 0.55rem;
-  border-top: 1px solid #2b6975;
-}
-
-.perceptual-color-debugger-section > strong {
-  font-size: var(--ui-text-body);
-}
-
-.perceptual-color-debugger-section > small {
-  color: #a9c3c8;
-  font-size: var(--ui-text-caption);
-}
-
-.perceptual-color-debugger-choice {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  padding: 1px;
-  background: #2b6975;
-}
-
-.perceptual-color-debugger-choice button {
-  padding: 0.3rem 0.45rem;
-  color: #c5d9dd;
-  background: #053942;
-  border: 0;
-  font: inherit;
-}
-
-.perceptual-color-debugger-choice button:hover {
-  background: #0b5260;
-}
-
-.perceptual-color-debugger-choice button.active {
-  color: #fff;
-  background: #137a3d;
 }
 
 .perceptual-color-debugger-toggle {

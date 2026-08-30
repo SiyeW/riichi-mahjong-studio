@@ -49,8 +49,8 @@
           :tile-image-src="tileImageSrc"
           :tile-face-label="tileFaceLabel"
           :perceptual-surface="perceptualSurface"
-          :count-spacing="countSpacing"
           :count-layout="countLayout"
+          @update:count-layout="emit('update:countLayout', $event)"
         />
       </template>
     </div>
@@ -59,7 +59,7 @@
 
 <script setup lang="ts">
 import { useI18n } from '../i18n'
-import type { AnalysisCountLayout, AnalysisCountSpacing } from '../analysisCountSpacing'
+import type { AnalysisCountLayout } from '../analysisCountSpacing'
 import type { PerceptualSurfaceBinding } from '../perceptualSurface'
 import AnalysisPanel from './AnalysisPanel.vue'
 
@@ -86,13 +86,13 @@ defineProps<{
   tileFaceLabel: (tile: string) => string
   hasOpponentGroundTruth: boolean
   shantenViewMode: 'predictions' | 'ground_truth'
-  countSpacing: AnalysisCountSpacing
   countLayout: AnalysisCountLayout
 }>()
 
 const emit = defineEmits<{
   'drag-start': [event: PointerEvent]
   'toggle-mode': []
+  'update:countLayout': [value: AnalysisCountLayout]
   close: []
 }>()
 </script>

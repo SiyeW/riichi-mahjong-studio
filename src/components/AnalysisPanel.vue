@@ -323,41 +323,71 @@
         :class="{ 'is-source-row-layout': countLayout === 'source-rows' }"
         @perceptual-surface-change="scheduleCountBarGeometry"
       >
+        <div class="analysis-count-layout-toggle" role="group" :aria-label="t('analysis.countLayout')">
+          <button
+            type="button"
+            :class="{ active: countLayout === 'tile-groups' }"
+            @click="emit('update:countLayout', 'tile-groups')"
+          >{{ t('analysis.countLayoutTiles') }}</button>
+          <button
+            type="button"
+            :class="{ active: countLayout === 'source-rows' }"
+            @click="emit('update:countLayout', 'source-rows')"
+          >{{ t('analysis.countLayoutSources') }}</button>
+        </div>
         <template v-if="countLayout === 'tile-groups'">
-        <div v-for="row in countTileRows" :key="row.tiles.join('-')" class="analysis-tile-chart-row analysis-count-row">
-          <div class="analysis-tile-sequence">
-            <canvas
-              :ref="(element) => setCountCanvasElement(row.key, row.tiles, element)"
-              class="analysis-count-row-canvas"
-              aria-hidden="true"
-            />
-            <div
-              v-for="tile in row.tiles"
-              :key="tile"
-              class="analysis-count-tile"
-              :class="{ 'is-red-five': isRedFive(tile) }"
-            >
-              <div class="analysis-count-bars">
-                <button
-                  v-for="source in countSources"
-                  :key="source.key"
-                  type="button"
-                  :class="`source-${source.key}`"
-                  :aria-label="t('analysis.tileCountDistribution', { source: source.label, tile: tileFaceLabel(tile) })"
-                  @mouseenter="showCountTooltip($event, tile, source)"
-                  @mouseleave="clearHoverTooltip"
-                  @focus="showCountTooltip($event, tile, source)"
-                  @blur="clearHoverTooltip"
-                />
+          <div
+            v-for="(row, rowIndex) in countTileRows"
+            :key="row.tiles.join('-')"
+            class="analysis-tile-chart-row analysis-count-row"
+            :class="{ 'is-final-row': rowIndex === countTileRows.length - 1 }"
+          >
+            <div class="analysis-tile-sequence">
+              <canvas
+                :ref="(element) => setCountCanvasElement(row.key, row.tiles, element)"
+                class="analysis-count-row-canvas"
+                aria-hidden="true"
+              />
+              <div
+                v-for="tile in row.tiles"
+                :key="tile"
+                class="analysis-count-tile"
+                :class="{ 'is-red-five': isRedFive(tile) }"
+              >
+                <div class="analysis-count-bars">
+                  <button
+                    v-for="source in countSources"
+                    :key="source.key"
+                    type="button"
+                    :class="`source-${source.key}`"
+                    :aria-label="t('analysis.tileCountDistribution', { source: source.label, tile: tileFaceLabel(tile) })"
+                    @mouseenter="showCountTooltip($event, tile, source)"
+                    @mouseleave="clearHoverTooltip"
+                    @focus="showCountTooltip($event, tile, source)"
+                    @blur="clearHoverTooltip"
+                  />
+                </div>
+                <img class="analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
               </div>
-              <img class="analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
+            </div>
+            <div v-if="rowIndex === countTileRows.length - 1" class="analysis-count-legends">
+              <div class="analysis-count-palette-legend" aria-hidden="true">
+                <span aria-hidden="true" />
+                <small v-for="value in [0, 1, 2, 3, 4]" :key="`heading-${value}`">{{ value }}</small>
+                <template v-for="source in countSources" :key="source.key">
+                  <strong>{{ source.label }}</strong>
+                  <i
+                    v-for="value in [0, 1, 2, 3, 4]"
+                    :key="`${source.key}-${value}`"
+                    :style="{ background: countSegmentColor(source.key, value) }"
+                  />
+                </template>
+              </div>
             </div>
           </div>
-        </div>
         </template>
         <div v-else class="analysis-count-source-layout">
           <div v-for="source in countSources" :key="source.key" class="analysis-count-source-row">
-            <strong>{{ source.label }}</strong>
             <div class="analysis-count-source-sequence-shell">
               <div class="analysis-count-source-sequence">
                 <button
@@ -388,18 +418,16 @@
             </div>
           </div>
         </div>
-        <div class="analysis-count-legends">
-          <div class="analysis-count-palette-legend" aria-hidden="true">
+        <div v-if="countLayout === 'source-rows'" class="analysis-count-source-legend" aria-hidden="true">
+          <div v-for="source in countSources" :key="source.key" class="analysis-count-source-legend-group">
             <span aria-hidden="true" />
-            <small v-for="value in [0, 1, 2, 3, 4]" :key="`heading-${value}`">{{ value }}</small>
-            <template v-for="source in countSources" :key="source.key">
-              <strong>{{ source.label }}</strong>
-              <i
-                v-for="value in [0, 1, 2, 3, 4]"
-                :key="`${source.key}-${value}`"
-                :style="{ background: countSegmentColor(source.key, value) }"
-              />
-            </template>
+            <small v-for="value in [0, 1, 2, 3, 4]" :key="`${source.key}-heading-${value}`">{{ value }}</small>
+            <strong>{{ source.label }}</strong>
+            <i
+              v-for="value in [0, 1, 2, 3, 4]"
+              :key="`${source.key}-${value}`"
+              :style="{ background: countSegmentColor(source.key, value) }"
+            />
           </div>
         </div>
       </div>
@@ -435,9 +463,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
 import {
+  ANALYSIS_COUNT_SPACING,
   type AnalysisCountLayout,
-  normalizeAnalysisCountSpacing,
-  type AnalysisCountSpacing,
 } from '../analysisCountSpacing'
 import {
   buildCountColorScale,
@@ -462,6 +489,10 @@ import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptual
 import ShantenPieChart from './ShantenPieChart.vue'
 
 const { t, numberLocale } = useI18n()
+
+const emit = defineEmits<{
+  'update:countLayout': [value: AnalysisCountLayout]
+}>()
 
 type AnalysisRecord = Record<string, unknown>
 type TileSource = { key: string; label: string; seat: number | null }
@@ -493,7 +524,6 @@ const props = defineProps<{
   tileImageSrc: (tile: string) => string
   tileFaceLabel: (tile: string) => string
   perceptualSurface: PerceptualSurfaceBinding
-  countSpacing: AnalysisCountSpacing
   countLayout: AnalysisCountLayout
 }>()
 
@@ -842,7 +872,7 @@ function updateCountBarGeometry() {
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const desiredTilePixels = Math.max(8, Math.round(2.45 * rootRem * floatingScale * ratio))
   const sourceCount = Math.max(1, countSources.value.length)
-  const spacing = normalizeAnalysisCountSpacing(props.countSpacing)
+  const spacing = ANALYSIS_COUNT_SPACING[props.countLayout]
   const wallGapPixels = sourceCount > 1 ? spacing.wallGapPixels : 0
   const lanePixels = Math.max(2, Math.round((desiredTilePixels - wallGapPixels) / sourceCount))
   const tilePixels = (lanePixels * sourceCount) + wallGapPixels
@@ -851,6 +881,11 @@ function updateCountBarGeometry() {
   grid.style.setProperty('--analysis-count-source-gap', '0px')
   grid.style.setProperty('--analysis-count-wall-gap', `${wallGapPixels / ratio}px`)
   grid.style.setProperty('--analysis-count-tile-gap', `${tileGapPixels / ratio}px`)
+  const longestGroupedRow = Math.max(1, ...countTileRows.value.map((row) => row.tiles.length))
+  const groupedRowPixels =
+    (tilePixels * longestGroupedRow)
+    + (tileGapPixels * Math.max(0, longestGroupedRow - 1))
+  grid.style.setProperty('--analysis-count-main-row-width', `${groupedRowPixels / ratio}px`)
   const sourceShell = grid.querySelector<HTMLElement>('.analysis-count-source-sequence-shell')
   if (sourceShell && countSourceTiles.value.length) {
     const availablePixels = Math.max(1, Math.floor(sourceShell.getBoundingClientRect().width * ratio))
@@ -1040,10 +1075,6 @@ onMounted(() => {
 watch(countGridElement, connectCountGeometry, { flush: 'post', immediate: true })
 
 watch(() => props.analysis, () => {
-  if (props.section === 'counts') void nextTick(scheduleCountBarGeometry)
-}, { deep: true })
-
-watch(() => props.countSpacing, () => {
   if (props.section === 'counts') void nextTick(scheduleCountBarGeometry)
 }, { deep: true })
 
@@ -1858,8 +1889,8 @@ button {
   --analysis-count-row-min-height: calc((var(--analysis-tile-height) * 2) + var(--analysis-chart-gap));
   --analysis-count-row-max-height: calc((var(--analysis-tile-height) * 4) + var(--analysis-chart-gap));
   grid-template-rows:
-    repeat(4, minmax(var(--analysis-count-row-min-height), var(--analysis-count-row-max-height)))
-    auto;
+    auto
+    repeat(4, minmax(var(--analysis-count-row-min-height), var(--analysis-count-row-max-height)));
   align-content: center;
   min-height: calc(
     (var(--analysis-count-row-min-height) * 4)
@@ -1869,7 +1900,41 @@ button {
 }
 
 .analysis-count-grid.is-source-row-layout {
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+.analysis-count-layout-toggle {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  justify-self: start;
+  gap: 1px;
+  width: min(calc(13rem * var(--floating-panel-scale)), 100%);
+  padding: 1px;
+  background: #2b6975;
+}
+
+.analysis-count-layout-toggle button {
+  min-width: 0;
+  padding:
+    calc(0.28rem * var(--floating-panel-scale))
+    calc(0.5rem * var(--floating-panel-scale));
+  overflow: hidden;
+  color: #c5d9dd;
+  background: #053942;
+  border: 0;
+  font: inherit;
+  font-size: var(--ui-text-caption);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-count-layout-toggle button:hover {
+  background: #0b5260;
+}
+
+.analysis-count-layout-toggle button.active {
+  color: #fff;
+  background: #137a3d;
 }
 
 .analysis-count-source-layout {
@@ -1882,23 +1947,8 @@ button {
 .analysis-count-source-row {
   display: flex;
   align-items: stretch;
-  gap: calc(0.38rem * var(--floating-panel-scale));
   min-width: 0;
   min-height: 0;
-}
-
-.analysis-count-source-row > strong {
-  display: flex;
-  flex: 0 0 calc(2.9rem * var(--floating-panel-scale));
-  align-items: center;
-  justify-content: flex-end;
-  overflow: hidden;
-  color: rgba(213, 229, 225, 0.82);
-  font-size: var(--ui-text-caption);
-  font-weight: 400;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .analysis-count-source-sequence-shell {
@@ -1979,6 +2029,31 @@ button {
   padding-right: 0;
   padding-bottom: 0;
   border-bottom: 0;
+}
+
+.analysis-count-row.is-final-row {
+  justify-self: center;
+  justify-content: flex-start;
+  width: var(--analysis-count-main-row-width);
+  min-width: 0;
+}
+
+.analysis-count-row.is-final-row .analysis-count-legends {
+  align-self: flex-end;
+  margin-left: auto;
+  padding: 0;
+}
+
+.analysis-count-row.is-final-row .analysis-count-palette-legend {
+  grid-template-columns:
+    fit-content(calc(3rem * var(--floating-panel-scale)))
+    repeat(5, calc(0.54rem * var(--floating-panel-scale)));
+  column-gap: calc(0.12rem * var(--floating-panel-scale));
+}
+
+.analysis-count-row.is-final-row .analysis-count-palette-legend i {
+  width: calc(0.54rem * var(--floating-panel-scale));
+  height: calc(0.54rem * var(--floating-panel-scale));
 }
 
 .analysis-count-row .analysis-tile-sequence {
@@ -2220,6 +2295,49 @@ button {
 }
 
 .analysis-count-palette-legend i {
+  display: block;
+  width: calc(0.64rem * var(--floating-panel-scale));
+  height: calc(0.64rem * var(--floating-panel-scale));
+}
+
+.analysis-count-source-legend {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: calc(0.55rem * var(--floating-panel-scale));
+  min-width: 0;
+  padding: 0 calc(0.65rem * var(--floating-panel-scale));
+}
+
+.analysis-count-source-legend-group {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1fr)
+    repeat(5, calc(0.64rem * var(--floating-panel-scale)));
+  gap:
+    calc(0.1rem * var(--floating-panel-scale))
+    calc(0.12rem * var(--floating-panel-scale));
+  align-items: center;
+  min-width: 0;
+}
+
+.analysis-count-source-legend-group strong {
+  overflow: hidden;
+  color: rgba(213, 229, 225, 0.8);
+  font-size: var(--ui-text-caption);
+  font-weight: 400;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-count-source-legend-group small {
+  color: rgba(205, 224, 220, 0.66);
+  font-size: var(--ui-text-caption);
+  line-height: 1;
+  text-align: center;
+}
+
+.analysis-count-source-legend-group i {
   display: block;
   width: calc(0.64rem * var(--floating-panel-scale));
   height: calc(0.64rem * var(--floating-panel-scale));
