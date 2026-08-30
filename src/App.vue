@@ -633,6 +633,7 @@
         :tile-face-label="tileFaceLabel"
         :has-opponent-ground-truth="hasOpponentGroundTruth"
         :shanten-view-mode="shantenViewMode"
+        :count-spacing="analysisCountSpacing"
         @drag-start="startDockPanelPointerDrag(workspaceItemId, $event)"
         @toggle-mode="shantenViewMode = shantenViewMode === 'predictions' ? 'ground_truth' : 'predictions'"
         @close="closeAnalysisPanel(workspaceItemId)"
@@ -1560,8 +1561,10 @@
       v-if="showPerceptualColorDebugger"
       :tuning="perceptualSurfaceTuning"
       :bypassed="perceptualSurfaceBypassed"
+      :count-spacing="analysisCountSpacing"
       @update:tuning="updatePerceptualSurfaceTuning"
       @update:bypassed="perceptualSurfaceBypassed = $event"
+      @update:count-spacing="updateAnalysisCountSpacing"
       @reset="resetPerceptualSurfaceTuning"
       @close="showPerceptualColorDebugger = false"
     />
@@ -1571,6 +1574,11 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
+import {
+  DEFAULT_ANALYSIS_COUNT_SPACING,
+  normalizeAnalysisCountSpacing,
+  type AnalysisCountSpacing,
+} from './analysisCountSpacing'
 import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
@@ -1814,6 +1822,7 @@ const activePerceptualColorPalette = computed<PerceptualColorPalette>(() => {
 })
 const perceptualSurfaceTuning = reactive({ ...DEFAULT_PERCEPTUAL_SURFACE_TUNING })
 const perceptualSurfaceBypassed = ref(false)
+const analysisCountSpacing = reactive({ ...DEFAULT_ANALYSIS_COUNT_SPACING })
 const showPerceptualColorDebugger = ref(import.meta.env.DEV)
 const effectivePerceptualSurfaceTuning = computed<PerceptualSurfaceTuning>(() => (
   perceptualSurfaceBypassed.value
@@ -1842,6 +1851,10 @@ function updatePerceptualSurfaceTuning(value: PerceptualSurfaceTuning) {
 function resetPerceptualSurfaceTuning() {
   Object.assign(perceptualSurfaceTuning, DEFAULT_PERCEPTUAL_SURFACE_TUNING)
   perceptualSurfaceBypassed.value = false
+}
+
+function updateAnalysisCountSpacing(value: AnalysisCountSpacing) {
+  Object.assign(analysisCountSpacing, normalizeAnalysisCountSpacing(value))
 }
 
 const shantenColors = computed(() => activeColorScheme.value.shanten)

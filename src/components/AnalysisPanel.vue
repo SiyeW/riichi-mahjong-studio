@@ -399,6 +399,10 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
 import {
+  normalizeAnalysisCountSpacing,
+  type AnalysisCountSpacing,
+} from '../analysisCountSpacing'
+import {
   buildCountColorScale,
   COUNT_EMPTY_COLOR,
 } from '../analysisCountPalette'
@@ -452,6 +456,7 @@ const props = defineProps<{
   tileImageSrc: (tile: string) => string
   tileFaceLabel: (tile: string) => string
   perceptualSurface: PerceptualSurfaceBinding
+  countSpacing: AnalysisCountSpacing
 }>()
 
 function scopedPerceptualSurface(
@@ -787,10 +792,11 @@ function updateCountBarGeometry() {
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const desiredTilePixels = Math.max(8, Math.round(2.45 * rootRem * floatingScale * ratio))
   const sourceCount = Math.max(1, countSources.value.length)
-  const wallGapPixels = sourceCount > 1 ? 2 : 0
+  const spacing = normalizeAnalysisCountSpacing(props.countSpacing)
+  const wallGapPixels = sourceCount > 1 ? spacing.wallGapPixels : 0
   const lanePixels = Math.max(2, Math.round((desiredTilePixels - wallGapPixels) / sourceCount))
   const tilePixels = (lanePixels * sourceCount) + wallGapPixels
-  const tileGapPixels = 2
+  const tileGapPixels = spacing.tileGapPixels
   grid.style.setProperty('--analysis-tile-width', `${tilePixels / ratio}px`)
   grid.style.setProperty('--analysis-count-source-gap', '0px')
   grid.style.setProperty('--analysis-count-wall-gap', `${wallGapPixels / ratio}px`)
@@ -875,10 +881,10 @@ function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
   const sources = countSources.value
   if (!sources.length || !row.length) return
   const style = getComputedStyle(canvas)
-  const tileGap = Math.max(1, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-tile-gap')) * ratio))
+  const tileGap = Math.max(0, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-tile-gap')) * ratio))
   const tileWidth = Math.max(sources.length, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-tile-width')) * ratio))
   const wallGap = sources.length > 1
-    ? Math.max(1, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-wall-gap')) * ratio))
+    ? Math.max(0, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-wall-gap')) * ratio))
     : 0
   const laneWidth = Math.max(1, Math.floor((tileWidth - wallGap) / sources.length))
   const palettes = sources.map((source) => countSourcePalette(source, style))
@@ -965,6 +971,10 @@ onMounted(() => {
 watch(countGridElement, connectCountGeometry, { flush: 'post', immediate: true })
 
 watch(() => props.analysis, () => {
+  if (props.section === 'counts') void nextTick(scheduleCountBarGeometry)
+}, { deep: true })
+
+watch(() => props.countSpacing, () => {
   if (props.section === 'counts') void nextTick(scheduleCountBarGeometry)
 }, { deep: true })
 
