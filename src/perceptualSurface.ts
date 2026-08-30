@@ -30,9 +30,9 @@ export type PerceptualSurfaceBinding = Readonly<{
 }>
 
 export const DEFAULT_PERCEPTUAL_SURFACE_TUNING: PerceptualSurfaceTuning = Object.freeze({
-  lightnessCompensation: 0.5,
+  lightnessCompensation: 0,
   chromaticCompensation: 0,
-  surfaceChromaGain: 0,
+  surfaceChromaGain: 7,
 })
 
 // The canonical palette was approved on this rendered chart-track surface.

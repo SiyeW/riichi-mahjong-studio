@@ -59,16 +59,21 @@ test('calibration surface reproduces canonical analysis colors', () => {
 
 test('every semantic color uses the tuned surface compensation', () => {
   const variables = perceptualSurfaceVariables(palette, [9, 72, 85])
-  assert.equal(variables['--ron-kamicha-color'], 'rgb(40 140 194)')
-  assert.equal(variables['--ron-toimen-color'], 'rgb(208 151 54)')
-  assert.equal(variables['--ron-shimocha-color'], 'rgb(73 172 77)')
-  assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(198 82 74)')
+  assert.equal(variables['--ron-kamicha-color'], 'rgb(0 144 205)')
+  assert.equal(variables['--ron-toimen-color'], 'rgb(218 151 15)')
+  assert.equal(variables['--ron-shimocha-color'], 'rgb(55 178 64)')
+  assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(211 74 68)')
   assert.equal(variables['--analysis-draw-color'], variables['--ron-kamicha-color'])
   assert.equal(variables['--analysis-self-win-color'], variables['--ron-shimocha-color'])
   assert.equal(variables['--analysis-horizontal-color'], variables['--ron-toimen-color'])
 
   const adjustedGreen = parseCssColor(variables['--ron-shimocha-color'], palette.shimocha)
-  assert.ok(rgbToOklab(adjustedGreen).l < rgbToOklab(palette.shimocha).l)
+  const adjustedGreenLab = rgbToOklab(adjustedGreen)
+  const canonicalGreenLab = rgbToOklab(palette.shimocha)
+  assert.ok(
+    Math.hypot(adjustedGreenLab.a, adjustedGreenLab.b)
+      > Math.hypot(canonicalGreenLab.a, canonicalGreenLab.b),
+  )
 })
 
 test('neutral anchors remain fixed after surface translation', () => {
@@ -119,7 +124,10 @@ test('surface chroma gain increases chroma away from the calibration surface', (
   const baselineVariables = perceptualSurfaceVariables(
     palette,
     [9, 72, 85],
-    DEFAULT_PERCEPTUAL_SURFACE_TUNING,
+    {
+      ...DEFAULT_PERCEPTUAL_SURFACE_TUNING,
+      surfaceChromaGain: 0,
+    },
   )
   const boostedVariables = perceptualSurfaceVariables(palette, [9, 72, 85], {
     ...DEFAULT_PERCEPTUAL_SURFACE_TUNING,

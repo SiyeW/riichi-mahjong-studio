@@ -398,7 +398,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
-import { buildCountColorScale, COUNT_EMPTY_COLOR } from '../analysisCountPalette'
+import {
+  buildCountColorScale,
+  buildWallCountColorScale,
+  COUNT_EMPTY_COLOR,
+} from '../analysisCountPalette'
 import { hasRedFiveCountPredictions, RED_FIVE_TILES } from '../analysisTileCounts'
 import { resolveKyokuOutcome } from '../kyokuOutcome'
 import {
@@ -784,10 +788,13 @@ function updateCountBarGeometry() {
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const desiredTilePixels = Math.max(8, Math.round(2.45 * rootRem * floatingScale * ratio))
   const sourceCount = Math.max(1, countSources.value.length)
-  const tilePixels = Math.max(sourceCount * 2, Math.round(desiredTilePixels / sourceCount) * sourceCount)
+  const wallGapPixels = sourceCount > 1 ? 2 : 0
+  const lanePixels = Math.max(2, Math.round((desiredTilePixels - wallGapPixels) / sourceCount))
+  const tilePixels = (lanePixels * sourceCount) + wallGapPixels
   const tileGapPixels = 2
   grid.style.setProperty('--analysis-tile-width', `${tilePixels / ratio}px`)
   grid.style.setProperty('--analysis-count-source-gap', '0px')
+  grid.style.setProperty('--analysis-count-wall-gap', `${wallGapPixels / ratio}px`)
   grid.style.setProperty('--analysis-count-tile-gap', `${tileGapPixels / ratio}px`)
   updateCountPaletteVariables(grid)
 }
@@ -834,7 +841,10 @@ function countSourceBaseColor(source: TileSource, style: CSSStyleDeclaration): R
 
 function countSourcePalette(source: TileSource, style: CSSStyleDeclaration): string[] {
   const baseRgb = countSourceBaseColor(source, style)
-  return buildCountColorScale(baseRgb).map(rgbString)
+  const palette = source.key === 'wall'
+    ? buildWallCountColorScale(baseRgb)
+    : buildCountColorScale(baseRgb)
+  return palette.map(rgbString)
 }
 
 function countPaletteVariable(sourceKey: string, value: number): string {
@@ -871,7 +881,10 @@ function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
   const style = getComputedStyle(canvas)
   const tileGap = Math.max(1, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-tile-gap')) * ratio))
   const tileWidth = Math.max(sources.length, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-tile-width')) * ratio))
-  const laneWidth = Math.max(1, Math.floor(tileWidth / sources.length))
+  const wallGap = sources.length > 1
+    ? Math.max(1, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-wall-gap')) * ratio))
+    : 0
+  const laneWidth = Math.max(1, Math.floor((tileWidth - wallGap) / sources.length))
   const palettes = sources.map((source) => countSourcePalette(source, style))
 
   for (let tileIndex = 0; tileIndex < row.length; tileIndex += 1) {
@@ -880,7 +893,9 @@ function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
 
     for (let sourceIndex = 0; sourceIndex < sources.length; sourceIndex += 1) {
       const source = sources[sourceIndex]
-      const left = blockLeft + (sourceIndex * laneWidth)
+      const left = blockLeft
+        + (sourceIndex * laneWidth)
+        + (sourceIndex === sources.length - 1 ? wallGap : 0)
       const segments = countSegments(tile, source)
       let cumulative = 0
       for (let segmentIndex = 0; segmentIndex < segments.length; segmentIndex += 1) {
@@ -1848,12 +1863,19 @@ button {
 
 .analysis-count-bars {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr))
+    var(--analysis-count-wall-gap, 0px)
+    minmax(0, 1fr);
   flex: 1 1 var(--analysis-tile-height);
   width: 100%;
   min-height: var(--analysis-tile-height);
   max-height: calc(var(--analysis-tile-height) * 3);
   gap: 0;
+}
+
+.analysis-count-bars > .source-wall {
+  grid-column: 5;
 }
 
 .analysis-count-row-canvas {

@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildCountColorScale, COUNT_EMPTY_COLOR } from './analysisCountPalette.ts'
+import {
+  buildCountColorScale,
+  buildWallCountColorScale,
+  COUNT_EMPTY_COLOR,
+} from './analysisCountPalette.ts'
+import { rgbToOklab } from './perceptualColor.ts'
 import type { RgbColor } from './perceptualColor.ts'
 
 const supportedSourceColors: RgbColor[] = [
@@ -22,25 +27,52 @@ test('count scale keeps zero and two at their semantic anchors', () => {
   assert.deepEqual(scale[2], base)
 })
 
-test('every RGB channel increases monotonically from two through four', () => {
+function hueDistance(first: number, second: number): number {
+  return Math.abs(Math.atan2(Math.sin(first - second), Math.cos(first - second)))
+}
+
+test('count levels increase monotonically in perceptual lightness', () => {
   for (const base of supportedSourceColors) {
     const scale = buildCountColorScale(base)
-    for (const channel of [0, 1, 2] as const) {
-      assert.ok(scale[2][channel] <= scale[3][channel], `${base}: 2 -> 3, channel ${channel}`)
-      assert.ok(scale[3][channel] <= scale[4][channel], `${base}: 3 -> 4, channel ${channel}`)
+    const lightness = scale.map((color) => rgbToOklab(color).l)
+    for (let index = 1; index < lightness.length; index += 1) {
+      assert.ok(lightness[index] > lightness[index - 1], `${base}: ${index - 1} -> ${index}`)
     }
   }
 })
 
-test('three and four occupy distinct parts of the light range', () => {
+test('non-empty count levels preserve their source hue', () => {
   for (const base of supportedSourceColors) {
+    const baseLab = rgbToOklab(base)
+    const baseHue = Math.atan2(baseLab.b, baseLab.a)
     const scale = buildCountColorScale(base)
-    const distance = (left: RgbColor, right: RgbColor) => Math.hypot(
-      right[0] - left[0],
-      right[1] - left[1],
-      right[2] - left[2],
-    )
-    assert.ok(distance(scale[2], scale[3]) >= 20, `${base}: 2 -> 3`)
-    assert.ok(distance(scale[3], scale[4]) >= 15, `${base}: 3 -> 4`)
+    for (const level of [1, 2, 3, 4]) {
+      const color = rgbToOklab(scale[level])
+      const colorHue = Math.atan2(color.b, color.a)
+      assert.ok(hueDistance(colorHue, baseHue) < 0.03, `${base}: level ${level}`)
+    }
   }
+})
+
+test('adjacent count levels remain perceptually distinct', () => {
+  for (const base of supportedSourceColors) {
+    const scale = buildCountColorScale(base).map(rgbToOklab)
+    for (let index = 1; index < scale.length; index += 1) {
+      const distance = Math.hypot(
+        scale[index].l - scale[index - 1].l,
+        scale[index].a - scale[index - 1].a,
+        scale[index].b - scale[index - 1].b,
+      )
+      assert.ok(distance >= 0.06, `${base}: ${index - 1} -> ${index}`)
+    }
+  }
+})
+
+test('wall scale stays quieter while retaining the same anchors', () => {
+  const base: RgbColor = [129, 151, 143]
+  const playerScale = buildCountColorScale(base)
+  const wallScale = buildWallCountColorScale(base)
+  assert.deepEqual(wallScale[0], COUNT_EMPTY_COLOR)
+  assert.deepEqual(wallScale[2], base)
+  assert.ok(rgbToOklab(wallScale[4]).l < rgbToOklab(playerScale[4]).l)
 })
