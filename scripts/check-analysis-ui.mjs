@@ -38,6 +38,8 @@ try {
       getShanten: async () => { check.reads++; return check.result() },
       setAnalysisVisibility: async () => ({ state: JSON.parse(JSON.stringify(vm.status)) }),
       saveSettings: async settings => settings,
+      toggleVisibleHands: async () => ({ ...JSON.parse(JSON.stringify(vm.status)), visibleHands: !vm.status.visibleHands }),
+      getGameView: async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: JSON.parse(JSON.stringify(vm.gameView)) }),
       clearAnalysisCaches: async () => {
         check.epoch++
         return { state: JSON.parse(JSON.stringify(vm.status)), cleared: { decisionEntries: 0, opponentEntries: 1, comparisons: 0, treeRevision: 1 } }
@@ -156,8 +158,47 @@ try {
   await page.waitForTimeout(2500)
   assert.equal(await readCount(), afterClear, 'cleared data is not silently requested again')
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.gameView.opponentAnalysis), null)
+
+  // Mouse clicks retain normal focus, but must not pin a hover-only tooltip.
+  await page.evaluate(() => {
+    window.analysisCheck.vm.gameView.table.hands = Array.from({ length: 4 }, () => Array(13).fill('1m'))
+  })
+  const handButtons = page.locator('.opponent-hand-toggle')
+  const hint = page.locator('[id^="ui-hover-tooltip-"]')
+  for (let index = 0; index < 3; index++) {
+    const button = handButtons.nth(index)
+    const before = await page.evaluate(() => window.analysisCheck.vm.status.visibleHands)
+    await button.hover()
+    await hint.waitFor({ state: 'visible' })
+    await button.click()
+    await page.waitForFunction(before => window.analysisCheck.vm.status.visibleHands !== before, before)
+    assert.equal(await hint.innerText(), await button.getAttribute('aria-label'))
+    await page.mouse.move(0, 0)
+    assert.equal(await button.evaluate(el => document.activeElement === el), true)
+    assert.equal(await hint.count(), 0, 'a mouse-focused hand toggle must not leave a pinned hint')
+    if (index === 0 && process.env.RMS_UI_CHECK_SCREENSHOT) {
+      await page.screenshot({ path: process.env.RMS_UI_CHECK_SCREENSHOT })
+    }
+    await page.evaluate(() => { window.analysisCheck.vm.status.visibleHands = !window.analysisCheck.vm.status.visibleHands })
+    assert.equal(await hint.count(), 0, 'a later label update must not revive the dismissed hint')
+  }
+  // Keyboard users still get focus hints, including after Enter activates the control.
+  await page.keyboard.press('Tab')
+  await handButtons.first().focus()
+  await hint.waitFor({ state: 'visible' })
+  await page.keyboard.press('Enter')
+  await page.waitForTimeout(100)
+  assert.equal(await hint.innerText(), await handButtons.first().getAttribute('aria-label'))
+  await handButtons.first().click()
+  await page.mouse.move(0, 0)
+  assert.equal(await hint.count(), 0, 'switching from keyboard to mouse must not leave a focus hint')
+  await page.keyboard.press('Tab')
+  await handButtons.first().focus()
+  await hint.waitFor({ state: 'visible' })
+  await handButtons.first().evaluate(el => el.blur())
+  assert.equal(await hint.count(), 0, 'keyboard blur dismisses the hint')
   assert.deepEqual(errors, [])
-  console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies and cache clearing passed.')
+  console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing and hand-toggle mouse/keyboard hints passed.')
 } finally {
   await browser?.close()
   await server.close()

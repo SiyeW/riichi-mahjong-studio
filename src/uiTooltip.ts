@@ -6,10 +6,11 @@ type TooltipState = {
   value: TooltipValue
   tooltip: HTMLDivElement | null
   pointerInside: boolean
-  focusInside: boolean
+  keyboardFocusInside: boolean
   positionFrame: number
   onPointerEnter: () => void
   onPointerLeave: () => void
+  onPointerDown: () => void
   onFocusIn: () => void
   onFocusOut: () => void
   onViewportChange: () => void
@@ -88,7 +89,7 @@ function mountTooltip(element: HTMLElement, binding: DirectiveBinding<TooltipVal
     value: binding.value,
     tooltip: null,
     pointerInside: false,
-    focusInside: false,
+    keyboardFocusInside: false,
     positionFrame: 0,
     onPointerEnter: () => {
       state.pointerInside = true
@@ -96,20 +97,26 @@ function mountTooltip(element: HTMLElement, binding: DirectiveBinding<TooltipVal
     },
     onPointerLeave: () => {
       state.pointerInside = false
-      if (!state.focusInside) removeTooltip(state)
+      if (!state.keyboardFocusInside) removeTooltip(state)
+    },
+    onPointerDown: () => {
+      // Clicking a control may keep DOM focus, but must not pin its hover hint.
+      state.keyboardFocusInside = false
+      if (!state.pointerInside) removeTooltip(state)
     },
     onFocusIn: () => {
-      state.focusInside = true
-      showTooltip(element, state)
+      state.keyboardFocusInside = element.matches(':focus-visible')
+      if (state.pointerInside || state.keyboardFocusInside) showTooltip(element, state)
     },
     onFocusOut: () => {
-      state.focusInside = false
+      state.keyboardFocusInside = false
       if (!state.pointerInside) removeTooltip(state)
     },
     onViewportChange: () => schedulePosition(element, state),
   }
   element.addEventListener('pointerenter', state.onPointerEnter)
   element.addEventListener('pointerleave', state.onPointerLeave)
+  element.addEventListener('pointerdown', state.onPointerDown)
   element.addEventListener('focusin', state.onFocusIn)
   element.addEventListener('focusout', state.onFocusOut)
   states.set(element, state)
@@ -119,7 +126,7 @@ function updateTooltip(element: HTMLElement, binding: DirectiveBinding<TooltipVa
   const state = states.get(element)
   if (!state) return
   state.value = binding.value
-  if (!state.pointerInside && !state.focusInside) return
+  if (!state.pointerInside && !state.keyboardFocusInside) return
   showTooltip(element, state)
 }
 
@@ -128,6 +135,7 @@ function unmountTooltip(element: HTMLElement) {
   if (!state) return
   element.removeEventListener('pointerenter', state.onPointerEnter)
   element.removeEventListener('pointerleave', state.onPointerLeave)
+  element.removeEventListener('pointerdown', state.onPointerDown)
   element.removeEventListener('focusin', state.onFocusIn)
   element.removeEventListener('focusout', state.onFocusOut)
   removeTooltip(state)
