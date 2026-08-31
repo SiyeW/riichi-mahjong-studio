@@ -3394,7 +3394,7 @@ function showShantenHover(opponentLabel: string, label: string, probability: num
 function clearShantenHover() {
   shantenHoverText.value = ''
 }
-let _shantenTimer: number | null = null
+let shantenReadGeneration = 0
 let _analysisVisibilityGeneration = 0
 
 function hasShantenRows(group: Record<string, number[]> | undefined): group is Record<string, number[]> {
@@ -3499,29 +3499,21 @@ function applyShantenResult(
 }
 
 async function fetchShantenOnce() {
-  if (!opponentAnalysisNeeded.value || !gameView.table || !window.trainerAPI?.getShanten) return
+  if (clearingAnalysisCaches.value || !opponentAnalysisNeeded.value || !gameView.table || !window.trainerAPI?.getShanten) return
+  const generation = ++shantenReadGeneration
   try {
-    applyShantenResult(await window.trainerAPI.getShanten(), {
+    const result = await window.trainerAPI.getShanten()
+    if (generation !== shantenReadGeneration || !opponentAnalysisNeeded.value) return
+    applyShantenResult(result, {
       clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value,
     })
   } catch (e: unknown) {
+    if (generation !== shantenReadGeneration) return
     shantenStatus.value = 'err: ' + String(e)
   }
 }
 
-async function pollShanten() {
-  if (!showAnalysisDock.value) return
-  await fetchShantenOnce()
-  if (showAnalysisDock.value) {
-    _shantenTimer = window.setTimeout(pollShanten, 2000)
-  }
-}
-
 watch(showAnalysisDock, async (open) => {
-  if (_shantenTimer !== null) {
-    window.clearTimeout(_shantenTimer)
-    _shantenTimer = null
-  }
   await nextTick()
   scheduleTableZoomRecalc()
   if (!open) {
@@ -3529,7 +3521,8 @@ watch(showAnalysisDock, async (open) => {
     await syncAnalysisVisibilityToBackend()
     return
   }
-  if (await syncAnalysisVisibilityToBackend()) void pollShanten()
+  // Read cached results on opening; new results arrive through backend events.
+  if (await syncAnalysisVisibilityToBackend()) void fetchShantenOnce()
 })
 
 async function toggleDecisionRecommendations(event?: Event) {
@@ -3897,7 +3890,8 @@ function normalizeModelActivityState(value: unknown): TrainerModelActivityState 
 }
 
 const hasOpponentAnalysisResult = computed(() => (
-  hasShantenRows(shantenPredData.value)
+  shantenResultHasRows(gameView.opponentAnalysis)
+  || hasShantenRows(shantenPredData.value)
   || hasShantenRows(ronWaitPredData.value)
   || hasShantenRows(shantenGTData.value)
   || hasShantenRows(ronWaitGTData.value)
@@ -3917,6 +3911,7 @@ const opponentAnalysisIsLoading = computed(() => {
   if (activity === 'loading') return true
   if (activity === 'error' || opponentAnalysisLoadError.value) return false
   return !hasOpponentAnalysisResult.value
+    && (activity === 'running' || gameView.opponentAnalysis?.status === 'loading')
 })
 
 const engineStatusItems = computed(() => {
@@ -7359,6 +7354,7 @@ function treeContainsNode(tree: TrainerGameView['tree'], nodeId: string | null |
 }
 
 function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewTransitionDirection = 'forward') {
+  ++shantenReadGeneration
   const previousSoundView: SoundTransitionView = {
     table: gameView.table,
     legalActions: gameView.legalActions,
@@ -8699,9 +8695,13 @@ function handlePythonEvent(event: TrainerPythonEvent) {
     return
   }
   if (event.type === 'opponent_analysis_ready' && event.opponentAnalysis) {
+    if (clearingAnalysisCaches.value) return
     if (event.gameId && event.gameId !== gameView.gameId) return
     if (event.nodeId && event.nodeId !== gameView.currentNodeId) return
     if (Number.isInteger(event.seat) && Number(event.seat) !== status.controlledSeat) return
+    if (!shantenResultMatchesCurrentPosition(event.opponentAnalysis)) return
+    // A late one-shot read must not overwrite this newer result.
+    ++shantenReadGeneration
     applyShantenResult(event.opponentAnalysis)
     return
   }
@@ -8761,6 +8761,7 @@ async function fetchAndShowMjaiDebug() {
 async function clearLoadedAnalysisCaches() {
   if (!window.trainerAPI?.clearAnalysisCaches || clearingAnalysisCaches.value) return
   clearingAnalysisCaches.value = true
+  ++shantenReadGeneration
   analysisCacheClearMessage.value = ''
   try {
     const response = await window.trainerAPI.clearAnalysisCaches()
@@ -8774,11 +8775,9 @@ async function clearLoadedAnalysisCaches() {
     })
     if (gameView.tree) gameView.tree.revision = response.cleared.treeRevision
 
-    shantenPredData.value = {}
-    shantenGTData.value = {}
-    ronWaitPredData.value = {}
-    ronWaitGTData.value = {}
-    shantenRawData.value = {}
+    ++shantenReadGeneration
+    gameView.opponentAnalysis = null
+    clearOpponentAnalysisWithoutMotion()
     shantenStatus.value = t('debug.cacheCleared')
 
     const { decisionEntries, opponentEntries, comparisons } = response.cleared

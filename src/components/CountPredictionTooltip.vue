@@ -103,11 +103,16 @@ function placeTooltip() {
 
 function schedulePosition() {
   cancelAnimationFrame(positionFrame)
-  positioned.value = false
+  // Keep the existing tooltip visible while refreshed values are laid out.
   void nextTick(() => { positionFrame = requestAnimationFrame(placeTooltip) })
 }
 
 function dismiss() { emit('close') }
+function onScroll(event: Event) {
+  // Unrelated scrolling (for example in the console) does not end this hover.
+  const target = event.target
+  if (target instanceof Node && target.contains(props.anchor)) dismiss()
+}
 function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape') dismiss()
 }
@@ -127,7 +132,7 @@ watch(() => props.anchor, (anchor, previous) => {
 onMounted(() => {
   schedulePosition()
   window.addEventListener('resize', dismiss)
-  window.addEventListener('scroll', dismiss, true)
+  window.addEventListener('scroll', onScroll, true)
   window.addEventListener('keydown', onKeydown)
 })
 watch(() => [props.anchor, props.prediction, props.palette, numberLocale.value], schedulePosition)
@@ -135,7 +140,7 @@ onBeforeUnmount(() => {
   removeDescription(props.anchor)
   cancelAnimationFrame(positionFrame)
   window.removeEventListener('resize', dismiss)
-  window.removeEventListener('scroll', dismiss, true)
+  window.removeEventListener('scroll', onScroll, true)
   window.removeEventListener('keydown', onKeydown)
 })
 </script>

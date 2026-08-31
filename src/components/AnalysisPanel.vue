@@ -570,14 +570,12 @@ const countSurface = computed<PerceptualSurfaceBinding>(() => ({
 const analysisRootElement = ref<HTMLElement | null>(null)
 const hoverTooltipElement = ref<HTMLElement | null>(null)
 const hoverTooltip = ref<HoverTooltipState | null>(null)
-const countHoverTooltip = ref<{
+const countHoverTarget = ref<{
   anchor: Element
-  sourceLabel: string
-  tileImage: string
-  tileLabel: string
-  redFive: boolean
-  prediction: NumericPrediction
-  palette: string[]
+  tile: string
+  sourceKey: string
+  contextKey: string
+  controlledSeat: number
 } | null>(null)
 let hoverTooltipPositionFrame = 0
 const offenseTrackElements = new Map<number, HTMLElement>()
@@ -1179,12 +1177,19 @@ onMounted(() => {
 
 watch(countGridElement, connectCountGeometry, { flush: 'post', immediate: true })
 
-watch(() => props.analysis, () => {
+watch(() => [props.analysis, props.controlledSeat], () => {
   if (props.section === 'counts') {
-    clearHoverTooltip()
+    const target = countHoverTarget.value
+    if (target && (
+      !target.anchor.isConnected
+      || target.contextKey !== countTooltipContextKey()
+      || target.controlledSeat !== props.controlledSeat
+      || !countHoverTooltip.value
+      || !hasCountPrediction(countHoverTooltip.value.prediction)
+    )) clearHoverTooltip()
     void nextTick(scheduleCountBarGeometry)
   }
-}, { deep: true })
+}, { deep: true, flush: 'post' })
 
 watch(() => props.countLayout, () => {
   if (props.section === 'counts') {
@@ -1278,7 +1283,7 @@ function clearHoverTooltip() {
   cancelAnimationFrame(hoverTooltipPositionFrame)
   hoverTooltipPositionFrame = 0
   hoverTooltip.value = null
-  countHoverTooltip.value = null
+  countHoverTarget.value = null
 }
 
 function showProbabilityTooltip(
@@ -1450,20 +1455,46 @@ function countSegments(tile: string, source: TileSource): DistributionEntry[] {
   return values
 }
 
-function showCountTooltip(event: Event, tile: string, source: TileSource) {
-  const anchor = event.currentTarget
+function countTooltipContextKey(): string {
+  const context = objectValue(props.analysis?.context)
+  return JSON.stringify([
+    context.gameId, context.nodeId, context.seat,
+    context.inputMode, context.cacheKey, context.cacheEpoch,
+  ])
+}
+
+function hasCountPrediction(prediction: NumericPrediction): boolean {
+  return prediction.scalarValue !== null || prediction.distribution.length > 0
+}
+
+const countHoverTooltip = computed(() => {
+  const target = countHoverTarget.value
   const grid = countGridElement.value
-  if (!(anchor instanceof Element) || !grid) return
-  clearHoverTooltip()
-  countHoverTooltip.value = {
-    anchor,
+  if (!target || !grid) return null
+  const source = countSources.value.find((candidate) => candidate.key === target.sourceKey)
+  if (!source) return null
+  return {
+    anchor: target.anchor,
     sourceLabel: source.label,
-    tileImage: props.tileImageSrc(tile),
-    tileLabel: props.tileFaceLabel(tile),
-    redFive: isRedFive(tile),
-    prediction: tilePrediction(tile, source),
+    tileImage: props.tileImageSrc(target.tile),
+    tileLabel: props.tileFaceLabel(target.tile),
+    redFive: isRedFive(target.tile),
+    prediction: tilePrediction(target.tile, source),
     // The floating layer lives outside the chart, so it needs resolved colors.
     palette: countSourcePalette(source, getComputedStyle(grid)),
+  }
+})
+
+function showCountTooltip(event: Event, tile: string, source: TileSource) {
+  const anchor = event.currentTarget
+  if (!(anchor instanceof Element) || !countGridElement.value) return
+  clearHoverTooltip()
+  countHoverTarget.value = {
+    anchor,
+    tile,
+    sourceKey: source.key,
+    contextKey: countTooltipContextKey(),
+    controlledSeat: props.controlledSeat,
   }
 }
 </script>
