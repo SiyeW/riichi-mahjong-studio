@@ -28,6 +28,18 @@ test('red-five detail uses two outcomes and the actual one-tile color', () => {
   ])
 })
 
+test('count detail preserves exact impossible and certain outcomes', () => {
+  const entries = countTooltipDistribution([
+    { value: 0, probability: 0 },
+    { value: 1, probability: 1 },
+    { value: 2, probability: 0 },
+    { value: 3, probability: 0 },
+    { value: 4, probability: 0 },
+  ], false, palette)
+
+  assert.deepEqual(entries.map((entry) => entry.probability), [0, 1, 0, 0, 0])
+})
+
 test('missing and empty distributions never become a fabricated zero-tile prediction', () => {
   assert.deepEqual(countTooltipDistribution([], false, palette), [])
   assert.deepEqual(countTooltipDistribution([{ value: 0, probability: 0 }], false, palette), [])

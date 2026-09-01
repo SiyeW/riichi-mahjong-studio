@@ -58,6 +58,28 @@ test('accepts a direct summary without detailed outcomes', () => {
   assert.deepEqual(result.players[2].winTargets, [])
 })
 
+test('preserves exact impossible and certain probabilities', () => {
+  const result = resolveKyokuOutcome({
+    drawProbability: 0,
+    players: [
+      { seat: 0, winProbability: 1, dealInProbability: 0 },
+      { seat: 1, winProbability: 0, dealInProbability: 1 },
+      { seat: 2, winProbability: 0, dealInProbability: 0 },
+      { seat: 3, winProbability: 0, dealInProbability: 0 },
+    ],
+    outcomes: [
+      { type: 'draw', probability: 0 },
+      { type: 'tsumo', winner: 0, probability: 1 },
+      { type: 'ron', winners: [1], target: 0, probability: 0 },
+    ],
+  })
+
+  assert.equal(result.drawProbability, 0)
+  assert.deepEqual(result.players.map((player) => player.winProbability), [1, 0, 0, 0])
+  assert.deepEqual(result.players.map((player) => player.dealInProbability), [0, 1, 0, 0])
+  assert.deepEqual(result.players[0].winTargets, [{ seat: 0, probability: 1 }])
+})
+
 test('does not turn missing analysis into a horizontal-movement prediction', () => {
   const result = resolveKyokuOutcome({})
   assert.equal(result.hasTotals, false)
