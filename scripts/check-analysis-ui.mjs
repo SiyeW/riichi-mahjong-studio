@@ -207,7 +207,7 @@ try {
   await handButtons.first().evaluate(el => el.blur())
   assert.equal(await hint.count(), 0, 'keyboard blur dismisses the hint')
 
-  // Deal-in rows fill their allotted width and height while retaining the mature
+  // Deal-in rows fill their allotted width and height while retaining the
   // tile-above, downward-bar, right-scale composition.
   await page.setViewportSize({ width: 1400, height: 1000 })
   await page.evaluate(() => {
@@ -260,7 +260,7 @@ try {
   assert.ok(Math.max(...roomyRisk.rowHeights) - Math.min(...roomyRisk.rowHeights) < 0.6, 'four rows share one visual ratio')
   assert.ok(Math.abs(roomyRisk.sequenceWidth - roomyRisk.faceWidth * 9) < 0.6, 'nine tile columns fill the chart lane')
   assert.ok(roomyRisk.barsHeight >= roomyRisk.faceHeight, 'bars retain at least one tile height')
-  assert.ok(roomyRisk.barsHeight <= roomyRisk.faceHeight * 1.15, 'bars do not stretch beyond the mature tile-to-chart ratio')
+  assert.ok(roomyRisk.barsHeight > roomyRisk.faceHeight * 1.15, 'bars expand into height not used by capped tiles')
   assert.ok(roomyRisk.scaleHeight > 0 && roomyRisk.scaleRight <= roomyRisk.gridRight + 0.6, 'the scale stays alongside the bars')
   assert.ok(roomyRisk.rowBorders.every(width => width === '0px'), 'risk rows have no divider rules')
 
@@ -327,6 +327,7 @@ try {
         rowCount: rows.length,
         lastRowBottom: rows.at(-1)?.getBoundingClientRect().bottom || 0,
         bodyBottom: body?.getBoundingClientRect().bottom || 0,
+        fontSize: grid ? Number.parseFloat(getComputedStyle(grid).fontSize) : 0,
         tileWidth: tile?.getBoundingClientRect().width || 0,
         tileHeight: tile?.getBoundingClientRect().height || 0,
       }
@@ -337,6 +338,8 @@ try {
   assert.equal(splitMetrics.counts.rowCount, 4)
   assert.ok(splitMetrics.risk.lastRowBottom <= splitMetrics.risk.bodyBottom + 0.6, 'all risk rows fit the vertically split panel')
   assert.ok(splitMetrics.counts.lastRowBottom <= splitMetrics.counts.bodyBottom + 0.6, 'all grouped count rows fit the vertically split panel')
+  assert.ok(splitMetrics.risk.tileWidth <= splitMetrics.risk.fontSize * 3 + 0.6, 'risk tiles stay within the 3em interface limit')
+  assert.ok(splitMetrics.counts.tileWidth <= splitMetrics.counts.fontSize * 3 + 0.6, 'grouped count tiles stay within the 3em interface limit')
   assert.ok(splitMetrics.counts.tileWidth < 60, 'grouped count tiles are height-limited in a wide, short panel')
   if (process.env.RMS_SPLIT_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_SPLIT_UI_CHECK_SCREENSHOT })

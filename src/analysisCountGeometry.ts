@@ -5,6 +5,7 @@ export type GroupedCountGeometryInput = Readonly<{
   toggleHeight: number
   legendHeight: number
   minimumTileWidth: number
+  maximumTileWidth?: number
   rowCount?: number
   longestRow?: number
   laneCount?: number
@@ -37,6 +38,9 @@ export function groupedCountGeometry(input: GroupedCountGeometryInput): GroupedC
   const legendHeight = Math.max(0, Math.round(input.legendHeight * ratio))
   const tileGap = Math.max(0, Math.round((input.tileGap || 0) * ratio))
   const minimumTile = Math.max(laneCount, Math.round(input.minimumTileWidth * ratio))
+  const maximumTile = Number.isFinite(input.maximumTileWidth)
+    ? Math.max(minimumTile, Math.round((input.maximumTileWidth || 0) * ratio))
+    : Number.POSITIVE_INFINITY
   const widthLimitedTile = Math.floor(
     (availableWidth - (tileGap * Math.max(0, longestRow - 1))) / longestRow,
   )
@@ -45,7 +49,7 @@ export function groupedCountGeometry(input: GroupedCountGeometryInput): GroupedC
     (TILE_ASPECT_RATIO * 2) + CHART_GAP_RATIO + GRID_GAP_RATIO
   )
   const heightLimitedTile = Math.floor((availableHeight - toggleHeight) / heightCoefficient)
-  const tile = Math.max(minimumTile, Math.min(widthLimitedTile, heightLimitedTile))
+  const tile = Math.max(minimumTile, Math.min(widthLimitedTile, heightLimitedTile, maximumTile))
   const tileHeight = Math.max(1, Math.round(tile * TILE_ASPECT_RATIO))
   const chartGap = Math.max(1, Math.round(tile * CHART_GAP_RATIO))
   const gridGap = Math.max(1, Math.round(tile * GRID_GAP_RATIO))

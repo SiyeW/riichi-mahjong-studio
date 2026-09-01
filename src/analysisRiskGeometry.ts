@@ -5,6 +5,7 @@ export type RiskGeometryInput = Readonly<{
   scaleSpace: number
   legendHeight: number
   minimumTileWidth?: number
+  maximumTileWidth?: number
   rowCount?: number
   longestRow?: number
   laneCount?: number
@@ -37,6 +38,9 @@ export function analysisRiskGeometry(input: RiskGeometryInput): RiskGeometry {
   const availableHeight = Math.max(1, Math.floor(input.availableHeight * ratio))
   const scale = Math.max(1, Math.round(input.scaleSpace * ratio))
   const minimumTile = Math.max(laneCount, Math.round((input.minimumTileWidth || laneCount) * ratio))
+  const maximumTile = Number.isFinite(input.maximumTileWidth)
+    ? Math.max(minimumTile, Math.round((input.maximumTileWidth || 0) * ratio))
+    : Number.POSITIVE_INFINITY
   const widthLimitedTile = Math.floor((available - scale) / longestRow)
   const legendHeight = Math.max(0, Math.round(input.legendHeight * ratio))
   const preferredHeightCoefficient = rowCount * (
@@ -45,17 +49,16 @@ export function analysisRiskGeometry(input: RiskGeometryInput): RiskGeometry {
     + 0.1
   )
   const heightLimitedTile = Math.floor((availableHeight - legendHeight) / preferredHeightCoefficient)
-  const tile = Math.max(minimumTile, Math.min(widthLimitedTile, heightLimitedTile))
+  const tile = Math.max(minimumTile, Math.min(widthLimitedTile, heightLimitedTile, maximumTile))
   const tileHeight = Math.max(1, Math.round(tile * TILE_ASPECT_RATIO))
   const barsWidth = Math.max(laneCount, Math.round(tile * 0.84))
   const chartGap = Math.max(1, Math.round(tile * 0.035))
   const gridGap = Math.max(1, Math.round(tile * 0.1))
   const minimumBarsHeight = Math.max(1, Math.round(tileHeight * MINIMUM_BARS_TO_TILE_RATIO))
-  const preferredBarsHeight = Math.max(minimumBarsHeight, Math.round(tileHeight * PREFERRED_BARS_TO_TILE_RATIO))
   const availableBarsHeight = Math.floor(
     (availableHeight - legendHeight - (gridGap * rowCount)) / rowCount,
   ) - tileHeight - chartGap
-  const barsHeight = Math.max(minimumBarsHeight, Math.min(preferredBarsHeight, availableBarsHeight))
+  const barsHeight = Math.max(minimumBarsHeight, availableBarsHeight)
   const rowMinimumHeight = tileHeight + chartGap + minimumBarsHeight
   const rowHeight = tileHeight + chartGap + barsHeight
   return {

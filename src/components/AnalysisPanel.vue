@@ -913,8 +913,10 @@ function groupedLegendHeightPixels(
 function updateRiskGeometry() {
   const grid = riskGridElement.value
   if (!grid) return
+  const gridStyle = getComputedStyle(grid)
   const rootRem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-  const floatingScale = Number.parseFloat(getComputedStyle(grid).getPropertyValue('--floating-panel-scale')) || 1
+  const floatingScale = Number.parseFloat(gridStyle.getPropertyValue('--floating-panel-scale')) || 1
+  const tileEm = Number.parseFloat(gridStyle.fontSize) || rootRem * floatingScale
   const geometry = analysisRiskGeometry({
     availableWidth: grid.getBoundingClientRect().width,
     availableHeight: grid.getBoundingClientRect().height,
@@ -922,6 +924,7 @@ function updateRiskGeometry() {
     scaleSpace: 2.45 * rootRem * floatingScale,
     legendHeight: grid.querySelector<HTMLElement>('.analysis-source-legend')?.getBoundingClientRect().height || 0,
     minimumTileWidth: 1.35 * rootRem * floatingScale,
+    maximumTileWidth: 3 * tileEm,
     rowCount: tileRows.length,
     longestRow: Math.max(...tileRows.map((row) => row.length)),
     laneCount: opponentSources.value.length,
@@ -968,8 +971,10 @@ function connectRiskGeometry(grid: HTMLElement | null) {
 function updateCountBarGeometry() {
   const grid = countGridElement.value
   if (!grid) return
+  const gridStyle = getComputedStyle(grid)
   const rootRem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-  const floatingScale = Number.parseFloat(getComputedStyle(grid).getPropertyValue('--floating-panel-scale')) || 1
+  const floatingScale = Number.parseFloat(gridStyle.getPropertyValue('--floating-panel-scale')) || 1
+  const tileEm = Number.parseFloat(gridStyle.fontSize) || rootRem * floatingScale
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const desiredTilePixels = Math.max(8, Math.round(2.45 * rootRem * floatingScale * ratio))
   const desiredTileHeightPixels = Math.max(1, Math.round(3.18 * rootRem * floatingScale * ratio))
@@ -992,6 +997,7 @@ function updateCountBarGeometry() {
     toggleHeight: toggleHeightPixels / ratio,
     legendHeight: groupedLegendPixels / ratio,
     minimumTileWidth: rootRem * floatingScale,
+    maximumTileWidth: 3 * tileEm,
     rowCount: countTileRows.value.length,
     longestRow: longestGroupedRow,
     laneCount: sourceCount,
