@@ -714,7 +714,7 @@
             </div>
             <div v-if="status.mode === 'research'" class="quick-seat-block">
               <span class="seat-switch-label">{{ t('console.switchSeat') }}</span>
-              <div class="seat-buttons seat-buttons-compact">
+              <div v-adaptive-button-grid="{ columns: [4, 2, 1] }" class="seat-buttons seat-buttons-compact">
                 <button
                   v-for="option in relativeSeatOptions"
                   :key="option.label"
@@ -731,7 +731,7 @@
             </div>
             <div v-if="status.mode === 'play'" class="quick-subsection">
               <span class="quick-subsection-label">{{ t('console.reviewMode') }}</span>
-            <div class="quick-training-mode-row">
+            <div v-adaptive-button-grid="{ columns: [4, 2, 1] }" class="quick-training-mode-row">
               <button
                 v-for="option in quickTrainingModes"
                 :key="option.value"
@@ -781,7 +781,7 @@
             <span>{{ treePanelCollapsed ? t('console.expand') : t('console.collapse') }}</span>
           </button>
           <template v-if="!treePanelCollapsed">
-            <div class="tree-actions">
+            <div v-adaptive-button-grid="{ columns: [3, 2, 1], spanLastWhenIncomplete: true }" class="tree-actions">
               <button @click="setCurrentNodeAsMainBranch" :disabled="!canSetCurrentNodeAsMainBranch || nodeMutationRequestInFlight">{{ t('tree.setMain') }}</button>
               <button
                 class="tree-delete-button"
@@ -1573,6 +1573,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
+import { vAdaptiveButtonGrid } from './adaptiveButtonGrid'
 import { DEFAULT_ANALYSIS_COUNT_LAYOUT, type AnalysisCountLayout } from './analysisCountSpacing'
 import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'

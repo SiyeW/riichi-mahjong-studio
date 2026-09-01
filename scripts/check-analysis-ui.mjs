@@ -434,8 +434,11 @@ try {
         return bounds && (rect.left < bounds.left - 0.6 || rect.right > bounds.right + 0.6)
       }).map(button => button.textContent?.trim()),
       wrappedSeatButtons: seatButtons.filter(button => getComputedStyle(button).whiteSpace !== 'nowrap').map(button => button.textContent?.trim()),
+      clippedButtons: buttons.filter(button => button.scrollWidth > button.clientWidth + 0.6).map(button => button.textContent?.trim()),
       seatRows: rowCount(seatButtons),
       treeRows: rowCount(treeButtons),
+      seatColumns: Number(document.querySelector('.seat-buttons-compact')?.dataset.adaptiveColumns || 0),
+      treeColumns: Number(document.querySelector('.tree-actions')?.dataset.adaptiveColumns || 0),
       autoColumns: getComputedStyle(document.querySelector('.auto-analysis-row')).gridTemplateColumns.split(' ').length,
     }
   })
@@ -444,8 +447,9 @@ try {
   const compactConsole = await consoleGeometry()
   assert.ok(compactConsole.bodyScrollWidth <= compactConsole.bodyClientWidth + 1, 'compact console has no horizontal overflow')
   assert.deepEqual(compactConsole.overflowingButtons, [], 'compact console buttons stay inside the panel')
+  assert.deepEqual(compactConsole.clippedButtons, [], 'compact console does not clip button text')
   assert.equal(compactConsole.seatRows, 1, 'seat buttons keep one row while enough width remains')
-  assert.equal(compactConsole.treeRows, 2, 'tree actions use the available compact width')
+  assert.equal(compactConsole.treeRows, 1, 'tree actions keep one row while their text fits')
 
   await setNarrowConsoleWidth(230)
   const narrowConsole = await consoleGeometry()
@@ -453,8 +457,7 @@ try {
   assert.ok(narrowConsole.bodyScrollWidth <= narrowConsole.bodyClientWidth + 1, 'narrow console has no horizontal overflow')
   assert.deepEqual(narrowConsole.overflowingButtons, [], 'narrow console buttons stay inside the panel')
   assert.deepEqual(narrowConsole.wrappedSeatButtons, [], 'seat labels remain on one line')
-  assert.equal(narrowConsole.seatRows, 2, 'seat buttons reflow to two rows in a narrow panel')
-  assert.equal(narrowConsole.treeRows, 3, 'tree actions keep readable labels instead of overflowing')
+  assert.deepEqual(narrowConsole.clippedButtons, [], 'narrow console switches layout before clipping button text')
   if (process.env.RMS_CONSOLE_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_CONSOLE_UI_CHECK_SCREENSHOT })
   }
@@ -464,10 +467,30 @@ try {
   assert.ok(extremeConsole.bodyScrollWidth <= extremeConsole.bodyClientWidth + 1, 'extreme console has no horizontal overflow')
   assert.deepEqual(extremeConsole.overflowingButtons, [], 'extreme console buttons stay inside the panel')
   assert.deepEqual(extremeConsole.wrappedSeatButtons, [], 'seat labels still remain on one line at the extreme width')
+  assert.deepEqual(extremeConsole.clippedButtons, [], 'extreme console switches layout before clipping button text')
   assert.equal(extremeConsole.autoColumns, 1, 'automatic analysis stacks at the extreme width')
   assert.equal(extremeConsole.treeRows, 3, 'tree actions use one full-width row each at the extreme width')
   if (process.env.RMS_CONSOLE_EXTREME_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_CONSOLE_EXTREME_UI_CHECK_SCREENSHOT })
+  }
+
+  for (const language of ['zh-CN', 'ja-JP', 'en-US']) {
+    await page.evaluate((value) => {
+      window.analysisCheck.vm.settings.display.language = value
+    }, language)
+    let previousSeatColumns = 4
+    let previousTreeColumns = 3
+    for (let width = 360; width >= 180; width -= 5) {
+      await setNarrowConsoleWidth(width)
+      const geometry = await consoleGeometry()
+      assert.ok(geometry.bodyScrollWidth <= geometry.bodyClientWidth + 1, `${language} console does not overflow at ${width}px`)
+      assert.deepEqual(geometry.overflowingButtons, [], `${language} buttons stay inside at ${width}px`)
+      assert.deepEqual(geometry.clippedButtons, [], `${language} buttons reflow before text clips at ${width}px`)
+      assert.ok(geometry.seatColumns <= previousSeatColumns, `${language} seat columns decrease monotonically`)
+      assert.ok(geometry.treeColumns <= previousTreeColumns, `${language} tree columns decrease monotonically`)
+      previousSeatColumns = geometry.seatColumns
+      previousTreeColumns = geometry.treeColumns
+    }
   }
   assert.deepEqual(errors, [])
   console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing, hand-toggle hints, responsive geometry, narrow console and shared tile artwork passed.')
