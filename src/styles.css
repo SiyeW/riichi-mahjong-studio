@@ -2326,6 +2326,11 @@ textarea {
   padding: 0;
 }
 
+.console-dock {
+  container-name: console-dock;
+  container-type: inline-size;
+}
+
 .side-panel .panel-header {
   margin: 0;
 }
@@ -2336,11 +2341,14 @@ textarea {
   flex-direction: column;
   gap: calc(0.36rem * var(--chrome-scale));
   min-height: 0;
+  overflow-x: hidden;
   overflow-y: auto;
   padding: calc(0.5rem * var(--chrome-scale)) calc(0.48rem * var(--chrome-scale)) calc(0.7rem * var(--chrome-scale));
 }
 
 .settings-preview {
+  box-sizing: border-box;
+  min-width: 0;
   padding: calc(0.40rem * var(--chrome-scale)) calc(0.44rem * var(--chrome-scale)) calc(0.44rem * var(--chrome-scale));
   background: var(--dock-module-surface);
   border: 1px solid rgba(140, 195, 188, 0.12);
@@ -2351,13 +2359,17 @@ textarea {
 }
 
 .auto-analysis-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
   align-items: stretch;
   gap: calc(0.38rem * var(--chrome-scale));
+  min-width: 0;
 }
 
 .auto-analysis-button {
-  flex: 0 0 auto;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid rgba(0, 0, 0, 0.28);
   background: rgba(23, 122, 70, 0.9);
   color: var(--text-main);
@@ -2365,6 +2377,9 @@ textarea {
   border-radius: calc(0.1875rem * var(--chrome-scale));
   font-size: var(--ui-text-control);
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     background var(--ui-motion-duration) var(--ui-motion-easing),
@@ -2434,9 +2449,18 @@ textarea {
   color: inherit;
   cursor: pointer;
   line-height: 1.1;
+  min-width: 0;
+}
+
+.panel-section-toggle h3 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .panel-section-toggle span {
+  flex: 0 0 auto;
   font-size: var(--ui-text-caption);
   color: var(--text-dim);
   line-height: 1;
@@ -2480,6 +2504,7 @@ textarea {
 .quick-training-content {
   display: grid;
   gap: calc(0.5rem * var(--chrome-scale));
+  min-width: 0;
 }
 
 .quick-audio-block {
@@ -2492,6 +2517,10 @@ textarea {
   padding-bottom: calc(0.34rem * var(--chrome-scale));
   line-height: 1.2;
   border-radius: calc(0.1875rem * var(--chrome-scale));
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .quick-subsection {
@@ -2552,9 +2581,19 @@ textarea {
   gap: calc(0.5rem * var(--chrome-scale));
   font-size: var(--ui-text-body);
   color: var(--text-dim);
+  min-width: 0;
+}
+
+.quick-time-header > span,
+.quick-time-legend > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .quick-time-header strong {
+  flex: 0 0 auto;
   color: var(--text-main);
   font-size: var(--ui-text-control);
   font-variant-numeric: tabular-nums;
@@ -2647,12 +2686,18 @@ textarea {
   justify-content: flex-end;
   gap: calc(0.45rem * var(--chrome-scale));
   margin-bottom: calc(0.20rem * var(--chrome-scale));
+  min-width: 0;
 }
 
 .tree-actions button {
-  flex-shrink: 0;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
   font-size: var(--ui-text-body);
   padding: calc(0.25rem * var(--ui-scale)) calc(0.5rem * var(--ui-scale));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .tree-actions button {
@@ -2688,6 +2733,50 @@ textarea {
 
 .seat-buttons-compact {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+@container console-dock (max-width: 20rem) {
+  .tree-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+    gap: calc(0.24rem * var(--chrome-scale));
+  }
+}
+
+@container console-dock (min-width: 17.5rem) and (max-width: 20rem) {
+  .tree-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tree-actions button:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
+@container console-dock (max-width: 15.5rem) {
+  .seat-buttons-compact,
+  .quick-training-mode-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-seat-block .seat-buttons button,
+  .quick-mode-btn {
+    padding-right: calc(0.38rem * var(--ui-scale));
+    padding-left: calc(0.38rem * var(--ui-scale));
+  }
+}
+
+@container console-dock (max-width: 12rem) {
+  .auto-analysis-row,
+  .tree-actions,
+  .quick-training-mode-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .auto-analysis-progress {
+    min-height: calc(1.75rem * var(--ui-scale));
+  }
 }
 
 .seat-buttons button.active {

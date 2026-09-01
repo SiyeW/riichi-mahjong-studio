@@ -43,6 +43,7 @@ try {
       },
     }
     const check = window.analysisCheck
+    vm.showPerceptualColorDebugger = false
     window.trainerAPI = {
       getShanten: async () => { check.reads++; return check.result() },
       setAnalysisVisibility: async () => ({ state: JSON.parse(JSON.stringify(vm.status)) }),
@@ -395,8 +396,81 @@ try {
   if (process.env.RMS_TILE_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_TILE_UI_CHECK_SCREENSHOT })
   }
+
+  const setNarrowConsoleWidth = async (consoleWidth) => {
+    await page.setViewportSize({ width: 800, height: 900 })
+    await page.evaluate((width) => {
+      const vm = window.analysisCheck.vm
+      vm.settings.display.workspaceLayout = {
+        ...vm.workspaceLayout,
+        analysisVisible: false,
+        consoleVisible: true,
+        layout: {
+          type: 'split', direction: 'horizontal', weights: [width, 800 - width],
+          children: [
+            { type: 'item', id: 'console' },
+            { type: 'item', id: 'table' },
+          ],
+        },
+        analysisPanels: { opponents: false, game: false, risk: false, counts: false },
+      }
+    }, consoleWidth)
+    await page.waitForTimeout(100)
+  }
+  const consoleGeometry = () => page.evaluate(() => {
+    const dock = document.querySelector('.console-dock')
+    const body = document.querySelector('.console-dock-body')
+    const buttons = [...document.querySelectorAll('.console-dock-body button')]
+    const seatButtons = [...document.querySelectorAll('.seat-buttons-compact button')]
+    const treeButtons = [...document.querySelectorAll('.tree-actions button')]
+    const bounds = body?.getBoundingClientRect()
+    const rowCount = elements => new Set(elements.map(element => Math.round(element.getBoundingClientRect().top))).size
+    return {
+      dockWidth: dock?.getBoundingClientRect().width || 0,
+      bodyClientWidth: body?.clientWidth || 0,
+      bodyScrollWidth: body?.scrollWidth || 0,
+      overflowingButtons: buttons.filter((button) => {
+        const rect = button.getBoundingClientRect()
+        return bounds && (rect.left < bounds.left - 0.6 || rect.right > bounds.right + 0.6)
+      }).map(button => button.textContent?.trim()),
+      wrappedSeatButtons: seatButtons.filter(button => getComputedStyle(button).whiteSpace !== 'nowrap').map(button => button.textContent?.trim()),
+      seatRows: rowCount(seatButtons),
+      treeRows: rowCount(treeButtons),
+      autoColumns: getComputedStyle(document.querySelector('.auto-analysis-row')).gridTemplateColumns.split(' ').length,
+    }
+  })
+
+  await setNarrowConsoleWidth(300)
+  const compactConsole = await consoleGeometry()
+  assert.ok(compactConsole.bodyScrollWidth <= compactConsole.bodyClientWidth + 1, 'compact console has no horizontal overflow')
+  assert.deepEqual(compactConsole.overflowingButtons, [], 'compact console buttons stay inside the panel')
+  assert.equal(compactConsole.seatRows, 1, 'seat buttons keep one row while enough width remains')
+  assert.equal(compactConsole.treeRows, 2, 'tree actions use the available compact width')
+
+  await setNarrowConsoleWidth(230)
+  const narrowConsole = await consoleGeometry()
+  assert.ok(narrowConsole.dockWidth < 235 && narrowConsole.dockWidth > 220, 'console receives the intended narrow width')
+  assert.ok(narrowConsole.bodyScrollWidth <= narrowConsole.bodyClientWidth + 1, 'narrow console has no horizontal overflow')
+  assert.deepEqual(narrowConsole.overflowingButtons, [], 'narrow console buttons stay inside the panel')
+  assert.deepEqual(narrowConsole.wrappedSeatButtons, [], 'seat labels remain on one line')
+  assert.equal(narrowConsole.seatRows, 2, 'seat buttons reflow to two rows in a narrow panel')
+  assert.equal(narrowConsole.treeRows, 3, 'tree actions keep readable labels instead of overflowing')
+  if (process.env.RMS_CONSOLE_UI_CHECK_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_CONSOLE_UI_CHECK_SCREENSHOT })
+  }
+
+  await setNarrowConsoleWidth(180)
+  const extremeConsole = await consoleGeometry()
+  assert.ok(extremeConsole.bodyScrollWidth <= extremeConsole.bodyClientWidth + 1, 'extreme console has no horizontal overflow')
+  assert.deepEqual(extremeConsole.overflowingButtons, [], 'extreme console buttons stay inside the panel')
+  assert.deepEqual(extremeConsole.wrappedSeatButtons, [], 'seat labels still remain on one line at the extreme width')
+  assert.equal(extremeConsole.autoColumns, 1, 'automatic analysis stacks at the extreme width')
+  assert.equal(extremeConsole.treeRows, 3, 'tree actions use one full-width row each at the extreme width')
+  if (process.env.RMS_CONSOLE_EXTREME_UI_CHECK_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_CONSOLE_EXTREME_UI_CHECK_SCREENSHOT })
+  }
   assert.deepEqual(errors, [])
-  console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing, hand-toggle hints, responsive geometry and shared tile artwork passed.')
+  console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing, hand-toggle hints, responsive geometry, narrow console and shared tile artwork passed.')
 } finally {
   await browser?.close()
   await server.close()
