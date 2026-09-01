@@ -474,6 +474,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { deltaHalfWidthPercent, symmetricDeltaScale } from '../analysisDeltaScale'
 import { useI18n } from '../i18n'
 import {
   ANALYSIS_COUNT_SPACING,
@@ -828,16 +829,15 @@ const playerRows = computed(() => playerSeatOrder.value.map((seat) => {
   }
 }))
 
-const maxAbsoluteDelta = computed(() => Math.max(
-  1,
-  ...playerRows.value.map((player) => Math.abs(player.kyokuDelta || 0)),
+const maxAbsoluteDelta = computed(() => (
+  symmetricDeltaScale(playerRows.value.map((player) => player.kyokuDelta))
 ))
 
 function deltaBarStyle(value: number | null) {
-  const normalized = Math.min(1, Math.abs(value || 0) / maxAbsoluteDelta.value)
+  const width = `${deltaHalfWidthPercent(value, maxAbsoluteDelta.value)}%`
   return value !== null && value < 0
-    ? { right: '50%', width: `${normalized * 50}%` }
-    : { left: '50%', width: `${normalized * 50}%` }
+    ? { right: '50%', width }
+    : { left: '50%', width }
 }
 
 function measureOffenseLabels() {
