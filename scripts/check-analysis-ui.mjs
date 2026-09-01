@@ -66,7 +66,7 @@ try {
       pendingDiscard: null, reactionWindow: null,
     }
     vm.settings.display.workspaceLayout = {
-      ...vm.workspaceLayout, analysisVisible: true, consoleVisible: false,
+      ...vm.workspaceLayout, analysisVisible: true, consoleVisible: true,
       layout: {
         type: 'split', direction: 'horizontal', weights: [2, 1, 1],
         children: [
@@ -78,6 +78,11 @@ try {
       analysisPanels: { opponents: false, game: false, risk: false, counts: true },
     }
   })
+  assert.equal(
+    await page.locator('.auto-analysis-progress small').evaluate(element => getComputedStyle(element).opacity),
+    '1',
+    'auto-analysis progress details stay visible without hover',
+  )
   const tooltip = page.locator('.count-prediction-tooltip')
   const target = () => page.locator('.analysis-count-source-row').nth(3).locator('.analysis-count-source-tile').first()
   await target().waitFor().catch(async error => {
