@@ -2,18 +2,11 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "RMS: Start Renderer",
-      "type": "shell",
-      "command": "npm",
+      "label": "RMS: Ensure Renderer",
+      "type": "process",
+      "command": "node",
       "args": [
-        "run",
-        "dev:renderer",
-        "--",
-        "--host",
-        "127.0.0.1",
-        "--port",
-        "5173",
-        "--strictPort"
+        "${workspaceFolder}/scripts/ensure-debug-renderer.mjs"
       ],
       "options": {
         "cwd": "${workspaceFolder}"
@@ -22,13 +15,13 @@
       "problemMatcher": {
         "owner": "riichi-mahjong-studio",
         "pattern": {
-          "regexp": "^\\s*(?:error|Error)(?::|\\s)(.*)$",
+          "regexp": "^Error: (.*)$",
           "message": 1
         },
         "background": {
           "activeOnStart": true,
-          "beginsPattern": "VITE.*ready|vite.*--host",
-          "endsPattern": "Local:.*http://127\\.0\\.0\\.1:5173"
+          "beginsPattern": "^RMS_RENDERER_STARTING ",
+          "endsPattern": "^RMS_RENDERER_READY "
         }
       },
       "presentation": {
