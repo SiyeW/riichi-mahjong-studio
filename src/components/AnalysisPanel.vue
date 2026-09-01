@@ -3,6 +3,7 @@
     ref="analysisRootElement"
     class="unified-analysis"
     :class="{
+      'is-opponent-section': section === 'opponents',
       'reduce-motion': reduceMotion,
       'is-risk-section': section === 'risk',
       'is-count-section': section === 'counts',
@@ -32,10 +33,16 @@
             <i :style="{ backgroundColor: shantenColors[index] }" />{{ label }}
           </span>
         </div>
-        <div class="analysis-opponent-prediction-grid">
+        <div
+          class="analysis-opponent-prediction-grid"
+          :class="{
+            'has-dora-distributions': hasOpponentDoraDistributions,
+            'has-score-distributions': hasOpponentScoreDistributions,
+          }"
+        >
           <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-predictions">
               <div
-                class="analysis-opponent-prediction"
+                class="analysis-opponent-prediction is-dora-prediction"
                 tabindex="0"
                 @mouseenter="showPredictionTooltip($event, opponent.label, t('analysis.dora'), opponent.doraPrediction, t('unit.tile'))"
                 @mouseleave="clearHoverTooltip"
@@ -66,7 +73,7 @@
                 </div>
               </div>
               <div
-                class="analysis-opponent-prediction"
+                class="analysis-opponent-prediction is-score-prediction"
                 tabindex="0"
                 @mouseenter="showPredictionTooltip($event, opponent.label, t('analysis.score'), opponent.scorePrediction, t('unit.point'))"
                 @mouseleave="clearHoverTooltip"
@@ -717,6 +724,13 @@ const opponentCards = computed(() => props.shantenOpponents.map((opponent) => {
       .slice(0, 3),
   }
 }))
+
+const hasOpponentDoraDistributions = computed(() => (
+  opponentCards.value.some((opponent) => opponent.doraPrediction.distribution.length)
+))
+const hasOpponentScoreDistributions = computed(() => (
+  opponentCards.value.some((opponent) => opponent.scorePrediction.distribution.length)
+))
 
 function maximumDistributionProbability(predictions: NumericPrediction[]): number {
   return Math.max(
@@ -1579,6 +1593,7 @@ function showCountTooltip(event: Event, tile: string, source: TileSource) {
   font-size: var(--ui-text-body);
 }
 
+.unified-analysis.is-opponent-section,
 .unified-analysis.is-risk-section,
 .unified-analysis.is-count-section {
   height: 100%;
@@ -1596,6 +1611,13 @@ button {
 
 .analysis-opponent-section {
   --analysis-distribution-track-surface: rgba(255, 255, 255, 0.045);
+  --analysis-dora-distribution-min-height: calc(2.25rem * var(--floating-panel-scale));
+  --analysis-dora-distribution-max-height: calc(4.25rem * var(--floating-panel-scale));
+  --analysis-score-distribution-min-height: calc(1.65rem * var(--floating-panel-scale));
+  --analysis-score-distribution-max-height: calc(3.15rem * var(--floating-panel-scale));
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
 }
 
 .analysis-opponent-grid {
@@ -1630,11 +1652,44 @@ button {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.analysis-opponent-prediction-grid.has-dora-distributions,
+.analysis-opponent-prediction-grid.has-score-distributions {
+  flex: 1 1 auto;
+}
+
+.analysis-opponent-prediction-grid.has-dora-distributions:not(.has-score-distributions) {
+  min-height: calc(5.5rem * var(--floating-panel-scale));
+  max-height: calc(7.5rem * var(--floating-panel-scale));
+}
+
+.analysis-opponent-prediction-grid.has-score-distributions:not(.has-dora-distributions) {
+  min-height: calc(5.55rem * var(--floating-panel-scale));
+  max-height: calc(7.05rem * var(--floating-panel-scale));
+}
+
+.analysis-opponent-prediction-grid.has-dora-distributions.has-score-distributions {
+  min-height: calc(8.2rem * var(--floating-panel-scale));
+  max-height: calc(11.7rem * var(--floating-panel-scale));
+}
+
 .analysis-opponent-predictions {
   display: grid;
   gap: calc(0.28rem * var(--floating-panel-scale));
+  height: 100%;
   min-width: 0;
   padding: calc(0.34rem * var(--floating-panel-scale)) calc(0.36rem * var(--floating-panel-scale));
+}
+
+.analysis-opponent-prediction-grid.has-dora-distributions.has-score-distributions .analysis-opponent-predictions {
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.analysis-opponent-prediction-grid.has-dora-distributions:not(.has-score-distributions) .analysis-opponent-predictions {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.analysis-opponent-prediction-grid.has-score-distributions:not(.has-dora-distributions) .analysis-opponent-predictions {
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .analysis-opponent-predictions + .analysis-opponent-predictions {
@@ -1642,7 +1697,10 @@ button {
 }
 
 .analysis-opponent-prediction {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 .analysis-prediction-heading {
@@ -1668,10 +1726,12 @@ button {
 
 .analysis-dora-distribution {
   display: grid;
+  flex: 1 1 var(--analysis-dora-distribution-min-height);
   grid-auto-columns: minmax(0, 1fr);
   grid-auto-flow: column;
   gap: 0;
-  height: calc(2.25rem * var(--floating-panel-scale));
+  min-height: var(--analysis-dora-distribution-min-height);
+  max-height: var(--analysis-dora-distribution-max-height);
 }
 
 .analysis-dora-distribution > span {
@@ -1716,9 +1776,11 @@ button {
 
 .analysis-score-distribution {
   display: flex;
+  flex: 1 1 var(--analysis-score-distribution-min-height);
   align-items: stretch;
   gap: 0;
-  height: calc(1.65rem * var(--floating-panel-scale));
+  min-height: var(--analysis-score-distribution-min-height);
+  max-height: var(--analysis-score-distribution-max-height);
   overflow: hidden;
 }
 

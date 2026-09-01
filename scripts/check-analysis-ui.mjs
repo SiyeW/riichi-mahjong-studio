@@ -26,6 +26,30 @@ try {
           context: { gameId: vm.gameView.gameId, nodeId: vm.gameView.currentNodeId, seat: vm.status.controlledSeat, inputMode: 'public', cacheKey: 'test-engine', cacheEpoch: this.epoch },
           outputs: {
             'wall-tile-count': { tiles: { '1m': { expectedValue, distribution: [{ value: 0, probability: 0.25 }, { value: 1, probability: 0.75 }] } } },
+            'opponent-dora-count': {
+              players: [1, 2, 3].map((seat, index) => ({
+                seat,
+                prediction: {
+                  expectedValue: 0.7 + (index * 0.1),
+                  distribution: [0, 1, 2, 3, 4, 5, 6, '7+'].map((value, valueIndex) => ({
+                    value,
+                    probability: Math.max(0.01, 0.32 - (valueIndex * 0.038) + (index * 0.004)),
+                  })),
+                },
+              })),
+            },
+            'opponent-score': {
+              players: [1, 2, 3].map((seat, index) => ({
+                seat,
+                prediction: {
+                  expectedValue: 6800 + (index * 450),
+                  distribution: [1000, 2000, 3900, 5800, 7700, 8000, 12000, 16000, 24000, 32000, 48000, 64000, 96000].map((value, valueIndex) => ({
+                    value,
+                    probability: Math.max(0.01, 0.16 - Math.abs(valueIndex - 5 - index) * 0.018),
+                  })),
+                },
+              })),
+            },
             'opponent-deal-in-probability': {
               players: [1, 2, 3].map((seat, sourceIndex) => ({
                 seat,
@@ -212,6 +236,71 @@ try {
   await hint.waitFor({ state: 'visible' })
   await handButtons.first().evaluate(el => el.blur())
   assert.equal(await hint.count(), 0, 'keyboard blur dismisses the hint')
+
+  // Dora and score distributions absorb useful vertical space in the opponent
+  // panel, then stop at a restrained maximum instead of becoming tall columns.
+  await page.setViewportSize({ width: 1400, height: 1000 })
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    window.analysisCheck.publish(window.analysisCheck.result())
+    vm.settings.display.workspaceLayout = {
+      ...vm.workspaceLayout,
+      analysisVisible: true,
+      consoleVisible: false,
+      layout: {
+        type: 'split', direction: 'horizontal', weights: [2, 1],
+        children: [{ type: 'item', id: 'table' }, { type: 'item', id: 'analysis-opponents' }],
+      },
+      analysisPanels: { opponents: true, game: false, risk: false, counts: false },
+    }
+  })
+  const opponentGeometry = async () => page.locator('.analysis-opponent-section').evaluate(section => {
+    const dora = section.querySelector('.analysis-dora-distribution')
+    const score = section.querySelector('.analysis-score-distribution')
+    const grid = section.querySelector('.analysis-opponent-prediction-grid')
+    const doraStyle = dora ? getComputedStyle(dora) : null
+    const scoreStyle = score ? getComputedStyle(score) : null
+    return {
+      sectionHeight: section.getBoundingClientRect().height,
+      gridHeight: grid?.getBoundingClientRect().height || 0,
+      doraHeight: dora?.getBoundingClientRect().height || 0,
+      scoreHeight: score?.getBoundingClientRect().height || 0,
+      doraMaximum: Number.parseFloat(doraStyle?.maxHeight || '0'),
+      scoreMaximum: Number.parseFloat(scoreStyle?.maxHeight || '0'),
+    }
+  })
+  await page.locator('.analysis-dora-distribution').first().waitFor()
+  await page.waitForTimeout(100)
+  const roomyOpponent = await opponentGeometry()
+  assert.ok(roomyOpponent.doraHeight > 36, 'roomy opponent panel grows the dora distribution beyond its former fixed height')
+  assert.ok(roomyOpponent.scoreHeight > 26.4, 'roomy opponent panel grows the score distribution beyond its former fixed height')
+  assert.ok(roomyOpponent.doraHeight <= roomyOpponent.doraMaximum + 0.6, 'dora distribution respects its visual maximum')
+  assert.ok(roomyOpponent.scoreHeight <= roomyOpponent.scoreMaximum + 0.6, 'score distribution respects its visual maximum')
+  if (process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT })
+  }
+
+  await page.setViewportSize({ width: 1400, height: 430 })
+  await page.waitForTimeout(100)
+  const shortOpponent = await opponentGeometry()
+  assert.ok(shortOpponent.gridHeight < roomyOpponent.gridHeight, 'opponent prediction area follows reductions in allotted height')
+  assert.ok(shortOpponent.doraHeight < roomyOpponent.doraHeight, 'dora distribution shrinks with the panel')
+  assert.ok(shortOpponent.scoreHeight < roomyOpponent.scoreHeight, 'score distribution shrinks with the panel')
+  if (process.env.RMS_OPPONENT_SHORT_UI_CHECK_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_OPPONENT_SHORT_UI_CHECK_SCREENSHOT })
+  }
+
+  await page.setViewportSize({ width: 1400, height: 1000 })
+  await page.evaluate(() => {
+    const result = window.analysisCheck.result()
+    for (const outputId of ['opponent-dora-count', 'opponent-score']) {
+      for (const player of result.outputs[outputId].players) delete player.prediction.distribution
+    }
+    window.analysisCheck.publish(result)
+  })
+  await page.waitForFunction(() => !document.querySelector('.analysis-opponent-prediction-grid')?.className.includes('has-'))
+  const scalarOnlyOpponent = await opponentGeometry()
+  assert.ok(scalarOnlyOpponent.gridHeight < roomyOpponent.gridHeight, 'scalar-only predictions remain compact instead of creating empty chart space')
 
   // Deal-in rows fill their allotted width and height while retaining the
   // tile-above, downward-bar, right-scale composition.
