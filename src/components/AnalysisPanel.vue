@@ -472,6 +472,7 @@ import {
   ANALYSIS_COUNT_SPACING,
   type AnalysisCountLayout,
 } from '../analysisCountSpacing'
+import { groupedCountGeometry } from '../analysisCountGeometry'
 import { analysisRiskGeometry } from '../analysisRiskGeometry'
 import {
   buildCountColorScale,
@@ -884,7 +885,6 @@ function setOffenseTrackElement(seat: number, element: unknown) {
 }
 
 const COUNT_TILE_ASPECT_RATIO = 3.18 / 2.45
-const COUNT_CHART_GAP_RATIO = 0.035
 const COUNT_GRID_GAP_RATIO = 0.1
 const COUNT_SOURCE_ROW_GAP_RATIO = 0.12
 
@@ -917,9 +917,11 @@ function updateRiskGeometry() {
   const floatingScale = Number.parseFloat(getComputedStyle(grid).getPropertyValue('--floating-panel-scale')) || 1
   const geometry = analysisRiskGeometry({
     availableWidth: grid.getBoundingClientRect().width,
+    availableHeight: grid.getBoundingClientRect().height,
     pixelRatio: window.devicePixelRatio,
     scaleSpace: 2.45 * rootRem * floatingScale,
     legendHeight: grid.querySelector<HTMLElement>('.analysis-source-legend')?.getBoundingClientRect().height || 0,
+    minimumTileWidth: 1.35 * rootRem * floatingScale,
     rowCount: tileRows.length,
     longestRow: Math.max(...tileRows.map((row) => row.length)),
     laneCount: opponentSources.value.length,
@@ -927,12 +929,14 @@ function updateRiskGeometry() {
   grid.style.setProperty('--analysis-tile-width', `${geometry.tileWidth}px`)
   grid.style.setProperty('--analysis-tile-height', `${geometry.tileHeight}px`)
   grid.style.setProperty('--analysis-risk-bars-width', `${geometry.barsWidth}px`)
+  grid.style.setProperty('--analysis-risk-bars-height', `${geometry.barsHeight}px`)
   grid.style.setProperty('--analysis-chart-gap', `${geometry.chartGap}px`)
   grid.style.setProperty('--analysis-risk-grid-gap', `${geometry.gridGap}px`)
   grid.style.setProperty('--analysis-risk-main-row-width', `${geometry.mainRowWidth}px`)
   grid.style.setProperty('--analysis-scale-space', `${geometry.scaleSpace}px`)
   grid.style.setProperty('--analysis-risk-row-min-height', `${geometry.rowMinimumHeight}px`)
   grid.style.setProperty('--analysis-risk-grid-min-height', `${geometry.gridMinimumHeight}px`)
+  grid.style.setProperty('--analysis-risk-grid-content-height', `${geometry.gridContentHeight}px`)
 }
 
 function scheduleRiskGeometry() {
@@ -976,15 +980,25 @@ function updateCountBarGeometry() {
   const gridRect = grid.getBoundingClientRect()
   const longestGroupedRow = Math.max(1, ...countTileRows.value.map((row) => row.tiles.length))
   const groupedTileGapPixels = ANALYSIS_COUNT_SPACING['tile-groups'].tileGapPixels
-  const availableWidthPixels = Math.floor(gridRect.width * ratio)
-  const groupedTilePixels = Math.max(
-    sourceCount,
-    Math.floor(
-      (availableWidthPixels - (groupedTileGapPixels * Math.max(0, longestGroupedRow - 1)))
-      / longestGroupedRow,
-    ),
+  const toggleHeightPixels = elementHeightPixels(
+    grid.querySelector('.analysis-count-layout-toggle'),
+    ratio,
   )
-  const groupedTileHeightPixels = Math.max(1, Math.round(groupedTilePixels * COUNT_TILE_ASPECT_RATIO))
+  const groupedLegendPixels = groupedLegendHeightPixels(grid, ratio, rootRem, floatingScale)
+  const groupedGeometry = groupedCountGeometry({
+    availableWidth: gridRect.width,
+    availableHeight: gridRect.height,
+    pixelRatio: ratio,
+    toggleHeight: toggleHeightPixels / ratio,
+    legendHeight: groupedLegendPixels / ratio,
+    minimumTileWidth: rootRem * floatingScale,
+    rowCount: countTileRows.value.length,
+    longestRow: longestGroupedRow,
+    laneCount: sourceCount,
+    tileGap: groupedTileGapPixels / ratio,
+  })
+  const groupedTilePixels = Math.round(groupedGeometry.tileWidth * ratio)
+  const groupedTileHeightPixels = Math.round(groupedGeometry.tileHeight * ratio)
   const tilePixels = props.countLayout === 'tile-groups' ? groupedTilePixels : desiredTilePixels
   const tileHeightPixels = props.countLayout === 'tile-groups'
     ? groupedTileHeightPixels
@@ -994,10 +1008,7 @@ function updateCountBarGeometry() {
   grid.style.setProperty('--analysis-count-source-gap', '0px')
   grid.style.setProperty('--analysis-count-wall-gap', `${wallGapPixels / ratio}px`)
   grid.style.setProperty('--analysis-count-tile-gap', `${tileGapPixels / ratio}px`)
-  const groupedRowPixels =
-    (groupedTilePixels * longestGroupedRow)
-    + (groupedTileGapPixels * Math.max(0, longestGroupedRow - 1))
-  grid.style.setProperty('--analysis-count-main-row-width', `${groupedRowPixels / ratio}px`)
+  grid.style.setProperty('--analysis-count-main-row-width', `${groupedGeometry.mainRowWidth}px`)
   const sourceShell = grid.querySelector<HTMLElement>('.analysis-count-source-sequence-shell')
   let sourceTilePixels = Math.max(4, Math.floor(desiredTilePixels * 0.3))
   if (sourceShell && countSourceTiles.value.length) {
@@ -1019,26 +1030,9 @@ function updateCountBarGeometry() {
     grid.style.setProperty('--analysis-count-source-content-width', `${sourceContentPixels / ratio}px`)
   }
 
-  const toggleHeightPixels = elementHeightPixels(
-    grid.querySelector('.analysis-count-layout-toggle'),
-    ratio,
-  )
-  const groupedChartGapPixels = groupedTilePixels * COUNT_CHART_GAP_RATIO
-  const groupedGridGapPixels = groupedTilePixels * COUNT_GRID_GAP_RATIO
-  const groupedLegendPixels = groupedLegendHeightPixels(grid, ratio, rootRem, floatingScale)
-  const groupedRowMinimumPixels = Math.max(
-    groupedTileHeightPixels + groupedChartGapPixels,
-    groupedLegendPixels,
-  )
-  const groupedBarMinimumPixels = Math.max(
-    0,
-    groupedRowMinimumPixels - groupedTileHeightPixels - groupedChartGapPixels,
-  )
-  const rowCount = countTileRows.value.length
-  const groupedGridMinimumPixels =
-    toggleHeightPixels
-    + (groupedRowMinimumPixels * rowCount)
-    + (groupedGridGapPixels * rowCount)
+  const groupedRowMinimumPixels = groupedGeometry.rowMinimumHeight * ratio
+  const groupedBarMinimumPixels = groupedGeometry.barMinimumHeight * ratio
+  const groupedGridMinimumPixels = groupedGeometry.gridMinimumHeight * ratio
 
   const sourceLegendPixels = elementHeightPixels(
     grid.querySelector('.analysis-count-source-legend'),
@@ -2083,7 +2077,7 @@ button {
 
 .analysis-risk-grid {
   --analysis-risk-track-surface: rgba(255, 255, 255, 0.05);
-  grid-template-rows: repeat(4, minmax(var(--analysis-risk-row-min-height, 0px), 1fr)) auto;
+  grid-template-rows: repeat(4, calc(var(--analysis-tile-height) + var(--analysis-chart-gap) + var(--analysis-risk-bars-height))) auto;
   align-content: center;
   height: 100%;
   min-height: var(--analysis-risk-grid-min-height, 0px);
@@ -2232,7 +2226,7 @@ button {
   grid-template-columns: var(--analysis-risk-main-row-width) var(--analysis-scale-space);
   justify-content: center;
   width: 100%;
-  height: 100%;
+  height: calc(var(--analysis-tile-height) + var(--analysis-chart-gap) + var(--analysis-risk-bars-height));
   min-height: var(--analysis-risk-row-min-height, 0px);
   padding: 0;
 }
@@ -2331,7 +2325,7 @@ button {
 }
 
 .analysis-risk-bars {
-  flex: 1 1 0;
+  flex: 0 0 var(--analysis-risk-bars-height);
   align-items: flex-start;
   width: var(--analysis-risk-bars-width);
   min-height: var(--analysis-tile-height);
@@ -2422,7 +2416,7 @@ button {
 
 .analysis-risk-scale {
   top: calc(var(--analysis-tile-height) + var(--analysis-chart-gap));
-  height: calc(100% - var(--analysis-tile-height) - var(--analysis-chart-gap));
+  height: var(--analysis-risk-bars-height);
 }
 
 .analysis-risk-scale > span {

@@ -257,9 +257,10 @@ try {
   const roomyRisk = await riskGeometry()
   assert.equal(roomyRisk.rowWidths.length, 4)
   assert.ok(roomyRisk.rowWidths.every(width => Math.abs(width - roomyRisk.gridWidth) < 0.6), 'all four rows align to the panel width')
-  assert.ok(Math.max(...roomyRisk.rowHeights) - Math.min(...roomyRisk.rowHeights) < 0.6, 'four rows share the available height')
+  assert.ok(Math.max(...roomyRisk.rowHeights) - Math.min(...roomyRisk.rowHeights) < 0.6, 'four rows share one visual ratio')
   assert.ok(Math.abs(roomyRisk.sequenceWidth - roomyRisk.faceWidth * 9) < 0.6, 'nine tile columns fill the chart lane')
   assert.ok(roomyRisk.barsHeight >= roomyRisk.faceHeight, 'bars retain at least one tile height')
+  assert.ok(roomyRisk.barsHeight <= roomyRisk.faceHeight * 1.15, 'bars do not stretch beyond the mature tile-to-chart ratio')
   assert.ok(roomyRisk.scaleHeight > 0 && roomyRisk.scaleRight <= roomyRisk.gridRight + 0.6, 'the scale stays alongside the bars')
   assert.ok(roomyRisk.rowBorders.every(width => width === '0px'), 'risk rows have no divider rules')
 
@@ -269,13 +270,13 @@ try {
   assert.ok(narrowRisk.faceWidth < roomyRisk.faceWidth, 'tile width follows the allotted panel width')
   assert.ok(Math.abs((narrowRisk.faceHeight / narrowRisk.faceWidth) - (3.18 / 2.45)) < 0.03, 'tile aspect ratio is retained')
 
-  await page.setViewportSize({ width: 1100, height: 760 })
+  await page.setViewportSize({ width: 1100, height: 540 })
   await page.waitForTimeout(100)
   const shortRisk = await riskGeometry()
   assert.ok(shortRisk.barsHeight < narrowRisk.barsHeight, 'bars absorb reductions in allotted panel height')
-  assert.ok(shortRisk.faceWidth === narrowRisk.faceWidth, 'height changes do not resize tile width')
+  assert.ok(shortRisk.faceWidth < narrowRisk.faceWidth, 'wide but short panels shrink tiles to preserve chart space')
 
-  await page.setViewportSize({ width: 1100, height: 430 })
+  await page.setViewportSize({ width: 1100, height: 260 })
   await page.waitForTimeout(100)
   const overflowRisk = await riskGeometry()
   assert.ok(overflowRisk.gridMinHeight > overflowRisk.bodyClientHeight, 'the chart keeps its readable minimum height')
@@ -284,6 +285,61 @@ try {
     await page.setViewportSize({ width: 1400, height: 1000 })
     await page.waitForTimeout(100)
     await page.screenshot({ path: process.env.RMS_RISK_UI_CHECK_SCREENSHOT })
+  }
+
+  // Reproduce the real three-column workspace: both count and risk panels are
+  // wide but share their columns vertically with another analysis panel.
+  await page.setViewportSize({ width: 2560, height: 1392 })
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    vm.analysisCountLayout = 'tile-groups'
+    vm.settings.display.workspaceLayout = {
+      ...vm.workspaceLayout,
+      analysisVisible: true,
+      consoleVisible: false,
+      layout: {
+        type: 'split', direction: 'horizontal', weights: [1, 2, 1.3],
+        children: [
+          { type: 'split', direction: 'vertical', weights: [1, 2], children: [
+            { type: 'item', id: 'analysis-opponents' },
+            { type: 'item', id: 'analysis-counts' },
+          ] },
+          { type: 'item', id: 'table' },
+          { type: 'split', direction: 'vertical', weights: [1, 1], children: [
+            { type: 'item', id: 'analysis-risk' },
+            { type: 'item', id: 'analysis-game' },
+          ] },
+        ],
+      },
+      analysisPanels: { opponents: true, game: true, risk: true, counts: true },
+    }
+  })
+  const groupedCountGrid = page.locator('.analysis-count-grid')
+  await groupedCountGrid.waitFor()
+  await page.waitForTimeout(150)
+  const splitMetrics = await page.evaluate(() => {
+    const visibleBounds = selector => {
+      const grid = document.querySelector(selector)
+      const body = grid?.closest('.analysis-dock-body')
+      const rows = [...(grid?.querySelectorAll('.analysis-tile-chart-row') || [])]
+      const tile = grid?.querySelector('.analysis-tile-face')
+      return {
+        rowCount: rows.length,
+        lastRowBottom: rows.at(-1)?.getBoundingClientRect().bottom || 0,
+        bodyBottom: body?.getBoundingClientRect().bottom || 0,
+        tileWidth: tile?.getBoundingClientRect().width || 0,
+        tileHeight: tile?.getBoundingClientRect().height || 0,
+      }
+    }
+    return { risk: visibleBounds('.analysis-risk-grid'), counts: visibleBounds('.analysis-count-grid') }
+  })
+  assert.equal(splitMetrics.risk.rowCount, 4)
+  assert.equal(splitMetrics.counts.rowCount, 4)
+  assert.ok(splitMetrics.risk.lastRowBottom <= splitMetrics.risk.bodyBottom + 0.6, 'all risk rows fit the vertically split panel')
+  assert.ok(splitMetrics.counts.lastRowBottom <= splitMetrics.counts.bodyBottom + 0.6, 'all grouped count rows fit the vertically split panel')
+  assert.ok(splitMetrics.counts.tileWidth < 60, 'grouped count tiles are height-limited in a wide, short panel')
+  if (process.env.RMS_SPLIT_UI_CHECK_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_SPLIT_UI_CHECK_SCREENSHOT })
   }
   assert.deepEqual(errors, [])
   console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing, hand-toggle hints and responsive deal-in geometry passed.')
