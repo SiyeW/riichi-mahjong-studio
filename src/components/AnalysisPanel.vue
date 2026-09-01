@@ -275,7 +275,7 @@
         <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-risk-row">
           <div class="analysis-tile-sequence">
             <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-risk-tile">
-              <img class="analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
+              <img class="mahjong-tile-artwork analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
               <div
                 class="analysis-risk-bars"
                 :class="{ 'has-adaptive-threshold': showRiskAdaptiveThreshold }"
@@ -368,7 +368,7 @@
                     @blur="clearHoverTooltip"
                   />
                 </div>
-                <img class="analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
+                <img class="mahjong-tile-artwork analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
               </div>
             </div>
             <div v-if="rowIndex === countTileRows.length - 1" class="analysis-count-legends">
@@ -413,7 +413,7 @@
                       }"
                     />
                   </span>
-                  <img :src="tileImageSrc(entry.tile)" alt="" />
+                  <img class="mahjong-tile-artwork" :src="tileImageSrc(entry.tile)" alt="" />
                 </button>
               </div>
             </div>
@@ -2201,16 +2201,10 @@ button {
 }
 
 .analysis-count-source-tile > img {
+  --mahjong-tile-artwork-width: var(--analysis-count-source-tile-width, 0.75rem);
   display: block;
-  box-sizing: border-box;
   width: 100%;
   aspect-ratio: 2.45 / 3.18;
-  padding: 0;
-  border-radius: 1px;
-  background: #fff;
-  filter: brightness(92%) saturate(80%);
-  user-select: none;
-  -webkit-user-drag: none;
 }
 
 .analysis-tile-chart-row {
@@ -2302,17 +2296,10 @@ button {
 }
 
 .analysis-tile-face {
+  --mahjong-tile-artwork-width: var(--analysis-tile-width);
   display: block;
-  box-sizing: border-box;
   width: var(--analysis-tile-width);
   height: var(--analysis-tile-height);
-  padding: calc(0.14rem * var(--floating-panel-scale));
-  border-radius: calc(0.22rem * var(--floating-panel-scale));
-  background: #fff;
-  filter: brightness(92%) saturate(80%);
-  box-shadow: inset 0 0 calc(0.12rem * var(--floating-panel-scale)) rgba(0, 0, 0, 0.9);
-  user-select: none;
-  -webkit-user-drag: none;
 }
 
 .analysis-risk-bars,

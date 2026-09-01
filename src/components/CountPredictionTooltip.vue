@@ -20,7 +20,7 @@
               :style="{ flexGrow: entry.probability, backgroundColor: entry.color }"
             />
           </div>
-          <img class="count-tooltip-tile" :src="tileImage" :alt="tileLabel" />
+          <img class="mahjong-tile-artwork count-tooltip-tile" :src="tileImage" :alt="tileLabel" />
         </div>
         <div class="count-tooltip-details">
           <div v-if="entries.length" class="count-tooltip-key">
@@ -217,14 +217,10 @@ onBeforeUnmount(() => {
 }
 
 .count-tooltip-tile {
+  --mahjong-tile-artwork-width: calc(1.25rem * var(--chrome-scale));
   display: block;
-  box-sizing: border-box;
   width: 100%;
   aspect-ratio: 2.45 / 3.18;
-  padding: calc(0.07rem * var(--chrome-scale));
-  border-radius: calc(0.11rem * var(--chrome-scale));
-  background: #fff;
-  filter: brightness(92%) saturate(80%);
 }
 
 .count-tooltip-estimate {

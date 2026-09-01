@@ -1411,17 +1411,28 @@ textarea {
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
+.tileImg,
+.mahjong-tile-artwork {
+  --mahjong-tile-artwork-width: var(--tile-img-w);
+  --mahjong-tile-artwork-padding: calc(var(--mahjong-tile-artwork-width) * 2 / 34);
+  /* Match the table tile exactly: its 4 px outer allowance stays fixed while
+     the SVG face, corner and inset scale together. */
+  --mahjong-tile-artwork-radius: calc((var(--mahjong-tile-artwork-width) - 4px) * 4 / 30);
+  --mahjong-tile-artwork-inset: calc((var(--mahjong-tile-artwork-width) - 4px) * 2 / 30);
+  display: block;
+  box-sizing: border-box;
+  padding: var(--mahjong-tile-artwork-padding);
+  border-radius: var(--mahjong-tile-artwork-radius);
+  background: #fff;
+  filter: brightness(92%) saturate(80%);
+  box-shadow: inset 0 0 var(--mahjong-tile-artwork-inset) black;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 .tileImg {
   width: var(--tile-img-w);
   height: var(--tile-img-h);
-  display: block;
-  padding: calc(2px * var(--zoom));
-  background: #fff;
-  filter: brightness(92%) saturate(80%);
-  border-radius: calc(var(--zoom-tiles) * 4px);
-  box-shadow: inset 0 0 calc(var(--zoom-tiles) * 2px) black;
-  user-select: none;
-  -webkit-user-drag: none;
   will-change: transform;
   backface-visibility: hidden;
   transition:
@@ -1441,10 +1452,9 @@ textarea {
 }
 
 .special-action-tiles .micro-tile-img {
+  --mahjong-tile-artwork-width: calc(var(--tile-img-w) * 0.7);
   width: calc(var(--tile-img-w) * 0.7);
   height: calc(var(--tile-img-h) * 0.7);
-  padding: calc(2px * 0.7 * var(--zoom));
-  border-radius: calc(var(--zoom-tiles) * 4px * 0.7);
   flex: 0 0 auto;
 }
 
@@ -1902,11 +1912,9 @@ textarea {
 }
 
 .info-doras .tileImg {
+  --mahjong-tile-artwork-width: calc(var(--tile-img-w) * 0.7);
   width: calc(var(--tile-img-w) * 0.7);
   height: calc(var(--tile-img-h) * 0.7);
-  padding: calc(2px * 0.7 * var(--zoom));
-  border-radius: calc(var(--zoom-tiles) * 4px * 0.7);
-  box-shadow: inset 0 0 calc(var(--zoom-tiles) * 2px * 0.7) black;
 }
 
 .gi-p0-outer,
@@ -2116,11 +2124,9 @@ textarea {
 }
 
 .result-indicator-tile {
+  --mahjong-tile-artwork-width: calc(1.545rem * var(--ui-scale));
   width: calc(1.545rem * var(--ui-scale));
   height: calc(2rem * var(--ui-scale));
-  padding: calc(0.09rem * var(--ui-scale));
-  border-radius: calc(0.18rem * var(--ui-scale));
-  box-shadow: inset 0 0 calc(0.09rem * var(--ui-scale)) black;
 }
 
 .result-overlay-detail {
@@ -2803,11 +2809,9 @@ textarea {
 }
 
 .mini-tile-img {
+  --mahjong-tile-artwork-width: calc(var(--ui-tile-w) * 0.52);
   width: calc(var(--ui-tile-w) * 0.52);
   height: calc(var(--ui-tile-h) * 0.52);
-  padding: calc(0.065rem * var(--ui-scale));
-  border-radius: calc(0.13rem * var(--ui-scale));
-  box-shadow: inset 0 0 calc(0.065rem * var(--ui-scale)) black;
 }
 
 .tree-scroll {
@@ -3523,7 +3527,7 @@ textarea {
   position: relative;
   width: var(--ron-tile-w);
   height: var(--ron-tile-h);
-  border-radius: calc(0.25rem * var(--floating-panel-scale) * var(--ron-tile-scale));
+  border-radius: calc((var(--ron-tile-w) - 4px) * 4 / 30);
 }
 
 .wall-tile-idx {
@@ -3537,12 +3541,10 @@ textarea {
 }
 
 .wall-tile-img {
+  --mahjong-tile-artwork-width: var(--ron-tile-w);
   width: 100%;
   height: 100%;
-  padding: calc(0.15625rem * var(--floating-panel-scale) * var(--ron-tile-scale));
   object-fit: contain;
-  border-radius: calc(0.25rem * var(--floating-panel-scale) * var(--ron-tile-scale));
-  box-shadow: inset 0 0 calc(0.125rem * var(--floating-panel-scale) * var(--ron-tile-scale)) black;
 }
 
 .wall-tint-filters {
@@ -4289,11 +4291,9 @@ textarea {
   gap: var(--ron-item-gap);
 }
 .analysis-dock .mini-tile-img {
+  --mahjong-tile-artwork-width: var(--ron-tile-w);
   width: var(--ron-tile-w);
   height: var(--ron-tile-h);
-  padding: calc(0.15625rem * var(--floating-panel-scale) * var(--ron-tile-scale));
-  border-radius: calc(0.25rem * var(--floating-panel-scale) * var(--ron-tile-scale));
-  box-shadow: inset 0 0 calc(0.125rem * var(--floating-panel-scale) * var(--ron-tile-scale)) black;
 }
 
 .ron-wait-bars {

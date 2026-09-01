@@ -341,8 +341,54 @@ try {
   if (process.env.RMS_SPLIT_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_SPLIT_UI_CHECK_SCREENSHOT })
   }
+
+  // Every rendered tile face uses the table tile's material treatment. Contexts
+  // may choose another size, but padding, corner radius and inset scale from the
+  // same proportions instead of drifting into panel-specific approximations.
+  await page.mouse.move(0, 0)
+  await page.evaluate(() => { window.analysisCheck.vm.analysisCountLayout = 'source-rows' })
+  await target().waitFor()
+  await target().hover()
+  await tooltip.waitFor({ state: 'visible' })
+  const tileArtwork = await page.evaluate(() => {
+    const read = selector => {
+      const element = document.querySelector(selector)
+      if (!(element instanceof HTMLElement)) return null
+      const style = getComputedStyle(element)
+      return {
+        selector,
+        width: element.getBoundingClientRect().width,
+        padding: Number.parseFloat(style.paddingLeft),
+        radius: Number.parseFloat(style.borderTopLeftRadius),
+        background: style.backgroundColor,
+        filter: style.filter,
+        shadow: style.boxShadow,
+      }
+    }
+    return [
+      read('.table-stage .tileImg'),
+      read('.analysis-risk-grid .analysis-tile-face'),
+      read('.analysis-count-source-tile > img'),
+      read('.count-prediction-tooltip .count-tooltip-tile'),
+    ]
+  })
+  const presentTileArtwork = tileArtwork.filter(Boolean)
+  assert.equal(presentTileArtwork.length, 4, 'table, risk, count and tooltip tiles are all rendered')
+  const tableArtwork = presentTileArtwork[0]
+  for (const artwork of presentTileArtwork) {
+    const expectedPadding = artwork.width * 2 / 34
+    const expectedRadius = (artwork.width - 4) * 4 / 30
+    assert.ok(Math.abs(artwork.padding - expectedPadding) < 0.15, `${artwork.selector} keeps the table tile padding ratio`)
+    assert.ok(Math.abs(artwork.radius - expectedRadius) < 0.15, `${artwork.selector} keeps the table tile corner ratio`)
+    assert.equal(artwork.background, tableArtwork.background, `${artwork.selector} keeps the table tile background`)
+    assert.equal(artwork.filter, tableArtwork.filter, `${artwork.selector} keeps the table tile filter`)
+    assert.match(artwork.shadow, /inset/, `${artwork.selector} keeps the table tile inset shadow`)
+  }
+  if (process.env.RMS_TILE_UI_CHECK_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_TILE_UI_CHECK_SCREENSHOT })
+  }
   assert.deepEqual(errors, [])
-  console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing, hand-toggle hints and responsive deal-in geometry passed.')
+  console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing, hand-toggle hints, responsive geometry and shared tile artwork passed.')
 } finally {
   await browser?.close()
   await server.close()
