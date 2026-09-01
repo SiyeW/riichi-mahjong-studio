@@ -28,21 +28,6 @@
         "reveal": "silent",
         "panel": "dedicated"
       }
-    },
-    {
-      "label": "RMS: Wait for Renderer Debug Target",
-      "type": "process",
-      "command": "node",
-      "args": [
-        "${workspaceFolder}/scripts/wait-for-debug-target.mjs",
-        "9222",
-        "http://127.0.0.1:5173/"
-      ],
-      "problemMatcher": [],
-      "presentation": {
-        "reveal": "silent",
-        "panel": "dedicated"
-      }
     }
   ]
 }

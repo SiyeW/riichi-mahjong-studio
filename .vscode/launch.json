@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "RMS: Main Process",
+      "name": "RMS: Debug",
       "type": "node",
       "request": "launch",
       "runtimeExecutable": "${workspaceFolder}/node_modules/electron/dist/electron",
@@ -19,6 +19,11 @@
         "MJAI_TRAINER_CONFIG": "${workspaceFolder}/.mjai-runtime/debug/config.json"
       },
       "preLaunchTask": "RMS: Ensure Renderer",
+      "serverReadyAction": {
+        "pattern": "DevTools listening on (ws://\\S+)",
+        "action": "startDebugging",
+        "name": "RMS: Renderer"
+      },
       "console": "integratedTerminal",
       "outputCapture": "std",
       "skipFiles": [
@@ -36,18 +41,10 @@
       "webRoot": "${workspaceFolder}",
       "timeout": 30000,
       "urlFilter": "http://127.0.0.1:5173/*",
-      "preLaunchTask": "RMS: Wait for Renderer Debug Target",
+      "presentation": {
+        "hidden": true
+      },
       "sourceMaps": true
-    }
-  ],
-  "compounds": [
-    {
-      "name": "RMS: Debug",
-      "configurations": [
-        "RMS: Main Process",
-        "RMS: Renderer"
-      ],
-      "stopAll": true
     }
   ]
 }
