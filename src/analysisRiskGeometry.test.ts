@@ -87,3 +87,22 @@ test('risk tiles stop growing at the interface tile limit', () => {
   assert.ok(geometry.barsHeight > geometry.tileHeight)
   assert.equal(geometry.gridContentHeight, 2400)
 })
+
+test('risk bars fill the remaining height in the observed dock layout', () => {
+  const geometry = analysisRiskGeometry({
+    availableWidth: 657.859375,
+    availableHeight: 877.53125,
+    pixelRatio: 1,
+    scaleSpace: 39,
+    legendHeight: 16,
+    minimumTileWidth: 22,
+    maximumTileWidth: 42,
+    rowCount: 4,
+    longestRow: 9,
+    laneCount: 3,
+  })
+  assert.equal(geometry.tileWidth, 42)
+  assert.equal(geometry.tileHeight, 55)
+  assert.equal(geometry.barsHeight, 155)
+  assert.ok(geometry.gridContentHeight >= 876)
+})

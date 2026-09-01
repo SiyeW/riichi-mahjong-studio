@@ -41,23 +41,6 @@ async function probeRenderer() {
   return isRmsRenderer ? 'ready' : 'starting'
 }
 
-function keepTaskAlive(child = null) {
-  return new Promise((resolve) => {
-    const timer = setInterval(() => {}, 0x7fffffff)
-    const stop = () => {
-      clearInterval(timer)
-      if (child && child.exitCode === null) child.kill('SIGTERM')
-      resolve()
-    }
-    process.once('SIGINT', stop)
-    process.once('SIGTERM', stop)
-    child?.once('exit', () => {
-      clearInterval(timer)
-      resolve()
-    })
-  })
-}
-
 async function waitForRenderer(child, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -69,6 +52,71 @@ async function waitForRenderer(child, timeoutMs = 30_000) {
   return false
 }
 
+function startRenderer() {
+  const child = spawn(process.execPath, [
+    viteEntry,
+    '--host', host,
+    '--port', String(port),
+    '--strictPort',
+  ], {
+    cwd: root,
+    env: process.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  child.stdout.pipe(process.stdout)
+  child.stderr.pipe(process.stderr)
+  return child
+}
+
+let ownedRenderer = null
+let stopping = false
+
+function stop() {
+  stopping = true
+  if (ownedRenderer?.exitCode === null) ownedRenderer.kill('SIGTERM')
+}
+
+process.once('SIGINT', stop)
+process.once('SIGTERM', stop)
+process.once('exit', () => {
+  if (ownedRenderer?.exitCode === null) ownedRenderer.kill('SIGTERM')
+})
+
+async function ensureRenderer() {
+  ownedRenderer = startRenderer()
+  if (await waitForRenderer(ownedRenderer)) return true
+
+  // Another task may have won the strict-port race while this child started.
+  if (await probeRenderer() === 'ready') {
+    ownedRenderer = null
+    return true
+  }
+  return false
+}
+
+async function superviseRenderer() {
+  while (!stopping) {
+    await new Promise(resolve => setTimeout(resolve, 500))
+    if (stopping) break
+    const state = await probeRenderer()
+    if (state === 'ready' || state === 'starting') continue
+    if (state === 'occupied') {
+      console.error(`Error: Port ${port} was taken over by a server that is not this RMS renderer.`)
+      process.exitCode = 1
+      break
+    }
+
+    console.log(`RMS_RENDERER_RECOVERING ${url}`)
+    if (!await ensureRenderer()) {
+      console.error(`Error: RMS renderer could not be recovered at ${url}.`)
+      process.exitCode = 1
+      break
+    }
+    console.log(`RMS_RENDERER_READY ${url} (recovered)`)
+  }
+  stop()
+}
+
 console.log(`RMS_RENDERER_STARTING ${url}`)
 const initialState = await probeRenderer()
 if (initialState === 'occupied') {
@@ -77,7 +125,7 @@ if (initialState === 'occupied') {
 }
 if (initialState === 'ready') {
   console.log(`RMS_RENDERER_READY ${url} (reused)`)
-  if (!checkOnly) await keepTaskAlive()
+  if (!checkOnly) await superviseRenderer()
   process.exit(0)
 }
 if (checkOnly) {
@@ -85,26 +133,10 @@ if (checkOnly) {
   process.exit(1)
 }
 
-const vite = spawn(process.execPath, [
-  viteEntry,
-  '--host', host,
-  '--port', String(port),
-  '--strictPort',
-], {
-  cwd: root,
-  env: process.env,
-  stdio: ['ignore', 'pipe', 'pipe'],
-})
-vite.stdout.pipe(process.stdout)
-vite.stderr.pipe(process.stderr)
-process.once('exit', () => {
-  if (vite.exitCode === null) vite.kill('SIGTERM')
-})
-
-if (!await waitForRenderer(vite)) {
-  if (vite.exitCode === null) vite.kill('SIGTERM')
+if (!await ensureRenderer()) {
+  stop()
   console.error(`Error: RMS renderer did not become ready at ${url}.`)
   process.exit(1)
 }
 console.log(`RMS_RENDERER_READY ${url} (started)`)
-await keepTaskAlive(vite)
+await superviseRenderer()
