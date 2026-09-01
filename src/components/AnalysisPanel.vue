@@ -4,6 +4,7 @@
     class="unified-analysis"
     :class="{
       'reduce-motion': reduceMotion,
+      'is-risk-section': section === 'risk',
       'is-count-section': section === 'counts',
     }"
   >
@@ -270,7 +271,7 @@
     </section>
 
     <div v-else-if="section === 'risk'" class="analysis-tiles-view">
-      <div v-perceptual-surface="riskTrackSurface" class="analysis-risk-grid">
+      <div ref="riskGridElement" v-perceptual-surface="riskTrackSurface" class="analysis-risk-grid">
         <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-risk-row">
           <div class="analysis-tile-sequence">
             <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-risk-tile">
@@ -471,6 +472,7 @@ import {
   ANALYSIS_COUNT_SPACING,
   type AnalysisCountLayout,
 } from '../analysisCountSpacing'
+import { analysisRiskGeometry } from '../analysisRiskGeometry'
 import {
   buildCountColorScale,
   COUNT_EMPTY_COLOR,
@@ -582,6 +584,10 @@ const offenseTrackElements = new Map<number, HTMLElement>()
 const offenseLabelPositions = ref<Map<number, { win: number; dealIn: number }>>(new Map())
 let offenseResizeObserver: ResizeObserver | null = null
 let offenseMeasureFrame = 0
+const riskGridElement = ref<HTMLElement | null>(null)
+let riskGeometryFrame = 0
+let riskResizeObserver: ResizeObserver | null = null
+let riskStyleObserver: MutationObserver | null = null
 const countGridElement = ref<HTMLElement | null>(null)
 const countCanvasElements = new Map<string, { canvas: HTMLCanvasElement; row: string[] }>()
 let countGeometryFrame = 0
@@ -904,6 +910,57 @@ function groupedLegendHeightPixels(
   return (rowHeight * rowCount) + (rowGap * Math.max(0, rowCount - 1))
 }
 
+function updateRiskGeometry() {
+  const grid = riskGridElement.value
+  if (!grid) return
+  const rootRem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+  const floatingScale = Number.parseFloat(getComputedStyle(grid).getPropertyValue('--floating-panel-scale')) || 1
+  const geometry = analysisRiskGeometry({
+    availableWidth: grid.getBoundingClientRect().width,
+    pixelRatio: window.devicePixelRatio,
+    scaleSpace: 2.45 * rootRem * floatingScale,
+    legendHeight: grid.querySelector<HTMLElement>('.analysis-source-legend')?.getBoundingClientRect().height || 0,
+    rowCount: tileRows.length,
+    longestRow: Math.max(...tileRows.map((row) => row.length)),
+    laneCount: opponentSources.value.length,
+  })
+  grid.style.setProperty('--analysis-tile-width', `${geometry.tileWidth}px`)
+  grid.style.setProperty('--analysis-tile-height', `${geometry.tileHeight}px`)
+  grid.style.setProperty('--analysis-risk-bars-width', `${geometry.barsWidth}px`)
+  grid.style.setProperty('--analysis-chart-gap', `${geometry.chartGap}px`)
+  grid.style.setProperty('--analysis-risk-grid-gap', `${geometry.gridGap}px`)
+  grid.style.setProperty('--analysis-risk-main-row-width', `${geometry.mainRowWidth}px`)
+  grid.style.setProperty('--analysis-scale-space', `${geometry.scaleSpace}px`)
+  grid.style.setProperty('--analysis-risk-row-min-height', `${geometry.rowMinimumHeight}px`)
+  grid.style.setProperty('--analysis-risk-grid-min-height', `${geometry.gridMinimumHeight}px`)
+}
+
+function scheduleRiskGeometry() {
+  if (riskGeometryFrame) return
+  riskGeometryFrame = requestAnimationFrame(() => {
+    riskGeometryFrame = 0
+    updateRiskGeometry()
+  })
+}
+
+function connectRiskGeometry(grid: HTMLElement | null) {
+  riskResizeObserver?.disconnect()
+  riskStyleObserver?.disconnect()
+  riskResizeObserver = null
+  riskStyleObserver = null
+  if (!grid) return
+  riskResizeObserver = new ResizeObserver(scheduleRiskGeometry)
+  riskResizeObserver.observe(grid)
+  const tilesView = grid.closest('.analysis-tiles-view')
+  if (tilesView) riskResizeObserver.observe(tilesView)
+  const dock = grid.closest('.dock-module')
+  if (dock) {
+    riskStyleObserver = new MutationObserver(scheduleRiskGeometry)
+    riskStyleObserver.observe(dock, { attributes: true, attributeFilter: ['style', 'class'] })
+  }
+  scheduleRiskGeometry()
+}
+
 function updateCountBarGeometry() {
   const grid = countGridElement.value
   if (!grid) return
@@ -1173,8 +1230,13 @@ onMounted(() => {
     window.addEventListener('resize', scheduleCountBarGeometry)
     connectCountGeometry(countGridElement.value)
   }
+  if (props.section === 'risk') {
+    window.addEventListener('resize', scheduleRiskGeometry)
+    connectRiskGeometry(riskGridElement.value)
+  }
 })
 
+watch(riskGridElement, connectRiskGeometry, { flush: 'post', immediate: true })
 watch(countGridElement, connectCountGeometry, { flush: 'post', immediate: true })
 
 watch(() => [props.analysis, props.controlledSeat], () => {
@@ -1206,13 +1268,19 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(hoverTooltipPositionFrame)
   cancelAnimationFrame(offenseMeasureFrame)
   cancelAnimationFrame(countGeometryFrame)
+  cancelAnimationFrame(riskGeometryFrame)
   offenseResizeObserver?.disconnect()
   offenseResizeObserver = null
   countResizeObserver?.disconnect()
   countResizeObserver = null
   countStyleObserver?.disconnect()
   countStyleObserver = null
+  riskResizeObserver?.disconnect()
+  riskResizeObserver = null
+  riskStyleObserver?.disconnect()
+  riskStyleObserver = null
   window.removeEventListener('resize', scheduleCountBarGeometry)
+  window.removeEventListener('resize', scheduleRiskGeometry)
   countCanvasElements.clear()
   offenseTrackElements.clear()
   offenseLabelPositions.value = new Map()
@@ -1511,6 +1579,7 @@ function showCountTooltip(event: Event, tile: string, source: TileSource) {
   font-size: var(--ui-text-body);
 }
 
+.unified-analysis.is-risk-section,
 .unified-analysis.is-count-section {
   height: 100%;
 }
@@ -2014,8 +2083,14 @@ button {
 
 .analysis-risk-grid {
   --analysis-risk-track-surface: rgba(255, 255, 255, 0.05);
+  grid-template-rows: repeat(4, minmax(var(--analysis-risk-row-min-height, 0px), 1fr)) auto;
+  align-content: center;
+  height: 100%;
+  min-height: var(--analysis-risk-grid-min-height, 0px);
+  gap: var(--analysis-risk-grid-gap, calc(var(--analysis-tile-width) * 0.1));
 }
 
+.is-risk-section .analysis-tiles-view,
 .is-count-section .analysis-tiles-view,
 .analysis-count-grid {
   height: 100%;
@@ -2152,6 +2227,22 @@ button {
   padding-bottom: calc(var(--analysis-tile-width) * 0.08);
 }
 
+.analysis-risk-row {
+  display: grid;
+  grid-template-columns: var(--analysis-risk-main-row-width) var(--analysis-scale-space);
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: var(--analysis-risk-row-min-height, 0px);
+  padding: 0;
+}
+
+.analysis-risk-row .analysis-tile-sequence {
+  position: relative;
+  width: var(--analysis-risk-main-row-width);
+  height: 100%;
+}
+
 .analysis-count-row {
   justify-content: center;
   width: max(100%, calc(var(--analysis-tile-width) * 9));
@@ -2212,6 +2303,10 @@ button {
   height: 100%;
 }
 
+.analysis-risk-tile {
+  height: 100%;
+}
+
 .analysis-tile-face {
   display: block;
   box-sizing: border-box;
@@ -2236,9 +2331,10 @@ button {
 }
 
 .analysis-risk-bars {
+  flex: 1 1 0;
   align-items: flex-start;
   width: var(--analysis-risk-bars-width);
-  height: var(--analysis-risk-height);
+  min-height: var(--analysis-tile-height);
 }
 
 .analysis-count-bars {
@@ -2312,13 +2408,13 @@ button {
 
 .analysis-risk-bridge {
   top: calc(var(--analysis-tile-height) + var(--analysis-chart-gap));
-  height: var(--analysis-risk-height);
+  bottom: 0;
   background: rgba(255, 255, 255, 0.05);
 }
 
 .analysis-risk-scale {
-  position: absolute;
-  left: calc(100% - var(--analysis-scale-space) + (var(--analysis-tile-width) * 0.12));
+  position: relative;
+  left: calc(var(--analysis-tile-width) * 0.12);
   width: calc(var(--analysis-scale-space) * 0.88);
   color: rgba(210, 224, 221, 0.52);
   pointer-events: none;
@@ -2326,7 +2422,7 @@ button {
 
 .analysis-risk-scale {
   top: calc(var(--analysis-tile-height) + var(--analysis-chart-gap));
-  height: var(--analysis-risk-height);
+  height: calc(100% - var(--analysis-tile-height) - var(--analysis-chart-gap));
 }
 
 .analysis-risk-scale > span {

@@ -26,6 +26,15 @@ try {
           context: { gameId: vm.gameView.gameId, nodeId: vm.gameView.currentNodeId, seat: vm.status.controlledSeat, inputMode: 'public', cacheKey: 'test-engine', cacheEpoch: this.epoch },
           outputs: {
             'wall-tile-count': { tiles: { '1m': { expectedValue, distribution: [{ value: 0, probability: 0.25 }, { value: 1, probability: 0.75 }] } } },
+            'opponent-deal-in-probability': {
+              players: [1, 2, 3].map((seat, sourceIndex) => ({
+                seat,
+                tiles: Object.fromEntries(
+                  ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p', '9p', '1s', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s', '1z', '2z', '3z', '4z', '5z', '6z', '7z']
+                    .map((tile, tileIndex) => [tile, ((tileIndex + sourceIndex) % 5 + 1) * 0.025]),
+                ),
+              })),
+            },
           },
         }
       },
@@ -197,8 +206,87 @@ try {
   await hint.waitFor({ state: 'visible' })
   await handButtons.first().evaluate(el => el.blur())
   assert.equal(await hint.count(), 0, 'keyboard blur dismisses the hint')
+
+  // Deal-in rows fill their allotted width and height while retaining the mature
+  // tile-above, downward-bar, right-scale composition.
+  await page.setViewportSize({ width: 1400, height: 1000 })
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    window.analysisCheck.publish(window.analysisCheck.result())
+    vm.settings.display.workspaceLayout = {
+      ...vm.workspaceLayout,
+      analysisVisible: true,
+      consoleVisible: false,
+      layout: {
+        type: 'split', direction: 'horizontal', weights: [2, 1],
+        children: [{ type: 'item', id: 'table' }, { type: 'item', id: 'analysis-risk' }],
+      },
+      analysisPanels: { opponents: false, game: false, risk: true, counts: false },
+    }
+  })
+  const riskGrid = page.locator('.analysis-risk-grid')
+  await riskGrid.waitFor()
+  await page.waitForTimeout(100)
+  const riskGeometry = async () => riskGrid.evaluate(grid => {
+    const rows = [...grid.querySelectorAll('.analysis-risk-row')]
+    const firstTile = grid.querySelector('.analysis-risk-tile')
+    const firstFace = grid.querySelector('.analysis-tile-face')
+    const firstBars = grid.querySelector('.analysis-risk-bars')
+    const scale = grid.querySelector('.analysis-risk-scale')
+    const sequence = grid.querySelector('.analysis-tile-sequence')
+    const body = grid.closest('.analysis-dock-body')
+    return {
+      gridWidth: grid.getBoundingClientRect().width,
+      gridHeight: grid.getBoundingClientRect().height,
+      gridMinHeight: Number.parseFloat(getComputedStyle(grid).minHeight),
+      rowWidths: rows.map(row => row.getBoundingClientRect().width),
+      rowHeights: rows.map(row => row.getBoundingClientRect().height),
+      tileHeight: firstTile?.getBoundingClientRect().height || 0,
+      faceHeight: firstFace?.getBoundingClientRect().height || 0,
+      faceWidth: firstFace?.getBoundingClientRect().width || 0,
+      barsHeight: firstBars?.getBoundingClientRect().height || 0,
+      sequenceWidth: sequence?.getBoundingClientRect().width || 0,
+      scaleHeight: scale?.getBoundingClientRect().height || 0,
+      scaleRight: scale?.getBoundingClientRect().right || 0,
+      gridRight: grid.getBoundingClientRect().right,
+      bodyClientHeight: body?.clientHeight || 0,
+      bodyScrollHeight: body?.scrollHeight || 0,
+      rowBorders: rows.map(row => getComputedStyle(row).borderBottomWidth),
+    }
+  })
+  const roomyRisk = await riskGeometry()
+  assert.equal(roomyRisk.rowWidths.length, 4)
+  assert.ok(roomyRisk.rowWidths.every(width => Math.abs(width - roomyRisk.gridWidth) < 0.6), 'all four rows align to the panel width')
+  assert.ok(Math.max(...roomyRisk.rowHeights) - Math.min(...roomyRisk.rowHeights) < 0.6, 'four rows share the available height')
+  assert.ok(Math.abs(roomyRisk.sequenceWidth - roomyRisk.faceWidth * 9) < 0.6, 'nine tile columns fill the chart lane')
+  assert.ok(roomyRisk.barsHeight >= roomyRisk.faceHeight, 'bars retain at least one tile height')
+  assert.ok(roomyRisk.scaleHeight > 0 && roomyRisk.scaleRight <= roomyRisk.gridRight + 0.6, 'the scale stays alongside the bars')
+  assert.ok(roomyRisk.rowBorders.every(width => width === '0px'), 'risk rows have no divider rules')
+
+  await page.setViewportSize({ width: 1100, height: 1000 })
+  await page.waitForTimeout(100)
+  const narrowRisk = await riskGeometry()
+  assert.ok(narrowRisk.faceWidth < roomyRisk.faceWidth, 'tile width follows the allotted panel width')
+  assert.ok(Math.abs((narrowRisk.faceHeight / narrowRisk.faceWidth) - (3.18 / 2.45)) < 0.03, 'tile aspect ratio is retained')
+
+  await page.setViewportSize({ width: 1100, height: 760 })
+  await page.waitForTimeout(100)
+  const shortRisk = await riskGeometry()
+  assert.ok(shortRisk.barsHeight < narrowRisk.barsHeight, 'bars absorb reductions in allotted panel height')
+  assert.ok(shortRisk.faceWidth === narrowRisk.faceWidth, 'height changes do not resize tile width')
+
+  await page.setViewportSize({ width: 1100, height: 430 })
+  await page.waitForTimeout(100)
+  const overflowRisk = await riskGeometry()
+  assert.ok(overflowRisk.gridMinHeight > overflowRisk.bodyClientHeight, 'the chart keeps its readable minimum height')
+  assert.ok(overflowRisk.bodyScrollHeight > overflowRisk.bodyClientHeight, 'only undersized panels need vertical scrolling')
+  if (process.env.RMS_RISK_UI_CHECK_SCREENSHOT) {
+    await page.setViewportSize({ width: 1400, height: 1000 })
+    await page.waitForTimeout(100)
+    await page.screenshot({ path: process.env.RMS_RISK_UI_CHECK_SCREENSHOT })
+  }
   assert.deepEqual(errors, [])
-  console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing and hand-toggle mouse/keyboard hints passed.')
+  console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing, hand-toggle hints and responsive deal-in geometry passed.')
 } finally {
   await browser?.close()
   await server.close()
