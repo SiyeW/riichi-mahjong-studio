@@ -2183,7 +2183,7 @@ button {
 .analysis-count-layout-toggle button {
   min-width: 0;
   padding:
-    calc(0.28rem * var(--floating-panel-scale))
+    calc(0.1rem * var(--floating-panel-scale))
     calc(0.5rem * var(--floating-panel-scale));
   overflow: hidden;
   color: #c5d9dd;
@@ -2191,6 +2191,7 @@ button {
   border: 0;
   font: inherit;
   font-size: var(--ui-text-caption);
+  line-height: 1.15;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
