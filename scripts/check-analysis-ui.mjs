@@ -67,6 +67,7 @@ try {
       },
     }
     const check = window.analysisCheck
+    if (vm.showPerceptualColorDebugger !== false) throw new Error('F8 debugger must start hidden')
     vm.showPerceptualColorDebugger = false
     window.trainerAPI = {
       getShanten: async () => { check.reads++; return check.result() },

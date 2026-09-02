@@ -1819,7 +1819,7 @@ const activePerceptualColorPalette = computed<PerceptualColorPalette>(() => {
 const perceptualSurfaceTuning = reactive({ ...DEFAULT_PERCEPTUAL_SURFACE_TUNING })
 const perceptualSurfaceBypassed = ref(false)
 const analysisCountLayout = ref<AnalysisCountLayout>(DEFAULT_ANALYSIS_COUNT_LAYOUT)
-const showPerceptualColorDebugger = ref(import.meta.env.DEV)
+const showPerceptualColorDebugger = ref(false)
 const effectivePerceptualSurfaceTuning = computed<PerceptualSurfaceTuning>(() => (
   perceptualSurfaceBypassed.value
     ? {
