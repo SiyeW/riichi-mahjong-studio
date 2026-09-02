@@ -3,6 +3,9 @@ import test from 'node:test'
 import {
   buildCountColorScale,
   COUNT_EMPTY_COLOR,
+  countPaletteVariable,
+  countSegmentColor,
+  countSourcePalette,
 } from './analysisCountPalette.ts'
 import { rgbToOklab } from './perceptualColor.ts'
 import type { RgbColor } from './perceptualColor.ts'
@@ -82,4 +85,21 @@ test('three and four use the available highlight range', () => {
     assert.ok(distanceToHighlight[3] < distanceToHighlight[2], `${base}: 2 -> 3`)
     assert.ok(distanceToHighlight[4] < distanceToHighlight[3], `${base}: 3 -> 4`)
   }
+})
+
+test('source palettes resolve shared player variables and a derived wall color', () => {
+  const variables: Record<string, string> = {
+    '--ron-kamicha-color': '#2c8fc5',
+    '--ron-toimen-color': '#d39a3a',
+    '--ron-shimocha-color': '#4caf50',
+  }
+  const style = { getPropertyValue: (name: string) => variables[name] || '' }
+  assert.equal(countSourcePalette('kamicha', style)[2], 'rgb(44 143 197)')
+  assert.equal(countSourcePalette('wall', style).length, 5)
+})
+
+test('count color variables clamp distribution values to supported levels', () => {
+  assert.equal(countPaletteVariable('wall', 2), '--analysis-count-wall-2')
+  assert.equal(countSegmentColor('wall', -1), 'var(--analysis-count-wall-0)')
+  assert.equal(countSegmentColor('wall', 9), 'var(--analysis-count-wall-4)')
 })

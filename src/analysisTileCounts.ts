@@ -1,4 +1,6 @@
-export const RED_FIVE_TILES = ['5mr', '5pr', '5sr'] as const
+import { RED_FIVE_TILES } from './analysisTiles.ts'
+
+export { RED_FIVE_TILES } from './analysisTiles.ts'
 
 function objectValue(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)

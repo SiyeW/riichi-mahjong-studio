@@ -1572,14 +1572,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
 import { vAdaptiveButtonGrid } from './adaptiveButtonGrid'
 import { DEFAULT_ANALYSIS_COUNT_LAYOUT, type AnalysisCountLayout } from './analysisCountSpacing'
+import {
+  adaptiveProbabilityScale,
+  clampProbability,
+  DEFAULT_PROBABILITY_SCALE,
+  probabilityScalePercent,
+  probabilityScaleRatio,
+  probabilityScaleTicks,
+} from './analysisProbabilityScale'
+import { ANALYSIS_TILE_ROWS, tile34Index } from './analysisTiles'
 import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
-import PerceptualColorDebugger from './components/PerceptualColorDebugger.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import { normalizeLanguagePreference, setLanguagePreference, useI18n } from './i18n'
 import { mostDistinctOklabColor, parseCssColor, type RgbColor } from './perceptualColor'
@@ -1608,6 +1616,10 @@ import {
   type WorkspaceDockNode,
   type WorkspaceItemId,
 } from './workspaceLayout'
+
+const PerceptualColorDebugger = defineAsyncComponent(
+  () => import('./components/PerceptualColorDebugger.vue'),
+)
 
 const { locale, numberLocale, t } = useI18n()
 
@@ -3309,29 +3321,11 @@ const SHANTEN_LABELS = computed(() => [
   t('shanten.furiten'),
 ])
 const SHANTEN_SHORT_LABELS = ['0','1','2','3','4','5','6','X']
-const RON_TILE_ROWS = [
-  ['1m','2m','3m','4m','5m','6m','7m','8m','9m'],
-  ['1p','2p','3p','4p','5p','6p','7p','8p','9p'],
-  ['1s','2s','3s','4s','5s','6s','7s','8s','9s'],
-  ['E','S','W','N','P','F','C'],
-]
-const ronWaitTileRows = RON_TILE_ROWS
-const TILE_IDX_MAP: Record<string, number> = {'m':0,'p':9,'s':18,'E':27,'S':28,'W':29,'N':30,'P':31,'F':32,'C':33}
-function tileIdx(tile: string): number {
-  const normalized = tile.replace('r', '')
-  const ch = normalized.slice(-1)
-  const rank = parseInt(normalized) || 0
-  return (TILE_IDX_MAP[ch] || 0) + (rank > 0 ? rank - 1 : 0)
-}
-const RON_BAR_ADAPTIVE_MIN = 0.20
-const RON_BAR_TICK_STEP = 0.05
+const ronWaitTileRows = ANALYSIS_TILE_ROWS
+const RON_BAR_ADAPTIVE_MIN = DEFAULT_PROBABILITY_SCALE
 const RON_WAIT_OPPONENT_KEYS = ['kamicha', 'toimen', 'shimocha'] as const
 function resolveRonBarAdaptiveMaxFromValues(values: number[]): number {
-  const maxProbability = values.reduce(
-    (currentMax, value) => Math.max(currentMax, displayedRonProbability(value)),
-    0,
-  )
-  return Math.max(RON_BAR_ADAPTIVE_MIN, maxProbability)
+  return adaptiveProbabilityScale(values)
 }
 function resolveRonBarAdaptiveMax(data: Record<string, number[]>): number {
   return resolveRonBarAdaptiveMaxFromValues(
@@ -3350,22 +3344,16 @@ const ronWaitScaleTicks = computed(() => {
       { value: 1, label: '100%' },
     ]
   }
-  const stepCount = Math.floor(
-    (ronBarAdaptiveMax.value + Number.EPSILON) / RON_BAR_TICK_STEP,
-  )
-  return Array.from({ length: stepCount + 1 }, (_, index) => ({
-    value: index * RON_BAR_TICK_STEP,
-    label: index % 2 === 0 ? `${index * 5}%` : '',
-  }))
+  return probabilityScaleTicks(ronBarAdaptiveMax.value)
 })
 function displayedRonProbability(prob: number): number {
-  return Math.max(0, Math.min(1, Number(prob) || 0))
+  return clampProbability(prob)
 }
 function ronBarHeightAtScale(prob: number, scaleMax: number): string {
-  return `${(ronBarScaleAtScale(prob, scaleMax) * 100).toFixed(1)}%`
+  return probabilityScalePercent(prob, scaleMax)
 }
 function ronBarScaleAtScale(prob: number, scaleMax: number): number {
-  return Math.min(1, displayedRonProbability(prob) / scaleMax)
+  return probabilityScaleRatio(prob, scaleMax)
 }
 function ronBarHeight(prob: number): string {
   return ronBarHeightAtScale(prob, ronBarAdaptiveMax.value)
@@ -6482,7 +6470,7 @@ const southRonRiskSlots = computed(() => {
     const isConnectedTile = !isGap && !isDrawn
     const previous = visualSlots[index - 1]
     const next = visualSlots[index + 1]
-    const tileIndex = tileIdx(tile)
+    const tileIndex = tile34Index(tile)
     return {
       tile,
       index,

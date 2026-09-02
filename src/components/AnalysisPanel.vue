@@ -360,7 +360,7 @@
                 v-for="tile in row.tiles"
                 :key="tile"
                 class="analysis-count-tile"
-                :class="{ 'is-red-five': isRedFive(tile) }"
+                :class="{ 'is-red-five': isRedFiveTile(tile) }"
               >
                 <div class="analysis-count-bars">
                   <button
@@ -403,7 +403,7 @@
                   :key="entry.tile"
                   type="button"
                   class="analysis-count-source-tile"
-                  :class="{ 'is-group-start': entry.groupStart, 'is-red-five': isRedFive(entry.tile) }"
+                  :class="{ 'is-group-start': entry.groupStart, 'is-red-five': isRedFiveTile(entry.tile) }"
                   :aria-label="t('analysis.tileCountDistribution', { source: source.label, tile: tileFaceLabel(entry.tile) })"
                   @mouseenter="showCountTooltip($event, entry.tile, source)"
                   @mouseleave="clearHoverTooltip"
@@ -483,10 +483,25 @@ import {
 import { groupedCountGeometry } from '../analysisCountGeometry'
 import { analysisRiskGeometry } from '../analysisRiskGeometry'
 import {
-  buildCountColorScale,
   COUNT_EMPTY_COLOR,
+  countPaletteVariable,
+  countSegmentColor,
+  countSourcePalette,
+  type CountSourceKey,
 } from '../analysisCountPalette'
-import { hasRedFiveCountPredictions, RED_FIVE_TILES } from '../analysisTileCounts'
+import {
+  adaptiveProbabilityScale,
+  DEFAULT_PROBABILITY_SCALE,
+  probabilityScaleRatio,
+  probabilityScaleTicks,
+} from '../analysisProbabilityScale'
+import { hasRedFiveCountPredictions } from '../analysisTileCounts'
+import {
+  ANALYSIS_TILE_ROWS,
+  analysisCountSourceTiles,
+  analysisCountTileRows,
+  isRedFiveTile,
+} from '../analysisTiles'
 import { resolveKyokuOutcome } from '../kyokuOutcome'
 import {
   parseNumericPrediction,
@@ -494,14 +509,8 @@ import {
   type DistributionValue,
   type NumericPrediction,
 } from '../numericPrediction'
-import {
-  oklabToRgb,
-  parseCssColor,
-  rgbString,
-  rgbToOklab,
-  type RgbColor,
-} from '../perceptualColor'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
+import { useResponsiveGeometry } from '../useResponsiveGeometry'
 import ShantenPieChart from './ShantenPieChart.vue'
 import CountPredictionTooltip from './CountPredictionTooltip.vue'
 
@@ -512,7 +521,7 @@ const emit = defineEmits<{
 }>()
 
 type AnalysisRecord = Record<string, unknown>
-type TileSource = { key: string; label: string; seat: number | null }
+type TileSource = { key: CountSourceKey; label: string; seat: number | null }
 type HoverTooltipRow = {
   label: string
   value: string
@@ -594,24 +603,9 @@ const offenseLabelPositions = ref<Map<number, { win: number; dealIn: number }>>(
 let offenseResizeObserver: ResizeObserver | null = null
 let offenseMeasureFrame = 0
 const riskGridElement = ref<HTMLElement | null>(null)
-let riskGeometryFrame = 0
-let riskResizeObserver: ResizeObserver | null = null
-let riskStyleObserver: MutationObserver | null = null
 const countGridElement = ref<HTMLElement | null>(null)
-const countCanvasElements = new Map<string, { canvas: HTMLCanvasElement; row: string[] }>()
-let countGeometryFrame = 0
-let countResizeObserver: ResizeObserver | null = null
-let countStyleObserver: MutationObserver | null = null
-const tileRows = [
-  ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m'],
-  ['1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p', '9p'],
-  ['1s', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s'],
-  ['E', 'S', 'W', 'N', 'P', 'F', 'C'],
-]
-
-function isRedFive(tile: string): boolean {
-  return tile === '5mr' || tile === '5pr' || tile === '5sr'
-}
+const countCanvasElements = new Map<string, { canvas: HTMLCanvasElement; row: readonly string[] }>()
+const tileRows = ANALYSIS_TILE_ROWS
 
 function objectValue(value: unknown): AnalysisRecord {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as AnalysisRecord : {}
@@ -644,24 +638,8 @@ const hasRedFivePredictions = computed(() => {
   )
 })
 
-const countTileRows = computed(() => [
-  { key: 'm', tiles: hasRedFivePredictions.value ? [...tileRows[0], RED_FIVE_TILES[0]] : tileRows[0] },
-  { key: 'p', tiles: hasRedFivePredictions.value ? [...tileRows[1], RED_FIVE_TILES[1]] : tileRows[1] },
-  { key: 's', tiles: hasRedFivePredictions.value ? [...tileRows[2], RED_FIVE_TILES[2]] : tileRows[2] },
-  { key: 'z', tiles: tileRows[3] },
-])
-
-const countSourceTiles = computed(() => {
-  const ordinary = tileRows.flatMap((row, rowIndex) => row.map((tile, tileIndex) => ({
-    tile,
-    groupStart: rowIndex > 0 && tileIndex === 0,
-  })))
-  if (!hasRedFivePredictions.value) return ordinary
-  return [
-    ...ordinary,
-    ...RED_FIVE_TILES.map((tile, index) => ({ tile, groupStart: index === 0 })),
-  ]
-})
+const countTileRows = computed(() => analysisCountTileRows(hasRedFivePredictions.value))
+const countSourceTiles = computed(() => analysisCountSourceTiles(hasRedFivePredictions.value))
 
 function playerOutput(outputId: string, seat: number): AnalysisRecord {
   return outputPlayers(outputId).find((player) => Number(player.seat) === seat) || {}
@@ -956,31 +934,14 @@ function updateRiskGeometry() {
   grid.style.setProperty('--analysis-risk-grid-content-height', `${geometry.gridContentHeight}px`)
 }
 
-function scheduleRiskGeometry() {
-  if (riskGeometryFrame) return
-  riskGeometryFrame = requestAnimationFrame(() => {
-    riskGeometryFrame = 0
-    updateRiskGeometry()
-  })
-}
-
-function connectRiskGeometry(grid: HTMLElement | null) {
-  riskResizeObserver?.disconnect()
-  riskStyleObserver?.disconnect()
-  riskResizeObserver = null
-  riskStyleObserver = null
-  if (!grid) return
-  riskResizeObserver = new ResizeObserver(scheduleRiskGeometry)
-  riskResizeObserver.observe(grid)
-  const tilesView = grid.closest('.analysis-tiles-view')
-  if (tilesView) riskResizeObserver.observe(tilesView)
-  const dock = grid.closest('.dock-module')
-  if (dock) {
-    riskStyleObserver = new MutationObserver(scheduleRiskGeometry)
-    riskStyleObserver.observe(dock, { attributes: true, attributeFilter: ['style', 'class'] })
-  }
-  scheduleRiskGeometry()
-}
+useResponsiveGeometry(
+  riskGridElement,
+  updateRiskGeometry,
+  {
+    resizeAncestorSelector: '.analysis-tiles-view',
+    styleAncestorSelector: '.dock-module',
+  },
+)
 
 function updateCountBarGeometry() {
   const grid = countGridElement.value
@@ -1081,69 +1042,15 @@ function updateCountBarGeometry() {
   updateCountPaletteVariables(grid)
 }
 
-const COUNT_SOURCE_FALLBACKS: Record<'kamicha' | 'toimen' | 'shimocha', RgbColor> = {
-  kamicha: [44, 143, 197],
-  toimen: [211, 154, 58],
-  shimocha: [76, 175, 80],
-}
-
-function countSourceColor(source: TileSource, style: CSSStyleDeclaration): string {
-  if (source.key === 'kamicha') return style.getPropertyValue('--ron-kamicha-color').trim() || '#2c8fc5'
-  if (source.key === 'toimen') return style.getPropertyValue('--ron-toimen-color').trim() || '#d39a3a'
-  if (source.key === 'shimocha') return style.getPropertyValue('--ron-shimocha-color').trim() || '#4caf50'
-  return ''
-}
-
-function playerCountBaseColors(style: CSSStyleDeclaration): Record<'kamicha' | 'toimen' | 'shimocha', RgbColor> {
-  return {
-    kamicha: parseCssColor(style.getPropertyValue('--ron-kamicha-color'), COUNT_SOURCE_FALLBACKS.kamicha),
-    toimen: parseCssColor(style.getPropertyValue('--ron-toimen-color'), COUNT_SOURCE_FALLBACKS.toimen),
-    shimocha: parseCssColor(style.getPropertyValue('--ron-shimocha-color'), COUNT_SOURCE_FALLBACKS.shimocha),
-  }
-}
-
-function wallCountBaseColor(style: CSSStyleDeclaration): RgbColor {
-  const players = Object.values(playerCountBaseColors(style)).map(rgbToOklab)
-  const meanLightness = players.reduce((sum, color) => sum + color.l, 0) / players.length
-  const meanChroma = players.reduce((sum, color) => sum + Math.hypot(color.a, color.b), 0) / players.length
-  const hue = 170 * (Math.PI / 180)
-  const chroma = Math.max(0.018, Math.min(0.04, meanChroma * 0.2))
-  return oklabToRgb({
-    l: meanLightness,
-    a: chroma * Math.cos(hue),
-    b: chroma * Math.sin(hue),
-  })
-}
-
-function countSourceBaseColor(source: TileSource, style: CSSStyleDeclaration): RgbColor {
-  if (source.key === 'wall') return wallCountBaseColor(style)
-  const fallback = COUNT_SOURCE_FALLBACKS[source.key as keyof typeof COUNT_SOURCE_FALLBACKS]
-  return parseCssColor(countSourceColor(source, style), fallback || COUNT_SOURCE_FALLBACKS.kamicha)
-}
-
-function countSourcePalette(source: TileSource, style: CSSStyleDeclaration): string[] {
-  const baseRgb = countSourceBaseColor(source, style)
-  return buildCountColorScale(baseRgb).map(rgbString)
-}
-
-function countPaletteVariable(sourceKey: string, value: number): string {
-  return `--analysis-count-${sourceKey}-${value}`
-}
-
-function countSegmentColor(sourceKey: string, value: DistributionValue): string {
-  const numericValue = Math.max(0, Math.min(4, Number(value) || 0))
-  return `var(${countPaletteVariable(sourceKey, numericValue)})`
-}
-
 function updateCountPaletteVariables(grid: HTMLElement) {
   const style = getComputedStyle(grid)
   for (const source of countSources.value) {
-    const palette = countSourcePalette(source, style)
+    const palette = countSourcePalette(source.key, style)
     palette.forEach((color, value) => grid.style.setProperty(countPaletteVariable(source.key, value), color))
   }
 }
 
-function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
+function renderCountCanvas(row: readonly string[], canvas: HTMLCanvasElement) {
   const rect = canvas.getBoundingClientRect()
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const width = Math.max(1, Math.round(rect.width * ratio))
@@ -1163,7 +1070,7 @@ function renderCountCanvas(row: string[], canvas: HTMLCanvasElement) {
     ? Math.max(0, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-wall-gap')) * ratio))
     : 0
   const sourceWidth = Math.max(sources.length, tileWidth - wallGap)
-  const palettes = sources.map((source) => countSourcePalette(source, style))
+  const palettes = sources.map((source) => countSourcePalette(source.key, style))
 
   for (let tileIndex = 0; tileIndex < row.length; tileIndex += 1) {
     const tile = row[tileIndex]
@@ -1198,39 +1105,24 @@ function renderCountCanvases() {
   for (const { canvas, row } of countCanvasElements.values()) renderCountCanvas(row, canvas)
 }
 
-function scheduleCountBarGeometry() {
-  if (countGeometryFrame) return
-  countGeometryFrame = requestAnimationFrame(() => {
-    countGeometryFrame = 0
+const scheduleCountBarGeometry = useResponsiveGeometry(
+  countGridElement,
+  () => {
     updateCountBarGeometry()
     renderCountCanvases()
-  })
-}
+  },
+  {
+    resizeAncestorSelector: '.analysis-tiles-view',
+    styleAncestorSelector: '.dock-module',
+  },
+)
 
-function setCountCanvasElement(key: string, row: string[], element: unknown) {
+function setCountCanvasElement(key: string, row: readonly string[], element: unknown) {
   if (!(element instanceof HTMLCanvasElement)) {
     countCanvasElements.delete(key)
     return
   }
   countCanvasElements.set(key, { canvas: element, row })
-  scheduleCountBarGeometry()
-}
-
-function connectCountGeometry(grid: HTMLElement | null) {
-  countResizeObserver?.disconnect()
-  countStyleObserver?.disconnect()
-  countResizeObserver = null
-  countStyleObserver = null
-  if (!grid) return
-  countResizeObserver = new ResizeObserver(scheduleCountBarGeometry)
-  countResizeObserver.observe(grid)
-  const tilesView = grid.closest('.analysis-tiles-view')
-  if (tilesView) countResizeObserver.observe(tilesView)
-  const dock = grid.closest('.dock-module')
-  if (dock) {
-    countStyleObserver = new MutationObserver(scheduleCountBarGeometry)
-    countStyleObserver.observe(dock, { attributes: true, attributeFilter: ['style', 'class'] })
-  }
   scheduleCountBarGeometry()
 }
 
@@ -1240,18 +1132,7 @@ onMounted(() => {
     for (const element of offenseTrackElements.values()) offenseResizeObserver.observe(element)
     scheduleOffenseLabelMeasurement()
   }
-  if (props.section === 'counts') {
-    window.addEventListener('resize', scheduleCountBarGeometry)
-    connectCountGeometry(countGridElement.value)
-  }
-  if (props.section === 'risk') {
-    window.addEventListener('resize', scheduleRiskGeometry)
-    connectRiskGeometry(riskGridElement.value)
-  }
 })
-
-watch(riskGridElement, connectRiskGeometry, { flush: 'post', immediate: true })
-watch(countGridElement, connectCountGeometry, { flush: 'post', immediate: true })
 
 watch(() => [props.analysis, props.controlledSeat], () => {
   if (props.section === 'counts') {
@@ -1281,20 +1162,8 @@ watch(playerRows, () => {
 onBeforeUnmount(() => {
   cancelAnimationFrame(hoverTooltipPositionFrame)
   cancelAnimationFrame(offenseMeasureFrame)
-  cancelAnimationFrame(countGeometryFrame)
-  cancelAnimationFrame(riskGeometryFrame)
   offenseResizeObserver?.disconnect()
   offenseResizeObserver = null
-  countResizeObserver?.disconnect()
-  countResizeObserver = null
-  countStyleObserver?.disconnect()
-  countStyleObserver = null
-  riskResizeObserver?.disconnect()
-  riskResizeObserver = null
-  riskStyleObserver?.disconnect()
-  riskStyleObserver = null
-  window.removeEventListener('resize', scheduleCountBarGeometry)
-  window.removeEventListener('resize', scheduleRiskGeometry)
   countCanvasElements.clear()
   offenseTrackElements.clear()
   offenseLabelPositions.value = new Map()
@@ -1491,26 +1360,18 @@ function riskProbability(seat: number | null, tile: string): number {
   return probability(objectValue(player.tiles)[tile])
 }
 
-const RISK_ADAPTIVE_MIN = 0.2
-const RISK_TICK_STEP = 0.05
-const riskScale = computed(() => Math.max(
-  RISK_ADAPTIVE_MIN,
-  ...opponentSources.value.flatMap((source) => tileRows.flatMap((row) => (
+const RISK_ADAPTIVE_MIN = DEFAULT_PROBABILITY_SCALE
+const riskScale = computed(() => adaptiveProbabilityScale(
+  opponentSources.value.flatMap((source) => tileRows.flatMap((row) => (
     row.map((tile) => riskProbability(source.seat, tile))
   ))),
 ))
 
 const showRiskAdaptiveThreshold = computed(() => riskScale.value > RISK_ADAPTIVE_MIN)
-const riskScaleTicks = computed(() => {
-  const stepCount = Math.floor((riskScale.value + Number.EPSILON) / RISK_TICK_STEP)
-  return Array.from({ length: stepCount + 1 }, (_, index) => ({
-    value: index * RISK_TICK_STEP,
-    label: index % 2 === 0 ? `${index * 5}%` : '',
-  }))
-})
+const riskScaleTicks = computed(() => probabilityScaleTicks(riskScale.value))
 
 function riskBarScale(value: number): number {
-  return Math.min(1, probability(value) / riskScale.value)
+  return probabilityScaleRatio(value, riskScale.value)
 }
 
 function riskScalePosition(value: number): string {
@@ -1518,7 +1379,7 @@ function riskScalePosition(value: number): string {
 }
 
 function tilePrediction(tile: string, source: TileSource): NumericPrediction {
-  const property = isRedFive(tile) ? 'redTiles' : 'tiles'
+  const property = isRedFiveTile(tile) ? 'redTiles' : 'tiles'
   if (source.seat === null) {
     return parsePrediction(objectValue(outputData('wall-tile-count')[property])[tile])
   }
@@ -1528,7 +1389,7 @@ function tilePrediction(tile: string, source: TileSource): NumericPrediction {
 
 function countSegments(tile: string, source: TileSource): DistributionEntry[] {
   const prediction = tilePrediction(tile, source)
-  const values = (isRedFive(tile) ? [0, 1] : [0, 1, 2, 3, 4]).map((value) => ({
+  const values = (isRedFiveTile(tile) ? [0, 1] : [0, 1, 2, 3, 4]).map((value) => ({
     value,
     probability: prediction.distribution.find((entry) => entry.value === value)?.probability || 0,
   }))
@@ -1560,10 +1421,10 @@ const countHoverTooltip = computed(() => {
     sourceLabel: source.label,
     tileImage: props.tileImageSrc(target.tile),
     tileLabel: props.tileFaceLabel(target.tile),
-    redFive: isRedFive(target.tile),
+    redFive: isRedFiveTile(target.tile),
     prediction: tilePrediction(target.tile, source),
     // The floating layer lives outside the chart, so it needs resolved colors.
-    palette: countSourcePalette(source, getComputedStyle(grid)),
+    palette: countSourcePalette(source.key, getComputedStyle(grid)),
   }
 })
 
