@@ -21,7 +21,7 @@ function createBackendProcess({
   let serviceReady = false
   let nextRequestId = 1
   const pendingRequests = new Map()
-  let queuedRequests = []
+  const queuedRequests = new Map()
   let onUnsolicitedEvent = null
 
   function isDebugLine(line) {
@@ -39,7 +39,7 @@ function createBackendProcess({
   function rejectPendingRequests(error) {
     pendingRequests.forEach(({ reject }) => reject(error))
     pendingRequests.clear()
-    queuedRequests = []
+    queuedRequests.clear()
   }
 
   function dispatchRequest(requestId, message, timeoutMs) {
@@ -64,8 +64,8 @@ function createBackendProcess({
   }
 
   function flushQueuedRequests() {
-    const requests = queuedRequests
-    queuedRequests = []
+    const requests = [...queuedRequests.values()]
+    queuedRequests.clear()
     requests.forEach(({ requestId, message, timeoutMs }) => {
       dispatchRequest(requestId, message, timeoutMs)
     })
@@ -234,6 +234,7 @@ function createBackendProcess({
       }
       pending.startupTimer = setTimeout(() => {
         pendingRequests.delete(requestId)
+        queuedRequests.delete(requestId)
         pending.reject(new Error(`${name} did not become ready within 60 seconds.`))
       }, 60_000)
       pendingRequests.set(requestId, pending)
@@ -241,7 +242,7 @@ function createBackendProcess({
       if (serviceReady) {
         dispatchRequest(requestId, message, timeoutMs)
       } else {
-        queuedRequests.push({ requestId, message, timeoutMs })
+        queuedRequests.set(requestId, { requestId, message, timeoutMs })
       }
     })
   }

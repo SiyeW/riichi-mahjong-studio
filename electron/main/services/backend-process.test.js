@@ -36,6 +36,20 @@ test('a synchronous spawn exception reports stopped and rejects the request', as
   assert.match(events[0].error, /invalid launch configuration/)
 })
 
+test('startup timeout drops its queued request while a later request can still run', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const { backend, children } = fixture()
+  const expired = assert.rejects(backend.sendRequest('expired'), /60 seconds/)
+  t.mock.timers.tick(60_000)
+  await expired
+  const fresh = backend.sendRequest('fresh')
+  children[0].output({ type: 'service_ready' })
+  assert.deepEqual(children[0].messages.map(message => message.command), ['fresh'])
+  children[0].output({ request_id: children[0].messages[0].request_id, ok: true })
+  assert.equal((await fresh).ok, true)
+  backend.stop()
+})
+
 test('multibyte text survives arbitrary stdout chunk boundaries', async () => {
   const { backend, children } = fixture()
   const request = backend.sendRequest('unicode')
