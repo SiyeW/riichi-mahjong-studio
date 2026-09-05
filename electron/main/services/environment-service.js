@@ -50,8 +50,13 @@ function createEnvironmentService(options = {}) {
   })
 
   const environmentService = createBackendSession(environmentProcess)
+  let onEvent = null
+  environmentProcess.onEvent(event => {
+    environmentService.handleEvent(event)
+    onEvent?.(event)
+  })
   return {
-    backendProcess: environmentProcess,
+    backendProcess: { onEvent(callback) { onEvent = callback } },
     environmentGateway: {
       getStatus() {
         return environmentService.sendRequest('get_status', {}, 30_000)
@@ -137,6 +142,9 @@ function createEnvironmentService(options = {}) {
       },
       restartBackend() {
         return environmentService.restart()
+      },
+      needsRecovery() {
+        return environmentService.needsRecovery()
       },
       getWallView() {
         return environmentService.sendRequest('get_wall_view')

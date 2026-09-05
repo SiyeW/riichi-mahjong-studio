@@ -541,7 +541,8 @@ function registerIpcHandlers() {
     return response
   })
   ipcMain.handle('backend:restart', async () => {
-    await requestRendererFlush(mainWindow, ipcMain, t('native.closeSaveTimeout'))
+    const fromCheckpoint = environmentBackend.environmentGateway.needsRecovery()
+    if (!fromCheckpoint) await requestRendererFlush(mainWindow, ipcMain, t('native.closeSaveTimeout'))
     let response
     try {
       response = await environmentBackend.environmentGateway.restartBackend()
@@ -551,6 +552,8 @@ function registerIpcHandlers() {
       }
       throw error
     }
+    if (fromCheckpoint && response.state?.gameLoaded) markRecordDirty()
+    gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('python:event', { type: 'service_restored', state: response.state, view: response.view })
     }

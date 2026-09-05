@@ -2,24 +2,24 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { createBackendSession } = require('./backend-session')
 
-function fixture(loaded = true) {
+function fixture(loaded = true, checkpointOptions = {}) {
   const calls = []
-  const record = { game: { currentNodeId: 'branch-2', nodes: { 'branch-2': { comment: 'unsaved' } } } }
+  const record = { game: { gameId: 'game-a', currentNodeId: 'branch-2', nodes: { 'branch-2': { comment: 'unsaved' } } } }
   const backend = {
     running: true,
     isRunning() { return this.running },
-    restart() { calls.push('restart') },
+    restart() { this.running = true; calls.push('restart') },
     async sendRequest(command, payload) {
       calls.push(command)
-      if (command === 'export_game_record') return { record }
+      if (command === 'export_game_record') return { record, state: { analysisVisibility: { opponentAnalysis: true } } }
       if (command === 'import_game_record') {
         assert.deepEqual(payload.record, record)
         if (backend.failImport) throw new Error('import failed')
       }
-      return { state: { gameLoaded: loaded, analysisVisibility: { opponentAnalysis: true } }, view: { currentNodeId: 'branch-2' } }
+      return { state: { gameLoaded: loaded, analysisVisibility: { opponentAnalysis: true } }, view: { gameId: 'game-a', currentNodeId: 'branch-2' } }
     },
   }
-  return { backend, session: createBackendSession(backend), calls }
+  return { backend, session: createBackendSession(backend, checkpointOptions), calls }
 }
 
 test('restart exports before stopping and returns only after restoration and visibility sync', async () => {
@@ -90,4 +90,42 @@ test('an empty response after import is not a successful recovery', async () => 
     ? Promise.resolve({ state: { gameLoaded: false }, view: {} }) : send(command, payload)
   await assert.rejects(session.restart(), /did not confirm/)
   await assert.rejects(session.sendRequest('create_game'), /recovery/)
+})
+
+test('a crash restores the latest completed checkpoint without exporting from the dead process', async () => {
+  let capture
+  const { backend, session, calls } = fixture(true, { schedule(callback) { capture = callback; return 1 }, cancel() {} })
+  await session.sendRequest('create_game')
+  capture()
+  await new Promise(resolve => setImmediate(resolve))
+  backend.running = false
+  session.handleEvent({ type: 'service_stopped' })
+  await assert.rejects(session.sendRequest('get_status'), /recovery/)
+  assert.equal(session.needsRecovery(), true)
+  const exports = calls.filter(call => call === 'export_game_record').length
+  await session.restart()
+  assert.equal(calls.filter(call => call === 'export_game_record').length, exports)
+  assert.equal(session.needsRecovery(), false)
+})
+
+test('a settled response from before the stop is rejected before applying its state', async () => {
+  const { backend, session } = fixture()
+  let finish
+  backend.sendRequest = () => new Promise(resolve => { finish = resolve })
+  const request = session.sendRequest('get_game_view')
+  finish({ state: { gameLoaded: true }, view: { gameId: 'game-a' } })
+  session.handleEvent({ type: 'service_stopped' })
+  await assert.rejects(request, /stopped before the response/)
+})
+
+test('reimporting a record with the same game ID cannot recover its predecessor', async () => {
+  let capture
+  const { backend, session } = fixture(true, { schedule(callback) { capture = callback; return 1 }, cancel() {} })
+  await session.sendRequest('create_game')
+  capture()
+  await new Promise(resolve => setImmediate(resolve))
+  await session.sendRequest('create_game')
+  backend.running = false
+  session.handleEvent({ type: 'service_stopped' })
+  await assert.rejects(session.restart(), /no restart snapshot/)
 })
