@@ -2272,6 +2272,7 @@ def _submit_background_analysis(current_node, snapshot):
             if STATE.get("decisionRecommendationsEnabled", True):
                 emit({
                     "type": "analysis_ready",
+                    "cacheEpoch": cache_epoch,
                     "nodeId": node_id,
                     "gameId": game_id,
                     "analysisKey": analysis_key,
@@ -2802,6 +2803,7 @@ def _complete_auto_analysis_item_locked(generation, item, result=None, error=Non
         if item.get("kind") == "decision" and context["game"].get("currentNodeId") == item.get("nodeId"):
             emit({
                 "type": "analysis_ready",
+                "cacheEpoch": _DECISION_CACHE_EPOCH,
                 "nodeId": item["nodeId"],
                 "gameId": context["gameId"],
                 "analysisKey": item["cacheKey"],
@@ -2814,6 +2816,7 @@ def _complete_auto_analysis_item_locked(generation, item, result=None, error=Non
     if tree_updates:
         emit({
             "type": "auto_analysis_tree_updates",
+            "cacheEpoch": _DECISION_CACHE_EPOCH,
             "gameId": context["gameId"],
             "treeComparisons": tree_updates,
             "treeRevision": int(context["game"].get("treeRevision", 0)),
@@ -5233,6 +5236,7 @@ def _commit_prefetched_decision_result(context, draft_node_id):
     )
     emit({
         "type": "analysis_ready",
+        "cacheEpoch": _DECISION_CACHE_EPOCH,
         "nodeId": actual_node_id,
         "gameId": context["gameId"],
         "analysisKey": cache_key,
@@ -6304,6 +6308,8 @@ def clear_loaded_analysis_caches():
     game_tree.mark_tree_changed(game)
     return {
         "decisionEntries": decision_entries,
+        "decisionCacheEpoch": _DECISION_CACHE_EPOCH,
+        "opponentCacheEpoch": _OPPONENT_ANALYSIS_CACHE_EPOCH,
         "opponentEntries": opponent_entries,
         "comparisons": comparisons,
         "pendingReview": had_pending_review,

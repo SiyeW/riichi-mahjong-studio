@@ -642,6 +642,7 @@ interface TrainerPythonEvent {
   nodeId?: string
   gameId?: string
   analysisKey?: string
+  cacheEpoch?: number
   analysis?: TrainerGameView['analysis']
   treeComparisons?: Array<{
     id: string
@@ -744,6 +745,8 @@ interface Window {
       state: TrainerStatusSnapshot
       cleared: {
         decisionEntries: number
+        decisionCacheEpoch: number
+        opponentCacheEpoch: number
         opponentEntries: number
         comparisons: number
         pendingReview: boolean

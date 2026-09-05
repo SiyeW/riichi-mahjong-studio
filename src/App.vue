@@ -1579,6 +1579,7 @@ import { createRevisionSaveQueue } from './revisionSaveQueue'
 import { flushBeforeClose } from './flushBeforeClose'
 import { settingsChanges, mergeSettingsReply } from './settingsChanges'
 import { decisionPositionKey, sameViewRequestContext } from './analysisPosition'
+import { acceptsAnalysisEpoch } from './analysisEpoch'
 import {
   normalizeWorkspaceLayout,
   normalizeDockPanelFraction,
@@ -3233,6 +3234,8 @@ const shantenGTData = ref<Record<string, number[]>>({})
 const shantenViewMode = ref<'predictions' | 'ground_truth'>('predictions')
 const suppressOpponentAnalysisTransitions = ref(false)
 let opponentAnalysisResetGeneration = 0
+let minimumDecisionCacheEpoch: number | null = null
+let minimumOpponentCacheEpoch: number | null = null
 let deferredShantenResult: Record<string, unknown> | null = null
 
 const shantenData = computed(() => (
@@ -3285,6 +3288,7 @@ const hasOpponentGroundTruth = computed(() => (
 function shantenResultMatchesCurrentPosition(result: Record<string, unknown>): boolean {
   const context = result.context as Record<string, unknown> | undefined
   if (!context) return false
+  if (!acceptsAnalysisEpoch(context.cacheEpoch, minimumOpponentCacheEpoch)) return false
   return context.gameId === gameView.gameId
     && context.nodeId === gameView.currentNodeId
     && Number(context.seat) === status.controlledSeat
@@ -7211,6 +7215,8 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
     ? preparePendingDiscardReturnFlight(previousPendingDiscard.actor)
     : null
   if (isNewGame) {
+    minimumDecisionCacheEpoch = null
+    minimumOpponentCacheEpoch = null
     cancelPendingWheelNavigation()
     latestNavigationIntentId += 1
     nodeComments.clear()
@@ -8452,6 +8458,13 @@ function onSouthHandContextMenu(event: MouseEvent) {
 }
 
 function handlePythonEvent(event: TrainerPythonEvent) {
+  if (event.type === 'opponent_analysis_ready') {
+    const context = event.opponentAnalysis?.context as Record<string, unknown> | undefined
+    if (clearingAnalysisCaches.value || !acceptsAnalysisEpoch(context?.cacheEpoch, minimumOpponentCacheEpoch)) return
+  }
+  if (event.type === 'analysis_ready' || event.type === 'auto_analysis_tree_updates') {
+    if (clearingAnalysisCaches.value || !acceptsAnalysisEpoch(event.cacheEpoch, minimumDecisionCacheEpoch)) return
+  }
   if (event.type === 'auto_analysis_progress' && event.autoAnalysis) {
     if (event.gameId && event.gameId !== gameView.gameId) return
     status.autoAnalysis = { ...event.autoAnalysis }
@@ -8610,11 +8623,15 @@ async function fetchAndShowMjaiDebug() {
 
 async function clearLoadedAnalysisCaches() {
   if (!window.trainerAPI?.clearAnalysisCaches || clearingAnalysisCaches.value) return
+  const gameId = gameView.gameId
   clearingAnalysisCaches.value = true
   ++shantenReadGeneration
   analysisCacheClearMessage.value = ''
   try {
     const response = await window.trainerAPI.clearAnalysisCaches()
+    if (gameId !== gameView.gameId) return
+    minimumDecisionCacheEpoch = response.cleared.decisionCacheEpoch
+    minimumOpponentCacheEpoch = response.cleared.opponentCacheEpoch
     applyStatus(response.state)
     decisionAnalysisEventCache.clear()
     gameView.analysis = null

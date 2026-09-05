@@ -78,7 +78,7 @@ try {
         getGameView: async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: JSON.parse(JSON.stringify(vm.gameView)) }),
         clearAnalysisCaches: async () => {
           check.epoch++
-          return { state: JSON.parse(JSON.stringify(vm.status)), cleared: { decisionEntries: 0, opponentEntries: 1, comparisons: 0, treeRevision: 1 } }
+          return { state: JSON.parse(JSON.stringify(vm.status)), cleared: { decisionEntries: 0, opponentEntries: 1, comparisons: 0, treeRevision: 1, decisionCacheEpoch: check.epoch, opponentCacheEpoch: check.epoch } }
         },
       }
       vm.status.mode = 'research'
@@ -196,6 +196,18 @@ try {
   })
   await page.evaluate(() => window.analysisCheck.vm.clearLoadedAnalysisCaches())
   await page.evaluate(async () => { const check = window.analysisCheck; check.resolveRead(check.oldResult); await check.pendingRead })
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    const vm = check.vm
+    const revision = vm.gameView.tree?.revision
+    check.publish(check.oldResult)
+    for (const type of ['analysis_ready', 'auto_analysis_tree_updates']) {
+      vm.handlePythonEvent({ type, gameId: vm.gameView.gameId, nodeId: vm.gameView.currentNodeId,
+        cacheEpoch: check.epoch - 1, analysis: {}, treeRevision: 9999 })
+    }
+    if (vm.gameView.analysis !== null) throw new Error('Old decision event revived cleared analysis')
+    if (vm.gameView.tree?.revision !== revision) throw new Error('Old tree event changed the cleared tree')
+  })
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.gameView.opponentAnalysis), null)
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.opponentAnalysisIsLoading), false, 'cleared idle panels are empty, not loading forever')
   assert.equal(await tooltip.count(), 0)

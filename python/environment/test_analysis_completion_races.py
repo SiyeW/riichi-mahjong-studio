@@ -52,6 +52,8 @@ class AnalysisCompletionRaceTest(unittest.TestCase):
         self.assertFalse(service._BG_TASKS)
         self.assertEqual(len(service._BG_COMPLETED), 1)
         self.store.assert_called_once()
+        ready = [call.args[0] for call in self.emit.call_args_list if call.args[0]["type"] == "analysis_ready"]
+        self.assertEqual(ready[0]["cacheEpoch"], service._DECISION_CACHE_EPOCH)
 
     def test_failed_task_is_removed_without_marking_it_completed(self):
         future = Future()
