@@ -1,0 +1,99 @@
+const assert = require('node:assert/strict')
+const test = require('node:test')
+const { EventEmitter } = require('node:events')
+const { createBackendProcess } = require('./backend-process')
+
+function fixture() {
+  const children = []
+  const events = []
+  const backend = createBackendProcess({
+    name: 'test', pythonExecutable: 'unused',
+    spawnProcess() {
+      const child = new EventEmitter()
+      child.stdout = new EventEmitter()
+      child.stderr = new EventEmitter()
+      child.stdin = new EventEmitter()
+      child.messages = []
+      child.stdin.write = (text, callback) => { child.messages.push(JSON.parse(text)); callback?.() }
+      child.kill = () => { child.killed = true }
+      child.output = payload => child.stdout.emit('data', Buffer.from(JSON.stringify(payload) + '\n'))
+      children.push(child)
+      return child
+    },
+  })
+  backend.onEvent(event => events.push(event))
+  return { backend, children, events }
+}
+
+test('startup queues requests until ready and exit rejects outstanding requests', async () => {
+  const { backend, children } = fixture()
+  const request = backend.sendRequest('pending')
+  const rejected = assert.rejects(request, /exited before responding/)
+  assert.equal(children[0].messages.length, 0)
+  children[0].output({ type: 'service_ready' })
+  assert.equal(children[0].messages.length, 1)
+  children[0].emit('exit', 1)
+  await rejected
+  assert.equal(backend.isRunning(), false)
+})
+
+test('restart rejects old requests and ignores old replies, readiness and exit', async () => {
+  const { backend, children, events } = fixture()
+  const oldRequest = backend.sendRequest('old')
+  const rejected = assert.rejects(oldRequest, /stopped before responding/)
+  const old = children[0]
+  old.output({ type: 'service_ready' })
+  backend.restart()
+  await rejected
+  assert.equal(old.killed, true)
+  const nextRequest = backend.sendRequest('new')
+  const current = children[1]
+  old.output({ type: 'service_ready' })
+  old.emit('exit', 0)
+  assert.equal(current.messages.length, 0)
+  current.output({ type: 'service_ready' })
+  const id = current.messages[0].request_id
+  old.output({ request_id: id, value: 'stale' })
+  current.output({ request_id: id, value: 'fresh' })
+  assert.equal((await nextRequest).value, 'fresh')
+  assert.equal(events.length, 2)
+  backend.stop()
+})
+
+test('stream errors reject requests and allow a clean subsequent process', async () => {
+  const { backend, children } = fixture()
+  const request = backend.sendRequest('first')
+  const rejected = assert.rejects(request, /broken pipe/)
+  children[0].stdin.emit('error', new Error('broken pipe'))
+  await rejected
+  assert.equal(children[0].killed, true)
+  const retry = backend.sendRequest('retry')
+  children[0].stdin.emit('error', new Error('late error'))
+  children[1].output({ type: 'service_ready' })
+  children[1].output({ request_id: children[1].messages[0].request_id, ok: true })
+  assert.equal((await retry).ok, true)
+  backend.stop()
+})
+
+test('synchronous and asynchronous write failures reject the owning request', async () => {
+  for (const sync of [true, false]) {
+    const { backend, children } = fixture()
+    backend.start()
+    children[0].output({ type: 'service_ready' })
+    children[0].stdin.write = (_text, callback) => {
+      if (sync) throw new Error('write failed')
+      callback(new Error('write failed'))
+    }
+    await assert.rejects(backend.sendRequest('write'), /write failed/)
+    backend.stop()
+  }
+})
+
+test('spawn errors reject startup requests instead of leaving them queued', async () => {
+  const { backend, children } = fixture()
+  const request = backend.sendRequest('first')
+  const rejected = assert.rejects(request, /failed to start/)
+  children[0].emit('error', new Error('missing executable'))
+  await rejected
+  assert.equal(backend.isRunning(), false)
+})

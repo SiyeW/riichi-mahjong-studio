@@ -216,6 +216,15 @@ try {
   assert.equal(await readCount(), afterClear, 'cleared data is not silently requested again')
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.gameView.opponentAnalysis), null)
 
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    check.vm.handlePythonEvent({ type: 'service_ready' })
+    check.epoch = 0
+    const result = check.result(2)
+    check.publish(result)
+    if (!check.vm.gameView.opponentAnalysis) throw new Error('New backend epoch zero was rejected')
+  })
+
   // Mouse clicks retain normal focus, but must not pin a hover-only tooltip.
   await page.evaluate(() => {
     window.analysisCheck.vm.gameView.table.hands = Array.from({ length: 4 }, () => Array(13).fill('1m'))

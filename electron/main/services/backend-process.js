@@ -13,6 +13,7 @@ function createBackendProcess({
   args = [],
   cwd,
   env = {},
+  spawnProcess = spawn,
   formatStartError = (processName, message) => `${processName} failed to start: ${message}`,
 }) {
   let child = null
@@ -48,7 +49,17 @@ function createBackendProcess({
       pendingRequests.delete(requestId)
       pending.reject(new Error(`${name} request timed out: ${pending.command}`))
     }, timeoutMs)
-    child.stdin.write(`${message}\n`)
+    const target = child
+    const failWrite = (error) => {
+      if (!error || child !== target || pendingRequests.get(requestId) !== pending) return
+      pendingRequests.delete(requestId)
+      pending.reject(error)
+    }
+    try {
+      target.stdin.write(`${message}\n`, failWrite)
+    } catch (error) {
+      failWrite(error)
+    }
   }
 
   function flushQueuedRequests() {
@@ -68,7 +79,7 @@ function createBackendProcess({
 
     const spawnArgs = scriptPath ? [scriptPath, ...args] : [...args]
 
-    const spawnedChild = spawn(pythonExecutable, spawnArgs, {
+    const spawnedChild = spawnProcess(pythonExecutable, spawnArgs, {
       cwd,
       env: {
         ...process.env,
@@ -86,6 +97,15 @@ function createBackendProcess({
       console.error(`[${name}] spawn error: ${err.message}`)
       rejectPendingRequests(new Error(formatStartError(name, err.message)))
       child = null
+      serviceReady = false
+    })
+
+    spawnedChild.stdin.on('error', (error) => {
+      if (child !== spawnedChild) return
+      rejectPendingRequests(error)
+      child = null
+      serviceReady = false
+      spawnedChild.kill()
     })
 
     spawnedChild.stdout.on('data', (chunk) => {

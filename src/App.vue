@@ -8458,6 +8458,20 @@ function onSouthHandContextMenu(event: MouseEvent) {
 }
 
 function handlePythonEvent(event: TrainerPythonEvent) {
+  if (event.type === 'service_ready') {
+    // Epochs are local to a backend process, not to the desktop session.
+    minimumDecisionCacheEpoch = null
+    minimumOpponentCacheEpoch = null
+    ++shantenReadGeneration
+    gameplayResponseGeneration += 1
+    latestNavigationIntentId += 1
+    cancelPendingWheelNavigation()
+    decisionAnalysisEventCache.clear()
+    gameView.analysis = null
+    gameView.opponentAnalysis = null
+    clearOpponentAnalysisWithoutMotion()
+    return
+  }
   if (event.type === 'opponent_analysis_ready') {
     const context = event.opponentAnalysis?.context as Record<string, unknown> | undefined
     if (clearingAnalysisCaches.value || !acceptsAnalysisEpoch(context?.cacheEpoch, minimumOpponentCacheEpoch)) return
