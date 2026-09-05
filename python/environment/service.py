@@ -421,6 +421,12 @@ def _current_opponent_analysis_context():
 
 
 def _cache_opponent_analysis_result(result, *, require_current):
+    # Epoch validation, cache writes and notifications share the command lock.
+    with _STATE_LOCK:
+        return _cache_opponent_analysis_result_locked(result, require_current=require_current)
+
+
+def _cache_opponent_analysis_result_locked(result, *, require_current):
     context = result.get("context") if isinstance(result, dict) else None
     if not isinstance(context, dict) or result.get("status") != "ready":
         return False
@@ -2242,6 +2248,10 @@ def _submit_background_analysis(current_node, snapshot):
             }
 
     def _on_complete(future):
+        with _STATE_LOCK:
+            _on_complete_locked(future)
+
+    def _on_complete_locked(future):
         should_mark_completed = False
         tree_updates = []
         try:
@@ -2286,8 +2296,8 @@ def _submit_background_analysis(current_node, snapshot):
                 })
 
     future = _BG_EXECUTOR.submit(_task)
-    future.add_done_callback(_on_complete)
     _BG_TASKS[task_key] = future
+    future.add_done_callback(_on_complete)
     return None
 
 
@@ -2742,6 +2752,13 @@ def _run_auto_decision_item(game, item, seat, model_path):
 
 
 def _complete_auto_analysis_item(generation, item, result=None, error=None):
+    with _STATE_LOCK:
+        completed = _complete_auto_analysis_item_locked(generation, item, result, error)
+    if completed:
+        _schedule_next_auto_analysis_item(generation)
+
+
+def _complete_auto_analysis_item_locked(generation, item, result=None, error=None):
     success = False
     tree_updates = []
     with _STATE_LOCK:
@@ -2803,7 +2820,7 @@ def _complete_auto_analysis_item(generation, item, result=None, error=None):
             "timestamp": now_iso(),
         })
     _emit_auto_analysis_progress()
-    _schedule_next_auto_analysis_item(generation)
+    return True
 
 
 def _on_auto_decision_complete(generation, item, future):
