@@ -1,5 +1,6 @@
 const path = require('node:path')
 const fs = require('node:fs')
+const { createRecord } = require('./state/create-record')
 const { requestRendererFlush, persistBeforeClose } = require('./close-persistence')
 const { pathToFileURL } = require('node:url')
 
@@ -487,10 +488,7 @@ function registerIpcHandlers() {
     return response
   })
   ipcMain.handle('game:create', async () => {
-    gameFileStore.prepareUnsavedRecord()
-    const response = await sessionStore.createGame()
-    beginRecordTracking({ dirty: true })
-    return response
+    return createRecord(() => sessionStore.createGame(), gameFileStore, beginRecordTracking)
   })
   ipcMain.handle('game:close', async () => {
     const response = await environmentBackend.environmentGateway.closeGame()

@@ -6059,19 +6059,29 @@ def create_game():
     seed = random.randint(100000, 999999)
     controlled_seat = random.randint(0, 3)
     game = create_empty_game(seed)
+    previous = {key: STATE[key] for key in (
+        "game", "gameLoaded", "mode", "controlledSeat", "pendingSeatSwitch", "visibleHands",
+    )}
     reset_runtime_for_game_change()
-    STATE["controlledSeat"] = controlled_seat
-    STATE["pendingSeatSwitch"] = None
-    STATE["game"] = game
-    STATE["gameLoaded"] = True
-    STATE["mode"] = "play"
-    advance_to_next_user_turn(STATE["game"])
-
-    _BG_EXECUTOR.submit(
-        ACTION_RECOMMENDATIONS.prewarm,
-        STATE["controlledSeat"],
-        get_action_engine_weight_path(),
-    )
+    try:
+        STATE["controlledSeat"] = controlled_seat
+        STATE["pendingSeatSwitch"] = None
+        STATE["game"] = game
+        STATE["gameLoaded"] = True
+        STATE["mode"] = "play"
+        advance_to_next_user_turn(game)
+        _BG_EXECUTOR.submit(
+            ACTION_RECOMMENDATIONS.prewarm,
+            controlled_seat,
+            get_action_engine_weight_path(),
+        )
+    except Exception:
+        # Do not let work started for the abandoned game publish into the old one.
+        try:
+            reset_runtime_for_game_change()
+        finally:
+            STATE.update(previous)
+        raise
 
 
 def close_game():
