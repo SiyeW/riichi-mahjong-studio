@@ -3746,6 +3746,7 @@ const recordHeaderTitle = computed(() => {
   return fileNameFromPath(recordPath.value)
 })
 const recordDirty = ref(false)
+let recordDirtyEventGeneration = 0
 const recoveryRecord = ref(false)
 const gameFileOperation = ref<'create' | 'open' | 'save' | 'save-as' | 'close' | null>(null)
 const closeRecordConfirmationPending = ref(false)
@@ -7515,12 +7516,14 @@ async function saveGame() {
   gameFileOperation.value = 'save'
   try {
     await flushNodeComment()
+    const dirtyGeneration = recordDirtyEventGeneration
+    const gameId = gameView.gameId
     const result = await window.trainerAPI.saveGame()
-    if (!result) return
-    applyStatus(result.state)
-    applyGameView(result.view)
+    if (!result || gameId !== gameView.gameId) return
     setRecordPath(result.path)
-    recordDirty.value = Boolean(result.recordDirty)
+    if (dirtyGeneration === recordDirtyEventGeneration) {
+      recordDirty.value = Boolean(result.recordDirty) || nodeComments.hasDrafts()
+    }
     recoveryRecord.value = Boolean(result.recoveryRecord)
   } finally {
     gameFileOperation.value = null
@@ -7532,12 +7535,14 @@ async function saveGameAs() {
   gameFileOperation.value = 'save-as'
   try {
     await flushNodeComment()
+    const dirtyGeneration = recordDirtyEventGeneration
+    const gameId = gameView.gameId
     const result = await window.trainerAPI.saveGameAs()
-    if (!result) return
-    applyStatus(result.state)
-    applyGameView(result.view)
+    if (!result || gameId !== gameView.gameId) return
     setRecordPath(result.path)
-    recordDirty.value = Boolean(result.recordDirty)
+    if (dirtyGeneration === recordDirtyEventGeneration) {
+      recordDirty.value = Boolean(result.recordDirty) || nodeComments.hasDrafts()
+    }
     recoveryRecord.value = Boolean(result.recoveryRecord)
   } finally {
     gameFileOperation.value = null
@@ -8809,7 +8814,8 @@ onMounted(() => {
   }
   if (window.trainerAPI?.onRecordDirtyChanged) {
     unsubscribeRecordDirtyChanged = window.trainerAPI.onRecordDirtyChanged((dirty) => {
-      recordDirty.value = dirty
+      recordDirtyEventGeneration += 1
+      recordDirty.value = dirty || nodeComments.hasDrafts()
     })
   }
   if (window.trainerAPI?.onUiZoomShortcut) {
@@ -8885,6 +8891,10 @@ onBeforeUnmount(() => {
 })
 if (import.meta.env.MODE === 'ui-test') {
   installAnalysisTestHarness(proxyRefs({
+    recordDirty,
+    recordPath,
+    saveGame,
+    saveGameAs,
     status,
     gameView,
     settings,

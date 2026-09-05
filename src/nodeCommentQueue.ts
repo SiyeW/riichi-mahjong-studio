@@ -51,5 +51,6 @@ export function createNodeCommentQueue(
     return queue
   }
 
-  return { set, discard, clear, flush, get: (key: string) => drafts.get(key)?.comment }
+  return { set, discard, clear, flush, hasDrafts: () => drafts.size > 0,
+    get: (key: string) => drafts.get(key)?.comment }
 }

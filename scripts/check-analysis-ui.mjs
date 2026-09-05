@@ -71,6 +71,7 @@ try {
         getStatus: async () => JSON.parse(JSON.stringify(vm.status)),
         restoreStartupRecovery: async () => null,
         getRecordDirty: async () => false,
+        onRecordDirtyChanged: callback => { check.notifyDirty = callback; return () => {} },
         getShanten: async () => { check.reads++; return check.result() },
         setAnalysisVisibility: async () => ({ state: JSON.parse(JSON.stringify(vm.status)) }),
         saveSettings: async settings => settings,
@@ -114,6 +115,35 @@ try {
     '1',
     'auto-analysis progress details stay visible without hover',
   )
+  for (const operation of ['saveGame', 'saveGameAs']) {
+    await page.evaluate(async operation => {
+      const check = window.analysisCheck
+      const vm = check.vm
+      const originalView = JSON.parse(JSON.stringify(vm.gameView))
+      const originalState = JSON.parse(JSON.stringify(vm.status))
+      vm.recordDirty = true
+      let finish
+      window.trainerAPI[operation] = () => new Promise(resolve => { finish = resolve })
+      const saving = vm[operation]()
+      while (!finish) await new Promise(resolve => setTimeout(resolve, 0))
+      window.trainerAPI.jumpToNode = async nodeId => ({ state: originalState, view: { ...originalView, currentNodeId: nodeId } })
+      await vm.jumpToNode('saved-during-navigation')
+      check.notifyDirty(false)
+      check.notifyDirty(true)
+      finish({ state: originalState, view: originalView, path: 'test-save.mjstudio', recordDirty: false, recoveryRecord: false })
+      await saving
+      if (vm.gameView.currentNodeId !== 'saved-during-navigation') throw new Error(`${operation} rewound the current node`)
+      if (!vm.recordDirty) throw new Error(`${operation} cleared a newer dirty notification`)
+      if (vm.recordPath !== 'test-save.mjstudio') throw new Error(`${operation} failed to update its path`)
+      await vm.jumpToNode(originalView.currentNodeId)
+      window.trainerAPI[operation] = async () => {
+        check.notifyDirty(false)
+        return { state: originalState, view: originalView, path: 'test-save.mjstudio', recordDirty: false, recoveryRecord: false }
+      }
+      await vm[operation]()
+      if (vm.recordDirty) throw new Error(`${operation} did not accept a clean save`)
+    }, operation)
+  }
   const tooltip = page.locator('.count-prediction-tooltip')
   const target = () => page.locator('.analysis-count-source-row').nth(3).locator('.analysis-count-source-tile').first()
   await target().waitFor().catch(async error => {

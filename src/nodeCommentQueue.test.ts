@@ -15,6 +15,19 @@ test('comment keys isolate identical node ids in different games', () => {
   assert.equal(nodeCommentKey('game', null), '')
 })
 
+test('unsent and in-flight comment drafts remain dirty until acknowledged', async () => {
+  const pending = deferred<{ comment: string }>()
+  const queue = createNodeCommentQueue(() => pending.promise)
+  assert.equal(queue.hasDrafts(), false)
+  queue.set('game/node', 'node', 'new comment')
+  const saving = queue.flush()
+  await Promise.resolve()
+  assert.equal(queue.hasDrafts(), true)
+  pending.resolve({ comment: 'new comment' })
+  await saving
+  assert.equal(queue.hasDrafts(), false)
+})
+
 test('pending edits are coalesced and empty comments are saved', async () => {
   const saved: string[] = []
   const queue = createNodeCommentQueue(async update => {
