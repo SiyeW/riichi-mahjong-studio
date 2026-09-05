@@ -1,4 +1,5 @@
 const { spawn } = require('node:child_process')
+const { StringDecoder } = require('node:string_decoder')
 
 function stringifyProtocolMessage(payload) {
   return JSON.stringify(payload).replace(/[\u0080-\uFFFF]/g, (character) => (
@@ -91,6 +92,7 @@ function createBackendProcess({
     })
     child = spawnedChild
     let processStdoutBuffer = ''
+    const stdoutDecoder = new StringDecoder('utf8')
 
     spawnedChild.on('error', (err) => {
       if (child !== spawnedChild) return
@@ -112,7 +114,7 @@ function createBackendProcess({
 
     spawnedChild.stdout.on('data', (chunk) => {
       if (child !== spawnedChild) return
-      const text = chunk.toString('utf8')
+      const text = stdoutDecoder.write(chunk)
       processStdoutBuffer += text
 
       let newlineIndex = processStdoutBuffer.indexOf('\n')

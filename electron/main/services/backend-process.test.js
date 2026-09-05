@@ -25,6 +25,17 @@ function fixture() {
   return { backend, children, events }
 }
 
+test('multibyte text survives arbitrary stdout chunk boundaries', async () => {
+  const { backend, children } = fixture()
+  const request = backend.sendRequest('unicode')
+  children[0].output({ type: 'service_ready' })
+  const bytes = Buffer.from(JSON.stringify({ request_id: children[0].messages[0].request_id,
+    comment: '中文 日本語 🀄' }) + '\n')
+  for (const byte of bytes) children[0].stdout.emit('data', Buffer.from([byte]))
+  assert.equal((await request).comment, '中文 日本語 🀄')
+  backend.stop()
+})
+
 test('startup queues requests until ready and exit rejects outstanding requests', async () => {
   const { backend, children } = fixture()
   const request = backend.sendRequest('pending')
