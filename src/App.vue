@@ -1574,6 +1574,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
+import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
 import {
   normalizeWorkspaceLayout,
   normalizeDockPanelFraction,
@@ -5708,11 +5709,20 @@ let deleteNodeConfirmationTimer: number | null = null
 const nodeMutationRequestInFlight = ref(false)
 const nodeCommentEl = ref<HTMLTextAreaElement | null>(null)
 const nodeCommentDraft = ref('')
-const nodeCommentLocalDrafts = new Map<string, string>()
+const nodeComments = createNodeCommentQueue(
+  async (update) => {
+    if (!window.trainerAPI?.setNodeComment) throw new Error('Node comment service unavailable')
+    return window.trainerAPI.setNodeComment(update.nodeId, update.comment)
+  },
+  (update, comment) => {
+    if (
+      nodeCommentKey(gameView.gameId, gameView.currentNodeId) === update.key
+      && nodeCommentDraft.value === update.comment
+    ) nodeCommentDraft.value = comment
+  },
+)
 const NODE_COMMENT_SAVE_DELAY_MS = 400
 let nodeCommentSaveTimer: number | null = null
-const pendingNodeComments = new Map<string, { key: string; nodeId: string; comment: string }>()
-let nodeCommentSaveQueue: Promise<void> = Promise.resolve()
 let wheelNavigationCursorNodeId: string | null = null
 let wheelNavigationQueuedNodeId: string | null = null
 let wheelNavigationQueuedDirection: GameViewTransitionDirection | null = null
@@ -5724,11 +5734,6 @@ function cancelPendingWheelNavigation() {
   wheelNavigationQueuedNodeId = null
   wheelNavigationQueuedDirection = null
   wheelNavigationGeneration = 0
-}
-
-function nodeCommentKey(gameId: string | null | undefined, nodeId: string | null | undefined) {
-  if (!gameId || !nodeId) return ''
-  return `${gameId}\u0000${nodeId}`
 }
 
 function resizeNodeComment() {
@@ -5752,9 +5757,7 @@ function resizeNodeComment() {
 
 function syncNodeCommentFromView(view: TrainerGameView) {
   const key = nodeCommentKey(view.gameId, view.currentNodeId)
-  nodeCommentDraft.value = (key && nodeCommentLocalDrafts.has(key))
-    ? nodeCommentLocalDrafts.get(key) || ''
-    : String(view.nodeComment || '')
+  nodeCommentDraft.value = nodeComments.get(key) ?? String(view.nodeComment || '')
   resizeNodeComment()
 }
 
@@ -5763,8 +5766,7 @@ function onNodeCommentInput() {
   const key = nodeCommentKey(gameView.gameId, nodeId)
   if (!nodeId || !key) return
   const comment = nodeCommentDraft.value
-  nodeCommentLocalDrafts.set(key, comment)
-  pendingNodeComments.set(key, { key, nodeId, comment })
+  nodeComments.set(key, nodeId, comment)
   recordDirty.value = true
   resizeNodeComment()
   if (nodeCommentSaveTimer !== null) window.clearTimeout(nodeCommentSaveTimer)
@@ -5779,41 +5781,7 @@ function flushNodeComment(): Promise<void> {
     window.clearTimeout(nodeCommentSaveTimer)
     nodeCommentSaveTimer = null
   }
-  const updates = [...pendingNodeComments.values()]
-  pendingNodeComments.clear()
-  if (!updates.length || !window.trainerAPI?.setNodeComment) return nodeCommentSaveQueue
-
-  const task = nodeCommentSaveQueue
-    .catch(() => undefined)
-    .then(async () => {
-      for (let index = 0; index < updates.length; index += 1) {
-        const update = updates[index]
-        let response
-        try {
-          response = await window.trainerAPI!.setNodeComment(update.nodeId, update.comment)
-        } catch (error) {
-          for (const remaining of updates.slice(index)) {
-            const current = nodeCommentLocalDrafts.get(remaining.key)
-            if (current !== undefined) {
-              pendingNodeComments.set(remaining.key, { ...remaining, comment: current })
-            }
-          }
-          throw error
-        }
-        if (nodeCommentLocalDrafts.get(update.key) === update.comment) {
-          nodeCommentLocalDrafts.delete(update.key)
-        }
-        if (
-          gameView.currentNodeId === update.nodeId
-          && nodeCommentKey(gameView.gameId, gameView.currentNodeId) === update.key
-          && nodeCommentDraft.value === update.comment
-        ) {
-          nodeCommentDraft.value = response.comment
-        }
-      }
-    })
-  nodeCommentSaveQueue = task
-  return task
+  return nodeComments.flush()
 }
 
 function flushNodeCommentInBackground() {
@@ -5825,8 +5793,7 @@ function flushNodeCommentInBackground() {
 function discardNodeCommentDraft(nodeId: string) {
   const key = nodeCommentKey(gameView.gameId, nodeId)
   if (!key) return
-  pendingNodeComments.delete(key)
-  nodeCommentLocalDrafts.delete(key)
+  nodeComments.discard(key)
 }
 
 const canSetCurrentNodeAsMainBranch = computed(() => {
@@ -7259,7 +7226,7 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
   if (isNewGame) {
     cancelPendingWheelNavigation()
     latestNavigationIntentId += 1
-    nodeCommentLocalDrafts.clear()
+    nodeComments.clear()
   }
   gameView.gameId = nextView.gameId
   gameView.matchId = nextView.matchId
