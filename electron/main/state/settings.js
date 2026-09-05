@@ -1,5 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
+const { writeFileAtomically } = require('./atomic-file')
 const { normalizeEngineSettings } = require('./engine-registry')
 const {
   discoverEnginePackages,
@@ -302,7 +303,7 @@ function saveSettings(settings, options = {}) {
   settings.audio = normalizeAudioSettings(settings.audio, soundPackCatalog)
   const filePath = getSettingsPath(options)
   fs.mkdirSync(path.dirname(filePath), { recursive: true })
-  fs.writeFileSync(filePath, JSON.stringify(settings, null, 2), 'utf8')
+  writeFileAtomically(filePath, JSON.stringify(settings, null, 2))
   return filePath
 }
 

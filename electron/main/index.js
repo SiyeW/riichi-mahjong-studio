@@ -1,5 +1,6 @@
 const path = require('node:path')
 const fs = require('node:fs')
+const { writeFileAtomically } = require('./state/atomic-file')
 const { createRecord } = require('./state/create-record')
 const { withCurrentRecord } = require('./state/record-operation')
 const { requestRendererFlush, persistBeforeClose } = require('./close-persistence')
@@ -150,18 +151,6 @@ function beginRecordTracking({ dirty, nodeId = null }) {
 function markRecordDirty() {
   gameFileStore.markDirty()
   return publishRecordDirty()
-}
-
-function writeFileAtomically(targetPath, contents) {
-  const temporaryPath = `${targetPath}.${process.pid}.tmp`
-  try {
-    fs.writeFileSync(temporaryPath, contents)
-    fs.renameSync(temporaryPath, targetPath)
-  } finally {
-    if (fs.existsSync(temporaryPath)) {
-      fs.rmSync(temporaryPath, { force: true })
-    }
-  }
 }
 
 async function writeCurrentGameRecord(targetPath, options = {}) {

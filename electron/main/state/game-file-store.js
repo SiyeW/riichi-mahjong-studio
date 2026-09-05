@@ -1,5 +1,6 @@
 const path = require('node:path')
 const fs = require('node:fs')
+const { writeFileAtomically } = require('./atomic-file')
 
 function padNumber(value, length = 2) {
   return String(value).padStart(length, '0')
@@ -148,7 +149,7 @@ function createGameFileStore(baseDir) {
         return ''
       }
       fs.mkdirSync(path.dirname(sessionPath), { recursive: true })
-      fs.writeFileSync(sessionPath, `${JSON.stringify({ sourcePath: normalized })}\n`, 'utf8')
+      writeFileAtomically(sessionPath, `${JSON.stringify({ sourcePath: normalized })}\n`)
       return normalized
     },
     readRecoverySourcePath() {
