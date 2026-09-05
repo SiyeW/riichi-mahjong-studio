@@ -14,9 +14,10 @@ export function useResponsiveGeometry(
   let resizeObserver: ResizeObserver | null = null
   let styleObserver: MutationObserver | null = null
   let listeningForWindowResize = false
+  let disposed = false
 
   function schedule() {
-    if (frame) return
+    if (disposed || !target.value || frame) return
     frame = requestAnimationFrame(() => {
       frame = 0
       update()
@@ -24,6 +25,8 @@ export function useResponsiveGeometry(
   }
 
   function disconnect() {
+    cancelAnimationFrame(frame)
+    frame = 0
     resizeObserver?.disconnect()
     styleObserver?.disconnect()
     resizeObserver = null
@@ -64,7 +67,7 @@ export function useResponsiveGeometry(
 
   watch(target, connect, { flush: 'post', immediate: true })
   onBeforeUnmount(() => {
-    cancelAnimationFrame(frame)
+    disposed = true
     disconnect()
     setWindowResizeListener(false)
   })

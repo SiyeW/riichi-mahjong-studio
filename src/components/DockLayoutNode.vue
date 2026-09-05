@@ -46,6 +46,7 @@ import type {
 } from '../workspaceLayout'
 
 const props = defineProps<{ node: WorkspaceDockViewNode }>()
+defineSlots<{ default(props: { id: WorkspaceItemId }): unknown }>()
 const emit = defineEmits<{ 'resize-start': [request: DockResizeRequest] }>()
 
 function dockNodeKey(node: WorkspaceDockViewNode): string {

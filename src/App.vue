@@ -527,10 +527,10 @@
                   <img :src="tileImageSrc(tile)" class="tileImg" :alt="tileFaceLabel(tile)" />
                 </div>
               </span>
-              <span v-if="gameView.table" class="gi-player-anchor gi-p0-anchor"><span class="gi-p0-outer" :class="{ 'is-actor': isCurrentActorSeat(southView.seat), 'is-east': southView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(southView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[southView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: southView.riichiAccepted }">-1000</span></span></span>
-              <span v-if="gameView.table" class="gi-player-anchor gi-p1-anchor"><span class="gi-p1-outer" :class="{ 'is-actor': isCurrentActorSeat(eastView.seat), 'is-east': eastView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(eastView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[eastView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: eastView.riichiAccepted }">-1000</span></span></span>
-              <span v-if="gameView.table" class="gi-player-anchor gi-p2-anchor"><span class="gi-p2-outer" :class="{ 'is-actor': isCurrentActorSeat(northView.seat), 'is-east': northView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(northView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[northView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: northView.riichiAccepted }">-1000</span></span></span>
-              <span v-if="gameView.table" class="gi-player-anchor gi-p3-anchor"><span class="gi-p3-outer" :class="{ 'is-actor': isCurrentActorSeat(westView.seat), 'is-east': westView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(westView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[westView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: westView.riichiAccepted }">-1000</span></span></span>
+              <span v-if="gameView.table && southView" class="gi-player-anchor gi-p0-anchor"><span class="gi-p0-outer" :class="{ 'is-actor': isCurrentActorSeat(southView.seat), 'is-east': southView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(southView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[southView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: southView.riichiAccepted }">-1000</span></span></span>
+              <span v-if="gameView.table && eastView" class="gi-player-anchor gi-p1-anchor"><span class="gi-p1-outer" :class="{ 'is-actor': isCurrentActorSeat(eastView.seat), 'is-east': eastView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(eastView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[eastView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: eastView.riichiAccepted }">-1000</span></span></span>
+              <span v-if="gameView.table && northView" class="gi-player-anchor gi-p2-anchor"><span class="gi-p2-outer" :class="{ 'is-actor': isCurrentActorSeat(northView.seat), 'is-east': northView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(northView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[northView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: northView.riichiAccepted }">-1000</span></span></span>
+              <span v-if="gameView.table && westView" class="gi-player-anchor gi-p3-anchor"><span class="gi-p3-outer" :class="{ 'is-actor': isCurrentActorSeat(westView.seat), 'is-east': westView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(westView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[westView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: westView.riichiAccepted }">-1000</span></span></span>
             </div>
             <div v-if="actionAnnouncement.visible" :key="actionAnnouncement.key" :class="['table-callout', `is-${actionAnnouncement.position}`]">
               {{ actionAnnouncement.text }}
@@ -1170,9 +1170,9 @@
               </div>
               <svg class="round-map-svg" :width="roundMapSvgW" :height="roundMapSvgH">
                 <line
-                  :x1="ROUND_BASE_X.value"
+                  :x1="ROUND_BASE_X"
                   y1="0"
-                  :x2="ROUND_BASE_X.value"
+                  :x2="ROUND_BASE_X"
                   :y2="roundMapSvgH"
                   stroke="rgba(159,213,200,0.18)"
                   stroke-width="1"
@@ -1226,7 +1226,7 @@
               :key="`round-map-score-${entry.seat}`"
               :class="['result-score-card', `is-${entry.position}`, { 'is-empty': !entry.hasScores }]"
               role="group"
-              :aria-label="entry.showDelta ? t('result.scoreAria', { player: entry.label, rank: entry.rank, before: entry.before, delta: formatDelta(entry.delta), after: entry.after }) : (entry.hasScores ? t('result.scoreOnlyAria', { player: entry.label, score: entry.after }) : entry.label)"
+              :aria-label="entry.showDelta ? t('result.scoreAria', { player: entry.label, rank: entry.rank ?? t('analysis.noData'), before: entry.before, delta: formatDelta(entry.delta), after: entry.after }) : (entry.hasScores ? t('result.scoreOnlyAria', { player: entry.label, score: entry.after }) : entry.label)"
             >
               <span class="result-score-heading">
                 <strong class="result-score-seat">{{ entry.label }}</strong>
@@ -1727,7 +1727,7 @@ function normalizeWorkspaceLayout(value: unknown): TrainerSettings['display']['w
   const source = value && typeof value === 'object'
     ? value as Partial<TrainerSettings['display']['workspaceLayout']> & { order?: unknown }
     : {}
-  const sourcePanels = source.analysisPanels && typeof source.analysisPanels === 'object'
+  const sourcePanels: Partial<TrainerSettings['display']['workspaceLayout']['analysisPanels']> = source.analysisPanels && typeof source.analysisPanels === 'object'
     ? source.analysisPanels
     : {}
   return {
@@ -3488,7 +3488,7 @@ const shantenOpponents = computed(() => {
     { key: 'kamicha', seat: (c + 3) % 4, label: t('seat.kamicha') },
     { key: 'toimen', seat: (c + 2) % 4, label: t('seat.toimen') },
     { key: 'shimocha', seat: (c + 1) % 4, label: t('seat.shimocha') },
-  ]
+  ] as const
   return opponents.map((opp) => ({
     ...opp,
     probabilities: shantenData.value[opp.key] || [],
@@ -3550,6 +3550,7 @@ const treePanelCollapsed = ref(false)
 const analysisPanelCollapsed = ref(false)
 
 const status = reactive<TrainerStatusSnapshot>({
+  aiThinkingTimeS: 0,
   mode: 'play',
   controlledSeat: 0,
   pendingSeatSwitch: null,
@@ -4381,7 +4382,7 @@ const HAND_HONOR_ORDER: Record<string, number> = { E: 30, S: 31, W: 32, N: 33, P
 
 interface DiscardBarSlot {
   tile: string
-  entry: TrainerGameView['analysis']['discardEntries'][number] | null
+  entry: NonNullable<TrainerGameView['analysis']>['discardEntries'][number] | null
   isBest: boolean
   isDrawn: boolean
   isGap: boolean
@@ -5235,11 +5236,11 @@ const roundRootNodeList = computed(() => (
     ))
 ))
 
-function roundSlotKey(node: TrainerTreeNode) {
+function roundSlotKey(node: Pick<TrainerTreeNode, 'roundIndex' | 'honba'>) {
   return `${node.roundIndex ?? -1}:${node.honba ?? 0}`
 }
 
-function roundNodeLabel(node: TrainerTreeNode) {
+function roundNodeLabel(node: Pick<TrainerTreeNode, 'bakaze' | 'kyoku' | 'honba'>) {
   const bakaze = roundWindLabel(node.bakaze || 'E')
   const kyoku = node.kyoku ?? 0
   const honba = node.honba ?? 0
@@ -5419,7 +5420,7 @@ const roundMapGraph = computed(() => {
     while (cursorId && roundNodeMap.has(cursorId)) {
       branchNodes.push(cursorId)
       nodeBranchId.set(cursorId, branchId)
-      const nextRoundId = mainNextRoundId.get(cursorId) || null
+      const nextRoundId: string | null = mainNextRoundId.get(cursorId) || null
       if (!nextRoundId) break
       cursorId = nextRoundId
     }
@@ -7841,7 +7842,7 @@ function announcementSoundEvent(type: string): string | null {
   return map[type] || null
 }
 
-function actionSignature(action: TrainerGameView['table']['lastAction']) {
+function actionSignature(action: NonNullable<TrainerGameView['table']>['lastAction']) {
   if (!action) return ''
   return [
     action.type || '',

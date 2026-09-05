@@ -587,6 +587,42 @@ try {
       previousTreeColumns = geometry.treeColumns
     }
   }
+  // Label measurements must survive mounting, resizing, and new probabilities.
+  await page.setViewportSize({ width: 1400, height: 1000 })
+  await page.evaluate(() => {
+    const { vm } = window.analysisCheck
+    vm.settings.display.workspaceLayout = {
+      ...vm.workspaceLayout,
+      analysisVisible: true, consoleVisible: false,
+      layout: {
+        type: 'split', direction: 'horizontal', weights: [1, 1],
+        children: [{ type: 'item', id: 'table' }, { type: 'item', id: 'analysis-game' }],
+      },
+      analysisPanels: { opponents: false, game: true, risk: false, counts: false },
+    }
+    const result = window.analysisCheck.result()
+    result.outputs['kyoku-outcome'] = {
+      players: [
+        { seat: 0, winProbability: 0.01, dealInProbability: 0.95 },
+        { seat: 1, winProbability: 0.95, dealInProbability: 0.01 },
+        { seat: 2, winProbability: 0.5, dealInProbability: 0.5 },
+        { seat: 3, winProbability: 1, dealInProbability: 0 },
+      ],
+    }
+    window.analysisCheck.publish(result)
+  })
+  for (const width of [1400, 1000, 1400]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await page.waitForFunction(() => {
+      const tracks = [...document.querySelectorAll('.analysis-offense-track.labels-measured')]
+      return tracks.length === 4 && tracks.every(track => {
+        const bounds = track.getBoundingClientRect()
+        const left = track.querySelector('.is-deal-in.analysis-offense-value').getBoundingClientRect()
+        const right = track.querySelector('.is-win.analysis-offense-value').getBoundingClientRect()
+        return left.left >= bounds.left - 1 && right.right <= bounds.right + 1 && left.right + 4 <= right.left
+      })
+    })
+  }
   assert.deepEqual(errors, [])
   console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing, hand-toggle hints, responsive geometry, narrow console and shared tile artwork passed.')
 } finally {

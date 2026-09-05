@@ -221,12 +221,12 @@
               >
                 <div class="analysis-zero-axis" />
                 <span
-                  :class="player.kyokuDelta >= 0 ? 'positive' : 'negative'"
+                  :class="(player.kyokuDelta ?? 0) >= 0 ? 'positive' : 'negative'"
                   :style="deltaBarStyle(player.kyokuDelta)"
                 />
                 <small
                   class="analysis-delta-value"
-                  :class="player.kyokuDelta >= 0 ? 'opposite-positive' : 'opposite-negative'"
+                  :class="(player.kyokuDelta ?? 0) >= 0 ? 'opposite-positive' : 'opposite-negative'"
                 >{{ formatSignedCompactPoints(player.kyokuDelta) }}</small>
               </div>
             </div>
@@ -473,8 +473,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { deltaHalfWidthPercent, symmetricDeltaScale } from '../analysisDeltaScale'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { useOffenseLabels } from '../useOffenseLabels'
+import { deltaHalfWidthPercent } from '../analysisDeltaScale'
+import { useAnalysisPanelData, type TileSource, type AnalysisPanelDataProps } from '../useAnalysisPanelData'
+import type { AnalysisRecord } from '../useAnalysisOutputs'
 import { useI18n } from '../i18n'
 import {
   ANALYSIS_COUNT_SPACING,
@@ -487,26 +490,14 @@ import {
   countPaletteVariable,
   countSegmentColor,
   countSourcePalette,
-  type CountSourceKey,
 } from '../analysisCountPalette'
-import {
-  adaptiveProbabilityScale,
-  DEFAULT_PROBABILITY_SCALE,
-  probabilityScaleRatio,
-  probabilityScaleTicks,
-} from '../analysisProbabilityScale'
-import { hasRedFiveCountPredictions } from '../analysisTileCounts'
+import { DEFAULT_PROBABILITY_SCALE as RISK_ADAPTIVE_MIN } from '../analysisProbabilityScale'
 import {
   ANALYSIS_TILE_ROWS,
-  analysisCountSourceTiles,
-  analysisCountTileRows,
   isRedFiveTile,
 } from '../analysisTiles'
-import { resolveKyokuOutcome } from '../kyokuOutcome'
 import {
-  parseNumericPrediction,
   type DistributionEntry,
-  type DistributionValue,
   type NumericPrediction,
 } from '../numericPrediction'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
@@ -520,8 +511,6 @@ const emit = defineEmits<{
   'update:countLayout': [value: AnalysisCountLayout]
 }>()
 
-type AnalysisRecord = Record<string, unknown>
-type TileSource = { key: CountSourceKey; label: string; seat: number | null }
 type HoverTooltipRow = {
   label: string
   value: string
@@ -540,7 +529,7 @@ type HoverTooltipState = {
 const props = defineProps<{
   section: 'opponents' | 'game' | 'risk' | 'counts'
   analysis: AnalysisRecord | null | undefined
-  shantenOpponents: Array<{ key: string; seat: number; label: string; probabilities: number[] }>
+  shantenOpponents: AnalysisPanelDataProps['shantenOpponents']
   shantenColors: string[]
   shantenLabels: string[]
   shantenShortLabels: string[]
@@ -598,218 +587,43 @@ const countHoverTarget = ref<{
   controlledSeat: number
 } | null>(null)
 let hoverTooltipPositionFrame = 0
-const offenseTrackElements = new Map<number, HTMLElement>()
-const offenseLabelPositions = ref<Map<number, { win: number; dealIn: number }>>(new Map())
-let offenseResizeObserver: ResizeObserver | null = null
-let offenseMeasureFrame = 0
 const riskGridElement = ref<HTMLElement | null>(null)
 const countGridElement = ref<HTMLElement | null>(null)
 const countCanvasElements = new Map<string, { canvas: HTMLCanvasElement; row: readonly string[] }>()
 const tileRows = ANALYSIS_TILE_ROWS
 
-function objectValue(value: unknown): AnalysisRecord {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as AnalysisRecord : {}
-}
-
-function finiteNumber(value: unknown, fallback = 0): number {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) ? numeric : fallback
-}
-
-function probability(value: unknown): number {
-  return Math.max(0, Math.min(1, finiteNumber(value)))
-}
-
-const outputs = computed(() => objectValue(props.analysis?.outputs))
-
-function outputData(outputId: string): AnalysisRecord {
-  return objectValue(outputs.value[outputId])
-}
-
-function outputPlayers(outputId: string): AnalysisRecord[] {
-  const players = outputData(outputId).players
-  return Array.isArray(players) ? players.map(objectValue) : []
-}
-
-const hasRedFivePredictions = computed(() => {
-  return hasRedFiveCountPredictions(
-    outputData('wall-tile-count'),
-    outputPlayers('opponent-concealed-tile-count'),
-  )
-})
-
-const countTileRows = computed(() => analysisCountTileRows(hasRedFivePredictions.value))
-const countSourceTiles = computed(() => analysisCountSourceTiles(hasRedFivePredictions.value))
-
-function playerOutput(outputId: string, seat: number): AnalysisRecord {
-  return outputPlayers(outputId).find((player) => Number(player.seat) === seat) || {}
-}
-
-function parsePrediction(value: unknown): NumericPrediction {
-  return parseNumericPrediction(value)
-}
-
-function seatPrediction(outputId: string, seat: number): NumericPrediction {
-  return parsePrediction(playerOutput(outputId, seat).prediction)
-}
-
-function formatCompactPoints(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return '—'
-  return new Intl.NumberFormat(numberLocale.value, {
-    notation: Math.abs(value) >= 10000 ? 'compact' : 'standard',
-    maximumFractionDigits: 1,
-  }).format(Math.round(value))
-}
-
-function formatPoints(value: number | null): string {
-  return value === null || !Number.isFinite(value)
-    ? t('analysis.noData')
-    : t('analysis.points', { value: Math.round(value).toLocaleString(numberLocale.value) })
-}
-
-function formatPlainPoints(value: number | null): string {
-  return value === null || !Number.isFinite(value) ? '—' : Math.round(value).toLocaleString(numberLocale.value)
-}
-
-function formatSignedCompactPoints(value: number | null): string {
-  if (value === null || !Number.isFinite(value)) return '—'
-  const absolute = formatCompactPoints(Math.abs(value))
-  return `${value > 0 ? '+' : value < 0 ? '−' : ''}${absolute}`
-}
-
-function formatDistributionPoints(value: DistributionValue): string {
-  if (typeof value !== 'number') return String(value)
-  return formatCompactPoints(value)
-}
-
-function formatProbability(value: number): string {
-  const percentage = probability(value) * 100
-  if (percentage === 0) return '0%'
-  if (percentage < 0.01) return '<0.01%'
-  return `${percentage.toFixed(1)}%`
-}
-
-const opponentCards = computed(() => props.shantenOpponents.map((opponent) => {
-  const dora = seatPrediction('opponent-dora-count', opponent.seat)
-  const score = seatPrediction('opponent-score', opponent.seat)
-  return {
-    ...opponent,
-    dora: dora.scalarValue === null ? '—' : dora.scalarValue.toFixed(1),
-    score: formatCompactPoints(score.scalarValue),
-    doraPrediction: dora,
-    scorePrediction: score,
-    scoreModes: [...score.distribution]
-      .sort((left, right) => right.probability - left.probability)
-      .slice(0, 3),
-  }
-}))
-
-const hasOpponentDoraDistributions = computed(() => (
-  opponentCards.value.some((opponent) => opponent.doraPrediction.distribution.length)
-))
-const hasOpponentScoreDistributions = computed(() => (
-  opponentCards.value.some((opponent) => opponent.scorePrediction.distribution.length)
-))
-
-function maximumDistributionProbability(predictions: NumericPrediction[]): number {
-  return Math.max(
-    0.01,
-    ...predictions.flatMap((prediction) => prediction.distribution.map((entry) => entry.probability)),
-  )
-}
-
-const doraDistributionScale = computed(() => maximumDistributionProbability(
-  opponentCards.value.map((opponent) => opponent.doraPrediction),
-))
-const scoreDistributionScale = computed(() => maximumDistributionProbability(
-  opponentCards.value.map((opponent) => opponent.scorePrediction),
-))
-
-function distributionBarHeight(value: number, scale: number): string {
-  return `${Math.min(1, probability(value) / Math.max(0.01, scale)) * 100}%`
-}
-
-function relativeLabel(seat: number): string {
-  const offset = (seat - props.controlledSeat + 4) % 4
-  return [t('seat.self'), t('seat.shimocha'), t('seat.toimen'), t('seat.kamicha')][offset]
-    || t('seat.number', { seat })
-}
-
-function windLabel(seat: number): string {
-  const wind = [t('wind.east'), t('wind.south'), t('wind.west'), t('wind.north')][(seat - props.dealer + 4) % 4] || '?'
-  return t('seat.windRelative', { wind, relative: relativeLabel(seat) })
-}
-
-function targetRows(player: AnalysisRecord, winnerSeat: number) {
-  const raw = Array.isArray(player.targetGivenWin) ? player.targetGivenWin.map(objectValue) : []
-  if (!raw.length) return []
-  return [winnerSeat, (winnerSeat + 1) % 4, (winnerSeat + 2) % 4, (winnerSeat + 3) % 4].map((seat) => {
-    const entry = raw.find((item) => Number(item.seat) === seat)
-    return {
-      seat,
-      label: seat === winnerSeat ? t('action.tsumo') : windLabel(seat),
-      probability: probability(entry?.probability),
-    }
-  })
-}
-
-const kyokuOutcome = computed(() => resolveKyokuOutcome(outputData('kyoku-outcome')))
-const legacyKyokuPlayers = computed(() => outputPlayers('kyoku-outcome'))
-const outcomeSegments = computed(() => {
-  const self = kyokuOutcome.value.players.find((player) => player.seat === props.controlledSeat)
-  const draw = kyokuOutcome.value.drawProbability
-  const selfWin = self?.winProbability || 0
-  const selfDealIn = self?.dealInProbability || 0
-  const horizontal = kyokuOutcome.value.hasTotals
-    ? Math.max(0, 1 - draw - selfWin - selfDealIn)
-    : 0
-  const segments = [
-    { key: 'draw', label: t('analysis.draw'), probability: draw },
-    { key: 'self-win', label: t('analysis.selfWin'), probability: selfWin },
-    { key: 'self-deal-in', label: t('analysis.selfDealIn'), probability: selfDealIn },
-    { key: 'horizontal', label: t('analysis.horizontal'), probability: horizontal },
-  ]
-  const total = segments.reduce((sum, segment) => sum + segment.probability, 0) || 1
-  return segments.map((segment) => ({ ...segment, displayProbability: segment.probability / total }))
-})
-
-const playerSeatOrder = computed(() => [
-  (props.controlledSeat + 3) % 4,
-  props.controlledSeat,
-  (props.controlledSeat + 1) % 4,
-  (props.controlledSeat + 2) % 4,
-])
-
-const playerRows = computed(() => playerSeatOrder.value.map((seat) => {
-  const outcome = kyokuOutcome.value.players.find((player) => player.seat === seat)!
-  const legacyOutcome = legacyKyokuPlayers.value.find((player) => Number(player.seat) === seat) || {}
-  const delta = seatPrediction('kyoku-score-delta', seat)
-  const placement = seatPrediction('match-placement', seat)
-  const matchScore = seatPrediction('match-score', seat)
-  const normalizedPlacement = [4, 3, 2, 1].map((value) => ({
-    value,
-    probability: placement.distribution.find((entry) => entry.value === value)?.probability || 0,
-  }))
-  return {
-    seat,
-    label: windLabel(seat),
-    winProbability: outcome.winProbability,
-    dealInProbability: outcome.dealInProbability,
-    targets: outcome.winTargets.length ? outcome.winTargets.map((target) => ({
-      ...target,
-      label: target.seat === seat ? t('action.tsumo') : windLabel(target.seat),
-    })) : targetRows(legacyOutcome, seat),
-    dealInWinnerSets: outcome.dealInWinnerSets,
-    kyokuDelta: delta.scalarValue,
-    placement: normalizedPlacement,
-    expectedPlacement: placement.scalarValue === null ? '—' : placement.scalarValue.toFixed(2),
-    matchScore: matchScore.scalarValue,
-  }
-}))
-
-const maxAbsoluteDelta = computed(() => (
-  symmetricDeltaScale(playerRows.value.map((player) => player.kyokuDelta))
-))
+const {
+  countTileRows,
+  countSourceTiles,
+  opponentCards,
+  hasOpponentDoraDistributions,
+  hasOpponentScoreDistributions,
+  doraDistributionScale,
+  scoreDistributionScale,
+  distributionBarHeight,
+  outcomeSegments,
+  playerRows,
+  maxAbsoluteDelta,
+  opponentSources,
+  countSources,
+  riskProbability,
+  riskScale,
+  showRiskAdaptiveThreshold,
+  riskScaleTicks,
+  riskBarScale,
+  riskScalePosition,
+  tilePrediction,
+  countSegments,
+  countTooltipContextKey,
+  hasCountPrediction,
+  formatCompactPoints,
+  formatPoints,
+  formatPlainPoints,
+  formatSignedCompactPoints,
+  formatDistributionPoints,
+  formatProbability,
+  windLabel,
+} = useAnalysisPanelData(props, { t, numberLocale })
 
 function deltaBarStyle(value: number | null) {
   const width = `${deltaHalfWidthPercent(value, maxAbsoluteDelta.value)}%`
@@ -818,63 +632,7 @@ function deltaBarStyle(value: number | null) {
     : { left: '50%', width }
 }
 
-function measureOffenseLabels() {
-  const nextPositions = new Map<number, { win: number; dealIn: number }>()
-  for (const player of playerRows.value) {
-    const track = offenseTrackElements.get(player.seat)
-    if (!track) continue
-    const winLabel = track.querySelector<HTMLElement>('.analysis-offense-value.is-win')
-    const dealInLabel = track.querySelector<HTMLElement>('.analysis-offense-value.is-deal-in')
-    if (!winLabel || !dealInLabel) continue
-    const trackWidth = track.clientWidth
-    const winWidth = winLabel.scrollWidth
-    const dealInWidth = dealInLabel.scrollWidth
-    const edgeGap = Math.max(3, trackWidth * 0.008)
-    const minimumSeparation = Math.max(8, trackWidth * 0.016)
-    const dealInEnd = trackWidth * player.dealInProbability
-    const winStart = trackWidth * (1 - player.winProbability)
-    let dealInLeft = dealInEnd + edgeGap
-    let winLeft = winStart - edgeGap - winWidth
-
-    if (dealInLeft + dealInWidth + minimumSeparation > winLeft) {
-      dealInLeft = Math.max(0, dealInEnd - edgeGap - dealInWidth)
-      winLeft = Math.max(winStart + edgeGap, dealInLeft + dealInWidth + minimumSeparation)
-      const maximumWinLeft = Math.max(0, trackWidth - winWidth)
-      if (winLeft > maximumWinLeft) {
-        winLeft = maximumWinLeft
-        dealInLeft = Math.max(0, Math.min(dealInLeft, winLeft - minimumSeparation - dealInWidth))
-      }
-    }
-
-    nextPositions.set(player.seat, {
-      win: Math.max(0, Math.min(winLeft, trackWidth - winWidth)),
-      dealIn: Math.max(0, Math.min(dealInLeft, trackWidth - dealInWidth)),
-    })
-  }
-  offenseLabelPositions.value = nextPositions
-}
-
-function offenseLabelStyle(seat: number, kind: 'win' | 'dealIn') {
-  const position = offenseLabelPositions.value.get(seat)?.[kind] || 0
-  return { left: `${position}px` }
-}
-
-function scheduleOffenseLabelMeasurement() {
-  cancelAnimationFrame(offenseMeasureFrame)
-  offenseMeasureFrame = requestAnimationFrame(measureOffenseLabels)
-}
-
-function setOffenseTrackElement(seat: number, element: unknown) {
-  const previous = offenseTrackElements.get(seat)
-  if (previous && previous !== element) offenseResizeObserver?.unobserve(previous)
-  if (!(element instanceof HTMLElement)) {
-    offenseTrackElements.delete(seat)
-    return
-  }
-  offenseTrackElements.set(seat, element)
-  offenseResizeObserver?.observe(element)
-  scheduleOffenseLabelMeasurement()
-}
+const { offenseLabelPositions, offenseLabelStyle, setOffenseTrackElement } = useOffenseLabels(() => playerRows.value, props.section === 'game')
 
 const COUNT_TILE_ASPECT_RATIO = 3.18 / 2.45
 const COUNT_GRID_GAP_RATIO = 0.1
@@ -1126,14 +884,6 @@ function setCountCanvasElement(key: string, row: readonly string[], element: unk
   scheduleCountBarGeometry()
 }
 
-onMounted(() => {
-  if (props.section === 'game') {
-    offenseResizeObserver = new ResizeObserver(scheduleOffenseLabelMeasurement)
-    for (const element of offenseTrackElements.values()) offenseResizeObserver.observe(element)
-    scheduleOffenseLabelMeasurement()
-  }
-})
-
 watch(() => [props.analysis, props.controlledSeat], () => {
   if (props.section === 'counts') {
     const target = countHoverTarget.value
@@ -1155,18 +905,9 @@ watch(() => props.countLayout, () => {
   }
 })
 
-watch(playerRows, () => {
-  if (props.section === 'game') void nextTick(scheduleOffenseLabelMeasurement)
-}, { deep: true })
-
 onBeforeUnmount(() => {
   cancelAnimationFrame(hoverTooltipPositionFrame)
-  cancelAnimationFrame(offenseMeasureFrame)
-  offenseResizeObserver?.disconnect()
-  offenseResizeObserver = null
   countCanvasElements.clear()
-  offenseTrackElements.clear()
-  offenseLabelPositions.value = new Map()
 })
 
 function showHoverTooltip(
@@ -1344,71 +1085,6 @@ function showDealInTooltip(
   })
 }
 
-const opponentSources = computed<TileSource[]>(() => props.shantenOpponents.map((opponent) => ({
-  key: opponent.key,
-  label: opponent.label,
-  seat: opponent.seat,
-})))
-const countSources = computed<TileSource[]>(() => [
-  ...opponentSources.value,
-  { key: 'wall', label: t('analysis.wall'), seat: null },
-])
-
-function riskProbability(seat: number | null, tile: string): number {
-  if (seat === null) return 0
-  const player = playerOutput('opponent-deal-in-probability', seat)
-  return probability(objectValue(player.tiles)[tile])
-}
-
-const RISK_ADAPTIVE_MIN = DEFAULT_PROBABILITY_SCALE
-const riskScale = computed(() => adaptiveProbabilityScale(
-  opponentSources.value.flatMap((source) => tileRows.flatMap((row) => (
-    row.map((tile) => riskProbability(source.seat, tile))
-  ))),
-))
-
-const showRiskAdaptiveThreshold = computed(() => riskScale.value > RISK_ADAPTIVE_MIN)
-const riskScaleTicks = computed(() => probabilityScaleTicks(riskScale.value))
-
-function riskBarScale(value: number): number {
-  return probabilityScaleRatio(value, riskScale.value)
-}
-
-function riskScalePosition(value: number): string {
-  return `${riskBarScale(value) * 100}%`
-}
-
-function tilePrediction(tile: string, source: TileSource): NumericPrediction {
-  const property = isRedFiveTile(tile) ? 'redTiles' : 'tiles'
-  if (source.seat === null) {
-    return parsePrediction(objectValue(outputData('wall-tile-count')[property])[tile])
-  }
-  const player = playerOutput('opponent-concealed-tile-count', source.seat)
-  return parsePrediction(objectValue(player[property])[tile])
-}
-
-function countSegments(tile: string, source: TileSource): DistributionEntry[] {
-  const prediction = tilePrediction(tile, source)
-  const values = (isRedFiveTile(tile) ? [0, 1] : [0, 1, 2, 3, 4]).map((value) => ({
-    value,
-    probability: prediction.distribution.find((entry) => entry.value === value)?.probability || 0,
-  }))
-  const total = values.reduce((sum, entry) => sum + entry.probability, 0)
-  if (total > 0) return values.map((entry) => ({ ...entry, probability: entry.probability / total }))
-  return values
-}
-
-function countTooltipContextKey(): string {
-  const context = objectValue(props.analysis?.context)
-  return JSON.stringify([
-    context.gameId, context.nodeId, context.seat,
-    context.inputMode, context.cacheKey, context.cacheEpoch,
-  ])
-}
-
-function hasCountPrediction(prediction: NumericPrediction): boolean {
-  return prediction.scalarValue !== null || prediction.distribution.length > 0
-}
 
 const countHoverTooltip = computed(() => {
   const target = countHoverTarget.value

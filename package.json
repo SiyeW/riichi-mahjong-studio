@@ -18,7 +18,7 @@
     "collect:licenses": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/collect-third-party-licenses.ps1",
     "package:win": "npm run build:backend:win && npm run build && npm run collect:licenses && electron-builder --win dir",
     "package:release:win": "npm run package:win && powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/prepare-release.ps1",
-    "type-check": "vue-tsc --noEmit",
+    "type-check": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "test:ui": "node scripts/check-analysis-ui.mjs",
     "preview": "vite preview"
   },

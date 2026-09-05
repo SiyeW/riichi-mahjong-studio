@@ -62,6 +62,7 @@ import { useI18n } from '../i18n'
 import type { AnalysisCountLayout } from '../analysisCountSpacing'
 import type { PerceptualSurfaceBinding } from '../perceptualSurface'
 import AnalysisPanel from './AnalysisPanel.vue'
+import type { AnalysisPanelDataProps } from '../useAnalysisPanelData'
 
 const { t } = useI18n()
 
@@ -75,7 +76,7 @@ defineProps<{
   loading: boolean
   loadError: string
   analysis: Record<string, unknown> | null | undefined
-  shantenOpponents: Array<{ key: string; seat: number; label: string; probabilities: number[] }>
+  shantenOpponents: AnalysisPanelDataProps['shantenOpponents']
   shantenColors: string[]
   shantenLabels: string[]
   shantenShortLabels: string[]
