@@ -56,7 +56,7 @@ test('restart rejects old requests and ignores old replies, readiness and exit',
   old.output({ request_id: id, value: 'stale' })
   current.output({ request_id: id, value: 'fresh' })
   assert.equal((await nextRequest).value, 'fresh')
-  assert.equal(events.length, 2)
+  assert.deepEqual(events.map(event => event.type), ['service_ready', 'service_stopped', 'service_ready'])
   backend.stop()
 })
 
@@ -96,4 +96,17 @@ test('spawn errors reject startup requests instead of leaving them queued', asyn
   children[0].emit('error', new Error('missing executable'))
   await rejected
   assert.equal(backend.isRunning(), false)
+})
+
+test('a stopped process notifies once and its later exit is ignored', () => {
+  const { backend, children, events } = fixture()
+  backend.start()
+  children[0].stdin.emit('error', new Error('broken pipe'))
+  children[0].emit('exit', 1)
+  assert.deepEqual(events, [{ type: 'service_stopped', error: 'broken pipe' }])
+  backend.start()
+  children[0].emit('error', new Error('late error'))
+  assert.equal(events.length, 1)
+  backend.stop()
+  assert.equal(events.length, 2)
 })

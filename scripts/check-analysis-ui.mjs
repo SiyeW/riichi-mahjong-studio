@@ -218,7 +218,22 @@ try {
 
   await page.evaluate(() => {
     const check = window.analysisCheck
+    const savedStatus = JSON.parse(JSON.stringify(check.vm.status))
+    const savedNodeId = check.vm.gameView.currentNodeId
+    check.vm.status.autoAnalysis.status = 'running'
+    check.vm.status.modelRuntime.decision = { profileId: 'test', ready: true, unloaded: false,
+      profiles: { test: { ready: true, unloaded: false } } }
+    check.vm.status.modelRuntime.opponentAnalysis = { profileId: 'test', ready: true, unloaded: false }
+    check.vm.status.modelActivity.opponentAnalysis = 'running'
+    check.vm.handlePythonEvent({ type: 'service_stopped' })
+    if (check.vm.status.autoAnalysis.status !== 'canceled') throw new Error('Backend exit left automatic analysis running')
+    if (check.vm.status.modelRuntime.decision.ready || check.vm.status.modelRuntime.opponentAnalysis.ready) throw new Error('Backend exit left engines ready')
+    if (check.vm.status.modelRuntime.decision.profiles?.test?.ready) throw new Error('Backend exit left per-profile readiness')
+    if (check.vm.status.gameLoaded) throw new Error('Backend exit left the game playable')
+    if (check.vm.gameView.currentNodeId !== savedNodeId) throw new Error('Backend exit discarded the visible record')
+    if (check.vm.opponentAnalysisIsLoading) throw new Error('Backend exit left analysis loading')
     check.vm.handlePythonEvent({ type: 'service_ready' })
+    Object.assign(check.vm.status, savedStatus)
     check.epoch = 0
     const result = check.result(2)
     check.publish(result)

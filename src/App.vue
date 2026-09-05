@@ -1580,6 +1580,7 @@ import { flushBeforeClose } from './flushBeforeClose'
 import { settingsChanges, mergeSettingsReply } from './settingsChanges'
 import { decisionPositionKey, sameViewRequestContext } from './analysisPosition'
 import { acceptsAnalysisEpoch } from './analysisEpoch'
+import { backendStoppedState } from './backendStoppedState'
 import {
   normalizeWorkspaceLayout,
   normalizeDockPanelFraction,
@@ -8458,7 +8459,7 @@ function onSouthHandContextMenu(event: MouseEvent) {
 }
 
 function handlePythonEvent(event: TrainerPythonEvent) {
-  if (event.type === 'service_ready') {
+  if (event.type === 'service_ready' || event.type === 'service_stopped') {
     // Epochs are local to a backend process, not to the desktop session.
     minimumDecisionCacheEpoch = null
     minimumOpponentCacheEpoch = null
@@ -8470,6 +8471,14 @@ function handlePythonEvent(event: TrainerPythonEvent) {
     gameView.analysis = null
     gameView.opponentAnalysis = null
     clearOpponentAnalysisWithoutMotion()
+    if (event.type === 'service_stopped') {
+      applyStatus(backendStoppedState(status))
+      clearAutoAdvanceTimer()
+      earlyPlayPrefetchReady.clear()
+      playPrefetchReady.value = false
+      playPrefetchWaiting.value = false
+      if (event.error) bootstrapError.value = t('error.backendStart', { message: event.error })
+    }
     return
   }
   if (event.type === 'opponent_analysis_ready') {

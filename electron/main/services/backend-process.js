@@ -98,6 +98,7 @@ function createBackendProcess({
       rejectPendingRequests(new Error(formatStartError(name, err.message)))
       child = null
       serviceReady = false
+      onUnsolicitedEvent?.({ type: 'service_stopped', error: formatStartError(name, err.message) })
     })
 
     spawnedChild.stdin.on('error', (error) => {
@@ -106,6 +107,7 @@ function createBackendProcess({
       child = null
       serviceReady = false
       spawnedChild.kill()
+      onUnsolicitedEvent?.({ type: 'service_stopped', error: error.message })
     })
 
     spawnedChild.stdout.on('data', (chunk) => {
@@ -140,6 +142,7 @@ function createBackendProcess({
       rejectPendingRequests(new Error(`${name} exited before responding.`))
       child = null
       serviceReady = false
+      onUnsolicitedEvent?.({ type: 'service_stopped', error: `${name} exited with code ${code}` })
     })
   }
 
@@ -181,6 +184,7 @@ function createBackendProcess({
     child = null
     serviceReady = false
     stoppedChild.kill()
+    onUnsolicitedEvent?.({ type: 'service_stopped' })
   }
 
   function restart() {
