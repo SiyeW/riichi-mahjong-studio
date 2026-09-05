@@ -1576,6 +1576,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, p
 import { installAnalysisTestHarness } from './testing/analysisHarness'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
 import { createRevisionSaveQueue } from './revisionSaveQueue'
+import { flushBeforeClose } from './flushBeforeClose'
 import {
   normalizeWorkspaceLayout,
   normalizeDockPanelFraction,
@@ -8718,7 +8719,11 @@ onMounted(() => {
     })
   }
   if (window.trainerAPI?.onBeforeClose) {
-    unsubscribeBeforeClose = window.trainerAPI.onBeforeClose(() => flushNodeComment())
+    unsubscribeBeforeClose = window.trainerAPI.onBeforeClose(() => flushBeforeClose(
+      flushNodeComment,
+      flushEngineAutosave,
+      () => engineSaveMessage.value || t('native.closeSaveFailed.message'),
+    ))
   }
 })
 

@@ -1,5 +1,6 @@
 const path = require('node:path')
 const fs = require('node:fs')
+const { requestRendererFlush, persistBeforeClose } = require('./close-persistence')
 const { pathToFileURL } = require('node:url')
 
 const {
@@ -97,7 +98,6 @@ let mainWindow = null
 let startupServicesStarted = false
 let startupRecoveryAttempted = false
 let publishedRecordDirty = false
-let closeRequestSerial = 0
 let runtimeMetricsBackendError = ''
 
 const engineIpcController = createEngineIpcController({
@@ -315,34 +315,6 @@ async function restoreStartupRecovery() {
   }
 }
 
-function requestRendererRecordFlush(window, timeoutMs = 5000) {
-  if (!window || window.isDestroyed() || window.webContents.isLoading()) {
-    return Promise.resolve()
-  }
-  const token = `${Date.now()}-${++closeRequestSerial}`
-  return new Promise((resolve, reject) => {
-    let settled = false
-    const finish = (error = null) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      ipcMain.removeListener('record:close-ready', onReady)
-      if (error) {
-        reject(error)
-      } else {
-        resolve()
-      }
-    }
-    const onReady = (event, receivedToken, errorMessage) => {
-      if (event.sender !== window.webContents || receivedToken !== token) return
-      finish(errorMessage ? new Error(String(errorMessage)) : null)
-    }
-    const timer = setTimeout(finish, timeoutMs)
-    ipcMain.on('record:close-ready', onReady)
-    window.webContents.send('record:before-close', token)
-  })
-}
-
 function saveWindowSettings(window) {
   const latest = loadSettings(appOptions)
   const [width, height] = window.getSize()
@@ -451,19 +423,19 @@ function createMainWindow() {
         console.warn('[settings] failed to save window state during close:', error)
       }
       try {
-        const latest = loadSettings(appOptions)
-        if (latest.records?.saveRecoveryOnExit && gameFileStore.isDirty()) {
-          await requestRendererRecordFlush(window)
-          await writeRecoveryGameRecord()
-        }
+        await persistBeforeClose(
+          () => requestRendererFlush(window, ipcMain, t('native.closeSaveTimeout')),
+          () => loadSettings(appOptions).records?.saveRecoveryOnExit && gameFileStore.isDirty(),
+          writeRecoveryGameRecord,
+        )
         closeAllowed = true
         window.close()
       } catch (error) {
-        console.error('[record] failed to save exit recovery record:', error)
+        console.error('[close] failed to save pending changes:', error)
         const result = await dialog.showMessageBox(window, {
           type: 'error',
-          title: t('native.recoverySaveFailed.title'),
-          message: t('native.recoverySaveFailed.message'),
+          title: t('native.closeSaveFailed.title'),
+          message: t('native.closeSaveFailed.message'),
           detail: error instanceof Error ? error.message : String(error),
           buttons: [t('native.cancelExit'), t('native.exitAnyway')],
           defaultId: 0,
