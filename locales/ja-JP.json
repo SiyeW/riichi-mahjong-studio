@@ -1,4 +1,11 @@
 {
+  "recovery.stopped": "バックエンドが停止しました。",
+  "recovery.available": "最後に取得したスナップショットから復元できます。それ以降の変更は失われている可能性があります。",
+  "recovery.unavailable": "復元できるスナップショットがありません。再起動後、牌譜を開き直すか新しい対局を始めてください。",
+  "recovery.restore": "対局を復元",
+  "recovery.restart": "再起動",
+  "recovery.working": "再試行中…",
+  "recovery.failed": "再試行に失敗しました：{message}",
   "app.name": "Riichi Mahjong Studio",
   "app.subtitle": "立直麻雀スタジオ",
   "common.none": "なし",

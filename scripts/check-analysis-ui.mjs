@@ -244,6 +244,49 @@ try {
     if (!check.vm.gameView.opponentAnalysis) throw new Error('New backend epoch zero was rejected')
   })
 
+  // The visible retry control must restart the backend, not repeat bootstrap reads.
+  for (const hasCheckpoint of [true, false]) {
+    await page.evaluate(hasCheckpoint => {
+      const check = window.analysisCheck
+      check.recoverySavedState = JSON.parse(JSON.stringify(check.vm.status))
+      check.recoverySavedView = JSON.parse(JSON.stringify(check.vm.gameView))
+      check.restartCalls = 0
+      window.trainerAPI.restartBackend = () => {
+        check.restartCalls++
+        return new Promise((resolve, reject) => { check.finishRestart = resolve; check.failRestart = reject })
+      }
+      check.vm.handlePythonEvent({ type: 'service_stopped', hasCheckpoint })
+    }, hasCheckpoint)
+    const retry = page.locator('.startup-banner button')
+    assert.equal(await retry.textContent().then(text => text.trim()), hasCheckpoint ? '恢复对局' : '重新启动')
+    if (!hasCheckpoint && process.env.RMS_RECOVERY_SCREENSHOT) {
+      await page.screenshot({ path: process.env.RMS_RECOVERY_SCREENSHOT })
+    }
+    await retry.click()
+    assert.equal(await retry.isDisabled(), true)
+    assert.equal(await page.evaluate(() => window.analysisCheck.restartCalls), 1)
+    await page.evaluate(() => window.analysisCheck.failRestart(new Error('test restart failure')))
+    await page.waitForFunction(() => !document.querySelector('.startup-banner button').disabled)
+    assert.match(await page.locator('.startup-banner').textContent(), /test restart failure/)
+    await retry.click()
+    await page.evaluate(hasCheckpoint => {
+      const check = window.analysisCheck
+      const state = hasCheckpoint ? check.recoverySavedState : { ...check.recoverySavedState, gameLoaded: false }
+      const view = hasCheckpoint ? check.recoverySavedView : { ...check.recoverySavedView,
+        gameId: null, matchId: null, currentNodeId: null, table: null, tree: null,
+        nodeComment: '', legalActions: [], analysis: null, opponentAnalysis: null, pendingReview: null }
+      check.vm.handlePythonEvent({ type: 'service_restored', state, view })
+      if (!hasCheckpoint && (check.vm.status.gameLoaded || check.vm.gameView.currentNodeId)) throw new Error('Empty restart retained the old game')
+      check.finishRestart({ ok: true })
+    }, hasCheckpoint)
+    await page.waitForFunction(() => !document.querySelector('.startup-banner'))
+    assert.equal(await page.evaluate(() => window.analysisCheck.restartCalls), 2)
+    await page.evaluate(() => {
+      const check = window.analysisCheck
+      check.vm.handlePythonEvent({ type: 'service_restored', state: check.recoverySavedState, view: check.recoverySavedView })
+    })
+  }
+
   // Mouse clicks retain normal focus, but must not pin a hover-only tooltip.
   await page.evaluate(() => {
     window.analysisCheck.vm.gameView.table.hands = Array.from({ length: 4 }, () => Array(13).fill('1m'))

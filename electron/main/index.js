@@ -553,6 +553,10 @@ function registerIpcHandlers() {
       throw error
     }
     if (fromCheckpoint && response.state?.gameLoaded) markRecordDirty()
+    if (fromCheckpoint && !response.state?.gameLoaded) {
+      gameFileStore.closeRecord()
+      publishRecordDirty(true)
+    }
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('python:event', { type: 'service_restored', state: response.state, view: response.view })

@@ -377,6 +377,7 @@ textarea {
 
 .startup-banner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: calc(0.75rem * var(--chrome-scale));
@@ -388,6 +389,7 @@ textarea {
 }
 
 .startup-banner button {
+  flex-shrink: 0;
   border: 1px solid rgba(0, 0, 0, 0.24);
   background: rgba(255, 255, 255, 0.12);
   color: inherit;

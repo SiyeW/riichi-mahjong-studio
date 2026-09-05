@@ -52,7 +52,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
         // Never start an empty replacement just to export from it.
         if (stopped || !backend.isRunning()) {
           recovery = checkpoint.get()
-          if (!recovery) throw new Error('The stopped backend has no restart snapshot.')
+          if (!recovery) recovery = { record: null }
         } else {
           const { state } = await backend.sendRequest('get_status')
           const record = state.gameLoaded
@@ -82,7 +82,8 @@ function createBackendSession(backend, checkpointOptions = {}) {
     return restarting
   }
 
-  return { sendRequest, restart, handleEvent, needsRecovery: () => stopped || Boolean(recovery) }
+  return { sendRequest, restart, handleEvent, needsRecovery: () => stopped || Boolean(recovery),
+    hasCheckpoint: () => Boolean(recovery?.record || checkpoint.get()?.record) }
 }
 
 module.exports = { createBackendSession }

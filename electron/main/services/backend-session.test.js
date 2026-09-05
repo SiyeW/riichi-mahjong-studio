@@ -6,6 +6,7 @@ function fixture(loaded = true, checkpointOptions = {}) {
   const calls = []
   const record = { game: { gameId: 'game-a', currentNodeId: 'branch-2', nodes: { 'branch-2': { comment: 'unsaved' } } } }
   const backend = {
+    loaded,
     running: true,
     isRunning() { return this.running },
     restart() { this.running = true; calls.push('restart') },
@@ -16,7 +17,7 @@ function fixture(loaded = true, checkpointOptions = {}) {
         assert.deepEqual(payload.record, record)
         if (backend.failImport) throw new Error('import failed')
       }
-      return { state: { gameLoaded: loaded, analysisVisibility: { opponentAnalysis: true } }, view: { gameId: 'game-a', currentNodeId: 'branch-2' } }
+      return { state: { gameLoaded: backend.loaded, analysisVisibility: { opponentAnalysis: true } }, view: { gameId: 'game-a', currentNodeId: 'branch-2' } }
     },
   }
   return { backend, session: createBackendSession(backend, checkpointOptions), calls }
@@ -76,11 +77,17 @@ test('an empty session restarts without trying to export a game', async () => {
   assert.equal(calls.includes('import_game_record'), false)
 })
 
-test('a crashed process cannot be replaced under the guise of taking a snapshot', async () => {
-  const { backend, session, calls } = fixture()
+test('a stopped session without a snapshot can restart empty, then accept requests', async () => {
+  const { backend, session, calls } = fixture(false)
   backend.running = false
-  await assert.rejects(session.restart(), /no restart snapshot/)
-  assert.deepEqual(calls, [])
+  session.handleEvent({ type: 'service_stopped' })
+  assert.equal(session.hasCheckpoint(), false)
+  const result = await session.restart()
+  assert.equal(result.state.gameLoaded, false)
+  assert.equal(calls.includes('export_game_record'), false)
+  assert.equal(calls.includes('import_game_record'), false)
+  await session.sendRequest('get_status')
+  assert.equal(session.needsRecovery(), false)
 })
 
 test('an empty response after import is not a successful recovery', async () => {
@@ -127,5 +134,7 @@ test('reimporting a record with the same game ID cannot recover its predecessor'
   await session.sendRequest('create_game')
   backend.running = false
   session.handleEvent({ type: 'service_stopped' })
-  await assert.rejects(session.restart(), /no restart snapshot/)
+  assert.equal(session.hasCheckpoint(), false)
+  backend.loaded = false
+  await session.restart()
 })

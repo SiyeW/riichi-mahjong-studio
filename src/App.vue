@@ -129,7 +129,10 @@
 
     <div v-if="bootstrapError" class="startup-banner">
       <span>{{ bootstrapError }}</span>
-      <button @click="refreshBootstrapState">{{ t('common.retry') }}</button>
+      <span v-if="backendRecoveryNeeded">{{ t(backendHasCheckpoint ? 'recovery.available' : 'recovery.unavailable') }}</span>
+      <button :disabled="backendRetrying" @click="retryBackend">
+        {{ t(backendRetrying ? 'recovery.working' : backendRecoveryNeeded ? (backendHasCheckpoint ? 'recovery.restore' : 'recovery.restart') : 'common.retry') }}
+      </button>
     </div>
 
     <main
@@ -3880,6 +3883,22 @@ const actionAnnouncement = reactive({
   visible: false,
 })
 const bootstrapError = ref('')
+const backendRecoveryNeeded = ref(false)
+const backendHasCheckpoint = ref(false)
+const backendRetrying = ref(false)
+
+async function retryBackend() {
+  if (backendRetrying.value || !window.trainerAPI) return
+  backendRetrying.value = true
+  try {
+    if (backendRecoveryNeeded.value) await window.trainerAPI.restartBackend()
+    else await refreshBootstrapState()
+  } catch (error) {
+    bootstrapError.value = t('recovery.failed', { message: error instanceof Error ? error.message : String(error) })
+  } finally {
+    backendRetrying.value = false
+  }
+}
 const activeAudioPlayers = new Set<HTMLAudioElement>()
 
 const isReadOnlyRecord = computed(() => Boolean(gameView.readOnly))
@@ -8460,13 +8479,19 @@ function onSouthHandContextMenu(event: MouseEvent) {
 
 function handlePythonEvent(event: TrainerPythonEvent) {
   if (event.type === 'service_recovery_failed') {
-    bootstrapError.value = t('error.backendStart', { message: event.error || '' })
+    bootstrapError.value = t('recovery.failed', { message: event.error || '' })
     return
   }
   if (event.type === 'service_restored') {
     if (event.state && event.view) {
       applyStatus(event.state)
       applyGameView(event.view)
+      if (!event.state.gameLoaded) {
+        setRecordPath('')
+        recoveryRecord.value = false
+        recordDirty.value = false
+      }
+      backendRecoveryNeeded.value = false
       bootstrapError.value = ''
     }
     return
@@ -8484,12 +8509,14 @@ function handlePythonEvent(event: TrainerPythonEvent) {
     gameView.opponentAnalysis = null
     clearOpponentAnalysisWithoutMotion()
     if (event.type === 'service_stopped') {
+      backendRecoveryNeeded.value = true
+      backendHasCheckpoint.value = Boolean(event.hasCheckpoint)
       applyStatus(backendStoppedState(status))
       clearAutoAdvanceTimer()
       earlyPlayPrefetchReady.clear()
       playPrefetchReady.value = false
       playPrefetchWaiting.value = false
-      if (event.error) bootstrapError.value = t('error.backendStart', { message: event.error })
+      bootstrapError.value = t('recovery.stopped')
     }
     return
   }

@@ -630,6 +630,7 @@ interface TrainerEnvironmentResponse {
 }
 
 interface TrainerPythonEvent {
+  hasCheckpoint?: boolean
   view?: TrainerGameView
   type: string
   model?: 'decision' | 'opponent_analysis'

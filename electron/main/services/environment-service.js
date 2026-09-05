@@ -53,7 +53,8 @@ function createEnvironmentService(options = {}) {
   let onEvent = null
   environmentProcess.onEvent(event => {
     environmentService.handleEvent(event)
-    onEvent?.(event)
+    onEvent?.(event.type === 'service_stopped'
+      ? { ...event, hasCheckpoint: environmentService.hasCheckpoint() } : event)
   })
   return {
     backendProcess: { onEvent(callback) { onEvent = callback } },

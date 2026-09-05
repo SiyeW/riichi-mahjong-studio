@@ -1,4 +1,11 @@
 {
+  "recovery.stopped": "The backend has stopped.",
+  "recovery.available": "You can restore the last complete snapshot. More recent changes may be missing.",
+  "recovery.unavailable": "No recovery snapshot is available. After restarting, open a record or start a new game.",
+  "recovery.restore": "Restore game",
+  "recovery.restart": "Restart",
+  "recovery.working": "Retrying…",
+  "recovery.failed": "Retry failed: {message}",
   "app.name": "Riichi Mahjong Studio",
   "app.subtitle": "Riichi Mahjong Studio",
   "common.none": "None",

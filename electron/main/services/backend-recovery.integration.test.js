@@ -56,6 +56,16 @@ test('real backend crash restores an unsaved comment and selected node from the 
       assert.equal(restored.view.currentNodeId, node)
       const exported = await session.sendRequest('export_game_record')
       assert.equal(JSON.stringify(exported.record).includes('unsaved recovery test'), true)
+      await session.sendRequest('close_game')
+      assert.equal(session.hasCheckpoint(), false)
+      const emptyExited = new Promise(resolve => { stopped = resolve })
+      child.kill()
+      await emptyExited
+      const empty = await session.restart()
+      assert.equal(empty.state.gameLoaded, false)
+      assert.equal(empty.view.currentNodeId, null)
+      const reopened = await session.sendRequest('import_game_record', { record })
+      assert.equal(reopened.state.gameLoaded, true)
     } finally {
       backend.stop()
       // This directory was created by this test, never the user's portable data.

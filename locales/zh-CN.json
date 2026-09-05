@@ -1,4 +1,11 @@
 {
+  "recovery.stopped": "后端已停止。",
+  "recovery.available": "可以恢复最近一次完整快照；较新的修改可能未保留。",
+  "recovery.unavailable": "没有可恢复的快照。重新启动后需要重新打开或新建对局。",
+  "recovery.restore": "恢复对局",
+  "recovery.restart": "重新启动",
+  "recovery.working": "正在重试…",
+  "recovery.failed": "重试失败：{message}",
   "app.name": "Riichi Mahjong Studio",
   "app.subtitle": "立直麻将研究室",
   "common.none": "无",
