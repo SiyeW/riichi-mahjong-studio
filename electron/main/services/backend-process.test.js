@@ -50,6 +50,21 @@ test('startup timeout drops its queued request while a later request can still r
   backend.stop()
 })
 
+test('callback errors are reported and do not prevent later replies', async t => {
+  const logged = t.mock.method(console, 'error', () => {})
+  const { backend, children } = fixture()
+  backend.onEvent(event => { if (event.type === 'broken') throw new Error('callback failed') })
+  const request = backend.sendRequest('next')
+  children[0].output({ type: 'service_ready' })
+  children[0].output({ type: 'broken' })
+  children[0].stdout.emit('data', Buffer.from('null\n42\nnot json\n'))
+  children[0].output({ request_id: children[0].messages[0].request_id, ok: true })
+  assert.equal((await request).ok, true)
+  assert.equal(logged.mock.callCount(), 1)
+  assert.match(logged.mock.calls[0].arguments[0], /output handler failed/)
+  backend.stop()
+})
+
 test('multibyte text survives arbitrary stdout chunk boundaries', async () => {
   const { backend, children } = fixture()
   const request = backend.sendRequest('unicode')

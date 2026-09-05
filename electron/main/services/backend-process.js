@@ -157,8 +157,15 @@ function createBackendProcess({
   }
 
   function handleOutputLine(line) {
+    let payload
     try {
-      const payload = JSON.parse(line)
+      payload = JSON.parse(line)
+    } catch {
+      // The backend may also print diagnostic lines.
+      return
+    }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return
+    try {
       const requestId = payload?.request_id
       if (!requestId && payload?.type === 'service_ready') {
         serviceReady = true
@@ -180,8 +187,8 @@ function createBackendProcess({
       }
 
       resolve(payload)
-    } catch {
-      // Not every line is JSON-bound to a request.
+    } catch (error) {
+      console.error(`[${name}] output handler failed:`, error)
     }
   }
 
