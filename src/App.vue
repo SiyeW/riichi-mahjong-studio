@@ -1577,6 +1577,7 @@ import { installAnalysisTestHarness } from './testing/analysisHarness'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
 import { createRevisionSaveQueue } from './revisionSaveQueue'
 import { flushBeforeClose } from './flushBeforeClose'
+import { settingsChanges, mergeSettingsReply } from './settingsChanges'
 import {
   normalizeWorkspaceLayout,
   normalizeDockPanelFraction,
@@ -1889,12 +1890,11 @@ function updateWorkspaceLayout(nextLayout: TrainerSettings['display']['workspace
   const generation = ++workspaceLayoutSaveGeneration
   void window.trainerAPI?.saveSettings({
     display: {
-      ...settings.display,
       workspaceLayout: JSON.parse(JSON.stringify(normalized)),
     },
   }).then((saved) => {
     if (generation !== workspaceLayoutSaveGeneration) return
-    applySettings(saved)
+    applySettings(mergeSettingsReply(settings, saved, { display: { workspaceLayout: normalized } }))
   }).catch((error) => {
     console.warn('Failed to save workspace layout:', error)
   })
@@ -3138,7 +3138,7 @@ async function saveEngineDraftSnapshot(
     const saved = await window.trainerAPI.saveSettings({
       engines: snapshot,
     })
-    applySettings(saved)
+    applySettings(mergeSettingsReply(settings, saved, { engines: snapshot }))
     if (engineSaves.revision === revision) replaceEngineDraft(saved.engines)
     return true
   } catch (error) {
@@ -3168,7 +3168,7 @@ async function loadEngineProfile(profileId: string) {
       profileId,
       engines,
     })
-    applySettings(loaded)
+    applySettings(mergeSettingsReply(settings, loaded, { engines: loaded.engines }))
     applyStatus(await window.trainerAPI.getStatus())
     captureRuntimeEngineProfile('decision', loaded.engines)
     captureRuntimeEngineProfile('opponent', loaded.engines)
@@ -3180,7 +3180,7 @@ async function loadEngineProfile(profileId: string) {
   } catch (error) {
     try {
       const failedSettings = await window.trainerAPI.getSettings()
-      applySettings(failedSettings)
+      applySettings(mergeSettingsReply(settings, failedSettings, { engines: failedSettings.engines }))
       applyStatus(await window.trainerAPI.getStatus())
       captureRuntimeEngineProfile('decision', failedSettings.engines)
       captureRuntimeEngineProfile('opponent', failedSettings.engines)
@@ -3206,7 +3206,7 @@ async function unloadEngineProfile(profileId: string) {
     const unloadRevision = engineSaves.revision
     const unloaded = await window.trainerAPI.unloadEngine({ profileId })
     applyStatus(unloaded.state)
-    applySettings(unloaded.settings)
+    applySettings(mergeSettingsReply(settings, unloaded.settings, { engines: unloaded.settings.engines }))
     if (engineSaves.revision === unloadRevision) replaceEngineDraft(unloaded.settings.engines)
     if (profileAssignedOutputs(profile).some((output) => output !== 'action-recommendation')) {
       if (!shantenResultHasRows(gameView.opponentAnalysis)) {
@@ -7287,7 +7287,7 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
 }
 
 function cloneSettingsDraftFromCurrent() {
-  Object.assign(settingsDraft, JSON.parse(JSON.stringify(settings)))
+  Object.assign(settingsDraft, JSON.parse(JSON.stringify(settings)), { engines: settingsDraft.engines })
 }
 
 function clearAutoAdvanceTimer() {
@@ -7570,8 +7570,11 @@ async function closeGame() {
   }
 }
 
+let settingsPanelBaseline: TrainerSettings | null = null
+
 function openSettingsPanel() {
   cloneSettingsDraftFromCurrent()
+  settingsPanelBaseline = JSON.parse(JSON.stringify(settings)) as TrainerSettings
   showSettingsPanel.value = true
 }
 
@@ -7590,14 +7593,15 @@ async function saveSettingsPanel() {
     0,
     Math.min(1, Number(settingsDraft.training.mistakeThreshold) || 0),
   )
-  const next = JSON.parse(JSON.stringify(settings)) as TrainerSettings
-  next.training.mistakeThreshold = settingsDraft.training.mistakeThreshold
-  next.display = JSON.parse(JSON.stringify(settingsDraft.display))
-  next.records = JSON.parse(JSON.stringify(settingsDraft.records))
-  next.audio = JSON.parse(JSON.stringify(settingsDraft.audio))
-  const saved = await window.trainerAPI.saveSettings(next)
-  applySettings(saved)
-  showSettingsPanel.value = false
+  const baseline = settingsPanelBaseline
+  const submitted = JSON.parse(JSON.stringify(settingsDraft)) as TrainerSettings
+  const patch = settingsChanges(baseline || settings, submitted)
+  const saved = await window.trainerAPI.saveSettings(patch)
+  applySettings(mergeSettingsReply(settings, saved, patch))
+  if (settingsPanelBaseline === baseline) {
+    settingsPanelBaseline = submitted
+    if (!Object.keys(settingsChanges(submitted, settingsDraft)).length) showSettingsPanel.value = false
+  }
 }
 
 async function saveQuickSettings(mutator: (draft: TrainerSettings) => void) {
@@ -7605,9 +7609,9 @@ async function saveQuickSettings(mutator: (draft: TrainerSettings) => void) {
   const next = JSON.parse(JSON.stringify(settings)) as TrainerSettings
   mutator(next)
   next.training.mode = normalizeTrainingMode(next.training.mode)
-  const saved = await window.trainerAPI.saveSettings(next)
-  applySettings(saved)
-  cloneSettingsDraftFromCurrent()
+  const patch = settingsChanges(settings, next)
+  const saved = await window.trainerAPI.saveSettings(patch)
+  applySettings(mergeSettingsReply(settings, saved, patch))
 }
 
 async function setQuickTrainingMode(mode: TrainerSettings['training']['mode']) {
@@ -8640,7 +8644,7 @@ async function changeUiScale(direction: 'in' | 'out' | 'reset') {
   if (showSettingsPanel.value) settingsDraft.display.uiScale = next
   try {
     await window.trainerAPI?.saveSettings({
-      display: { ...settings.display, uiScale: next },
+      display: { uiScale: next },
     })
   } catch (error) {
     console.warn('Failed to save UI scale:', error)

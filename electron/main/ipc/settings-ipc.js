@@ -8,6 +8,10 @@ function registerSettingsIpc(ipcMain, appOptions) {
     const next = {
       ...current,
       ...patch,
+      training: {
+        ...current.training,
+        ...(patch?.training || {}),
+      },
       modeDefaults: {
         ...current.modeDefaults,
         ...(patch?.modeDefaults || {}),

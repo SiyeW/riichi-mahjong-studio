@@ -1,5 +1,9 @@
 /// <reference types="vite/client" />
 
+type TrainerSettingsPatch = {
+  [K in 'training' | 'modeDefaults' | 'display' | 'records' | 'audio']?: Partial<TrainerSettings[K]>
+} & { engines?: TrainerEngineSettings }
+
 interface TrainerSettings {
   configPath: string
   runtime?: {
@@ -653,7 +657,7 @@ interface TrainerPythonEvent {
 interface Window {
   trainerAPI?: {
     getSettings: () => Promise<TrainerSettings>
-    saveSettings: (settings: Partial<TrainerSettings>) => Promise<TrainerSettings>
+    saveSettings: (settings: TrainerSettingsPatch) => Promise<TrainerSettings>
     describeEngine: (profile: {
       engineId?: string
       engineVersion?: string
