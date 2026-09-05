@@ -7,36 +7,17 @@ export const ANALYSIS_TILE_ROWS = [
 
 export const RED_FIVE_TILES = ['5mr', '5pr', '5sr'] as const
 
-const SUIT_OFFSETS: Readonly<Record<string, number>> = {
-  m: 0,
-  p: 9,
-  s: 18,
-}
-
-const HONOR_INDEXES: Readonly<Record<string, number>> = {
-  E: 27,
-  S: 28,
-  W: 29,
-  N: 30,
-  P: 31,
-  F: 32,
-  C: 33,
-}
+const TILE_INDEXES = new Map<string, number>(
+  ANALYSIS_TILE_ROWS.flat().map((tile, index) => [tile, index]),
+)
 
 export function isRedFiveTile(tile: string): boolean {
   return RED_FIVE_TILES.includes(tile as typeof RED_FIVE_TILES[number])
 }
 
-export function tile34Index(tile: string): number {
-  const normalized = tile.replace('r', '')
-  const honorIndex = HONOR_INDEXES[normalized]
-  if (honorIndex !== undefined) return honorIndex
-
-  const suit = normalized.slice(-1)
-  const rank = Number.parseInt(normalized, 10)
-  const offset = SUIT_OFFSETS[suit]
-  if (offset === undefined || rank < 1 || rank > 9) return 0
-  return offset + rank - 1
+export function tile34Index(tile: string): number | null {
+  const normalized = isRedFiveTile(tile) ? tile.slice(0, -1) : tile
+  return TILE_INDEXES.get(normalized) ?? null
 }
 
 export function analysisCountTileRows(includeRedFives: boolean) {

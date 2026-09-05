@@ -1572,7 +1572,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch, watchEffect } from 'vue'
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
+import { installAnalysisTestHarness } from './testing/analysisHarness'
 import { vAdaptiveButtonGrid } from './adaptiveButtonGrid'
 import { DEFAULT_ANALYSIS_COUNT_LAYOUT, type AnalysisCountLayout } from './analysisCountSpacing'
 import {
@@ -1581,9 +1582,8 @@ import {
   DEFAULT_PROBABILITY_SCALE,
   probabilityScalePercent,
   probabilityScaleRatio,
-  probabilityScaleTicks,
 } from './analysisProbabilityScale'
-import { ANALYSIS_TILE_ROWS, tile34Index } from './analysisTiles'
+import { tile34Index } from './analysisTiles'
 import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
@@ -3290,7 +3290,6 @@ const ronWaitGTData = ref<Record<string, number[]>>({})
 const shantenPredData = ref<Record<string, number[]>>({})
 const shantenGTData = ref<Record<string, number[]>>({})
 const shantenViewMode = ref<'predictions' | 'ground_truth'>('predictions')
-const shantenHoverText = ref('')
 const suppressOpponentAnalysisTransitions = ref(false)
 let opponentAnalysisResetGeneration = 0
 let deferredShantenResult: Record<string, unknown> | null = null
@@ -3298,15 +3297,6 @@ let deferredShantenResult: Record<string, unknown> | null = null
 const shantenData = computed(() => (
   shantenViewMode.value === 'ground_truth' ? shantenGTData.value : shantenPredData.value
 ))
-const ronWaitData = computed(() => (
-  shantenViewMode.value === 'ground_truth' ? ronWaitGTData.value : ronWaitPredData.value
-))
-const EMPTY_RON_WAIT_VALUES = Array.from({ length: 34 }, () => 0)
-const displayedRonWaitData = computed(() => ({
-  kamicha: ronWaitData.value.kamicha || EMPTY_RON_WAIT_VALUES,
-  toimen: ronWaitData.value.toimen || EMPTY_RON_WAIT_VALUES,
-  shimocha: ronWaitData.value.shimocha || EMPTY_RON_WAIT_VALUES,
-}))
 const shantenRawData = ref<Record<string, Record<string, unknown>>>({})
 const shantenRawJson = computed(() => JSON.stringify(shantenRawData.value, null, 2))
 const shantenStatus = ref('—')
@@ -3321,67 +3311,13 @@ const SHANTEN_LABELS = computed(() => [
   t('shanten.furiten'),
 ])
 const SHANTEN_SHORT_LABELS = ['0','1','2','3','4','5','6','X']
-const ronWaitTileRows = ANALYSIS_TILE_ROWS
 const RON_BAR_ADAPTIVE_MIN = DEFAULT_PROBABILITY_SCALE
 const RON_WAIT_OPPONENT_KEYS = ['kamicha', 'toimen', 'shimocha'] as const
-function resolveRonBarAdaptiveMaxFromValues(values: number[]): number {
-  return adaptiveProbabilityScale(values)
-}
-function resolveRonBarAdaptiveMax(data: Record<string, number[]>): number {
-  return resolveRonBarAdaptiveMaxFromValues(
-    RON_WAIT_OPPONENT_KEYS.flatMap((key) => data[key] || []),
-  )
-}
-const ronBarAdaptiveMax = computed(() => resolveRonBarAdaptiveMax(ronWaitData.value))
-const showRonAdaptiveThreshold = computed(() => (
-  shantenViewMode.value === 'predictions'
-  && ronBarAdaptiveMax.value > RON_BAR_ADAPTIVE_MIN
-))
-const ronWaitScaleTicks = computed(() => {
-  if (shantenViewMode.value === 'ground_truth') {
-    return [
-      { value: 0, label: '0%' },
-      { value: 1, label: '100%' },
-    ]
-  }
-  return probabilityScaleTicks(ronBarAdaptiveMax.value)
-})
-function displayedRonProbability(prob: number): number {
-  return clampProbability(prob)
-}
-function ronBarHeightAtScale(prob: number, scaleMax: number): string {
-  return probabilityScalePercent(prob, scaleMax)
-}
-function ronBarScaleAtScale(prob: number, scaleMax: number): number {
-  return probabilityScaleRatio(prob, scaleMax)
-}
-function ronBarHeight(prob: number): string {
-  return ronBarHeightAtScale(prob, ronBarAdaptiveMax.value)
-}
-function ronBarScale(prob: number): number {
-  return ronBarScaleAtScale(prob, ronBarAdaptiveMax.value)
-}
 function southRonRiskBarHeight(prob: number): string {
-  return ronBarHeightAtScale(prob, southRonRiskAdaptiveMax.value)
+  return probabilityScalePercent(prob, southRonRiskAdaptiveMax.value)
 }
 function southRonRiskBarScale(prob: number): number {
-  return ronBarScaleAtScale(prob, southRonRiskAdaptiveMax.value)
-}
-function formatHoverProbability(prob: number): string {
-  const value = Math.max(0, Math.min(1, Number(prob) || 0))
-  const percentage = value * 100
-  if (percentage === 0) return '0%'
-  if (percentage < 0.01) return '<0.01%'
-  return `${percentage.toFixed(2)}%`
-}
-function showRonHover(opponentLabel: string, tile: string, probability: number) {
-  shantenHoverText.value = `${opponentLabel} - ${tileFaceLabel(tile)} - ${formatHoverProbability(displayedRonProbability(probability))}`
-}
-function showShantenHover(opponentLabel: string, label: string, probability: number) {
-  shantenHoverText.value = `${opponentLabel} - ${label} - ${formatHoverProbability(probability)}`
-}
-function clearShantenHover() {
-  shantenHoverText.value = ''
+  return probabilityScaleRatio(prob, southRonRiskAdaptiveMax.value)
 }
 let shantenReadGeneration = 0
 let _analysisVisibilityGeneration = 0
@@ -3439,7 +3375,6 @@ function clearOpponentAnalysisWithoutMotion() {
   ronWaitPredData.value = {}
   ronWaitGTData.value = {}
   shantenRawData.value = {}
-  shantenHoverText.value = ''
   shantenStatus.value = '—'
 }
 
@@ -3506,7 +3441,6 @@ watch(showAnalysisDock, async (open) => {
   await nextTick()
   scheduleTableZoomRecalc()
   if (!open) {
-    shantenHoverText.value = ''
     await syncAnalysisVisibilityToBackend()
     return
   }
@@ -6480,14 +6414,14 @@ const southRonRiskSlots = computed(() => {
       connectRight: isConnectedTile && Boolean(next && next.tile !== HAND_DISCARD_GAP && !next.isDrawn),
       risks: RON_WAIT_OPPONENT_KEYS.map((key) => ({
         key,
-        probability: isGap
+        probability: tileIndex === null
           ? 0
-          : displayedRonProbability(ronWaitPredData.value[key]?.[tileIndex] || 0),
+          : clampProbability(ronWaitPredData.value[key]?.[tileIndex]),
       })),
     }
   })
 })
-const southRonRiskAdaptiveMax = computed(() => resolveRonBarAdaptiveMaxFromValues(
+const southRonRiskAdaptiveMax = computed(() => adaptiveProbabilityScale(
   southRonRiskSlots.value.flatMap((slot) => slot.risks.map((risk) => risk.probability)),
 ))
 const showSouthRonRiskThreshold = computed(() => (
@@ -8939,4 +8873,21 @@ onBeforeUnmount(() => {
     unsubscribeBeforeClose = null
   }
 })
+if (import.meta.env.MODE === 'ui-test') {
+  installAnalysisTestHarness(proxyRefs({
+    status,
+    gameView,
+    settings,
+    workspaceLayout,
+    analysisCountLayout,
+    showPerceptualColorDebugger,
+    bootstrapError,
+    tileArtworkReady,
+    opponentAnalysisIsLoading,
+    handlePythonEvent,
+    fetchShantenOnce,
+    toggleAnalysisDock,
+    clearLoadedAnalysisCaches,
+  }))
+}
 </script>

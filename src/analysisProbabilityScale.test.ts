@@ -31,3 +31,12 @@ test('scale ratios and labels share the same scale model', () => {
     { value: 0.2, label: '20%' },
   ])
 })
+
+test('tick generation stays bounded for invalid and extreme scales', () => {
+  for (const scale of [NaN, Infinity, -Infinity, -1, 0, 0.999, 1, Number.MAX_VALUE]) {
+    const ticks = probabilityScaleTicks(scale)
+    assert.ok(ticks.length >= 1 && ticks.length <= 21)
+    assert.ok(ticks.every(tick => Number.isFinite(tick.value) && tick.value >= 0 && tick.value <= 1))
+  }
+  assert.equal(probabilityScaleTicks(1).at(-1)?.label, '100%')
+})

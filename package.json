@@ -19,6 +19,7 @@
     "package:win": "npm run build:backend:win && npm run build && npm run collect:licenses && electron-builder --win dir",
     "package:release:win": "npm run package:win && powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/prepare-release.ps1",
     "type-check": "vue-tsc --noEmit",
+    "test:ui": "node scripts/check-analysis-ui.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

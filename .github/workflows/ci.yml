@@ -54,3 +54,9 @@ jobs:
 
       - name: Build renderer
         run: npm run build
+
+      - name: Install Chromium for renderer tests
+        run: npx playwright install chromium
+
+      - name: Check renderer interactions and responsive layouts
+        run: npm run test:ui

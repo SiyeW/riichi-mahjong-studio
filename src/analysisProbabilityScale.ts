@@ -23,14 +23,12 @@ export function adaptiveProbabilityScale(
 
 export function probabilityScaleTicks(
   scale: number,
-  step = DEFAULT_PROBABILITY_TICK_STEP,
 ): ProbabilityScaleTick[] {
-  const safeScale = Math.max(0, clampProbability(scale))
-  const safeStep = Math.max(Number.EPSILON, clampProbability(step))
-  const stepCount = Math.floor((safeScale + Number.EPSILON) / safeStep)
+  const safeScale = clampProbability(scale)
+  const stepCount = Math.floor((safeScale + Number.EPSILON) / DEFAULT_PROBABILITY_TICK_STEP)
   return Array.from({ length: stepCount + 1 }, (_, index) => ({
-    value: index * safeStep,
-    label: index % 2 === 0 ? `${Math.round(index * safeStep * 100)}%` : '',
+    value: index * DEFAULT_PROBABILITY_TICK_STEP,
+    label: index % 2 === 0 ? `${index * 5}%` : '',
   }))
 }
 

@@ -5,7 +5,7 @@ import { chromium } from 'playwright'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
 const root = path.resolve(import.meta.dirname, '..')
-const server = await createServer({ root, server: { host: '127.0.0.1', port: 0, strictPort: false } })
+const server = await createServer({ root, mode: 'ui-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
 let browser
 try {
   await server.listen()
@@ -14,96 +14,101 @@ try {
   page.setDefaultTimeout(10000)
   const errors = []
   page.on('pageerror', error => { errors.push(error.message); console.error(error.message) })
-  await page.goto(server.resolvedUrls.local[0], { waitUntil: 'domcontentloaded', timeout: 30000 })
-  await page.waitForFunction(() => document.querySelector('#app').__vue_app__?._instance?.setupState.bootstrapError)
-  await page.evaluate(() => {
-    const vm = document.querySelector('#app').__vue_app__._instance.setupState
-    window.analysisCheck = {
-      vm, reads: 0, epoch: 0,
-      result(expectedValue = 1) {
-        return {
-          status: 'ready',
-          context: { gameId: vm.gameView.gameId, nodeId: vm.gameView.currentNodeId, seat: vm.status.controlledSeat, inputMode: 'public', cacheKey: 'test-engine', cacheEpoch: this.epoch },
-          outputs: {
-            'wall-tile-count': { tiles: { '1m': { expectedValue, distribution: [{ value: 0, probability: 0.25 }, { value: 1, probability: 0.75 }] } } },
-            'opponent-dora-count': {
-              players: [1, 2, 3].map((seat, index) => ({
-                seat,
-                prediction: {
-                  expectedValue: 0.7 + (index * 0.1),
-                  distribution: [0, 1, 2, 3, 4, 5, 6, '7+'].map((value, valueIndex) => ({
-                    value,
-                    probability: Math.max(0.01, 0.32 - (valueIndex * 0.038) + (index * 0.004)),
-                  })),
-                },
-              })),
+  await page.addInitScript(() => {
+    window.setupRmsAnalysisTest = vm => {
+      window.analysisCheck = {
+        vm, reads: 0, epoch: 0,
+        result(expectedValue = 1) {
+          return {
+            status: 'ready',
+            context: { gameId: vm.gameView.gameId, nodeId: vm.gameView.currentNodeId, seat: vm.status.controlledSeat, inputMode: 'public', cacheKey: 'test-engine', cacheEpoch: this.epoch },
+            outputs: {
+              'wall-tile-count': { tiles: { '1m': { expectedValue, distribution: [{ value: 0, probability: 0.25 }, { value: 1, probability: 0.75 }] } } },
+              'opponent-dora-count': {
+                players: [1, 2, 3].map((seat, index) => ({
+                  seat,
+                  prediction: {
+                    expectedValue: 0.7 + (index * 0.1),
+                    distribution: [0, 1, 2, 3, 4, 5, 6, '7+'].map((value, valueIndex) => ({
+                      value,
+                      probability: Math.max(0.01, 0.32 - (valueIndex * 0.038) + (index * 0.004)),
+                    })),
+                  },
+                })),
+              },
+              'opponent-score': {
+                players: [1, 2, 3].map((seat, index) => ({
+                  seat,
+                  prediction: {
+                    expectedValue: 6800 + (index * 450),
+                    distribution: [1000, 2000, 3900, 5800, 7700, 8000, 12000, 16000, 24000, 32000, 48000, 64000, 96000].map((value, valueIndex) => ({
+                      value,
+                      probability: Math.max(0.01, 0.16 - Math.abs(valueIndex - 5 - index) * 0.018),
+                    })),
+                  },
+                })),
+              },
+              'opponent-deal-in-probability': {
+                players: [1, 2, 3].map((seat, sourceIndex) => ({
+                  seat,
+                  tiles: Object.fromEntries(
+                    ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p', '9p', '1s', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s', '1z', '2z', '3z', '4z', '5z', '6z', '7z']
+                      .map((tile, tileIndex) => [tile, ((tileIndex + sourceIndex) % 5 + 1) * 0.025]),
+                  ),
+                })),
+              },
             },
-            'opponent-score': {
-              players: [1, 2, 3].map((seat, index) => ({
-                seat,
-                prediction: {
-                  expectedValue: 6800 + (index * 450),
-                  distribution: [1000, 2000, 3900, 5800, 7700, 8000, 12000, 16000, 24000, 32000, 48000, 64000, 96000].map((value, valueIndex) => ({
-                    value,
-                    probability: Math.max(0.01, 0.16 - Math.abs(valueIndex - 5 - index) * 0.018),
-                  })),
-                },
-              })),
-            },
-            'opponent-deal-in-probability': {
-              players: [1, 2, 3].map((seat, sourceIndex) => ({
-                seat,
-                tiles: Object.fromEntries(
-                  ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p', '9p', '1s', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s', '1z', '2z', '3z', '4z', '5z', '6z', '7z']
-                    .map((tile, tileIndex) => [tile, ((tileIndex + sourceIndex) % 5 + 1) * 0.025]),
-                ),
-              })),
-            },
-          },
-        }
-      },
-      publish(result = this.result()) {
-        vm.handlePythonEvent({ type: 'opponent_analysis_ready', opponentAnalysis: result, gameId: result.context.gameId, nodeId: result.context.nodeId, seat: result.context.seat })
-      },
-    }
-    const check = window.analysisCheck
-    if (vm.showPerceptualColorDebugger !== false) throw new Error('F8 debugger must start hidden')
-    vm.showPerceptualColorDebugger = false
-    window.trainerAPI = {
-      getShanten: async () => { check.reads++; return check.result() },
-      setAnalysisVisibility: async () => ({ state: JSON.parse(JSON.stringify(vm.status)) }),
-      saveSettings: async settings => settings,
-      toggleVisibleHands: async () => ({ ...JSON.parse(JSON.stringify(vm.status)), visibleHands: !vm.status.visibleHands }),
-      getGameView: async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: JSON.parse(JSON.stringify(vm.gameView)) }),
-      clearAnalysisCaches: async () => {
-        check.epoch++
-        return { state: JSON.parse(JSON.stringify(vm.status)), cleared: { decisionEntries: 0, opponentEntries: 1, comparisons: 0, treeRevision: 1 } }
-      },
-    }
-    vm.status.mode = 'research'
-    vm.status.gameLoaded = true
-    vm.gameView.gameId = 'ui-test-game'
-    vm.gameView.currentNodeId = 'node-1'
-    vm.gameView.table = {
-      bakaze: 'E', kyoku: 1, honba: 0, kyotaku: 0, dealer: 0,
-      currentActor: 0, phase: 'draw', turn: 1, drawIndex: 1, wallRemaining: 69,
-      doraIndicators: ['1m'], scores: [25000, 25000, 25000, 25000],
-      hands: [[], [], [], []], rivers: [[], [], [], []], melds: [[], [], [], []],
-      pendingDiscard: null, reactionWindow: null,
-    }
-    vm.settings.display.workspaceLayout = {
-      ...vm.workspaceLayout, analysisVisible: true, consoleVisible: true,
-      layout: {
-        type: 'split', direction: 'horizontal', weights: [2, 1, 1],
-        children: [
-          { type: 'item', id: 'table' }, { type: 'item', id: 'analysis-counts' },
-          { type: 'split', direction: 'vertical', weights: [1, 1, 1, 1],
-            children: ['console', 'analysis-opponents', 'analysis-game', 'analysis-risk'].map(id => ({ type: 'item', id })) },
-        ],
-      },
-      analysisPanels: { opponents: false, game: false, risk: false, counts: true },
+          }
+        },
+        publish(result = this.result()) {
+          vm.handlePythonEvent({ type: 'opponent_analysis_ready', opponentAnalysis: result, gameId: result.context.gameId, nodeId: result.context.nodeId, seat: result.context.seat })
+        },
+      }
+      const check = window.analysisCheck
+      if (vm.showPerceptualColorDebugger !== false) throw new Error('F8 debugger must start hidden')
+      window.trainerAPI = {
+        getSettings: async () => JSON.parse(JSON.stringify(vm.settings)),
+        getStatus: async () => JSON.parse(JSON.stringify(vm.status)),
+        restoreStartupRecovery: async () => null,
+        getRecordDirty: async () => false,
+        getShanten: async () => { check.reads++; return check.result() },
+        setAnalysisVisibility: async () => ({ state: JSON.parse(JSON.stringify(vm.status)) }),
+        saveSettings: async settings => settings,
+        toggleVisibleHands: async () => ({ ...JSON.parse(JSON.stringify(vm.status)), visibleHands: !vm.status.visibleHands }),
+        getGameView: async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: JSON.parse(JSON.stringify(vm.gameView)) }),
+        clearAnalysisCaches: async () => {
+          check.epoch++
+          return { state: JSON.parse(JSON.stringify(vm.status)), cleared: { decisionEntries: 0, opponentEntries: 1, comparisons: 0, treeRevision: 1 } }
+        },
+      }
+      vm.status.mode = 'research'
+      vm.status.gameLoaded = true
+      vm.gameView.gameId = 'ui-test-game'
+      vm.gameView.currentNodeId = 'node-1'
+      vm.gameView.table = {
+        bakaze: 'E', kyoku: 1, honba: 0, kyotaku: 0, dealer: 0,
+        currentActor: 0, phase: 'draw', turn: 1, drawIndex: 1, wallRemaining: 69,
+        doraIndicators: ['1m'], scores: [25000, 25000, 25000, 25000],
+        hands: [[], [], [], []], rivers: [[], [], [], []], melds: [[], [], [], []],
+        pendingDiscard: null, reactionWindow: null,
+      }
+      vm.settings.display.workspaceLayout = {
+        ...vm.workspaceLayout, analysisVisible: true, consoleVisible: true,
+        layout: {
+          type: 'split', direction: 'horizontal', weights: [2, 1, 1],
+          children: [
+            { type: 'item', id: 'table' }, { type: 'item', id: 'analysis-counts' },
+            { type: 'split', direction: 'vertical', weights: [1, 1, 1, 1],
+              children: ['console', 'analysis-opponents', 'analysis-game', 'analysis-risk'].map(id => ({ type: 'item', id })) },
+          ],
+        },
+        analysisPanels: { opponents: false, game: false, risk: false, counts: true },
+      }
     }
   })
+  await page.goto(server.resolvedUrls.local[0], { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await page.waitForFunction(() => window.analysisCheck?.vm.tileArtworkReady)
+  assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
   assert.equal(
     await page.locator('.auto-analysis-progress small').evaluate(element => getComputedStyle(element).opacity),
     '1',
@@ -366,11 +371,11 @@ try {
   assert.ok(narrowRisk.faceWidth < roomyRisk.faceWidth, 'tile width follows the allotted panel width')
   assert.ok(Math.abs((narrowRisk.faceHeight / narrowRisk.faceWidth) - (3.18 / 2.45)) < 0.03, 'tile aspect ratio is retained')
 
-  await page.setViewportSize({ width: 1100, height: 540 })
+  await page.setViewportSize({ width: 1100, height: 420 })
   await page.waitForTimeout(100)
   const shortRisk = await riskGeometry()
   assert.ok(shortRisk.barsHeight < narrowRisk.barsHeight, 'bars absorb reductions in allotted panel height')
-  assert.ok(shortRisk.faceWidth < narrowRisk.faceWidth, 'wide but short panels shrink tiles to preserve chart space')
+  assert.ok(shortRisk.faceWidth < narrowRisk.faceWidth, `wide but short panels shrink tiles to preserve chart space: ${JSON.stringify({ narrowRisk, shortRisk })}`)
 
   await page.setViewportSize({ width: 1100, height: 260 })
   await page.waitForTimeout(100)

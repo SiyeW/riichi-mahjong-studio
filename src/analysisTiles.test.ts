@@ -15,11 +15,20 @@ test('the shared tile rows contain every ordinary tile exactly once', () => {
 })
 
 test('tile indexes normalize red fives and preserve honor indexes', () => {
+  ANALYSIS_TILE_ROWS.flat().forEach((tile, index) => assert.equal(tile34Index(tile), index))
   assert.equal(tile34Index('1m'), 0)
   assert.equal(tile34Index('5mr'), 4)
+  assert.equal(tile34Index('5pr'), 13)
+  assert.equal(tile34Index('5sr'), 22)
   assert.equal(tile34Index('9s'), 26)
   assert.equal(tile34Index('E'), 27)
   assert.equal(tile34Index('C'), 33)
+})
+
+test('invalid tiles cannot read another tile prediction', () => {
+  for (const tile of ['?', '', 'xm', '0m', '10m', '1mr', '5mrr', 'r5m', '5junkm', 'constructor']) {
+    assert.equal(tile34Index(tile), null, tile)
+  }
 })
 
 test('count layouts add optional red fives as a separate source group', () => {
