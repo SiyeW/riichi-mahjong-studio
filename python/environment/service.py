@@ -3296,18 +3296,32 @@ def load_game_record(record):
     _migrate_discard_tsumogiri(game)
     _migrate_terminal_table_scores(game)
 
+    candidate = copy.deepcopy(game)
+    mode = "research" if is_read_only_game(game) else normalize_mode(state.get("mode"))
+    controlled_seat = normalize_seat(state.get("controlledSeat", 0))
+    visible_hands = bool(state.get("visibleHands"))
+    previous = {key: STATE[key] for key in (
+        "game", "gameLoaded", "mode", "controlledSeat", "pendingSeatSwitch", "visibleHands",
+    )}
     reset_runtime_for_game_change()
-    reserve_loaded_game_id(game.get("gameId"))
-    STATE["game"] = copy.deepcopy(game)
-    STATE["gameLoaded"] = True
-    STATE["mode"] = "research" if is_read_only_game(game) else normalize_mode(state.get("mode"))
-    STATE["controlledSeat"] = normalize_seat(state.get("controlledSeat", 0))
-    STATE["pendingSeatSwitch"] = None
-    STATE["visibleHands"] = bool(state.get("visibleHands"))
-    normalize_current_tree_cursor(STATE["game"], STATE["controlledSeat"])
-    backfill_cached_child_comparisons(STATE["game"])
-    if STATE["mode"] == "research":
-        request_current_opponent_analysis()
+    try:
+        reserve_loaded_game_id(candidate.get("gameId"))
+        STATE["game"] = candidate
+        STATE["gameLoaded"] = True
+        STATE["mode"] = mode
+        STATE["controlledSeat"] = controlled_seat
+        STATE["pendingSeatSwitch"] = None
+        STATE["visibleHands"] = visible_hands
+        normalize_current_tree_cursor(candidate, controlled_seat)
+        backfill_cached_child_comparisons(candidate)
+        if mode == "research":
+            request_current_opponent_analysis()
+    except Exception:
+        try:
+            reset_runtime_for_game_change()
+        finally:
+            STATE.update(previous)
+        raise
 
 
 def build_state_payload(*, consume_thinking_time=True):
