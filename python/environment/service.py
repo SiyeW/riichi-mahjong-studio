@@ -6473,6 +6473,18 @@ def handle_command(request_id, command, payload):
             return response
 
         if command == "export_game_record":
+            if payload.get("checkpoint") is True:
+                return {
+                    "request_id": request_id,
+                    "command": command,
+                    "record": serialize_game_record(),
+                    "state": {
+                        "analysisVisibility": {
+                            "decisionRecommendations": bool(STATE.get("decisionRecommendationsEnabled", True)),
+                            "opponentAnalysis": bool(STATE.get("opponentAnalysisEnabled", False)),
+                        },
+                    },
+                }
             return build_response(
                 request_id,
                 command,
