@@ -1575,6 +1575,7 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
+import { createRevisionSaveQueue } from './revisionSaveQueue'
 import {
   normalizeWorkspaceLayout,
   normalizeDockPanelFraction,
@@ -2469,10 +2470,11 @@ const engineDescriptions = reactive<Record<string, TrainerEngineDescription>>({}
 const engineDescribeErrors = reactive<Record<string, string>>({})
 const engineLoadErrors = reactive<Record<string, string>>({})
 const ENGINE_AUTOSAVE_DELAY_MS = 250
-let engineDraftRevision = 0
-let engineSavedRevision = 0
+const engineSaves = createRevisionSaveQueue(
+  () => JSON.parse(JSON.stringify(settingsDraft.engines)) as TrainerEngineSettings,
+  saveEngineDraftSnapshot,
+)
 let engineAutosaveTimer: number | null = null
-let engineAutosavePromise: Promise<boolean> | null = null
 let suppressEngineAutosave = false
 let engineAutosaveEnabled = false
 const activeEngineProfiles = computed(() => settingsDraft.engines.profiles)
@@ -2536,10 +2538,8 @@ const activeEngineOptionEntries = computed(() => {
 })
 function openEngineWindow() {
   cancelEngineAutosaveTimer()
-  if (!engineAutosavePromise && engineSavedRevision >= engineDraftRevision) {
+  if (!engineSaves.saving && !engineSaves.pending) {
     replaceEngineDraft(settings.engines)
-    engineDraftRevision = 0
-    engineSavedRevision = 0
   }
   engineAutosaveEnabled = true
   showSettingsPanel.value = false
@@ -3110,7 +3110,7 @@ function cancelEngineAutosaveTimer() {
 
 function scheduleEngineAutosave(delay = ENGINE_AUTOSAVE_DELAY_MS) {
   cancelEngineAutosaveTimer()
-  if (loadingEngineProfileId.value) return
+  if (loadingEngineProfileId.value || unloadingEngineProfileId.value) return
   engineAutosaveTimer = window.setTimeout(() => {
     engineAutosaveTimer = null
     void flushEngineAutosave()
@@ -3121,7 +3121,7 @@ watch(
   () => settingsDraft.engines,
   () => {
     if (suppressEngineAutosave || !engineAutosaveEnabled) return
-    engineDraftRevision += 1
+    engineSaves.changed()
     engineSaveMessage.value = ''
     scheduleEngineAutosave()
   },
@@ -3138,8 +3138,7 @@ async function saveEngineDraftSnapshot(
       engines: snapshot,
     })
     applySettings(saved)
-    engineSavedRevision = Math.max(engineSavedRevision, revision)
-    if (engineDraftRevision === revision) replaceEngineDraft(saved.engines)
+    if (engineSaves.revision === revision) replaceEngineDraft(saved.engines)
     return true
   } catch (error) {
     engineSaveMessage.value = t('engine.saveFailed', { message: error instanceof Error ? error.message : String(error) })
@@ -3147,22 +3146,9 @@ async function saveEngineDraftSnapshot(
   }
 }
 
-async function flushEngineAutosave(): Promise<boolean> {
+function flushEngineAutosave(): Promise<boolean> {
   cancelEngineAutosaveTimer()
-  while (engineSavedRevision < engineDraftRevision) {
-    if (engineAutosavePromise) {
-      if (!await engineAutosavePromise) return false
-      continue
-    }
-    const revision = engineDraftRevision
-    const snapshot = JSON.parse(JSON.stringify(settingsDraft.engines)) as TrainerEngineSettings
-    const request = saveEngineDraftSnapshot(snapshot, revision)
-    engineAutosavePromise = request
-    const saved = await request
-    if (engineAutosavePromise === request) engineAutosavePromise = null
-    if (!saved) return false
-  }
-  return true
+  return engineSaves.flush()
 }
 
 async function loadEngineProfile(profileId: string) {
@@ -3175,7 +3161,7 @@ async function loadEngineProfile(profileId: string) {
   try {
     assignSupportedOutputsForLoading(profile)
     if (!await flushEngineAutosave()) return
-    const activationRevision = engineDraftRevision
+    const activationRevision = engineSaves.revision
     const engines = JSON.parse(JSON.stringify(settingsDraft.engines)) as TrainerEngineSettings
     const loaded = await window.trainerAPI.activateEngine({
       profileId,
@@ -3185,8 +3171,8 @@ async function loadEngineProfile(profileId: string) {
     applyStatus(await window.trainerAPI.getStatus())
     captureRuntimeEngineProfile('decision', loaded.engines)
     captureRuntimeEngineProfile('opponent', loaded.engines)
-    engineSavedRevision = Math.max(engineSavedRevision, activationRevision)
-    if (engineDraftRevision === activationRevision) {
+    engineSaves.acknowledge(activationRevision)
+    if (engineSaves.revision === activationRevision) {
       replaceEngineDraft(loaded.engines)
     }
     engineSaveMessage.value = t('engine.loaded')
@@ -3204,21 +3190,24 @@ async function loadEngineProfile(profileId: string) {
     engineSaveMessage.value = t('engine.loadFailed', { message: engineLoadErrors[profileId] })
   } finally {
     loadingEngineProfileId.value = ''
-    if (engineSavedRevision < engineDraftRevision) scheduleEngineAutosave(0)
+    if (engineSaves.pending) scheduleEngineAutosave(0)
   }
 }
 
 async function unloadEngineProfile(profileId: string) {
   if (!window.trainerAPI?.unloadEngine || loadingEngineProfileId.value || unloadingEngineProfileId.value) return
   if (activeEngineProfile.value?.id !== profileId || !profileIsLoaded(activeEngineProfile.value)) return
+  const profile = activeEngineProfile.value
   unloadingEngineProfileId.value = profileId
   engineSaveMessage.value = ''
   try {
+    if (!await flushEngineAutosave()) return
+    const unloadRevision = engineSaves.revision
     const unloaded = await window.trainerAPI.unloadEngine({ profileId })
     applyStatus(unloaded.state)
     applySettings(unloaded.settings)
-    replaceEngineDraft(unloaded.settings.engines)
-    if (profileAssignedOutputs(activeEngineProfile.value).some((output) => output !== 'action-recommendation')) {
+    if (engineSaves.revision === unloadRevision) replaceEngineDraft(unloaded.settings.engines)
+    if (profileAssignedOutputs(profile).some((output) => output !== 'action-recommendation')) {
       if (!shantenResultHasRows(gameView.opponentAnalysis)) {
         clearOpponentAnalysisWithoutMotion()
       }
@@ -3229,6 +3218,7 @@ async function unloadEngineProfile(profileId: string) {
     engineSaveMessage.value = t('engine.unloadFailed', { message: error instanceof Error ? error.message : String(error) })
   } finally {
     unloadingEngineProfileId.value = ''
+    if (engineSaves.pending) scheduleEngineAutosave(0)
   }
 }
 const decisionRecommendationsEnabled = ref(true)
