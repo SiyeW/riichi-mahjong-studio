@@ -1574,6 +1574,13 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
+import {
+  normalizeWorkspaceLayout,
+  normalizeDockPanelFraction,
+  normalizeDockPanelSizeFractions,
+  type DockPanelId,
+  type DockPanelSizeFractions,
+} from './workspaceSettings'
 import { vAdaptiveButtonGrid } from './adaptiveButtonGrid'
 import { DEFAULT_ANALYSIS_COUNT_LAYOUT, type AnalysisCountLayout } from './analysisCountSpacing'
 import {
@@ -1605,7 +1612,6 @@ import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 import {
   moveDockItem,
   moveDockItemBesideNode,
-  normalizeWorkspaceDockLayout,
   resizeDockSplit,
   visibleDockLayout,
   WORKSPACE_ITEM_IDS,
@@ -1626,9 +1632,7 @@ const { locale, numberLocale, t } = useI18n()
 const seats = [0, 1, 2, 3]
 type ColorSchemeId = TrainerSettings['display']['colorScheme']
 type TablePosition = TrainerSettings['display']['tablePosition']
-type DockPanelId = Exclude<WorkspaceItemId, 'table'>
 type AnalysisPanelKey = keyof TrainerSettings['display']['workspaceLayout']['analysisPanels']
-type DockPanelSizeFractions = TrainerSettings['display']['workspaceLayout']['panelSizeFractions']
 type DockDropTarget = {
   edge: DockEdge
   bounds: { left: number; top: number; width: number; height: number }
@@ -1636,14 +1640,6 @@ type DockDropTarget = {
   | { kind: 'item'; item: WorkspaceItemId }
   | { kind: 'group'; sourcePath: number[] }
 )
-
-const DOCK_PANEL_IDS: readonly DockPanelId[] = [
-  'console',
-  'analysis-opponents',
-  'analysis-game',
-  'analysis-risk',
-  'analysis-counts',
-]
 
 const ANALYSIS_PANEL_DEFINITIONS: Array<{
   id: AnalysisPanelId
@@ -1697,54 +1693,6 @@ function normalizeColorScheme(value: unknown): ColorSchemeId {
 
 function normalizeTablePosition(value: unknown): TablePosition {
   return value === 'left' || value === 'right' ? value : 'center'
-}
-
-function normalizeDockPanelFraction(value: unknown): number | null {
-  const numeric = Number(value)
-  return Number.isFinite(numeric) && numeric > 0 && numeric < 1
-    ? Math.max(0.08, Math.min(0.8, numeric))
-    : null
-}
-
-function normalizeDockPanelSizeFractions(value: unknown): DockPanelSizeFractions {
-  if (!value || typeof value !== 'object') return {}
-  const source = value as Partial<Record<DockPanelId, Record<DockDirection, unknown>>>
-  const normalized: DockPanelSizeFractions = {}
-  for (const panelId of DOCK_PANEL_IDS) {
-    const sourcePanel = source[panelId]
-    if (!sourcePanel || typeof sourcePanel !== 'object') continue
-    const panel: { horizontal?: number; vertical?: number } = {}
-    for (const direction of ['horizontal', 'vertical'] as const) {
-      const fraction = normalizeDockPanelFraction(sourcePanel[direction])
-      if (fraction !== null) panel[direction] = fraction
-    }
-    if (Object.keys(panel).length) normalized[panelId] = panel
-  }
-  return normalized
-}
-
-function normalizeWorkspaceLayout(value: unknown): TrainerSettings['display']['workspaceLayout'] {
-  const source = value && typeof value === 'object'
-    ? value as Partial<TrainerSettings['display']['workspaceLayout']> & { order?: unknown }
-    : {}
-  const sourcePanels: Partial<TrainerSettings['display']['workspaceLayout']['analysisPanels']> = source.analysisPanels && typeof source.analysisPanels === 'object'
-    ? source.analysisPanels
-    : {}
-  return {
-    layout: normalizeWorkspaceDockLayout(source.layout, source.order),
-    analysisVisible: source.analysisVisible === true,
-    analysisPanels: {
-      opponents: sourcePanels.opponents !== false,
-      game: sourcePanels.game !== false,
-      risk: sourcePanels.risk === true,
-      counts: sourcePanels.counts === true,
-    },
-    consoleVisible: source.consoleVisible !== false,
-    panelSizeFractionsVersion: 2,
-    panelSizeFractions: source.panelSizeFractionsVersion === 2
-      ? normalizeDockPanelSizeFractions(source.panelSizeFractions)
-      : {},
-  }
 }
 
 const settings = reactive<TrainerSettings>({
