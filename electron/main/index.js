@@ -1,6 +1,7 @@
 const path = require('node:path')
 const fs = require('node:fs')
 const { createRecord } = require('./state/create-record')
+const { withCurrentRecord } = require('./state/record-operation')
 const { requestRendererFlush, persistBeforeClose } = require('./close-persistence')
 const { pathToFileURL } = require('node:url')
 
@@ -170,7 +171,8 @@ async function writeCurrentGameRecord(targetPath, options = {}) {
     rememberPath = true,
   } = options
   const exportedRevision = gameFileStore.getRevision()
-  const response = await environmentBackend.environmentGateway.exportGameRecord()
+  const response = await withCurrentRecord(gameFileStore,
+    () => environmentBackend.environmentGateway.exportGameRecord())
   const record = prepareGameRecordForWrite(response.record, {
     appVersion: app.getVersion(),
     recovery,
@@ -208,13 +210,13 @@ function writeRecoveryGameRecord() {
 async function saveGameAs() {
   const currentPath = gameFileStore.getCurrentPath()
   const suggestedPath = currentPath || gameFileStore.buildDefaultSavePath(fs.existsSync)
-  const result = await dialog.showSaveDialog(mainWindow, {
+  const result = await withCurrentRecord(gameFileStore, () => dialog.showSaveDialog(mainWindow, {
     title: t('native.saveRecord'),
     defaultPath: suggestedPath,
     filters: [
       { name: t('native.recordFilter'), extensions: [RECORD_FILE_EXTENSION.slice(1)] },
     ],
-  })
+  }))
 
   if (result.canceled || !result.filePath) {
     return null

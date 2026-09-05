@@ -67,6 +67,7 @@ function createGameFileStore(baseDir) {
   let lastSuggestedBaseName = null
   let repeatedSuggestionCount = 0
   let recordActive = false
+  let recordGeneration = 0
   let revision = 0
   let savedRevision = 0
   let currentNodeId = null
@@ -199,6 +200,7 @@ function createGameFileStore(baseDir) {
       return suggestedFileName
     },
     beginRecord({ dirty = false, nodeId = null } = {}) {
+      recordGeneration += 1
       recordActive = true
       revision += 1
       savedRevision = dirty ? revision - 1 : revision
@@ -206,6 +208,7 @@ function createGameFileStore(baseDir) {
       return dirty
     },
     closeRecord() {
+      recordGeneration += 1
       currentPath = null
       suggestedFileName = null
       recordActive = false
@@ -224,6 +227,9 @@ function createGameFileStore(baseDir) {
     },
     getRevision() {
       return revision
+    },
+    getRecordGeneration() {
+      return recordGeneration
     },
     isDirty() {
       return isDirty()
