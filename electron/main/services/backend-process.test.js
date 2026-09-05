@@ -36,6 +36,20 @@ test('multibyte text survives arbitrary stdout chunk boundaries', async () => {
   backend.stop()
 })
 
+test('restarting inside an event callback discards remaining lines from that process', () => {
+  const { backend, children } = fixture()
+  const received = []
+  backend.onEvent(event => {
+    received.push(event.type)
+    if (event.type === 'restart-now') backend.restart()
+  })
+  backend.start()
+  children[0].stdout.emit('data', Buffer.from('{"type":"restart-now"}\n{"type":"stale"}\n'))
+  assert.deepEqual(received, ['restart-now', 'service_stopped'])
+  assert.equal(children.length, 2)
+  backend.stop()
+})
+
 test('startup queues requests until ready and exit rejects outstanding requests', async () => {
   const { backend, children } = fixture()
   const request = backend.sendRequest('pending')

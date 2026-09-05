@@ -118,7 +118,7 @@ function createBackendProcess({
       processStdoutBuffer += text
 
       let newlineIndex = processStdoutBuffer.indexOf('\n')
-      while (newlineIndex >= 0) {
+      while (newlineIndex >= 0 && child === spawnedChild) {
         const line = processStdoutBuffer.slice(0, newlineIndex).trim()
         processStdoutBuffer = processStdoutBuffer.slice(newlineIndex + 1)
 
