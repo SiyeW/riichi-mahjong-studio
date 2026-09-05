@@ -63,12 +63,20 @@ function createBackendSession(backend, checkpointOptions = {}) {
         }
       }
       backend.restart()
+      const recoveryGeneration = generation
+      const requestRecovery = async (...args) => {
+        const result = await backend.sendRequest(...args)
+        if (generation !== recoveryGeneration || !backend.isRunning()) {
+          throw new Error('Backend stopped during recovery.')
+        }
+        return result
+      }
       let response = recovery.record
-        ? await backend.sendRequest('import_game_record', { record: recovery.record })
-        : await backend.sendRequest('get_game_view')
+        ? await requestRecovery('import_game_record', { record: recovery.record })
+        : await requestRecovery('get_game_view')
       if (recovery.visibility) {
-        await backend.sendRequest('set_analysis_visibility', recovery.visibility)
-        response = await backend.sendRequest('get_game_view')
+        await requestRecovery('set_analysis_visibility', recovery.visibility)
+        response = await requestRecovery('get_game_view')
       }
       if (!response.state || !response.view || Boolean(response.state.gameLoaded) !== Boolean(recovery.record)) {
         throw new Error('Backend did not confirm the restored game state.')

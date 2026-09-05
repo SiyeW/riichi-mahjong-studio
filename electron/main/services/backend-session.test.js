@@ -99,6 +99,25 @@ test('an empty response after import is not a successful recovery', async () => 
   await assert.rejects(session.sendRequest('create_game'), /recovery/)
 })
 
+test('a final reply followed by backend exit cannot mark recovery successful', async () => {
+  const { backend, session } = fixture()
+  const send = backend.sendRequest
+  backend.sendRequest = async (command, payload) => {
+    const response = await send(command, payload)
+    if (command === 'get_game_view') {
+      backend.running = false
+      session.handleEvent({ type: 'service_stopped' })
+    }
+    return response
+  }
+  await assert.rejects(session.restart(), /stopped during recovery/)
+  assert.equal(session.needsRecovery(), true)
+  assert.equal(session.hasCheckpoint(), true)
+  backend.sendRequest = send
+  await session.restart()
+  assert.equal(session.needsRecovery(), false)
+})
+
 test('a crash restores the latest completed checkpoint without exporting from the dead process', async () => {
   let capture
   const { backend, session, calls } = fixture(true, { schedule(callback) { capture = callback; return 1 }, cancel() {} })
