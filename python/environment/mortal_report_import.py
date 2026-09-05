@@ -1,6 +1,7 @@
 """Convert a public Mortal review report into a read-only replay game."""
 
 from __future__ import annotations
+from analysis_cache import decision_cache_key
 
 import copy
 import math
@@ -754,7 +755,6 @@ def attach_mortal_review_cache(
     game: Dict[str, Any],
     report: Dict[str, Any],
     controlled_seat: int,
-    cache_version: int,
 ) -> Dict[str, Dict[str, Any]]:
     """Attach compact official review rows as stale decision caches."""
     review = report.get("review") if isinstance(report, dict) else None
@@ -805,9 +805,8 @@ def attach_mortal_review_cache(
             phase = str(snapshot.get("phase") or "")
             if phase == "draw_or_discard":
                 phase = "discard"
-            cache_key = (
-                f"m{int(cache_version)}::{controlled_seat}::{phase}::"
-                f"{OFFICIAL_MORTAL_REPORT_SOURCE_ID}"
+            cache_key = decision_cache_key(
+                controlled_seat, phase, {"id": OFFICIAL_MORTAL_REPORT_SOURCE_ID},
             )
             matching.setdefault("analysisCache", {})[cache_key] = analysis
             attached[str(matching.get("id") or "")] = analysis

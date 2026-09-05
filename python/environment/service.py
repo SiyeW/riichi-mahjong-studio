@@ -6107,6 +6107,27 @@ def close_game():
     STATE["visibleHands"] = False
 
 
+def activate_imported_game(game, controlled_seat):
+    previous = {key: STATE[key] for key in (
+        "game", "gameLoaded", "mode", "controlledSeat", "pendingSeatSwitch", "visibleHands",
+    )}
+    reset_runtime_for_game_change()
+    try:
+        STATE["game"] = game
+        STATE["gameLoaded"] = True
+        STATE["mode"] = "research"
+        STATE["controlledSeat"] = controlled_seat
+        STATE["pendingSeatSwitch"] = None
+        STATE["visibleHands"] = False
+        request_current_opponent_analysis(get_current_snapshot())
+    except Exception:
+        try:
+            reset_runtime_for_game_change()
+        finally:
+            STATE.update(previous)
+        raise
+
+
 def import_mortal_report(report, source_url, source_import_url=None, reconstruct_walls=False, seed=None):
     game_id = f"game_{STATE['nextGameId']:04d}"
     STATE["nextGameId"] += 1
@@ -6120,7 +6141,6 @@ def import_mortal_report(report, source_url, source_import_url=None, reconstruct
         game,
         report,
         controlled_seat,
-        _DECISION_CACHE_VERSION,
     )
     repair_reaction_decision_nodes(game)
     for node_id, analysis in official_analyses.items():
@@ -6132,14 +6152,7 @@ def import_mortal_report(report, source_url, source_import_url=None, reconstruct
     reconstruction = None
     if reconstruct_walls:
         reconstruction = reconstruct_imported_walls(game, seed, generated_at=now_iso())
-    reset_runtime_for_game_change()
-    STATE["game"] = game
-    STATE["gameLoaded"] = True
-    STATE["mode"] = "research"
-    STATE["controlledSeat"] = controlled_seat
-    STATE["pendingSeatSwitch"] = None
-    STATE["visibleHands"] = False
-    request_current_opponent_analysis(get_current_snapshot())
+    activate_imported_game(game, controlled_seat)
     return reconstruction
 
 
@@ -6157,14 +6170,7 @@ def import_custom_tenhou(raw_input, reconstruct_walls=False, seed=None):
     reconstruction = None
     if reconstruct_walls:
         reconstruction = reconstruct_imported_walls(game, seed, generated_at=now_iso())
-    reset_runtime_for_game_change()
-    STATE["game"] = game
-    STATE["gameLoaded"] = True
-    STATE["mode"] = "research"
-    STATE["controlledSeat"] = controlled_seat
-    STATE["pendingSeatSwitch"] = None
-    STATE["visibleHands"] = False
-    request_current_opponent_analysis(get_current_snapshot())
+    activate_imported_game(game, controlled_seat)
     return reconstruction
 
 

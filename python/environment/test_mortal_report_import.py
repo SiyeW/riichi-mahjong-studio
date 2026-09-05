@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
+
+from analysis_cache import cache_key_context
 
 import service
 from mortal_report_import import (
@@ -145,7 +148,7 @@ class MortalReportImportTests(unittest.TestCase):
         game, controlled_seat = build_mortal_report_game(
             report, "https://example.invalid/report.json", "game_review", "2026-08-01T00:00:00Z"
         )
-        attached = attach_mortal_review_cache(game, report, controlled_seat, 3)
+        attached = attach_mortal_review_cache(game, report, controlled_seat)
 
         self.assertEqual(len(attached), 2)
         self.assertNotIn("analysisSources", game)
@@ -169,6 +172,23 @@ class MortalReportImportTests(unittest.TestCase):
             for key in node.get("analysisCache", {})
         ]
         self.assertTrue(all(key.endswith(f"::{OFFICIAL_MORTAL_REPORT_SOURCE_ID}") for key in cache_keys))
+        self.assertTrue(all(cache_key_context(key) is not None for key in cache_keys))
+
+        saved_state = dict(service.STATE)
+        try:
+            with patch.object(service, 'request_current_opponent_analysis'), \
+                 patch.object(service, 'reset_runtime_for_game_change'):
+                service.import_mortal_report(report, 'https://example.invalid/report.json')
+            self.assertTrue(service.STATE['gameLoaded'])
+            self.assertEqual(service.STATE['controlledSeat'], controlled_seat)
+            imported_keys = [
+                key for node in service.STATE['game']['nodes'].values()
+                for key in node.get('analysisCache', {})
+            ]
+            self.assertEqual(sorted(imported_keys), sorted(cache_keys))
+        finally:
+            service.STATE.clear()
+            service.STATE.update(saved_state)
 
     def test_malformed_official_review_does_not_block_replay_import(self):
         report = build_report(
@@ -181,7 +201,7 @@ class MortalReportImportTests(unittest.TestCase):
             report, "https://example.invalid/report.json", "game_bad_review", "2026-08-01T00:00:00Z"
         )
 
-        self.assertEqual(attach_mortal_review_cache(game, report, controlled_seat, 3), {})
+        self.assertEqual(attach_mortal_review_cache(game, report, controlled_seat), {})
 
     def test_imports_detailed_hora_and_round_result(self):
         report = build_report(

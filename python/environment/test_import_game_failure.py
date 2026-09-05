@@ -1,4 +1,5 @@
 import copy
+from contextlib import ExitStack
 import unittest
 from unittest.mock import patch
 
@@ -58,6 +59,50 @@ class ImportGameFailureTests(unittest.TestCase):
         self.assertIsNot(service.STATE['game'], self.old_game)
         self.assertEqual(self.old_game, old_copy)
         self.assertEqual(service.STATE['controlledSeat'], 0)
+
+    def import_external_record(self, kind, stack, **options):
+        candidate = copy.deepcopy(self.record['game'])
+        if kind == 'mortal':
+            stack.enter_context(patch.object(service, 'build_mortal_report_game', return_value=(candidate, 0)))
+            stack.enter_context(patch.object(service, 'attach_mortal_review_cache', return_value={}))
+            return service.import_mortal_report({}, 'https://example.org/report.json', **options)
+        stack.enter_context(patch.object(service, 'normalize_custom_tenhou_input', return_value={}))
+        stack.enter_context(patch.object(service, 'build_custom_tenhou_game', return_value=(candidate, 0)))
+        return service.import_custom_tenhou({}, **options)
+
+    def test_external_import_initialization_failure_restores_old_record(self):
+        for kind in ('mortal', 'tenhou'):
+            for stage in ('get_current_snapshot', 'request_current_opponent_analysis'):
+                with self.subTest(kind=kind, stage=stage), ExitStack() as stack:
+                    stack.enter_context(patch.object(service, stage, side_effect=RuntimeError('activation failed')))
+                    reset = stack.enter_context(patch.object(service, 'reset_runtime_for_game_change'))
+                    with self.assertRaisesRegex(RuntimeError, 'activation failed'):
+                        self.import_external_record(kind, stack)
+                    self.assertEqual(reset.call_count, 2)
+                self.assert_old_record_preserved()
+
+    def test_external_reconstruction_failure_does_not_stop_old_runtime(self):
+        for kind in ('mortal', 'tenhou'):
+            with self.subTest(kind=kind), ExitStack() as stack:
+                stack.enter_context(patch.object(service, 'reconstruct_imported_walls',
+                                                side_effect=ValueError('invalid wall')))
+                reset = stack.enter_context(patch.object(service, 'reset_runtime_for_game_change'))
+                with self.assertRaisesRegex(ValueError, 'invalid wall'):
+                    self.import_external_record(kind, stack, reconstruct_walls=True)
+                reset.assert_not_called()
+            self.assert_old_record_preserved()
+
+    def test_external_import_success_commits_candidate(self):
+        for kind in ('mortal', 'tenhou'):
+            with self.subTest(kind=kind), ExitStack() as stack:
+                stack.enter_context(patch.object(service, 'request_current_opponent_analysis'))
+                reset = stack.enter_context(patch.object(service, 'reset_runtime_for_game_change'))
+                self.assertIsNone(self.import_external_record(kind, stack))
+                reset.assert_called_once()
+                self.assertIsNot(service.STATE['game'], self.old_game)
+                self.assertEqual(service.STATE['mode'], 'research')
+                self.assertEqual(service.STATE['controlledSeat'], 0)
+                self.assertFalse(service.STATE['visibleHands'])
 
 
 if __name__ == '__main__':
