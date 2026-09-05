@@ -587,6 +587,32 @@ try {
       previousTreeColumns = geometry.treeColumns
     }
   }
+  // A delayed navigation reply cannot restore a previous game, seat, or mode.
+  await page.evaluate(async () => {
+    const { vm } = window.analysisCheck
+    const originalJump = window.trainerAPI.jumpToNode
+    for (const field of ['gameId', 'controlledSeat', 'mode']) {
+      const state = JSON.parse(JSON.stringify(vm.status))
+      const view = JSON.parse(JSON.stringify(vm.gameView))
+      let resolve
+      window.trainerAPI.jumpToNode = () => new Promise(done => { resolve = done })
+      const pending = vm.jumpToNode('delayed-node')
+      if (field === 'gameId') vm.gameView.gameId = 'replacement-game'
+      if (field === 'controlledSeat') vm.status.controlledSeat = (state.controlledSeat + 1) % 4
+      if (field === 'mode') vm.status.mode = state.mode === 'research' ? 'play' : 'research'
+      resolve({ state, view: { ...view, currentNodeId: 'delayed-node' } })
+      await pending
+      if (vm.gameView.currentNodeId === 'delayed-node') throw new Error(`Stale navigation accepted after ${field} changed`)
+      if (field === 'gameId' && vm.gameView.gameId !== 'replacement-game') throw new Error('Old game restored')
+      if (field === 'controlledSeat' && vm.status.controlledSeat === state.controlledSeat) throw new Error('Old seat restored')
+      if (field === 'mode' && vm.status.mode === state.mode) throw new Error('Old mode restored')
+      vm.gameView.gameId = view.gameId
+      vm.status.controlledSeat = state.controlledSeat
+      vm.status.mode = state.mode
+    }
+    window.trainerAPI.jumpToNode = originalJump
+  })
+
   // Label measurements must survive mounting, resizing, and new probabilities.
   await page.setViewportSize({ width: 1400, height: 1000 })
   await page.evaluate(() => {

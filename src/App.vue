@@ -1578,6 +1578,7 @@ import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
 import { createRevisionSaveQueue } from './revisionSaveQueue'
 import { flushBeforeClose } from './flushBeforeClose'
 import { settingsChanges, mergeSettingsReply } from './settingsChanges'
+import { decisionPositionKey, sameViewRequestContext } from './analysisPosition'
 import {
   normalizeWorkspaceLayout,
   normalizeDockPanelFraction,
@@ -7126,13 +7127,8 @@ watch(reduceMotionEnabled, (reduced) => {
   cancelPendingDiscardReturnFlight()
 })
 
-function decisionAnalysisPositionKey(gameId: string | null | undefined, nodeId: string | null | undefined) {
-  if (!gameId || !nodeId) return null
-  return `${gameId}\u0000${nodeId}`
-}
-
 function cacheDecisionAnalysis(gameId: string | null | undefined, nodeId: string | null | undefined, analysis: DecisionAnalysis) {
-  const key = decisionAnalysisPositionKey(gameId, nodeId)
+  const key = decisionPositionKey(gameId, nodeId, status.controlledSeat)
   if (key) decisionAnalysisEventCache.set(key, analysis)
 }
 
@@ -7157,7 +7153,7 @@ function resolveNextDecisionAnalysis(nextView: TrainerGameView, isNewGame: boole
   }
   if (!effectiveDecisionRecommendationsEnabled.value || !nextView.legalActions.length) return null
 
-  const key = decisionAnalysisPositionKey(nextView.gameId, nextView.currentNodeId)
+  const key = decisionPositionKey(nextView.gameId, nextView.currentNodeId, status.controlledSeat)
   const eventAnalysis = key ? decisionAnalysisEventCache.get(key) : null
   if (eventAnalysis) return eventAnalysis
   return null
@@ -7372,7 +7368,10 @@ function openEngineLegalDocument(kind: 'license' | 'notice', index: number) {
 
 async function refreshGameView() {
   if (!window.trainerAPI) return
+  const requestContext = currentViewRequestContext()
+  const nodeId = gameView.currentNodeId
   const response = await window.trainerAPI.getGameView()
+  if (nodeId !== gameView.currentNodeId || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
   applyStatus(response.state)
   applyGameView(response.view)
 }
@@ -7978,11 +7977,17 @@ async function toggleVisibleHands() {
 
 async function switchSeat(seat: number, label: string) {
   if (!window.trainerAPI || seatSwitchInFlight.value || seat === status.controlledSeat) return
+  gameplayResponseGeneration += 1
+  latestNavigationIntentId += 1
+  cancelPendingWheelNavigation()
   seatSwitchInFlight.value = true
   pendingSeatSwitchLabel.value = label
   try {
+    const requestContext = currentViewRequestContext()
     gameView.analysis = null
-    applyStatus(await window.trainerAPI.requestSeatSwitch(seat))
+    const response = await window.trainerAPI.requestSeatSwitch(seat)
+    if (!sameViewRequestContext(requestContext, currentViewRequestContext())) return
+    applyStatus(response)
     await refreshGameView()
   } finally {
     seatSwitchInFlight.value = false
@@ -8041,11 +8046,19 @@ function resolveNodeTransitionDirection(nodeId: string): GameViewTransitionDirec
   return targetNode && currentNode && targetNode.depth < currentNode.depth ? 'backward' : 'forward'
 }
 
+function currentViewRequestContext() {
+  return {
+    gameId: gameView.gameId, seat: status.controlledSeat, mode: status.mode,
+    generation: gameplayResponseGeneration, intent: latestNavigationIntentId,
+  }
+}
+
 async function jumpToNode(nodeId: string, navigationIntentId?: number) {
   if (!window.trainerAPI) return
   cancelPendingWheelNavigation()
   const intentId = navigationIntentId ?? ++latestNavigationIntentId
   latestNavigationIntentId = Math.max(latestNavigationIntentId, intentId)
+  const requestContext = currentViewRequestContext()
   wheelNavigationCursorNodeId = nodeId
   const targetNode = nodeMapById.value.get(nodeId)
   const transitionDirection = resolveNodeTransitionDirection(nodeId)
@@ -8056,7 +8069,7 @@ async function jumpToNode(nodeId: string, navigationIntentId?: number) {
     }
   }
   const response = await window.trainerAPI.jumpToNode(nodeId, gameView.tree?.revision)
-  if (intentId !== latestNavigationIntentId) return
+  if (intentId !== latestNavigationIntentId || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
   applyStatus(response.state)
   applyGameView(response.view, transitionDirection)
   wheelNavigationCursorNodeId = response.view.currentNodeId
@@ -8067,13 +8080,15 @@ async function dispatchQueuedWheelNavigation() {
   const nodeId = wheelNavigationQueuedNodeId
   const transitionDirection = wheelNavigationQueuedDirection ?? resolveNodeTransitionDirection(nodeId)
   const generation = wheelNavigationGeneration
+  const requestContext = currentViewRequestContext()
   wheelNavigationQueuedNodeId = null
   wheelNavigationQueuedDirection = null
   wheelNavigationRequestInFlight = true
 
   try {
     const response = await window.trainerAPI.jumpToNode(nodeId, gameView.tree?.revision)
-    if (generation !== wheelNavigationGeneration || generation !== latestNavigationIntentId) return
+    if (generation !== wheelNavigationGeneration || generation !== latestNavigationIntentId
+      || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
     applyStatus(response.state)
     applyGameView(response.view, transitionDirection)
   } finally {
@@ -8540,6 +8555,7 @@ function handlePythonEvent(event: TrainerPythonEvent) {
     return
   }
   if (event.type === 'analysis_ready' && event.nodeId && event.analysis) {
+    if (clearingAnalysisCaches.value) return
     if (!effectiveDecisionRecommendationsEnabled.value) return
     if (event.gameId && event.gameId !== gameView.gameId) return
     const analysisSeat = typeof (event.analysis as Record<string, unknown>).seat === 'number'
@@ -8801,6 +8817,7 @@ if (import.meta.env.MODE === 'ui-test') {
     opponentAnalysisIsLoading,
     handlePythonEvent,
     fetchShantenOnce,
+    jumpToNode,
     toggleAnalysisDock,
     clearLoadedAnalysisCaches,
   }))

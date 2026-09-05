@@ -14,6 +14,7 @@ export interface AnalysisTestApi {
   readonly opponentAnalysisIsLoading: boolean
   handlePythonEvent: (event: TrainerPythonEvent) => void
   fetchShantenOnce: () => Promise<void>
+  jumpToNode: (nodeId: string) => Promise<void>
   toggleAnalysisDock: () => void
   clearLoadedAnalysisCaches: () => Promise<void>
 }
