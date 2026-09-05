@@ -8459,6 +8459,18 @@ function onSouthHandContextMenu(event: MouseEvent) {
 }
 
 function handlePythonEvent(event: TrainerPythonEvent) {
+  if (event.type === 'service_recovery_failed') {
+    bootstrapError.value = t('error.backendStart', { message: event.error || '' })
+    return
+  }
+  if (event.type === 'service_restored') {
+    if (event.state && event.view) {
+      applyStatus(event.state)
+      applyGameView(event.view)
+      bootstrapError.value = ''
+    }
+    return
+  }
   if (event.type === 'service_ready' || event.type === 'service_stopped') {
     // Epochs are local to a backend process, not to the desktop session.
     minimumDecisionCacheEpoch = null

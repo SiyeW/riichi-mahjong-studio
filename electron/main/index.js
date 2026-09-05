@@ -541,7 +541,20 @@ function registerIpcHandlers() {
     return response
   })
   ipcMain.handle('backend:restart', async () => {
-    return environmentBackend.environmentGateway.restartBackend()
+    await requestRendererFlush(mainWindow, ipcMain, t('native.closeSaveTimeout'))
+    let response
+    try {
+      response = await environmentBackend.environmentGateway.restartBackend()
+    } catch (error) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('python:event', { type: 'service_recovery_failed', error: String(error.message || error) })
+      }
+      throw error
+    }
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('python:event', { type: 'service_restored', state: response.state, view: response.view })
+    }
+    return response
   })
   ipcMain.handle('game:wall-view', () => environmentBackend.environmentGateway.getWallView())
   ipcMain.handle('game:reconstruct-walls', async (event, seed) => {

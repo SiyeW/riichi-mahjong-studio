@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { createBackendProcess } = require('./backend-process')
+const { createBackendSession } = require('./backend-session')
 const { migrateSettings } = require('../state/settings')
 
 function resolveDevelopmentPython(resourceRoot, env = process.env) {
@@ -32,7 +33,7 @@ function createEnvironmentService(options = {}) {
   const bundledBackend = resolveBundledBackend(resourceRoot)
   const useBundledBackend = Boolean(options.isPackaged)
 
-  const environmentService = createBackendProcess({
+  const environmentProcess = createBackendProcess({
     name: 'environment',
     pythonExecutable: useBundledBackend
       ? bundledBackend
@@ -48,8 +49,9 @@ function createEnvironmentService(options = {}) {
     },
   })
 
+  const environmentService = createBackendSession(environmentProcess)
   return {
-    backendProcess: environmentService,
+    backendProcess: environmentProcess,
     environmentGateway: {
       getStatus() {
         return environmentService.sendRequest('get_status', {}, 30_000)
@@ -134,8 +136,7 @@ function createEnvironmentService(options = {}) {
         return environmentService.sendRequest('delete_node', { nodeId })
       },
       restartBackend() {
-        environmentService.restart()
-        return { ok: true }
+        return environmentService.restart()
       },
       getWallView() {
         return environmentService.sendRequest('get_wall_view')
@@ -166,10 +167,10 @@ function createEnvironmentService(options = {}) {
       },
     },
     startAll() {
-      environmentService.start()
+      environmentProcess.start()
     },
     stopAll() {
-      environmentService.stop()
+      environmentProcess.stop()
     },
   }
 }

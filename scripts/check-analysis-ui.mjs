@@ -233,7 +233,11 @@ try {
     if (check.vm.gameView.currentNodeId !== savedNodeId) throw new Error('Backend exit discarded the visible record')
     if (check.vm.opponentAnalysisIsLoading) throw new Error('Backend exit left analysis loading')
     check.vm.handlePythonEvent({ type: 'service_ready' })
-    Object.assign(check.vm.status, savedStatus)
+    if (check.vm.status.gameLoaded) throw new Error('Readiness alone made the retained game playable')
+    check.vm.handlePythonEvent({ type: 'service_restored', state: savedStatus,
+      view: JSON.parse(JSON.stringify(check.vm.gameView)) })
+    if (check.vm.status.gameLoaded !== savedStatus.gameLoaded) throw new Error('Restored game status was not applied')
+    if (check.vm.gameView.currentNodeId !== savedNodeId) throw new Error('Recovery changed the selected node')
     check.epoch = 0
     const result = check.result(2)
     check.publish(result)
