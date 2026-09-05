@@ -80,7 +80,9 @@ function createBackendProcess({
 
     const spawnArgs = scriptPath ? [scriptPath, ...args] : [...args]
 
-    const spawnedChild = spawnProcess(pythonExecutable, spawnArgs, {
+    let spawnedChild
+    try {
+      spawnedChild = spawnProcess(pythonExecutable, spawnArgs, {
       cwd,
       env: {
         ...process.env,
@@ -89,7 +91,13 @@ function createBackendProcess({
         ...env,
       },
       stdio: ['pipe', 'pipe', 'pipe'],
-    })
+      })
+    } catch (error) {
+      const message = formatStartError(name, error instanceof Error ? error.message : String(error))
+      rejectPendingRequests(new Error(message))
+      onUnsolicitedEvent?.({ type: 'service_stopped', error: message })
+      return
+    }
     child = spawnedChild
     let processStdoutBuffer = ''
     const stdoutDecoder = new StringDecoder('utf8')

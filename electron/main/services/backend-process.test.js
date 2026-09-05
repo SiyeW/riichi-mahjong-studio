@@ -25,6 +25,17 @@ function fixture() {
   return { backend, children, events }
 }
 
+test('a synchronous spawn exception reports stopped and rejects the request', async () => {
+  const events = []
+  const backend = createBackendProcess({ name: 'test', pythonExecutable: 'unused',
+    spawnProcess() { throw new Error('invalid launch configuration') } })
+  backend.onEvent(event => events.push(event))
+  await assert.rejects(backend.sendRequest('get_status'), /not running/)
+  assert.equal(backend.isRunning(), false)
+  assert.equal(events[0].type, 'service_stopped')
+  assert.match(events[0].error, /invalid launch configuration/)
+})
+
 test('multibyte text survives arbitrary stdout chunk boundaries', async () => {
   const { backend, children } = fixture()
   const request = backend.sendRequest('unicode')
