@@ -3,6 +3,25 @@ const assert = require('node:assert/strict')
 const { createSessionCheckpoint } = require('./session-checkpoint')
 const turn = () => new Promise(resolve => setImmediate(resolve))
 
+test('slow exports increase the next wait instead of exporting continuously', async () => {
+  let time = 0
+  let callback
+  let wait
+  const checkpoint = createSessionCheckpoint({
+    now: () => time, isRunning: () => true,
+    schedule(fn, ms) { callback = fn; wait = ms; return 1 }, cancel() {},
+    exportRecord: async () => { time += 1500; return { record: { game: { gameId: 'a' } } } },
+  })
+  checkpoint.observe({ view: { gameId: 'a' } })
+  checkpoint.changed()
+  assert.equal(wait, 750)
+  callback()
+  await turn()
+  checkpoint.changed()
+  assert.equal(wait, 6000)
+  checkpoint.stop()
+})
+
 function fixture() {
   const timers = new Map()
   const requests = []

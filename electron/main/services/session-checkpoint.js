@@ -1,12 +1,13 @@
 // Throttle complete exports; never overlap them or retain another game's record.
 function createSessionCheckpoint({ exportRecord, isRunning, delayMs = 750,
-  schedule = setTimeout, cancel = clearTimeout, onError = console.error }) {
+  schedule = setTimeout, cancel = clearTimeout, now = () => performance.now(), onError = console.error }) {
   let gameId = null
   let generation = 0
   let checkpoint = null
   let timer = null
   let exporting = false
   let dirty = false
+  let exportDurationMs = 0
 
   function stop() {
     generation += 1
@@ -44,13 +45,15 @@ function createSessionCheckpoint({ exportRecord, isRunning, delayMs = 750,
 
   function arm() {
     if (!dirty || timer !== null || exporting || !isRunning()) return
-    timer = schedule(() => { timer = null; void capture() }, delayMs)
+    // Leave at least four times the export duration for foreground work.
+    timer = schedule(() => { timer = null; void capture() }, Math.max(delayMs, exportDurationMs * 4))
     timer?.unref?.()
   }
 
   async function capture() {
     if (!dirty || !isRunning()) return
     const startedGeneration = generation
+    const startedAt = now()
     exporting = true
     dirty = false
     try {
@@ -62,6 +65,7 @@ function createSessionCheckpoint({ exportRecord, isRunning, delayMs = 750,
       // Keep the last complete record. Retry only after another change.
       if (generation === startedGeneration) onError('[recovery] checkpoint export failed:', error)
     } finally {
+      exportDurationMs = Math.max(0, now() - startedAt)
       exporting = false
       arm()
     }
