@@ -464,9 +464,12 @@ class OpponentPredictionGateway:
         error: Optional[str] = None,
         *,
         latch_error: bool = True,
+        expected_generation: Optional[int] = None,
     ) -> None:
         callback = None
         with self._activity_lock:
+            if expected_generation is not None and expected_generation != self._lifecycle_generation:
+                return
             if self._unloaded:
                 state = "idle"
                 error = None
@@ -521,7 +524,8 @@ class OpponentPredictionGateway:
 
     def _invalidate_initialization(self) -> None:
         with self._lock:
-            self._lifecycle_generation += 1
+            with self._activity_lock:
+                self._lifecycle_generation += 1
 
     def prewarm(self) -> bool:
         """Load weights and complete one device forward pass without game input."""
@@ -539,7 +543,7 @@ class OpponentPredictionGateway:
             generation = self._lifecycle_generation
         if self._model_ready:
             return True
-        self._set_activity("loading")
+        self._set_activity("loading", expected_generation=generation)
         try:
             requested_outputs = self._requested_output_contracts()
             initialization = initialize_engine_client(
@@ -584,13 +588,13 @@ class OpponentPredictionGateway:
                 if generation != self._lifecycle_generation:
                     return False
             print(f"[SHANTEN] Prewarm failed: {exc}", flush=True)
-            self._set_activity("error", self._format_error("模型预热失败", exc))
+            self._set_activity("error", self._format_error("模型预热失败", exc), expected_generation=generation)
             return False
         finally:
             with self._lock:
                 has_work = self._pending is not None or self._active_context is not None
             if not has_work and self.activity_state() != "error":
-                self._set_activity("idle")
+                self._set_activity("idle", expected_generation=generation)
 
     @staticmethod
     def _validate_probability(value: Any, field: str) -> float:

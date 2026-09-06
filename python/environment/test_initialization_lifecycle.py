@@ -6,6 +6,36 @@ from opponent_prediction_gateway import OpponentPredictionGateway
 
 
 class InitializationLifecycleTests(unittest.TestCase):
+    def test_old_initialization_cleanup_preserves_new_loading_state(self):
+        with patch('opponent_prediction_gateway.threading.Thread.start'):
+            gateway = OpponentPredictionGateway()
+        gateway._unloaded = False
+
+        def initialize(*args, **kwargs):
+            gateway.prepare_reload()
+            gateway._set_activity('loading')
+            raise RuntimeError('old initialization interrupted')
+
+        with patch.object(gateway._process_client, 'restart'), \
+             patch('opponent_prediction_gateway.initialize_engine_client', side_effect=initialize):
+            self.assertFalse(gateway.prewarm())
+        self.assertEqual(gateway.activity_state(), 'loading')
+        self.assertIsNone(gateway.activity_error())
+
+    def test_stale_activity_update_does_not_latch_error_or_notify(self):
+        with patch('opponent_prediction_gateway.threading.Thread.start'):
+            gateway = OpponentPredictionGateway()
+        gateway._unloaded = False
+        notifications = []
+        gateway.set_activity_callback(lambda *args: notifications.append(args))
+        generation = gateway._lifecycle_generation
+        gateway._invalidate_initialization()
+        gateway._set_activity('error', 'stale', expected_generation=generation)
+        self.assertFalse(gateway._error_latched)
+        self.assertEqual(notifications, [])
+        gateway._set_activity('loading', expected_generation=gateway._lifecycle_generation)
+        self.assertEqual(notifications, [('loading', None)])
+
     def test_late_initialization_cannot_publish_after_unload_or_reload(self):
         for transition in ('unload', 'prepare_reload'):
             for fails in (False, True):
