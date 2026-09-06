@@ -14,7 +14,7 @@ function encodeGameRecord(record, compressed = true) {
 function decodeGameRecord(input) {
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input)
   const json = isGzipBuffer(buffer) ? zlib.gunzipSync(buffer) : buffer
-  return JSON.parse(json.toString('utf8').replace(/^\uFEFF/, ''))
+  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json))
 }
 
 function prepareGameRecordForWrite(record, options = {}) {

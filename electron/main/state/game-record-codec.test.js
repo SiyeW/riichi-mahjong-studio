@@ -1,4 +1,6 @@
 const assert = require('node:assert/strict')
+const { test } = require('node:test')
+const zlib = require('node:zlib')
 
 const {
   decodeGameRecord,
@@ -57,4 +59,31 @@ function testWriteMetadataIsPortable() {
 }
 
 testWriteMetadataIsPortable()
+
+test('record decoding preserves Unicode and accepts a UTF-8 BOM with or without compression', () => {
+  const record = { comment: '评论・牌譜🀄・literal replacement character �' }
+  for (const bom of ['', '\uFEFF']) {
+    const json = Buffer.from(bom + JSON.stringify(record), 'utf8')
+    for (const data of [json, zlib.gzipSync(json)]) {
+      assert.deepEqual(decodeGameRecord(data), record)
+    }
+  }
+})
+
+test('record decoding rejects damaged UTF-8 rather than silently changing comments', () => {
+  for (const invalid of [[0xff], [0xc3, 0x28], [0xed, 0xa0, 0x80], [0xf0, 0x9f]]) {
+    const json = Buffer.concat([
+      Buffer.from('{"comment":"'), Buffer.from(invalid), Buffer.from('"}'),
+    ])
+    for (const data of [json, zlib.gzipSync(json)]) {
+      assert.throws(() => decodeGameRecord(data), { code: 'ERR_ENCODING_INVALID_ENCODED_DATA' })
+    }
+  }
+})
+
+test('record decoding rejects truncated compressed input and invalid JSON', () => {
+  const data = encodeGameRecord({ comment: 'record' })
+  assert.throws(() => decodeGameRecord(data.subarray(0, data.length - 4)))
+  assert.throws(() => decodeGameRecord(Buffer.from('{"comment":')))
+})
 console.log('game record codec tests passed')
