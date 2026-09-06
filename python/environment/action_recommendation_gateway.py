@@ -736,8 +736,8 @@ class ActionRecommendationGateway:
                 timeout=30,
             )
         except Exception:
-            # A worker that has not started has no incremental state to reset.
-            self._client.restart()
+            # Restarting loses the worker's initialized models as well as its session.
+            self.prepare_reload()
         self._set_activity(self._active_seat, "idle")
 
     def get_bot(
