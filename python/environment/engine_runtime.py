@@ -242,6 +242,11 @@ class EngineProfileRuntime:
             except Exception:
                 pass
 
+    def remove_notification_listener(self, listener: Any) -> None:
+        with self._listeners_lock:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
     def describe(self) -> dict[str, Any]:
         return self._client.describe()
 

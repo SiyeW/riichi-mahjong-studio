@@ -48,6 +48,7 @@ class ActionRecommendationGateway:
         self._lock = threading.Lock()
         self._initialization_lock = threading.Lock()
         self._lifecycle_generation = 0
+        self._runtime_notification_listener = None
         self._activity_state = "idle"
         self._activity_error: Optional[str] = None
         self._error_latched = False
@@ -141,6 +142,7 @@ class ActionRecommendationGateway:
         if next_config == current_config and not client_changed:
             return
         self._invalidate_initialization()
+        self._detach_runtime_notifications()
         self._client.shutdown()
         (
             self._profile_id,
@@ -164,8 +166,8 @@ class ActionRecommendationGateway:
         self._configured_weights = json.loads(weights_json)
         self._external_engine = bool(self._engine_command)
         if engine_client is not None:
-            engine_client.add_notification_listener(self._on_engine_notification)
             self._client = engine_client
+            self._attach_runtime_notifications(engine_client)
         else:
             self._client = EngineProcessClient(
                 self._engine_kind,
@@ -607,10 +609,29 @@ class ActionRecommendationGateway:
         ).encode()
         return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
+    def _detach_runtime_notifications(self) -> None:
+        listener = self._runtime_notification_listener
+        self._runtime_notification_listener = None
+        if listener is not None:
+            self._client.remove_notification_listener(listener)
+
+    def _attach_runtime_notifications(self, client: Any) -> None:
+        def listener(method: str, params: Dict[str, Any]) -> None:
+            with self._lock:
+                if self._client is not client or self._runtime_notification_listener is not listener:
+                    return
+                generation = self._lifecycle_generation
+            self._on_engine_notification(method, params, expected_generation=generation)
+
+        self._runtime_notification_listener = listener
+        client.add_notification_listener(listener)
+
     def _on_engine_notification(
         self,
         method: str,
         params: Dict[str, Any],
+        *,
+        expected_generation: Optional[int] = None,
     ) -> None:
         if method == "task.status":
             seat = int(params.get("seat", self._active_seat))
@@ -618,22 +639,23 @@ class ActionRecommendationGateway:
             mapped = "running" if state in ("queued", "running") else "idle"
             if state == "error":
                 mapped = "error"
-            self._set_activity(seat, mapped)
+            self._set_activity(seat, mapped, expected_generation=expected_generation)
             return
         if method != "engine.status":
             return
         state = str(params.get("state") or "")
         if state in ("starting", "loading", "reloading"):
-            self._set_activity(self._active_seat, "loading")
+            self._set_activity(self._active_seat, "loading", expected_generation=expected_generation)
         elif state == "error":
             error = params.get("error") or {}
             self._set_activity(
                 self._active_seat,
                 "error",
                 str(error.get("message") or params.get("message") or "引擎错误"),
+                expected_generation=expected_generation,
             )
         elif state in ("ready", "stopping", "stopped"):
-            self._set_activity(self._active_seat, "idle")
+            self._set_activity(self._active_seat, "idle", expected_generation=expected_generation)
 
     @staticmethod
     def _format_error(prefix: str, error: Exception) -> str:
@@ -832,4 +854,5 @@ class ActionRecommendationGateway:
 
     def shutdown(self) -> None:
         self._invalidate_initialization()
+        self._detach_runtime_notifications()
         self._client.shutdown()
