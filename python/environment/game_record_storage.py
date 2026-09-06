@@ -210,15 +210,22 @@ def _compact_action_histories_for_record(game):
                 snapshot["actionHistoryReset"] = True
             else:
                 snapshot.pop("actionHistoryReset", None)
-        for child_id in node.get("children") or ():
-            visit(str(child_id), history)
+        return history
+
+    def walk(start):
+        stack = [(start, [])]
+        while stack:
+            node_id, parent_history = stack.pop()
+            history = visit(node_id, parent_history)
+            if history is not None:
+                stack.extend((str(child), history) for child in reversed(nodes[node_id].get("children") or ()))
 
     root_id = str(game.get("rootNodeId") or "")
     if root_id in nodes:
-        visit(root_id, [])
+        walk(root_id)
     for node_id in nodes:
         if node_id not in visited:
-            visit(node_id, [])
+            walk(node_id)
     return game
 
 
@@ -245,16 +252,27 @@ def _hydrate_action_histories_from_record(game):
         history = delta if resets else list(parent_history) + delta
         snapshot["actionHistory"] = history
         visited.add(node_id)
-        for child_id in node.get("children") or ():
-            visit(str(child_id), history, active)
-        active.remove(node_id)
+        return history
+
+    def walk(start):
+        active = set()
+        stack = [(start, [], False)]
+        while stack:
+            node_id, parent_history, exiting = stack.pop()
+            if exiting:
+                active.remove(node_id)
+                continue
+            history = visit(node_id, parent_history, active)
+            if history is not None:
+                stack.append((node_id, None, True))
+                stack.extend((str(child), history, False) for child in reversed(nodes[node_id].get("children") or ()))
 
     root_id = str(game.get("rootNodeId") or "")
     if root_id in nodes:
-        visit(root_id, [], set())
+        walk(root_id)
     for node_id in nodes:
         if node_id not in visited:
-            visit(node_id, [], set())
+            walk(node_id)
     return game
 
 
@@ -399,24 +417,28 @@ def hydrate_game_structure(game, format_version):
 
     depth_cache = {}
 
-    def resolve_depth(node_id, active):
-        if node_id in depth_cache:
-            return depth_cache[node_id]
-        if node_id in active:
-            raise ValueError("存档的节点树包含循环引用。")
-        active.add(node_id)
-        parent_id = parent_by_child.get(node_id)
-        depth = 0 if parent_id is None else resolve_depth(parent_id, active) + 1
-        active.remove(node_id)
-        depth_cache[node_id] = depth
-        return depth
+    def resolve_depth(node_id):
+        active = set()
+        chain = []
+        cursor = node_id
+        while cursor is not None and cursor not in depth_cache:
+            if cursor in active:
+                raise ValueError("存档的节点树包含循环引用。")
+            active.add(cursor)
+            chain.append(cursor)
+            cursor = parent_by_child.get(cursor)
+        depth = -1 if cursor is None else depth_cache[cursor]
+        for current in reversed(chain):
+            depth += 1
+            depth_cache[current] = depth
+        return depth_cache[node_id]
 
     for node_id, node in nodes.items():
         node_id = str(node_id)
         parent_id = parent_by_child.get(node_id)
         node["id"] = node_id
         node["parentId"] = parent_id
-        node["depth"] = resolve_depth(node_id, set())
+        node["depth"] = resolve_depth(node_id)
         action = node.get("action")
         node["type"] = (
             "root"
