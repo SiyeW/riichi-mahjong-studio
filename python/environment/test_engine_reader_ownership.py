@@ -17,6 +17,25 @@ def process_with_messages(messages):
 
 
 class EngineReaderOwnershipTests(unittest.TestCase):
+    def test_non_object_json_fails_request_without_stopping_reader(self):
+        for value in (None, [], 3, 'text', True):
+            with self.subTest(value=value):
+                callback = Mock()
+                client = EngineProcessClient('test', callback)
+                process = process_with_messages([
+                    value,
+                    {'jsonrpc': '2.0', 'method': 'engine.status', 'params': {'state': 'ready'}},
+                ])
+                client._process = process
+                client._stopping = True
+                pending = {'process': process, 'event': threading.Event(), 'response': None}
+                client._pending['host-1'] = pending
+                client._read_stdout(process)
+                self.assertTrue(pending['event'].is_set())
+                self.assertEqual(pending['error'], 'engine emitted a non-object JSON message')
+                self.assertIsNone(pending['response'])
+                callback.assert_called_once_with('engine.status', {'state': 'ready'})
+
     def test_retired_reader_cannot_deliver_notification_or_response(self):
         callback = Mock()
         client = EngineProcessClient('test', callback)

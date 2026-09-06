@@ -321,6 +321,9 @@ class EngineProcessClient:
                 except json.JSONDecodeError:
                     self._fail_pending("engine emitted invalid JSON", process)
                     continue
+                if not isinstance(message, dict):
+                    self._fail_pending("engine emitted a non-object JSON message", process)
+                    continue
                 if message.get("jsonrpc") != "2.0":
                     continue
                 with self._lock:
