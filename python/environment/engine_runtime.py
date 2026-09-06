@@ -285,12 +285,12 @@ class EngineProfileRuntime:
     def restart(self) -> None:
         with self._initialization_lock:
             self._initialization = None
-        self._client.restart()
+            self._client.restart()
 
     def shutdown(self) -> None:
         with self._initialization_lock:
             self._initialization = None
-        self._client.shutdown()
+            self._client.shutdown()
 
 
 class EngineRuntimeRegistry:

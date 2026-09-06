@@ -169,6 +169,27 @@ class EngineRuntimeTest(unittest.TestCase):
             "options": {"example": True},
         }
 
+    def test_process_stop_and_cache_invalidation_share_initialization_lock(self):
+        for operation in ('restart', 'shutdown'):
+            with self.subTest(operation=operation):
+                with mock.patch('engine_runtime.EngineProcessClient') as client_type:
+                    runtime = EngineProfileRuntime(**self._runtime_specification())
+                runtime._initialization = object()
+
+                def stop():
+                    self.assertIsNone(runtime._initialization)
+                    acquired = runtime._initialization_lock.acquire(blocking=False)
+                    if acquired:
+                        runtime._initialization_lock.release()
+                    self.assertFalse(acquired, 'initialization must not enter before the old process stops')
+
+                getattr(client_type.return_value, operation).side_effect = stop
+                getattr(runtime, operation)()
+                getattr(client_type.return_value, operation).assert_called_once_with()
+                self.assertIsNone(runtime._initialization)
+                self.assertTrue(runtime._initialization_lock.acquire(blocking=False))
+                runtime._initialization_lock.release()
+
     def test_profile_runtime_initializes_all_assigned_outputs_once(self):
         FakeProcessClient.instances = []
         FakeProcessClient.hello = self.hello
