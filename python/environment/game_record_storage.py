@@ -327,8 +327,50 @@ def _compact_game_structure_for_record(game):
     return game
 
 
+def _validate_legacy_node_links(game):
+    nodes = game.get("nodes") if isinstance(game, dict) else None
+    if not isinstance(nodes, dict):
+        raise ValueError("Record nodes must be an object.")
+    children = {}
+    parents = {}
+    for node_id, node in nodes.items():
+        if not isinstance(node, dict):
+            raise ValueError(f"Invalid record node: {node_id}")
+        child_ids = node.get("children") or []
+        if not isinstance(child_ids, list):
+            raise ValueError(f"Invalid child links: {node_id}")
+        parent_id = node.get("parentId")
+        children[node_id] = child_ids
+        parents[node_id] = [] if parent_id is None else [parent_id]
+        for target in child_ids + parents[node_id]:
+            if not isinstance(target, str) or target not in nodes:
+                raise ValueError(f"Record references a missing node: {target}")
+
+    # Legacy records store both directions; either one can contain a cycle.
+    for links in (children, parents):
+        complete = set()
+        for start in nodes:
+            if start in complete:
+                continue
+            active = {start}
+            stack = [(start, iter(links[start]))]
+            while stack:
+                node_id, targets = stack[-1]
+                target = next(targets, None)
+                if target is None:
+                    active.remove(node_id)
+                    complete.add(node_id)
+                    stack.pop()
+                elif target in active:
+                    raise ValueError("Record node links contain a cycle.")
+                elif target not in complete:
+                    active.add(target)
+                    stack.append((target, iter(links[target])))
+
+
 def hydrate_game_structure(game, format_version):
     if format_version < RECORD_FORMAT_VERSION:
+        _validate_legacy_node_links(game)
         return game
     nodes = game.get("nodes") if isinstance(game, dict) else None
     if not isinstance(nodes, dict):
