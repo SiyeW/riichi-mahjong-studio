@@ -153,23 +153,18 @@ def build_tree_view(
         if node_id in projected_children_cache:
             return projected_children_cache[node_id][:]
         result = []
-        seen = set()
-
-        def collect(child_id, path):
-            if child_id not in game["nodes"] or child_id in path:
-                return
+        seen = {node_id}
+        stack = list(reversed(game["nodes"][node_id].get("children", [])))
+        while stack:
+            child_id = stack.pop()
+            if child_id not in game["nodes"] or child_id in seen:
+                continue
+            seen.add(child_id)
             if is_visible(child_id):
-                if child_id not in seen:
-                    seen.add(child_id)
-                    result.append(child_id)
-                return
+                result.append(child_id)
+                continue
             child = game["nodes"][child_id]
-            next_path = path | {child_id}
-            for grandchild_id in child.get("children", []):
-                collect(grandchild_id, next_path)
-
-        for child_id in game["nodes"][node_id].get("children", []):
-            collect(child_id, {node_id})
+            stack.extend(reversed(child.get("children", [])))
         projected_children_cache[node_id] = result[:]
         return result
 
@@ -188,23 +183,30 @@ def build_tree_view(
         return None
 
     def resolve_round_depth(node_id):
-        if node_id in round_depth_cache:
-            return round_depth_cache[node_id]
-        round_root_id = resolve_round_root_id(node_id)
-        if node_id == round_root_id:
-            round_depth = 1
-        else:
-            parent_id = resolve_projected_parent_id(node_id)
+        chain = []
+        active = set()
+        cursor_id = node_id
+        while cursor_id not in round_depth_cache:
+            if cursor_id in active:
+                raise ValueError("Record node links contain a cycle.")
+            active.add(cursor_id)
+            round_root_id = resolve_round_root_id(cursor_id)
+            parent_id = resolve_projected_parent_id(cursor_id)
             if (
-                parent_id in game["nodes"]
+                cursor_id != round_root_id
+                and parent_id in game["nodes"]
                 and game["nodes"][parent_id].get("type") != "root"
                 and resolve_round_root_id(parent_id) == round_root_id
             ):
-                round_depth = resolve_round_depth(parent_id) + 1
+                chain.append(cursor_id)
+                cursor_id = parent_id
             else:
-                round_depth = 1
-        round_depth_cache[node_id] = round_depth
-        return round_depth
+                round_depth_cache[cursor_id] = 1
+        depth = round_depth_cache[cursor_id]
+        for current in reversed(chain):
+            depth += 1
+            round_depth_cache[current] = depth
+        return round_depth_cache[node_id]
 
     current_round_root_id = resolve_round_root_id(current_node_id)
 
