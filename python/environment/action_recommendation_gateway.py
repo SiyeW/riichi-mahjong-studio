@@ -206,13 +206,11 @@ class ActionRecommendationGateway:
         result = initialization.result
         action_contract = initialization.contracts[output_key]
         initialized_output = initialization.outputs[output_key]
-        self._output_reference = dict(initialization.references[output_key])
-        self._protocol_minor = initialization.protocol_minor
         metrics = initialized_output.get("metrics")
-        self._action_metrics = [dict(item) for item in metrics] if isinstance(metrics, list) else []
-        self._primary_metric_id = str(initialized_output.get("primaryMetricId") or "")
-        self._recommendation_metric_id = str(initialized_output.get("recommendationMetricId") or "")
-        metric_ids = [str(metric.get("id") or "") for metric in self._action_metrics]
+        action_metrics = [dict(item) for item in metrics] if isinstance(metrics, list) else []
+        primary_metric_id = str(initialized_output.get("primaryMetricId") or "")
+        recommendation_metric_id = str(initialized_output.get("recommendationMetricId") or "")
+        metric_ids = [str(metric.get("id") or "") for metric in action_metrics]
         if any(not metric_id for metric_id in metric_ids) or len(set(metric_ids)) != len(metric_ids):
             raise RuntimeError("decision engine initialized invalid metric declarations")
         hello_metrics = {
@@ -220,7 +218,7 @@ class ActionRecommendationGateway:
             for metric in action_contract.get("metrics") or []
             if isinstance(metric, dict)
         }
-        for metric in self._action_metrics:
+        for metric in action_metrics:
             metric_id = str(metric.get("id") or "")
             fraction_digits = metric.get("fractionDigits")
             if (
@@ -248,13 +246,13 @@ class ActionRecommendationGateway:
             ):
                 if declared.get(key) != metric.get(key):
                     raise RuntimeError(f"decision engine changed initialized metric {metric_id}")
-        if self._primary_metric_id and self._primary_metric_id not in metric_ids:
+        if primary_metric_id and primary_metric_id not in metric_ids:
             raise RuntimeError("decision engine initialized an unknown primaryMetricId")
-        if self._recommendation_metric_id:
+        if recommendation_metric_id:
             recommendation_metric = next((
                 metric
-                for metric in self._action_metrics
-                if metric.get("id") == self._recommendation_metric_id
+                for metric in action_metrics
+                if metric.get("id") == recommendation_metric_id
             ), None)
             if (
                 recommendation_metric is None
@@ -262,7 +260,14 @@ class ActionRecommendationGateway:
                 or recommendation_metric.get("preferredDirection") != "higher"
             ):
                 raise RuntimeError("decision engine initialized an invalid recommendationMetricId")
-        self._effective_options = dict(result.get("effectiveOptions") or {})
+        effective_options = dict(result.get("effectiveOptions") or {})
+        output_reference = dict(initialization.references[output_key])
+        self._output_reference = output_reference
+        self._protocol_minor = initialization.protocol_minor
+        self._action_metrics = action_metrics
+        self._primary_metric_id = primary_metric_id
+        self._recommendation_metric_id = recommendation_metric_id
+        self._effective_options = effective_options
         self._actual_device = initialization.device
         self._last_fingerprint = ""
         self._last_fingerprint = self.cache_identity(model_path)
