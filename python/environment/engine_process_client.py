@@ -510,8 +510,17 @@ class EngineProcessClient:
         if pending["error"]:
             raise EngineProcessError(str(pending["error"]))
         response = pending["response"] or {}
+        if ("result" in response) == ("error" in response):
+            raise EngineProcessError("engine response must contain either result or error")
         error = response.get("error")
-        if isinstance(error, dict):
+        if "error" in response:
+            if (
+                not isinstance(error, dict)
+                or isinstance(error.get("code"), bool)
+                or not isinstance(error.get("code"), int)
+                or not isinstance(error.get("message"), str)
+            ):
+                raise EngineProcessError("engine returned an invalid error response")
             raise EngineProcessError(
                 str(error.get("message") or "engine request failed"),
                 code=error.get("code"),
