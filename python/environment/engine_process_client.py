@@ -154,7 +154,9 @@ class EngineProcessClient:
         self._spawn()
         if self._hello is not None:
             return
-        self._hello = self._request_started(
+        with self._lock:
+            process = self._process
+        hello = self._request_started(
             "engine.hello",
             {
                 "protocol": dict(PROTOCOL),
@@ -165,7 +167,7 @@ class EngineProcessClient:
             },
             timeout=60,
         )
-        protocol = self._hello.get("protocol")
+        protocol = hello.get("protocol")
         if (
             not isinstance(protocol, dict)
             or protocol.get("name") != PROTOCOL["name"]
@@ -178,12 +180,12 @@ class EngineProcessClient:
             self._stop_process()
             raise EngineProcessError("engine protocol version is not compatible")
         try:
-            self._validate_hello(self._hello)
+            self._validate_hello(hello)
         except EngineProcessError:
             self._stop_process()
             raise
-        actual_engine_id = str((self._hello.get("engine") or {}).get("id") or "")
-        actual_engine_version = str((self._hello.get("engine") or {}).get("version") or "")
+        actual_engine_id = str((hello.get("engine") or {}).get("id") or "")
+        actual_engine_version = str((hello.get("engine") or {}).get("version") or "")
         if self._expected_engine_id and actual_engine_id != self._expected_engine_id:
             self._stop_process()
             raise EngineProcessError(
@@ -197,6 +199,14 @@ class EngineProcessClient:
                 f"expected {self._expected_engine_version}, "
                 f"received {actual_engine_version or '(missing)'}"
             )
+        with self._lock:
+            self._require_current_process(process)
+            self._hello = hello
+
+    def _require_current_process(self, process: Optional[subprocess.Popen[str]]) -> None:
+        # Caller holds _lock so the reader cannot retire the process during publication.
+        if process is None or self._process is not process or process.poll() is not None:
+            raise EngineProcessError("engine exited or changed before response publication")
 
     @staticmethod
     def _validate_hello(hello: dict[str, Any]) -> None:
@@ -560,12 +570,17 @@ class EngineProcessClient:
         }
         with self._request_lock:
             self._ensure_started()
-            self._initialized = self._request_started(
+            with self._lock:
+                process = self._process
+            initialized = self._request_started(
                 "engine.initialize",
                 params,
                 timeout=timeout,
             )
-            return dict(self._initialized)
+            with self._lock:
+                self._require_current_process(process)
+                self._initialized = initialized
+                return dict(initialized)
 
     @property
     def hello(self) -> Optional[dict[str, Any]]:
