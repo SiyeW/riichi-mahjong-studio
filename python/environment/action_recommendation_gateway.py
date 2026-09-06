@@ -46,6 +46,8 @@ class ActionRecommendationGateway:
         self._external_engine = False
         self._ready_models: set[str] = set()
         self._lock = threading.Lock()
+        self._initialization_lock = threading.Lock()
+        self._lifecycle_generation = 0
         self._activity_state = "idle"
         self._activity_error: Optional[str] = None
         self._error_latched = False
@@ -138,6 +140,7 @@ class ActionRecommendationGateway:
         client_changed = engine_client is not None and self._client is not engine_client
         if next_config == current_config and not client_changed:
             return
+        self._invalidate_initialization()
         self._client.shutdown()
         (
             self._profile_id,
@@ -188,7 +191,13 @@ class ActionRecommendationGateway:
             self._unloaded = True
         self._set_activity(self._active_seat, "idle")
 
-    def _initialize(self, model_path: str, timeout: float) -> Dict[str, Any]:
+    def _initialize(
+        self, model_path: str, timeout: float, *, expected_generation: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        with self._lock:
+            generation = self._lifecycle_generation if expected_generation is None else expected_generation
+            if expected_generation is not None:
+                self._check_generation(generation)
         initialized_weights = self._configured_weights or [{
             "slotId": "model",
             "format": self._model_format,
@@ -262,16 +271,48 @@ class ActionRecommendationGateway:
                 raise RuntimeError("decision engine initialized an invalid recommendationMetricId")
         effective_options = dict(result.get("effectiveOptions") or {})
         output_reference = dict(initialization.references[output_key])
-        self._output_reference = output_reference
-        self._protocol_minor = initialization.protocol_minor
-        self._action_metrics = action_metrics
-        self._primary_metric_id = primary_metric_id
-        self._recommendation_metric_id = recommendation_metric_id
-        self._effective_options = effective_options
-        self._actual_device = initialization.device
-        self._last_fingerprint = ""
-        self._last_fingerprint = self.cache_identity(model_path)
+        fingerprint = self._calculate_cache_identity(
+            model_path,
+            protocol_minor=initialization.protocol_minor,
+            actual_device=initialization.device,
+            effective_options=effective_options,
+            action_metrics=action_metrics,
+            primary_metric_id=primary_metric_id,
+            recommendation_metric_id=recommendation_metric_id,
+        )
+        with self._lock:
+            self._check_generation(generation)
+            self._output_reference = output_reference
+            self._protocol_minor = initialization.protocol_minor
+            self._action_metrics = action_metrics
+            self._primary_metric_id = primary_metric_id
+            self._recommendation_metric_id = recommendation_metric_id
+            self._effective_options = effective_options
+            self._actual_device = initialization.device
+            self._last_fingerprint = fingerprint
         return result
+
+    def _check_generation(self, generation: int) -> None:
+        # Caller holds _lock; lifecycle changes invalidate in-flight work.
+        if generation != self._lifecycle_generation or self._unloaded:
+            raise RuntimeError("decision engine request was superseded")
+
+    def _invalidate_initialization(self) -> None:
+        with self._lock:
+            self._lifecycle_generation += 1
+            self._unloaded = True
+            self._ready_models.clear()
+
+    def _ensure_initialized(self, model_path: str, generation: int) -> None:
+        with self._initialization_lock:
+            with self._lock:
+                self._check_generation(generation)
+                if model_path in self._ready_models:
+                    return
+            self._initialize(model_path, 120, expected_generation=generation)
+            with self._lock:
+                self._check_generation(generation)
+                self._ready_models = {model_path}
 
     @staticmethod
     def _validate_generic_result(
@@ -377,6 +418,7 @@ class ActionRecommendationGateway:
         with self._lock:
             if self._error_latched or self._unloaded:
                 raise RuntimeError(self._activity_error or "决策引擎未加载")
+            generation = self._lifecycle_generation
         if not self._external_engine:
             raise RuntimeError("generic decision protocol is only used by external engines")
         if not legal_actions:
@@ -401,12 +443,19 @@ class ActionRecommendationGateway:
                 "candidateId": candidate_id,
                 "action": engine_action,
             })
-        self._set_activity(player_id, "loading" if initializing else "running")
+        self._set_activity(player_id, "loading" if initializing else "running", expected_generation=generation)
         try:
-            if initializing:
-                self._initialize(resolved_model_path, 120)
-                self._ready_models = {resolved_model_path}
-            result = self._client.request(
+            self._ensure_initialized(resolved_model_path, generation)
+            with self._lock:
+                self._check_generation(generation)
+                client = self._client
+                output_reference = dict(self._output_reference)
+                action_metrics = [dict(metric) for metric in self._action_metrics]
+                primary_metric_id = self._primary_metric_id
+                recommendation_metric_id = self._recommendation_metric_id
+                fingerprint = self._last_fingerprint
+                engine_id = self._engine_id
+            result = client.request(
                 "analysis.run",
                 {
                     "sessionId": session_id,
@@ -414,7 +463,7 @@ class ActionRecommendationGateway:
                     "inputMode": "standard",
                     "events": mjai_events,
                     "outputs": [{
-                        **self._output_reference,
+                        **output_reference,
                         "parameters": {"candidates": candidates},
                     }],
                 },
@@ -423,16 +472,16 @@ class ActionRecommendationGateway:
             normalized = self._validate_generic_result(
                 result,
                 candidate_ids,
-                self._action_metrics,
-                self._primary_metric_id,
-                self._recommendation_metric_id,
-                self._output_reference,
+                action_metrics,
+                primary_metric_id,
+                recommendation_metric_id,
+                output_reference,
             )
-            normalized["engineFingerprint"] = self._last_fingerprint
-            normalized["engineId"] = self._engine_id
-            normalized["metricDefinitions"] = [dict(metric) for metric in self._action_metrics]
-            normalized["primaryMetricId"] = self._primary_metric_id
-            normalized["recommendationMetricId"] = self._recommendation_metric_id
+            normalized["engineFingerprint"] = fingerprint
+            normalized["engineId"] = engine_id
+            normalized["metricDefinitions"] = action_metrics
+            normalized["primaryMetricId"] = primary_metric_id
+            normalized["recommendationMetricId"] = recommendation_metric_id
             timing = result.get("timing")
             elapsed_ms = (
                 float(timing.get("totalMs"))
@@ -440,7 +489,10 @@ class ActionRecommendationGateway:
                 and isinstance(timing.get("totalMs"), (int, float))
                 else (time.perf_counter() - started_at) * 1000
             )
-            self._record_response_ms(elapsed_ms)
+            with self._lock:
+                self._check_generation(generation)
+                self._response_times.append(float(elapsed_ms))
+                del self._response_times[:-10]
             return normalized
         except Exception as exc:
             self._set_activity(
@@ -450,11 +502,12 @@ class ActionRecommendationGateway:
                     "模型加载失败" if initializing else "模型推理失败",
                     exc,
                 ),
+                expected_generation=generation,
             )
             raise
         finally:
             if self.activity_state() != "error":
-                self._set_activity(player_id, "idle")
+                self._set_activity(player_id, "idle", expected_generation=generation)
 
     def _model_sha256(self, model_path: Optional[str]) -> str:
         if self._expected_sha256:
@@ -491,6 +544,18 @@ class ActionRecommendationGateway:
     def cache_identity(self, model_path: Optional[str] = None) -> str:
         if self._last_fingerprint:
             return self._last_fingerprint
+        return self._calculate_cache_identity(
+            model_path, protocol_minor=self._protocol_minor,
+            actual_device=self._actual_device, effective_options=self._effective_options,
+            action_metrics=self._action_metrics, primary_metric_id=self._primary_metric_id,
+            recommendation_metric_id=self._recommendation_metric_id,
+        )
+
+    def _calculate_cache_identity(
+        self, model_path: Optional[str], *, protocol_minor: int, actual_device: str,
+        effective_options: Dict[str, Any], action_metrics: List[Dict[str, Any]],
+        primary_metric_id: str, recommendation_metric_id: str,
+    ) -> str:
         resolved_model_path = model_path or self._configured_model_path
         configured_weights = self._configured_weights or ([{
             "slotId": "model",
@@ -501,7 +566,7 @@ class ActionRecommendationGateway:
             "engineId": self._engine_id,
             "version": self._engine_version,
             "protocolMajor": 2,
-            "protocolMinor": self._protocol_minor,
+            "protocolMinor": protocol_minor,
             "weights": [
                 {
                     "slotId": weight["slotId"],
@@ -514,8 +579,8 @@ class ActionRecommendationGateway:
                 }
                 for weight in configured_weights
             ],
-            "device": self._actual_device or self._device,
-            "options": self._effective_options or self._engine_options,
+            "device": actual_device or self._device,
+            "options": effective_options or self._engine_options,
             "outputContract": self._OUTPUT,
             "metrics": [
                 {
@@ -529,10 +594,10 @@ class ActionRecommendationGateway:
                         "fractionDigits",
                     )
                 }
-                for metric in self._action_metrics
+                for metric in action_metrics
             ],
-            "primaryMetricId": self._primary_metric_id,
-            "recommendationMetricId": self._recommendation_metric_id,
+            "primaryMetricId": primary_metric_id,
+            "recommendationMetricId": recommendation_metric_id,
             "resultSemanticsVersion": self._RESULT_SEMANTICS_VERSION,
         }
         encoded = json.dumps(
@@ -587,9 +652,13 @@ class ActionRecommendationGateway:
         seat: int,
         state: str,
         error: Optional[str] = None,
+        *,
+        expected_generation: Optional[int] = None,
     ) -> None:
         callback = None
         with self._lock:
+            if expected_generation is not None and expected_generation != self._lifecycle_generation:
+                return
             if self._unloaded:
                 state = "idle"
                 error = None
@@ -647,16 +716,12 @@ class ActionRecommendationGateway:
                 return 0.0
             return sum(self._response_times) / len(self._response_times)
 
-    def _record_response_ms(self, elapsed_ms: float) -> None:
-        with self._lock:
-            self._response_times.append(float(elapsed_ms))
-            del self._response_times[:-10]
-
     @property
     def device_str(self) -> str:
         return self._device
 
     def set_force_device(self, device: Optional[str]) -> None:
+        self._invalidate_initialization()
         self._device = "auto" if device is None else str(device)
         self._ready_models.clear()
         self._last_fingerprint = ""
@@ -668,6 +733,7 @@ class ActionRecommendationGateway:
         self._set_activity(self._active_seat, "idle")
 
     def prepare_reload(self) -> None:
+        self._invalidate_initialization()
         self._ready_models.clear()
         self._last_fingerprint = ""
         self._model_hash_cache = None
@@ -679,6 +745,7 @@ class ActionRecommendationGateway:
         self._set_activity(self._active_seat, "idle")
 
     def unload(self) -> None:
+        self._invalidate_initialization()
         self._client.shutdown()
         self._ready_models.clear()
         self._last_fingerprint = ""
@@ -690,28 +757,28 @@ class ActionRecommendationGateway:
         self._set_activity(self._active_seat, "idle")
 
     def prewarm(self, player_id: int, model_path: str) -> bool:
+        resolved_model_path = resolve_engine_weight_path(str(model_path))
         with self._lock:
             if self._error_latched or self._unloaded:
                 return False
-        resolved_model_path = resolve_engine_weight_path(str(model_path))
-        key = resolved_model_path
-        if key in self._ready_models:
-            return True
-        self._set_activity(player_id, "loading")
+            generation = self._lifecycle_generation
+            if resolved_model_path in self._ready_models:
+                return True
+        self._set_activity(player_id, "loading", expected_generation=generation)
         try:
-            self._initialize(resolved_model_path, 120)
-            self._ready_models = {key}
+            self._ensure_initialized(resolved_model_path, generation)
             return True
         except Exception as exc:
             self._set_activity(
                 player_id,
                 "error",
                 self._format_error("模型加载失败", exc),
+                expected_generation=generation,
             )
             return False
         finally:
             if self.activity_state() != "error":
-                self._set_activity(player_id, "idle")
+                self._set_activity(player_id, "idle", expected_generation=generation)
 
     def react(
         self,
@@ -764,4 +831,5 @@ class ActionRecommendationGateway:
         return errors
 
     def shutdown(self) -> None:
+        self._invalidate_initialization()
         self._client.shutdown()
