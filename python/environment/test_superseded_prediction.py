@@ -5,6 +5,34 @@ from opponent_prediction_gateway import OpponentPredictionGateway
 
 
 class SupersededPredictionTests(unittest.TestCase):
+    def test_late_success_after_unload_does_not_restore_model_readiness(self):
+        with patch('opponent_prediction_gateway.threading.Thread.start'):
+            gateway = OpponentPredictionGateway()
+        context = {'nodeId': 'old'}
+        callback = Mock()
+        gateway._unloaded = False
+        gateway._model_ready = True
+        gateway._latest_context = context
+        gateway._pending = {'snapshot': None, 'controlled_seat': 0, 'context': context,
+                            'mjai_events': [], 'include_ground_truth': False,
+                            'on_complete': callback}
+        gateway._pending_event.set()
+
+        def finish_after_unload(*args, **kwargs):
+            gateway.unload()
+            gateway._running = False
+            return {'outputs': []}
+
+        with patch.object(gateway, '_is_initializing', return_value=False), \
+             patch.object(gateway._process_client, 'shutdown'), \
+             patch.object(gateway._process_client, 'request', side_effect=finish_after_unload), \
+             patch.object(gateway, '_validate_protocol_prediction', return_value=[]), \
+             patch.object(gateway, '_protocol_result_to_host', return_value={'status': 'ready'}):
+            gateway._run()
+        self.assertFalse(gateway._model_ready)
+        self.assertTrue(gateway._unloaded)
+        callback.assert_not_called()
+
     def test_old_failure_does_not_replace_new_node_status_or_call_old_callback(self):
         # Run a single worker iteration synchronously; no engine or worker thread starts.
         with patch('opponent_prediction_gateway.threading.Thread.start'):

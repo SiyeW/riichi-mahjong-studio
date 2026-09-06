@@ -1005,7 +1005,6 @@ class OpponentPredictionGateway:
                     target_prefix_hashes=pending.get("target_mjai_prefix_hashes"),
                     target_event_hash=pending.get("target_mjai_events_hash"),
                 )
-                self._model_ready = True
                 if not is_background and self._is_superseded(context):
                     continue
                 if not is_background:
