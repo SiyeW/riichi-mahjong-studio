@@ -94,6 +94,7 @@ class OpponentPredictionGateway:
         self._device_preference = "auto"
         self._model_ready = False
         self._initialization_lock = threading.Lock()
+        self._lifecycle_generation = 0
         self._lock = threading.Lock()
         self._activity_lock = threading.Lock()
         self._activity_callback: Optional[Callable[[str, Optional[str]], None]] = None
@@ -307,6 +308,7 @@ class OpponentPredictionGateway:
         )
         if next_identity == current_identity and not client_changed:
             return
+        self._invalidate_initialization()
         self.cancel_all()
         self._process_client.shutdown()
         (
@@ -389,6 +391,7 @@ class OpponentPredictionGateway:
             configured_device = "auto"
         if configured_device == self._device_preference:
             return
+        self._invalidate_initialization()
         self.cancel_all()
         self._device_preference = configured_device
         self._model_ready = False
@@ -480,6 +483,7 @@ class OpponentPredictionGateway:
                 pass
 
     def prepare_reload(self) -> None:
+        self._invalidate_initialization()
         self.cancel_all()
         self._model_ready = False
         self._engine_fingerprint = ""
@@ -493,6 +497,7 @@ class OpponentPredictionGateway:
         self._set_activity("idle")
 
     def unload(self) -> None:
+        self._invalidate_initialization()
         self.cancel_all()
         self._process_client.shutdown()
         self._model_ready = False
@@ -509,15 +514,24 @@ class OpponentPredictionGateway:
         with self._lock:
             return self._latest_context is not None
 
+    def _invalidate_initialization(self) -> None:
+        with self._lock:
+            self._lifecycle_generation += 1
+
     def prewarm(self) -> bool:
         """Load weights and complete one device forward pass without game input."""
         with self._activity_lock:
             if self._error_latched or self._unloaded:
                 return False
         with self._initialization_lock:
+            with self._activity_lock:
+                if self._error_latched or self._unloaded:
+                    return False
             return self._prewarm_locked()
 
     def _prewarm_locked(self) -> bool:
+        with self._lock:
+            generation = self._lifecycle_generation
         if self._model_ready:
             return True
         self._set_activity("loading")
@@ -531,29 +545,33 @@ class OpponentPredictionGateway:
                 options=self._engine_options,
                 timeout=180,
             )
-            self._output_references = {
-                output_id: dict(initialization.references[output_id])
-                for output_id in self._enabled_outputs
-            }
-            self._protocol_minor = initialization.protocol_minor
             revealed_supported = all(
                 bool(initialization.contracts[output["id"]].get("supportsRevealedHands"))
                 and bool(initialization.outputs[output["id"]].get("supportsRevealedHands"))
                 for output in requested_outputs
             )
-            self._supported_input_modes = (
-                ("public", "full-information") if revealed_supported else ("public",)
-            )
-            self._effective_options = dict(initialization.result.get("effectiveOptions") or {})
-            self._actual_device = initialization.device
-            self._engine_fingerprint = ""
-            self._engine_fingerprint = self.cache_identity()
-            self._model_ready = True
-            if self._model_ready:
-                with self._lock:
-                    self._latest["status"] = "loaded"
-            return self._model_ready
+            with self._lock:
+                if generation != self._lifecycle_generation:
+                    return False
+                self._output_references = {
+                    output_id: dict(initialization.references[output_id])
+                    for output_id in self._enabled_outputs
+                }
+                self._protocol_minor = initialization.protocol_minor
+                self._supported_input_modes = (
+                    ("public", "full-information") if revealed_supported else ("public",)
+                )
+                self._effective_options = dict(initialization.result.get("effectiveOptions") or {})
+                self._actual_device = initialization.device
+                self._engine_fingerprint = ""
+                self._engine_fingerprint = self.cache_identity()
+                self._model_ready = True
+                self._latest["status"] = "loaded"
+            return True
         except Exception as exc:
+            with self._lock:
+                if generation != self._lifecycle_generation:
+                    return False
             print(f"[SHANTEN] Prewarm failed: {exc}", flush=True)
             self._set_activity("error", self._format_error("模型预热失败", exc))
             return False
