@@ -383,7 +383,6 @@ class ActionRecommendationGateway:
             raise ValueError("decision engine requires at least one legal candidate")
         resolved_model_path = resolve_engine_weight_path(str(model_path))
         initializing = resolved_model_path not in self._ready_models
-        self._set_activity(player_id, "loading" if initializing else "running")
         started_at = time.perf_counter()
         session_id = f"decision:seat-{int(player_id)}:{role}"
         candidates = []
@@ -402,6 +401,7 @@ class ActionRecommendationGateway:
                 "candidateId": candidate_id,
                 "action": engine_action,
             })
+        self._set_activity(player_id, "loading" if initializing else "running")
         try:
             if initializing:
                 self._initialize(resolved_model_path, 120)
