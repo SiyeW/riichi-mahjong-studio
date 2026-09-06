@@ -263,7 +263,7 @@ async function importGameRecordFile(filePath) {
 }
 
 async function openGame() {
-  const result = await dialog.showOpenDialog(mainWindow, {
+  const result = await withCurrentRecord(gameFileStore, () => dialog.showOpenDialog(mainWindow, {
     title: t('native.openRecord'),
     defaultPath: gameFileStore.getDefaultDirectory(),
     properties: ['openFile'],
@@ -272,7 +272,7 @@ async function openGame() {
       extensions: [RECORD_FILE_EXTENSION, LEGACY_RECORD_FILE_EXTENSION, '.json']
         .map((extension) => extension.slice(1)),
     }],
-  })
+  }))
 
   if (result.canceled || !result.filePaths.length) {
     return null
@@ -578,7 +578,9 @@ function registerIpcHandlers() {
   ipcMain.handle('game:import-mortal-report', async (event, payload) => {
     const request = typeof payload === 'string' ? { input: payload } : (payload || {})
     const originalInput = String(request.input || '').trim()
-    const { report, sourceUrl } = await downloadMortalReport(originalInput)
+    const { report, sourceUrl } = await withCurrentRecord(
+      gameFileStore, () => downloadMortalReport(originalInput),
+    )
     const response = await environmentBackend.environmentGateway.importMortalReport(report, sourceUrl, {
       sourceImportUrl: originalInput,
       reconstructWalls: Boolean(request.reconstructWalls),
