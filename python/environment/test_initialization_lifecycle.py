@@ -50,6 +50,52 @@ class InitializationLifecycleTests(unittest.TestCase):
         self.assertTrue(gateway._model_ready)
         self.assertEqual(gateway._actual_device, 'cpu')
 
+    def test_fingerprint_calculation_does_not_hold_request_lock(self):
+        with patch('opponent_prediction_gateway.threading.Thread.start'):
+            gateway = OpponentPredictionGateway()
+        gateway._unloaded = False
+        outputs = gateway._requested_output_contracts()
+        initialization = SimpleNamespace(
+            references={item['id']: {'id': item['id']} for item in outputs},
+            contracts={item['id']: {} for item in outputs},
+            outputs={item['id']: {} for item in outputs},
+            protocol_minor=2, result={}, device='cpu')
+        gateway._configured_weights = [{'slotId': 'model', 'format': 'test', 'path': 'unused'}]
+        acquired = []
+
+        def hash_weight(path):
+            available = gateway._lock.acquire(blocking=False)
+            acquired.append(available)
+            if available:
+                gateway._lock.release()
+            return 'test-hash'
+
+        with patch('opponent_prediction_gateway.initialize_engine_client', return_value=initialization), \
+             patch.object(gateway, '_weight_sha256', side_effect=hash_weight):
+            self.assertTrue(gateway.prewarm())
+        self.assertEqual(acquired, [True])
+
+    def test_reload_during_fingerprint_calculation_discards_initialization(self):
+        with patch('opponent_prediction_gateway.threading.Thread.start'):
+            gateway = OpponentPredictionGateway()
+        gateway._unloaded = False
+        outputs = gateway._requested_output_contracts()
+        initialization = SimpleNamespace(
+            contracts={item['id']: {} for item in outputs},
+            outputs={item['id']: {} for item in outputs},
+            protocol_minor=2, result={}, device='old-device')
+
+        def fingerprint(*args):
+            gateway.prepare_reload()
+            return 'old-fingerprint'
+
+        with patch('opponent_prediction_gateway.initialize_engine_client', return_value=initialization), \
+             patch.object(gateway._process_client, 'restart'), \
+             patch.object(gateway, '_calculate_cache_identity', side_effect=fingerprint):
+            self.assertFalse(gateway.prewarm())
+        self.assertFalse(gateway._model_ready)
+        self.assertNotEqual(gateway._engine_fingerprint, 'old-fingerprint')
+
 
 if __name__ == '__main__':
     unittest.main()

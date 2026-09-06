@@ -181,11 +181,16 @@ class OpponentPredictionGateway:
     def cache_identity(self) -> str:
         if self._engine_fingerprint:
             return self._engine_fingerprint
+        return self._calculate_cache_identity(
+            self._protocol_minor, self._actual_device, self._effective_options,
+        )
+
+    def _calculate_cache_identity(self, protocol_minor, actual_device, effective_options) -> str:
         source = {
             "engineId": self._engine_id,
             "version": self._engine_version,
             "protocolMajor": 2,
-            "protocolMinor": self._protocol_minor,
+            "protocolMinor": protocol_minor,
             "weights": [
                 {
                     "slotId": weight["slotId"],
@@ -194,8 +199,8 @@ class OpponentPredictionGateway:
                 }
                 for weight in self._configured_weights
             ],
-            "device": self._actual_device or self._device_preference,
-            "options": self._effective_options or self._engine_options,
+            "device": actual_device or self._device_preference,
+            "options": effective_options or self._engine_options,
             "outputContracts": self._requested_output_contracts(),
             "resultSemanticsVersion": _ENGINE_POSTPROCESSOR_VERSION,
         }
@@ -553,6 +558,13 @@ class OpponentPredictionGateway:
             with self._lock:
                 if generation != self._lifecycle_generation:
                     return False
+            effective_options = dict(initialization.result.get("effectiveOptions") or {})
+            fingerprint = self._calculate_cache_identity(
+                initialization.protocol_minor, initialization.device, effective_options,
+            )
+            with self._lock:
+                if generation != self._lifecycle_generation:
+                    return False
                 self._output_references = {
                     output_id: dict(initialization.references[output_id])
                     for output_id in self._enabled_outputs
@@ -561,10 +573,9 @@ class OpponentPredictionGateway:
                 self._supported_input_modes = (
                     ("public", "full-information") if revealed_supported else ("public",)
                 )
-                self._effective_options = dict(initialization.result.get("effectiveOptions") or {})
+                self._effective_options = effective_options
                 self._actual_device = initialization.device
-                self._engine_fingerprint = ""
-                self._engine_fingerprint = self.cache_identity()
+                self._engine_fingerprint = fingerprint
                 self._model_ready = True
                 self._latest["status"] = "loaded"
             return True
