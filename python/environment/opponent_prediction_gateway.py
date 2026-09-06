@@ -1010,6 +1010,8 @@ class OpponentPredictionGateway:
                     continue
                 if not is_background:
                     with self._lock:
+                        if self._latest_context != context:
+                            continue
                         self._latest = result
                 timing = worker_result.get("timing")
                 worker_response_ms = timing.get("totalMs") if isinstance(timing, dict) else None
@@ -1029,6 +1031,8 @@ class OpponentPredictionGateway:
                         )
                 continue
             except Exception as exc:
+                if not pending.get("background") and self._is_superseded(pending.get("context") or {}):
+                    continue
                 import traceback
                 print(f"[SHANTEN] Prediction error: {exc}", flush=True)
                 traceback.print_exc()
@@ -1045,6 +1049,8 @@ class OpponentPredictionGateway:
                 }
                 if not pending.get("background"):
                     with self._lock:
+                        if self._latest_context != (pending.get("context") or {}):
+                            continue
                         self._latest = error_result
                 on_complete = pending.get("on_complete")
                 if callable(on_complete):
