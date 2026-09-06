@@ -323,6 +323,9 @@ class EngineProcessClient:
                     continue
                 if message.get("jsonrpc") != "2.0":
                     continue
+                with self._lock:
+                    if self._process is not process:
+                        continue
                 if "method" in message and "id" not in message:
                     callback = self._notification_callback
                     if callback is not None:
@@ -336,7 +339,11 @@ class EngineProcessClient:
                     continue
                 request_id = str(message.get("id") or "")
                 with self._lock:
-                    pending = self._pending.pop(request_id, None)
+                    pending = self._pending.get(request_id)
+                    if pending is not None and pending.get("process") is process:
+                        self._pending.pop(request_id)
+                    else:
+                        pending = None
                 if pending is not None:
                     pending["response"] = message
                     pending["event"].set()
@@ -382,6 +389,8 @@ class EngineProcessClient:
                 if not line:
                     continue
                 with self._lock:
+                    if self._process is not process:
+                        continue
                     self._stderr_tail.append(line)
                     del self._stderr_tail[:-STDERR_TAIL_LINES]
                 sys.stderr.write(f"[{self._engine_kind}-engine] {line}\n")
