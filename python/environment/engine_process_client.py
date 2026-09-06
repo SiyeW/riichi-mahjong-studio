@@ -499,7 +499,7 @@ class EngineProcessClient:
         }
         try:
             self._write_message(process, message)
-        except EngineProcessError:
+        except Exception:
             with self._lock:
                 self._pending.pop(request_id, None)
             raise
