@@ -364,7 +364,14 @@ class EngineProcessClient:
             try:
                 code = process.wait(timeout=1)
             except subprocess.TimeoutExpired:
-                code = process.poll()
+                # EOF is terminal for JSONL communication, even when the worker
+                # keeps running after closing stdout. Do not orphan that worker.
+                process.terminate()
+                try:
+                    code = process.wait(timeout=1)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    code = process.wait(timeout=2)
             self._fail_pending(f"engine exited with code {code}", process)
             with self._lock:
                 unexpected_exit = self._process is process and not self._stopping
