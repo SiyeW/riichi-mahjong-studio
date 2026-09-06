@@ -157,18 +157,20 @@ class OpponentPredictionCoordinator:
         if not callable(callback) or len(gateways) <= 1:
             return [callback] * len(gateways)
         lock = threading.Lock()
-        results: list[Dict[str, Any]] = []
+        results: Dict[int, Dict[str, Any]] = {}
 
-        def collect(result: Dict[str, Any]) -> None:
+        def collect(index: int, result: Dict[str, Any]) -> None:
             ready = None
             with lock:
-                results.append(copy.deepcopy(result))
+                if index in results:
+                    return
+                results[index] = copy.deepcopy(result)
                 if len(results) == len(gateways):
-                    ready = self._merge_results(results)
+                    ready = self._merge_results([results[i] for i in range(len(gateways))])
             if ready is not None:
                 callback(ready)
 
-        return [collect] * len(gateways)
+        return [lambda result, index=index: collect(index, result) for index in range(len(gateways))]
 
     def request_predict(self, *args, on_complete=None, **kwargs) -> None:
         gateways = self._request_gateways()
@@ -187,7 +189,10 @@ class OpponentPredictionCoordinator:
                 **kwargs,
             )
             if not child_accepted and callable(callback) and len(gateways) > 1:
-                callback(gateway.get_latest())
+                callback({
+                    "status": "request_rejected",
+                    "context": copy.deepcopy(kwargs.get("context", args[3] if len(args) > 3 else None) or {}),
+                })
             accepted = child_accepted or accepted
         return accepted
 
