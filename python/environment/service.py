@@ -6193,11 +6193,11 @@ def reconstruct_loaded_imported_walls(seed=None):
 
 def jump_to_node(node_id):
     ensure_game_loaded()
-    cancel_play_prefetch()
     game = STATE["game"]
     if node_id not in game["nodes"]:
         raise ValueError(f"Unknown node id: {node_id}")
     previous_round_root_id = resolve_round_root_id_for_node(game, game["currentNodeId"])
+    cancel_play_prefetch()
     game["currentNodeId"] = node_id
     game["pendingReview"] = None
     schedule_auto_analysis_reprioritization(game, node_id)
@@ -6240,7 +6240,6 @@ def set_node_comment(node_id, value):
 
 def delete_node(node_id):
     ensure_writable_game()
-    cancel_play_prefetch()
     game = STATE["game"]
     nodes = game["nodes"]
     node = nodes.get(node_id)
@@ -6262,6 +6261,7 @@ def delete_node(node_id):
         if child_id != node_id and child_id in nodes
     ]
 
+    cancel_play_prefetch()
     cancel_auto_analysis("节点已删除")
     purge_bg_analysis_tasks(game.get("gameId"), subtree_ids)
     purge_stale_mjai_stream_cache(game.get("gameId"))
