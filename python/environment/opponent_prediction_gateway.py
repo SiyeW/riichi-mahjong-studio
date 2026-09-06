@@ -95,6 +95,7 @@ class OpponentPredictionGateway:
         self._model_ready = False
         self._initialization_lock = threading.Lock()
         self._lifecycle_generation = 0
+        self._runtime_notification_listener = None
         self._lock = threading.Lock()
         self._activity_lock = threading.Lock()
         self._activity_callback: Optional[Callable[[str, Optional[str]], None]] = None
@@ -116,33 +117,53 @@ class OpponentPredictionGateway:
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
 
+    def _detach_runtime_notifications(self) -> None:
+        listener = self._runtime_notification_listener
+        self._runtime_notification_listener = None
+        if listener is not None:
+            self._process_client.remove_notification_listener(listener)
+
+    def _attach_runtime_notifications(self, client: Any) -> None:
+        def listener(method: str, params: Dict[str, Any]) -> None:
+            with self._lock:
+                if self._process_client is not client or self._runtime_notification_listener is not listener:
+                    return
+                generation = self._lifecycle_generation
+            self._on_engine_notification(method, params, expected_generation=generation)
+
+        self._runtime_notification_listener = listener
+        client.add_notification_listener(listener)
+
     def _on_engine_notification(
         self,
         method: str,
         params: Dict[str, Any],
+        *,
+        expected_generation: Optional[int] = None,
     ) -> None:
         if method == "task.status":
             state = str(params.get("state") or "")
             if state in ("queued", "running"):
-                self._set_activity("running")
+                self._set_activity("running", expected_generation=expected_generation)
             elif state == "error":
-                self._set_activity("error", str(params.get("message") or "引擎推理失败"))
+                self._set_activity("error", str(params.get("message") or "引擎推理失败"), expected_generation=expected_generation)
             elif state in ("completed", "canceled"):
-                self._set_activity("idle")
+                self._set_activity("idle", expected_generation=expected_generation)
             return
         if method != "engine.status":
             return
         state = str(params.get("state") or "")
         if state in ("starting", "loading", "reloading"):
-            self._set_activity("loading")
+            self._set_activity("loading", expected_generation=expected_generation)
         elif state == "error":
             error = params.get("error") or {}
             self._set_activity(
                 "error",
                 str(error.get("message") or params.get("message") or "引擎错误"),
+                expected_generation=expected_generation,
             )
         elif state in ("ready", "stopping", "stopped"):
-            self._set_activity("idle")
+            self._set_activity("idle", expected_generation=expected_generation)
 
     def _read_model_signature(self) -> str:
         try:
@@ -315,6 +336,7 @@ class OpponentPredictionGateway:
             return
         self._invalidate_initialization()
         self.cancel_all()
+        self._detach_runtime_notifications()
         self._process_client.shutdown()
         (
             self._profile_id,
@@ -339,8 +361,8 @@ class OpponentPredictionGateway:
         self._configured_weights = json.loads(weights_json)
         self._device_preference = configured_device
         if engine_client is not None:
-            engine_client.add_notification_listener(self._on_engine_notification)
             self._process_client = engine_client
+            self._attach_runtime_notifications(engine_client)
         else:
             self._process_client = EngineProcessClient(
                 "opponent-analysis",
@@ -1101,6 +1123,8 @@ class OpponentPredictionGateway:
                     self._set_activity("idle")
 
     def shutdown(self):
+        self._invalidate_initialization()
+        self._detach_runtime_notifications()
         self._running = False
         self._pending_event.set()
         self._process_client.shutdown()
