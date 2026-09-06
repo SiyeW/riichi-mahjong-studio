@@ -204,7 +204,9 @@ class OpponentPredictionCoordinator:
 
     def prewarm(self, profile_id: Optional[str] = None) -> bool:
         gateways = self._gateways_for_profile(profile_id)
-        return bool(gateways) and all(gateway.prewarm() for gateway in gateways)
+        # Each selected profile must be attempted even if an earlier one fails.
+        results = [gateway.prewarm() for gateway in gateways]
+        return bool(results) and all(results)
 
     def cache_identity(self) -> str:
         identities = [
