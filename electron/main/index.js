@@ -19,6 +19,7 @@ const { registerApplicationIpc } = require('./ipc/application-ipc')
 const { createEngineIpcController } = require('./ipc/engine-ipc')
 const { registerSettingsIpc } = require('./ipc/settings-ipc')
 const { createEnvironmentService } = require('./services/environment-service')
+const { readLimitedResponseText } = require('./services/limited-response')
 const { buildRuntimeMetrics } = require('./runtime-metrics')
 const { loadSettings, saveSettings } = require('./state/settings')
 const { discoverSoundPacks, resolveSoundPackFile } = require('./state/sound-pack-registry')
@@ -330,14 +331,7 @@ async function downloadMortalReport(rawInput) {
     if (!response.ok) {
       throw new Error(t('native.download.http', { status: response.status }))
     }
-    const contentLength = Number(response.headers.get('content-length') || 0)
-    if (contentLength > 25 * 1024 * 1024) {
-      throw new Error(t('native.download.tooLarge'))
-    }
-    const text = await response.text()
-    if (text.length > 25 * 1024 * 1024) {
-      throw new Error(t('native.download.tooLarge'))
-    }
+    const text = await readLimitedResponseText(response, 25 * 1024 * 1024, t('native.download.tooLarge'))
     let report
     try {
       report = JSON.parse(text)
