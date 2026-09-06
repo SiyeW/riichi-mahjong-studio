@@ -60,6 +60,7 @@ class EngineProcessClient:
         self._initialized: Optional[dict[str, Any]] = None
         self._stderr_tail: list[str] = []
         self._stopping = False
+        self._process_generation = 0
         atexit.register(self.shutdown)
 
     def _command(self) -> list[str]:
@@ -105,6 +106,7 @@ class EngineProcessClient:
                 creationflags=creation_flags,
             )
             self._process = process
+            self._process_generation += 1
             self._hello = None
             self._initialized = None
             self._stderr_tail.clear()
@@ -339,16 +341,13 @@ class EngineProcessClient:
                 with self._lock:
                     if self._process is not process:
                         continue
+                    generation = self._process_generation
                 if "method" in message and "id" not in message:
-                    callback = self._notification_callback
-                    if callback is not None:
-                        try:
-                            callback(
-                                str(message.get("method") or ""),
-                                message.get("params") or {},
-                            )
-                        except Exception:
-                            pass
+                    self._notify(
+                        str(message.get("method") or ""),
+                        message.get("params") or {},
+                        expected_generation=generation,
+                    )
                     continue
                 request_id = str(message.get("id") or "")
                 with self._lock:
@@ -375,6 +374,7 @@ class EngineProcessClient:
             self._fail_pending(f"engine exited with code {code}", process)
             with self._lock:
                 unexpected_exit = self._process is process and not self._stopping
+                generation = self._process_generation
                 if self._process is process:
                     self._process = None
                     self._hello = None
@@ -390,6 +390,7 @@ class EngineProcessClient:
                             "recoverable": True,
                         },
                     },
+                    expected_generation=generation,
                 )
             for stream in (process.stdin, process.stdout):
                 if stream is not None:
@@ -421,8 +422,13 @@ class EngineProcessClient:
             except OSError:
                 pass
 
-    def _notify(self, method: str, params: dict[str, Any]) -> None:
-        callback = self._notification_callback
+    def _notify(
+        self, method: str, params: dict[str, Any], *, expected_generation: Optional[int] = None,
+    ) -> None:
+        with self._lock:
+            if expected_generation is not None and expected_generation != self._process_generation:
+                return
+            callback = self._notification_callback
         if callback is None:
             return
         try:
@@ -608,6 +614,7 @@ class EngineProcessClient:
 
     def _stop_process(self) -> None:
         with self._lock:
+            self._process_generation += 1
             process = self._process
             self._stopping = True
             self._process = None
