@@ -1586,6 +1586,7 @@ import { useWorkspaceDock } from './useWorkspaceDock'
 import { useWallView } from './useWallView'
 import { useEngineProfiles } from './useEngineProfiles'
 import { useAutomaticAnalysis } from './useAutomaticAnalysis'
+import { useRecordSession } from './useRecordSession'
 import {
   RON_WAIT_OPPONENT_KEYS,
   SHANTEN_SHORT_LABELS,
@@ -1839,7 +1840,6 @@ const uiScaleOptions = computed(() => {
 })
 const showSettingsPanel = ref(false)
 const showAboutPanel = ref(false)
-const showRecordImportPanel = ref(false)
 const showCustomTenhouExport = ref(false)
 const customTenhouExportRefreshKey = ref(0)
 const showMjaiDebug = ref(false)
@@ -2297,20 +2297,6 @@ watch(
   () => { void fetchShantenOnce() },
 )
 
-const recordPath = ref('')
-function fileNameFromPath(value: string): string {
-  return String(value || '').split(/[\\/]/).pop() || ''
-}
-const recordHeaderTitle = computed(() => {
-  if (!recordPath.value) return ''
-  return fileNameFromPath(recordPath.value)
-})
-const recordDirty = ref(false)
-let recordDirtyEventGeneration = 0
-const recoveryRecord = ref(false)
-const gameFileOperation = ref<'create' | 'open' | 'save' | 'save-as' | 'close' | null>(null)
-const closeRecordConfirmationPending = ref(false)
-let closeRecordConfirmationTimer: number | null = null
 const autoAdvanceTimer = ref<number | null>(null)
 const actionRequestInFlight = ref(false)
 const advanceRequestInFlight = ref(false)
@@ -2396,6 +2382,47 @@ const {
   focus: () => focusFloatingPanel('wall'),
   applyStatus,
   applyGameView,
+})
+const {
+  clearRecordMetadata,
+  closeGame,
+  closeRecordConfirmationPending,
+  closeRecordImportPanel,
+  createGame,
+  gameFileOperation,
+  handleRecordDirtyChanged,
+  handleRecordImported,
+  markRecordDirty,
+  openGame,
+  openRecordImportPanel,
+  recordDirty,
+  recordHeaderTitle,
+  recordPath,
+  restoreRecordMetadata,
+  saveGame,
+  saveGameAs,
+  setRecordDirtySnapshot,
+  showRecordImportPanel,
+  showRecordInFolder,
+} = useRecordSession({
+  status,
+  gameView,
+  flushNodeComment,
+  hasNodeCommentDrafts: () => nodeComments.hasDrafts(),
+  applyStatus,
+  applyGameView,
+  refreshGameView,
+  prepareClose: () => {
+    gameplayResponseGeneration += 1
+    cancelPendingWheelNavigation()
+    clearAutoAdvanceTimer()
+    closeWallView(true)
+    closeRoundMapOverlay()
+  },
+  handleReconstruction: async (roundCount) => {
+    await openWallView()
+    reportReconstructedRounds(roundCount)
+  },
 })
 const READ_ONLY_RECORD_HINT = computed(() => t('mode.readOnlyHint'))
 
@@ -4249,7 +4276,7 @@ function onNodeCommentInput() {
   if (!nodeId || !key) return
   const comment = nodeCommentDraft.value
   nodeComments.set(key, nodeId, comment)
-  recordDirty.value = true
+  markRecordDirty()
   resizeNodeComment()
   if (nodeCommentSaveTimer !== null) window.clearTimeout(nodeCommentSaveTimer)
   nodeCommentSaveTimer = window.setTimeout(() => {
@@ -5812,15 +5839,6 @@ function triggerActionAnnouncementForCurrentNode() {
   }, 1500)
 }
 
-function setRecordPath(nextPath: string | null | undefined) {
-  recordPath.value = nextPath || ''
-}
-
-async function showRecordInFolder() {
-  if (!recordPath.value || !window.trainerAPI) return
-  await window.trainerAPI.showRecordInFolder()
-}
-
 function openExternalLink(url: string) {
   void window.trainerAPI?.openExternal(url).catch((error) => {
     console.error('Failed to open external link:', error)
@@ -5875,13 +5893,12 @@ async function refreshBootstrapState() {
     if (restored) {
       applyStatus(restored.state)
       applyGameView(restored.view)
-      setRecordPath(restored.path)
-      recoveryRecord.value = Boolean(restored.recoveryRecord)
+      restoreRecordMetadata(restored.path, Boolean(restored.recoveryRecord))
     } else {
       await refreshGameView()
     }
     if (window.trainerAPI.getRecordDirty) {
-      recordDirty.value = await window.trainerAPI.getRecordDirty()
+      setRecordDirtySnapshot(await window.trainerAPI.getRecordDirty())
     }
     bootstrapError.value = ''
   } catch (error) {
@@ -5896,152 +5913,10 @@ async function refreshBootstrapState() {
   }
 }
 
-async function createGame() {
-  if (!window.trainerAPI || gameFileOperation.value !== null) return
-  clearCloseRecordConfirmation()
-  gameFileOperation.value = 'create'
-  try {
-    await flushNodeComment()
-    applyStatus(await window.trainerAPI.createGame())
-    setRecordPath('')
-    recoveryRecord.value = false
-    await refreshGameView()
-  } finally {
-    gameFileOperation.value = null
-  }
-}
-
-async function openGame() {
-  if (!window.trainerAPI || gameFileOperation.value !== null) return
-  clearCloseRecordConfirmation()
-  gameFileOperation.value = 'open'
-  try {
-    await flushNodeComment()
-    const result = await window.trainerAPI.openGame()
-    if (!result) return
-    applyStatus(result.state)
-    applyGameView(result.view)
-    setRecordPath(result.path)
-    recordDirty.value = Boolean(result.recordDirty)
-    recoveryRecord.value = Boolean(result.recoveryRecord)
-  } finally {
-    gameFileOperation.value = null
-  }
-}
-
-function openRecordImportPanel() {
-  showRecordImportPanel.value = true
-}
-
-function closeRecordImportPanel() {
-  showRecordImportPanel.value = false
-}
-
-async function handleRecordImported(result: TrainerRecordImportResult) {
-  applyStatus(result.state)
-  applyGameView(result.view)
-  setRecordPath('')
-  recordDirty.value = Boolean(result.recordDirty)
-  recoveryRecord.value = false
-  showRecordImportPanel.value = false
-  if (result.reconstruction) {
-    await openWallView()
-    reportReconstructedRounds(result.reconstruction.roundCount)
-  }
-}
-
 function openCustomTenhouExport() {
   if (!gameView.currentNodeId) return
   showCustomTenhouExport.value = true
   focusFloatingPanel('customExport')
-}
-
-async function saveGame() {
-  if (!window.trainerAPI || !recordDirty.value || gameFileOperation.value !== null) return
-  gameFileOperation.value = 'save'
-  try {
-    await flushNodeComment()
-    const dirtyGeneration = recordDirtyEventGeneration
-    const gameId = gameView.gameId
-    const result = await window.trainerAPI.saveGame()
-    if (!result || gameId !== gameView.gameId) return
-    setRecordPath(result.path)
-    if (dirtyGeneration === recordDirtyEventGeneration) {
-      recordDirty.value = Boolean(result.recordDirty) || nodeComments.hasDrafts()
-    }
-    recoveryRecord.value = Boolean(result.recoveryRecord)
-  } finally {
-    gameFileOperation.value = null
-  }
-}
-
-async function saveGameAs() {
-  if (!window.trainerAPI || gameFileOperation.value !== null) return
-  gameFileOperation.value = 'save-as'
-  try {
-    await flushNodeComment()
-    const dirtyGeneration = recordDirtyEventGeneration
-    const gameId = gameView.gameId
-    const result = await window.trainerAPI.saveGameAs()
-    if (!result || gameId !== gameView.gameId) return
-    setRecordPath(result.path)
-    if (dirtyGeneration === recordDirtyEventGeneration) {
-      recordDirty.value = Boolean(result.recordDirty) || nodeComments.hasDrafts()
-    }
-    recoveryRecord.value = Boolean(result.recoveryRecord)
-  } finally {
-    gameFileOperation.value = null
-  }
-}
-
-function clearCloseRecordConfirmation() {
-  closeRecordConfirmationPending.value = false
-  if (closeRecordConfirmationTimer !== null) {
-    window.clearTimeout(closeRecordConfirmationTimer)
-    closeRecordConfirmationTimer = null
-  }
-}
-
-function requestCloseRecordConfirmation() {
-  closeRecordConfirmationPending.value = true
-  if (closeRecordConfirmationTimer !== null) {
-    window.clearTimeout(closeRecordConfirmationTimer)
-  }
-  closeRecordConfirmationTimer = window.setTimeout(() => {
-    closeRecordConfirmationPending.value = false
-    closeRecordConfirmationTimer = null
-  }, CONFIRMATION_TIMEOUT_MS)
-}
-
-watch(recordDirty, (dirty) => {
-  if (!dirty) clearCloseRecordConfirmation()
-})
-
-async function closeGame() {
-  if (!window.trainerAPI || !status.gameLoaded || gameFileOperation.value !== null) return
-  if (recordDirty.value && !closeRecordConfirmationPending.value) {
-    requestCloseRecordConfirmation()
-    return
-  }
-
-  clearCloseRecordConfirmation()
-  gameFileOperation.value = 'close'
-  try {
-    await flushNodeComment()
-    gameplayResponseGeneration += 1
-    cancelPendingWheelNavigation()
-    clearAutoAdvanceTimer()
-    closeWallView(true)
-    closeRoundMapOverlay()
-    const response = await window.trainerAPI.closeGame()
-    applyStatus(response.state)
-    applyGameView(response.view)
-    setRecordPath('')
-    recordDirty.value = false
-    recoveryRecord.value = false
-  } finally {
-    gameFileOperation.value = null
-  }
 }
 
 let settingsPanelBaseline: TrainerSettings | null = null
@@ -6810,9 +6685,7 @@ function handlePythonEvent(event: TrainerPythonEvent) {
       applyStatus(event.state)
       applyGameView(event.view)
       if (!event.state.gameLoaded) {
-        setRecordPath('')
-        recoveryRecord.value = false
-        recordDirty.value = false
+        clearRecordMetadata()
       }
       backendRecoveryNeeded.value = false
       bootstrapError.value = ''
@@ -7078,8 +6951,7 @@ onMounted(() => {
   }
   if (window.trainerAPI?.onRecordDirtyChanged) {
     unsubscribeRecordDirtyChanged = window.trainerAPI.onRecordDirtyChanged((dirty) => {
-      recordDirtyEventGeneration += 1
-      recordDirty.value = dirty || nodeComments.hasDrafts()
+      handleRecordDirtyChanged(dirty)
     })
   }
   if (window.trainerAPI?.onUiZoomShortcut) {
