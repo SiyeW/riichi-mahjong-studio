@@ -35,13 +35,22 @@ class DuplicateCompletionTests(unittest.TestCase):
         self.assertEqual(runtime.status, before)
 
     def test_service_rejects_duplicate_before_cache_write_or_schedule(self):
+        self.assert_service_rejects('duplicate')
+
+    def test_service_rejects_retired_game_before_cache_write_or_schedule(self):
+        self.assert_service_rejects('replaced')
+        self.assert_service_rejects('closed')
+
+    def assert_service_rejects(self, reason):
         runtime = self.runtime()
         item = {'kind': 'decision', 'nodeId': 'one', 'cacheKey': 'key'}
-        runtime.context['attempted'].add(item_key(item))
+        if reason == 'duplicate':
+            runtime.context['attempted'].add(item_key(item))
         game = {'gameId': 'test', 'nodes': {'one': {}}, 'currentNodeId': 'one'}
         runtime.context['game'] = game
         runtime.context['gameId'] = 'test'
-        with patch.dict(service.STATE, {'game': game}), \
+        current_game = game if reason == 'duplicate' else {} if reason == 'replaced' else None
+        with patch.dict(service.STATE, {'game': current_game}), \
              patch.object(service, 'AUTO_ANALYSIS_RUNTIME', runtime), \
              patch.object(service, '_store_decision_analysis') as store, \
              patch.object(service, '_schedule_next_auto_analysis_item') as schedule, \

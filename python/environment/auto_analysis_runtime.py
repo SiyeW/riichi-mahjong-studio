@@ -204,15 +204,25 @@ class AutoAnalysisRuntime:
                 return None
             return context
 
-    def complete_item(self, generation, item, success, error=None):
+    def completion_context(self, generation, item):
+        """Check completion eligibility before the service writes its cache.
+
+        The service holds its state lock through cache writes and complete_item;
+        this check does not reserve an item or change progress.
+        """
         with self.lock:
-            context = self.context
+            context = self.active_context(generation)
             if (
-                not isinstance(context, dict)
-                or context.get("generation") != generation
-                or self.status.get("status") != "running"
+                context is None
                 or auto_analysis_plan.item_key(item) in context["attempted"]
             ):
+                return None
+            return context
+
+    def complete_item(self, generation, item, success, error=None):
+        with self.lock:
+            context = self.completion_context(generation, item)
+            if context is None:
                 return None
             self.future = None
             context["attempted"].add(auto_analysis_plan.item_key(item))

@@ -2760,35 +2760,30 @@ def _complete_auto_analysis_item(generation, item, result=None, error=None):
 
 
 def _complete_auto_analysis_item_locked(generation, item, result=None, error=None):
+    """Store and publish a completion while the caller holds _STATE_LOCK."""
+    context = AUTO_ANALYSIS_RUNTIME.completion_context(generation, item)
+    if context is None or context["game"] is not STATE.get("game"):
+        return
+    game = context["game"]
+    seat = context["seat"]
     success = False
     tree_updates = []
-    with _STATE_LOCK:
-        context = AUTO_ANALYSIS_RUNTIME.active_context(generation)
-        if context is None:
-            return
-        with AUTO_ANALYSIS_RUNTIME.lock:
-            if auto_analysis_plan.item_key(item) in context["attempted"]:
-                return
-            game = context["game"]
-            seat = context["seat"]
-        if STATE.get("game") is not game:
-            return
-        node = game.get("nodes", {}).get(item.get("nodeId"))
-        if isinstance(node, dict) and isinstance(result, dict) and not result.get("error"):
-            if item.get("kind") == "decision":
-                stored = _store_decision_analysis(
-                    game,
-                    node,
-                    item["cacheKey"],
-                    result,
-                    source=item.get("source"),
-                )
-                if stored is not None:
-                    _set_auto_analysis_timeline_cached("decision", item.get("nodeId"), True)
-                    tree_updates = update_cached_child_comparisons(game, node, result, seat)
-                    success = True
-            else:
-                success = _cache_opponent_analysis_result(result, require_current=False)
+    node = game.get("nodes", {}).get(item.get("nodeId"))
+    if isinstance(node, dict) and isinstance(result, dict) and not result.get("error"):
+        if item.get("kind") == "decision":
+            stored = _store_decision_analysis(
+                game,
+                node,
+                item["cacheKey"],
+                result,
+                source=item.get("source"),
+            )
+            if stored is not None:
+                _set_auto_analysis_timeline_cached("decision", item.get("nodeId"), True)
+                tree_updates = update_cached_child_comparisons(game, node, result, seat)
+                success = True
+        else:
+            success = _cache_opponent_analysis_result(result, require_current=False)
 
     context = AUTO_ANALYSIS_RUNTIME.complete_item(generation, item, success, error)
     if context is None:
