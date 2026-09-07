@@ -52,7 +52,7 @@ class PlayPrefetchTest(unittest.TestCase):
         snapshot["currentActor"] = 0
         tile = snapshot["hands"][0][0]
 
-        with mock.patch.object(service, "evaluate_reactions") as evaluate:
+        with mock.patch.object(service.ROUND_ACTIONS, "evaluate_reactions") as evaluate:
             next_snapshot, _action = service.create_user_discard_child_snapshot(
                 snapshot,
                 tile,
@@ -149,7 +149,7 @@ class PlayPrefetchTest(unittest.TestCase):
             "consumed": ["1m"] * 4,
         }
 
-        service.apply_self_kan_action(snapshot, response)
+        service.ROUND_ACTIONS.apply_self_kan_action(snapshot, response)
 
         self.assertIsNone(snapshot["riichiDiscardState"])
         self.assertTrue(snapshot["pendingRinshanDraw"])
@@ -203,8 +203,22 @@ class PlayPrefetchTest(unittest.TestCase):
         snapshot["hands"][actor] = ["F", "F"]
         snapshot["actionHistory"] = [{"type": "tsumo", "actor": actor, "pai": "F"}]
 
-        self.assertFalse(service.resolve_discard_tsumogiri(snapshot, actor, "F", requested=False))
-        self.assertTrue(service.resolve_discard_tsumogiri(snapshot, actor, "F", requested=True))
+        self.assertFalse(
+            service.ROUND_ACTIONS.resolve_discard_tsumogiri(
+                snapshot,
+                actor,
+                "F",
+                requested=False,
+            )
+        )
+        self.assertTrue(
+            service.ROUND_ACTIONS.resolve_discard_tsumogiri(
+                snapshot,
+                actor,
+                "F",
+                requested=True,
+            )
+        )
 
     def test_live_discard_reuses_matching_imported_replay_child_with_live_snapshot(self):
         game = service.STATE["game"]
@@ -273,7 +287,7 @@ class PlayPrefetchTest(unittest.TestCase):
         }
 
         with mock.patch.object(
-            service,
+            service.ROUND_ACTIONS,
             "evaluate_reactions",
             return_value=resolved_window,
         ) as evaluate:

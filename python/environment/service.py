@@ -23,6 +23,7 @@ import play_prefetch_runtime
 import record_commands
 import record_session
 import result_view
+import round_actions
 import round_progression
 import snapshot_state
 import table_view
@@ -58,13 +59,8 @@ from service_helpers import (
     build_comparison_result,
     build_special_action_comparison_result,
     build_reaction_comparison_result,
-    get_reaction_expected_hand_count,
-    get_reaction_hand_consumed,
-    resolve_reaction_hand_consumed,
     get_abortive_reason_label,
-    normalize_tile_family,
     now_iso,
-    sort_tiles,
 )
 from settlement import (
     can_ankan,
@@ -255,6 +251,18 @@ ROUND_PROGRESSION = round_progression.RoundProgression(
             *args, **kwargs
         ),
     )
+)
+
+
+ROUND_ACTIONS = round_actions.RoundActions(
+    ROUND_PROGRESSION,
+    round_actions.RoundActionDependencies(
+        controlled_seat=lambda: int(STATE["controlledSeat"]),
+        action_weight_path=ENGINE_MANAGEMENT.action_weight_path,
+        choose_ai_action=lambda *args, **kwargs: choose_ai_action_for_snapshot(
+            *args, **kwargs
+        ),
+    ),
 )
 
 
@@ -1112,7 +1120,7 @@ def _build_local_reaction_actions(snapshot, actor):
     return legal_actions._build_local_reaction_actions(
         snapshot,
         actor,
-        can_resolve_hora_reaction=can_resolve_hora_reaction,
+        can_resolve_hora_reaction=ROUND_ACTIONS.can_resolve_hora_reaction,
     )
 
 
@@ -1384,202 +1392,6 @@ def build_runtime_memory_metrics():
     }
 
 
-def draw_one(snapshot, seat):
-    sync_snapshot_state(snapshot)
-    return draw_tile(snapshot, seat, source="wall")
-
-
-def draw_tile(snapshot, seat, source="wall"):
-    sync_snapshot_state(snapshot)
-    if source == "rinshan":
-        if not ROUND_PROGRESSION.has_rinshan_draw_available(snapshot):
-            raise ValueError("Rinshan exhausted.")
-        tile = snapshot["rinshanWall"][0]
-        snapshot["rinshanWall"] = snapshot["rinshanWall"][1:]
-        # 开杠摸岭上牌：王牌区向牌山区扩张一格，牌山最后一张变为不可摸
-        if snapshot["drawIndex"] < len(snapshot["wall"]):
-            snapshot["wall"] = snapshot["wall"][:-1]
-    else:
-        if snapshot["drawIndex"] >= len(snapshot["wall"]):
-            raise ValueError("Wall exhausted.")
-        tile = snapshot["wall"][snapshot["drawIndex"]]
-        snapshot["drawIndex"] += 1
-    snapshot["hands"][seat].append(tile)
-    snapshot["hands"][seat] = sort_tiles(snapshot["hands"][seat])
-    snapshot["lastAction"] = {
-        "type": "tsumo",
-        "actor": seat,
-        "pai": tile,
-        "source": source,
-    }
-    snapshot["actionHistory"].append(
-        {
-            "type": "tsumo",
-            "actor": seat,
-            "pai": tile,
-            "tsumogiri": False,
-            "source": source,
-        }
-    )
-    persist_snapshot_state(snapshot)
-    return tile
-
-
-def has_pending_riichi(snapshot, actor):
-    return snapshot.get("pendingRiichiSeat") == actor and not snapshot["riichiAccepted"][actor]
-
-
-def stage_riichi_discard(snapshot, actor, tile, tsumogiri):
-    next_actor = (actor + 1) % 4
-    snapshot["pendingRiichiDiscard"] = {
-        "actor": actor,
-        "pai": tile,
-        "tsumogiri": tsumogiri,
-        "targetActor": next_actor,
-        "riichi": True,
-    }
-    snapshot["reactionWindow"] = None
-    snapshot["lastAction"] = {
-        "type": "reach",
-        "actor": actor,
-    }
-    snapshot["phase"] = "reach_declaration"
-    persist_snapshot_state(snapshot)
-
-
-def materialize_reach_discard(snapshot):
-    sync_snapshot_state(snapshot)
-    staged = snapshot.get("pendingRiichiDiscard")
-    if not staged:
-        return False
-    actor = staged["actor"]
-    tile = staged["pai"]
-    return materialize_reach_declaration_discard(snapshot, actor, tile, bool(staged.get("tsumogiri", False)))
-
-
-def materialize_reach_declaration_discard(snapshot, actor, tile, tsumogiri):
-    sync_snapshot_state(snapshot)
-    if tile in snapshot["hands"][actor]:
-        snapshot["hands"][actor].remove(tile)
-    ROUND_PROGRESSION.promote_delayed_dora_reveal(snapshot)
-    snapshot["pendingDiscard"] = {
-        "actor": actor,
-        "pai": tile,
-        "tsumogiri": bool(tsumogiri),
-        "targetActor": (actor + 1) % 4,
-        "riichi": True,
-    }
-    snapshot["pendingRiichiDiscard"] = None
-    snapshot["reactionWindow"] = None
-    snapshot["lastAction"] = {
-        "type": "dahai",
-        "actor": actor,
-        "pai": tile,
-        "tsumogiri": bool(tsumogiri),
-        "riichi": True,
-    }
-    snapshot["actionHistory"].append(
-        {
-            "type": "dahai",
-            "actor": actor,
-            "pai": tile,
-            "tsumogiri": bool(tsumogiri),
-            "riichi": True,
-        }
-    )
-    snapshot["turn"] += 1
-    snapshot["currentActor"] = actor
-    snapshot["phase"] = "reaction_window"
-    persist_snapshot_state(snapshot)
-    return True
-
-
-def apply_discard(snapshot, actor, tile, from_drawn=None):
-    sync_snapshot_state(snapshot)
-    if tile not in snapshot["hands"][actor]:
-        raise ValueError(f"Tile {tile} not found in actor {actor} hand.")
-    ippatsu_flags = ROUND_PROGRESSION.ensure_ippatsu_flags(snapshot)
-    tsumogiri = False
-    if from_drawn is not None:
-        tsumogiri = bool(from_drawn)
-    elif snapshot["actionHistory"]:
-        last_action = snapshot["actionHistory"][-1]
-        tsumogiri = last_action.get("type") == "tsumo" and last_action.get("actor") == actor and last_action.get("pai") == tile
-    if has_pending_riichi(snapshot, actor) and not snapshot["riichiDeclared"][actor]:
-        snapshot["riichiDeclared"][actor] = True
-        snapshot["actionHistory"].append(
-            {
-                "type": "reach",
-                "actor": actor,
-            }
-        )
-    hand = snapshot["hands"][actor]
-    if tsumogiri and hand.count(tile) > 1:
-        # Remove the DRAWN copy (last occurrence in sorted hand — draw_tile
-        # appends then sorts; Python stable sort keeps it after the old copy)
-        last_idx = len(hand) - 1 - hand[::-1].index(tile)
-        hand.pop(last_idx)
-    else:
-        hand.remove(tile)
-    ROUND_PROGRESSION.promote_delayed_dora_reveal(snapshot)
-    if has_pending_riichi(snapshot, actor):
-        stage_riichi_discard(snapshot, actor, tile, tsumogiri)
-        return
-
-    if snapshot.get("riichiAccepted", [False, False, False, False])[actor] and ippatsu_flags[actor]:
-        ippatsu_flags[actor] = False
-
-    next_actor = (actor + 1) % 4
-    snapshot["pendingDiscard"] = {
-        "actor": actor,
-        "pai": tile,
-        "tsumogiri": tsumogiri,
-        "targetActor": next_actor,
-        "riichi": False,
-    }
-    snapshot["reactionWindow"] = None
-    snapshot["lastAction"] = {
-        "type": "dahai",
-        "actor": actor,
-        "pai": tile,
-        "tsumogiri": tsumogiri,
-        "riichi": False,
-    }
-    snapshot["actionHistory"].append(
-        {
-            "type": "dahai",
-            "actor": actor,
-            "pai": tile,
-            "tsumogiri": tsumogiri,
-            "riichi": False,
-        }
-    )
-    snapshot["turn"] += 1
-    snapshot["currentActor"] = actor
-    snapshot["phase"] = "reaction_window"
-    persist_snapshot_state(snapshot)
-
-
-def resolve_discard_tsumogiri(snapshot, actor, tile, requested=None):
-    """Normalize engine intent against the actual drawn tile and hand contents."""
-    action_history = snapshot.get("actionHistory") or []
-    last_action = action_history[-1] if action_history else {}
-    is_drawn_tile = (
-        last_action.get("type") == "tsumo"
-        and last_action.get("actor") == actor
-        and str(last_action.get("pai") or "") == str(tile or "")
-    )
-    if not is_drawn_tile:
-        return False
-
-    hand = snapshot.get("hands", [[], [], [], []])[actor]
-    if hand.count(tile) <= 1:
-        return True
-    if isinstance(requested, bool):
-        return requested
-    return True
-
-
 def choose_ai_discard(snapshot, actor):
     sync_snapshot_state(snapshot)
     model_path = ENGINE_MANAGEMENT.action_weight_path()
@@ -1694,458 +1506,13 @@ def choose_ai_discard(snapshot, actor):
         "type": "dahai",
         "actor": actor,
         "pai": tile,
-        "tsumogiri": resolve_discard_tsumogiri(
+        "tsumogiri": ROUND_ACTIONS.resolve_discard_tsumogiri(
             snapshot,
             actor,
             tile,
             None if used_fallback else requested_tsumogiri,
         ),
     }
-
-
-def get_reaction_priority(action_type):
-    priorities = {
-        "none": 0,
-        "chi": 1,
-        "pon": 2,
-        "daiminkan": 3,
-        "hora": 4,
-    }
-    return priorities.get(action_type, -1)
-
-
-def can_resolve_hora_reaction(snapshot, winner, target, win_tile):
-    return legal_actions.can_resolve_hora_reaction(snapshot, winner, target, win_tile)
-
-
-def normalize_called_tile(snapshot, actor, tile):
-    if tile in snapshot["hands"][actor]:
-        return tile
-
-    normalized_candidates = {
-        "5m": ["5m", "5mr"],
-        "5p": ["5p", "5pr"],
-        "5s": ["5s", "5sr"],
-    }.get(tile, [tile])
-
-    for candidate in normalized_candidates:
-        if candidate in snapshot["hands"][actor]:
-            return candidate
-
-    return tile
-
-
-def remove_consumed_tiles(snapshot, actor, consumed):
-    sync_snapshot_state(snapshot)
-    for tile in consumed:
-        actual_tile = normalize_called_tile(snapshot, actor, tile)
-        if actual_tile not in snapshot["hands"][actor]:
-            raise ValueError(f"Consumed tile {tile} not found in actor {actor} hand.")
-        snapshot["hands"][actor].remove(actual_tile)
-    persist_snapshot_state(snapshot)
-
-
-def remove_single_tile(snapshot, actor, tile):
-    sync_snapshot_state(snapshot)
-    actual_tile = normalize_called_tile(snapshot, actor, tile)
-    if actual_tile not in snapshot["hands"][actor]:
-        raise ValueError(f"Tile {tile} not found in actor {actor} hand.")
-    snapshot["hands"][actor].remove(actual_tile)
-    persist_snapshot_state(snapshot)
-    return actual_tile
-
-
-def apply_self_kan_action(snapshot, response):
-    sync_snapshot_state(snapshot)
-    actor = int(response["actor"])
-    action_type = str(response.get("type") or "")
-    # The riichi ankan prompt is a one-shot state. Carrying it into the
-    # rinshan draw would expose a second, invalid skip prompt.
-    snapshot["riichiDiscardState"] = None
-    ROUND_PROGRESSION.clear_all_ippatsu(snapshot)
-    ROUND_PROGRESSION.promote_delayed_dora_reveal(snapshot)
-    persist_snapshot_state(snapshot)
-    if action_type == "ankan":
-        consumed = response.get("consumed", [])
-        remove_consumed_tiles(snapshot, actor, consumed)
-        snapshot["melds"][actor].append(copy.deepcopy(response))
-    elif action_type == "kakan":
-        start_kakan_reaction_window(snapshot, response)
-        return
-    elif action_type == "daiminkan":
-        consumed = response.get("consumed", [])
-        remove_consumed_tiles(snapshot, actor, consumed)
-        snapshot["melds"][actor].append(copy.deepcopy(response))
-    else:
-        raise ValueError(f"Unsupported kan action: {action_type}")
-
-    snapshot["lastAction"] = copy.deepcopy(response)
-    snapshot["actionHistory"].append(copy.deepcopy(response))
-    persist_snapshot_state(snapshot)
-    if action_type == "ankan":
-        ROUND_PROGRESSION.queue_dora_reveal(snapshot, after_action=False)
-    else:
-        ROUND_PROGRESSION.queue_dora_reveal(snapshot, after_action=True)
-    snapshot["currentActor"] = actor
-    snapshot["pendingRinshanDraw"] = True
-    snapshot["phase"] = "draw_or_discard"
-    persist_snapshot_state(snapshot)
-
-
-def build_kan_reaction_window(snapshot):
-    sync_snapshot_state(snapshot)
-    pending_kan = snapshot.get("pendingKan")
-    if not pending_kan:
-        return None
-
-    actor = int(pending_kan["actor"])
-    seats_in_order = [((actor + offset) % 4) for offset in range(1, 4)]
-    reactions = []
-    reaction_thinking_time_s = 0.0
-
-    for seat in seats_in_order:
-        model_path = ENGINE_MANAGEMENT.action_weight_path()
-        try:
-            response = choose_ai_action_for_snapshot(snapshot, seat, model_path, accumulate_thinking=False)
-        except Exception as error:  # pylint: disable=broad-except
-            response = {
-                "type": "none",
-                "actor": seat,
-                "variant": "none",
-                "label": "Pass",
-                "meta": {
-                    "skip_reason": "kan_reaction_error",
-                    "error": str(error),
-                },
-            }
-        reaction_thinking_time_s = max(
-            reaction_thinking_time_s,
-            float(((response.get("meta") or {}).get("thinking_time_s") or 0.0)),
-        )
-        reaction_type = response.get("type", "none")
-        if reaction_type == "hora":
-            if not can_resolve_hora_reaction(snapshot, seat, actor, pending_kan.get("pai")):
-                response = {"type": "none", "actor": seat, "variant": "none", "label": "Pass"}
-                reaction_type = "none"
-        else:
-            response = {"type": "none", "actor": seat, "variant": "none", "label": "Pass"}
-            reaction_type = "none"
-        reactions.append(
-            {
-                "seat": seat,
-                "response": response,
-                "priority": get_reaction_priority(reaction_type),
-            }
-        )
-
-    selected = max(reactions, key=lambda item: (item["priority"], -seats_in_order.index(item["seat"])))
-    return {
-        "kan": copy.deepcopy(pending_kan),
-        "reactions": reactions,
-        "selected": copy.deepcopy(selected),
-        "thinkingTimeS": reaction_thinking_time_s,
-    }
-
-
-def start_kakan_reaction_window(snapshot, response):
-    sync_snapshot_state(snapshot)
-    actor = int(response["actor"])
-    pai = str(response.get("pai") or "")
-    remove_single_tile(snapshot, actor, pai)
-    consumed = None
-    for meld in snapshot["melds"][actor]:
-        if meld.get("type") == "pon" and str(meld.get("pai") or "") == pai:
-            consumed = [str(tile) for tile in copy.deepcopy(meld.get("consumed") or [])]
-            while len(consumed) < 3:
-                consumed.append(pai)
-            break
-    if not consumed:
-        consumed = [pai, pai, pai]
-    response = copy.deepcopy(response)
-    response["consumed"] = consumed
-    pending_kan = copy.deepcopy(response)
-    pending_kan["source"] = "kakan"
-    snapshot["pendingKan"] = pending_kan
-    snapshot["pendingDiscard"] = None
-    snapshot["reactionWindow"] = None
-    snapshot["lastAction"] = copy.deepcopy(response)
-    snapshot["actionHistory"].append(copy.deepcopy(response))
-    snapshot["currentActor"] = actor
-    snapshot["phase"] = "kan_reaction_window"
-    persist_snapshot_state(snapshot)
-    snapshot["kanReactionWindow"] = build_kan_reaction_window(snapshot)
-    persist_snapshot_state(snapshot)
-
-
-def finalize_kakan_resolution(snapshot):
-    sync_snapshot_state(snapshot)
-    pending_kan = copy.deepcopy(snapshot.get("pendingKan"))
-    if not pending_kan:
-        return
-
-    actor = int(pending_kan["actor"])
-    pai = str(pending_kan.get("pai") or "")
-    upgraded = False
-    for meld in snapshot["melds"][actor]:
-        if meld.get("type") == "pon" and str(meld.get("pai") or "") == pai:
-            meld["type"] = "kakan"
-            meld["kakan"] = pai
-            meld["consumed"] = copy.deepcopy(pending_kan.get("consumed") or [pai, pai, pai])
-            upgraded = True
-            break
-    if not upgraded:
-        snapshot["melds"][actor].append(copy.deepcopy(pending_kan))
-
-    snapshot["pendingKan"] = None
-    snapshot["kanReactionWindow"] = None
-    persist_snapshot_state(snapshot)
-    ROUND_PROGRESSION.queue_dora_reveal(snapshot, after_action=True)
-    snapshot["pendingRinshanDraw"] = True
-    snapshot["currentActor"] = actor
-    snapshot["phase"] = "draw_or_discard"
-    persist_snapshot_state(snapshot)
-
-
-def evaluate_reactions(snapshot):
-    sync_snapshot_state(snapshot)
-    pending_discard = snapshot.get("pendingDiscard")
-    if not pending_discard:
-        return None
-
-    discard_actor = pending_discard["actor"]
-    seats_in_order = [((discard_actor + offset) % 4) for offset in range(1, 4)]
-    reactions = []
-    reaction_thinking_time_s = 0.0
-
-    for seat in seats_in_order:
-        if seat == STATE["controlledSeat"]:
-            response = {"type": "none", "actor": seat, "variant": "none", "label": "Pass"}
-        else:
-            model_path = ENGINE_MANAGEMENT.action_weight_path()
-            try:
-                response = choose_ai_action_for_snapshot(snapshot, seat, model_path, accumulate_thinking=False)
-            except Exception as error:  # pylint: disable=broad-except
-                response = {
-                    "type": "none",
-                    "actor": seat,
-                    "variant": "none",
-                    "label": "Pass",
-                    "meta": {
-                        "skip_reason": "reaction_error",
-                        "error": str(error),
-                    },
-                }
-        reaction_thinking_time_s = max(
-            reaction_thinking_time_s,
-            float(((response.get("meta") or {}).get("thinking_time_s") or 0.0)),
-        )
-        reaction_type = response.get("type", "none")
-        if seat != pending_discard["targetActor"] and reaction_type == "chi":
-            response = {"type": "none", "actor": seat, "meta": {"skip_reason": "non_adjacent_chi"}}
-            reaction_type = "none"
-        elif reaction_type == "hora":
-            if not can_resolve_hora_reaction(snapshot, seat, discard_actor, pending_discard["pai"]):
-                response = {
-                    "type": "none",
-                    "actor": seat,
-                    "variant": "none",
-                    "label": "Pass",
-                    "meta": {
-                        "skip_reason": "invalid_hora_reaction",
-                        "original": copy.deepcopy(response),
-                    },
-                }
-                reaction_type = "none"
-        elif (
-            reaction_type in ("chi", "pon", "daiminkan")
-            and snapshot.get("riichiAccepted", [False, False, False, False])[seat]
-        ):
-            response = {
-                "type": "none",
-                "actor": seat,
-                "variant": "none",
-                "label": "Pass",
-                "meta": {
-                    "skip_reason": "riichi_blocked",
-                    "original": copy.deepcopy(response),
-                },
-            }
-            reaction_type = "none"
-        elif reaction_type in ("chi", "pon", "daiminkan"):
-            resolved_consumed = resolve_reaction_hand_consumed(
-                snapshot["hands"][seat],
-                response,
-                pending_discard["pai"],
-                normalize_tile_family,
-            )
-            expected_count = get_reaction_expected_hand_count(reaction_type) or 0
-            if len(resolved_consumed) != expected_count:
-                response = {
-                    "type": "none",
-                    "actor": seat,
-                    "variant": "none",
-                    "label": "Pass",
-                    "meta": {
-                        "skip_reason": "invalid_reaction_consumed",
-                        "original": copy.deepcopy(response),
-                    },
-                }
-                reaction_type = "none"
-            else:
-                response = copy.deepcopy(response)
-                response["consumed"] = copy.deepcopy(resolved_consumed)
-        reactions.append(
-            {
-                "seat": seat,
-                "response": response,
-                "priority": get_reaction_priority(reaction_type),
-            }
-        )
-
-    selected = max(reactions, key=lambda item: (item["priority"], -seats_in_order.index(item["seat"])))
-
-    return {
-        "discard": copy.deepcopy(pending_discard),
-        "reactions": reactions,
-        "selected": copy.deepcopy(selected),
-        "thinkingTimeS": reaction_thinking_time_s,
-    }
-
-
-def finalize_pending_discard_to_river(snapshot):
-    sync_snapshot_state(snapshot)
-    pending_discard = snapshot.get("pendingDiscard")
-    if not pending_discard:
-        return
-    snapshot["rivers"][pending_discard["actor"]].append(pending_discard["pai"])
-    snapshot["pendingDiscard"] = None
-    persist_snapshot_state(snapshot)
-
-
-def apply_reaction_action(snapshot, selected):
-    sync_snapshot_state(snapshot)
-    response = selected["response"]
-    action_type = response.get("type")
-    if snapshot.get("phase") == "kan_reaction_window":
-        pending_kan = copy.deepcopy(snapshot.get("pendingKan") or {})
-        if action_type == "none":
-            finalize_kakan_resolution(snapshot)
-            return
-
-        if action_type == "hora":
-            winner = int(response.get("actor", snapshot.get("currentActor", 0)))
-            target = int(pending_kan.get("actor", snapshot.get("currentActor", 0)))
-            win_tile = str(pending_kan.get("pai") or "")
-            result = compute_hora_result(snapshot, winner, target, win_tile, False)
-            snapshot["kanReactionWindow"] = None
-            snapshot["pendingKan"] = None
-            snapshot["pendingDiscard"] = None
-            snapshot["reactionWindow"] = None
-            snapshot["lastAction"] = {
-                "type": "hora",
-                "actor": winner,
-                "target": target,
-                "pai": win_tile,
-                "isTsumo": False,
-                "deltas": copy.deepcopy(result["deltas"]),
-                "uraMarkers": copy.deepcopy(result["uraMarkers"]),
-                "han": result.get("han"),
-                "fu": result.get("fu"),
-                "yaku": copy.deepcopy(result.get("yaku", [])),
-                "yakuDetails": copy.deepcopy(result.get("yakuDetails", [])),
-                "isOpenHand": result.get("isOpenHand"),
-                "cost": copy.deepcopy(result.get("cost", {})),
-            }
-            snapshot["actionHistory"].append(copy.deepcopy(response))
-            snapshot["phase"] = "game_end"
-            snapshot["currentActor"] = winner
-            persist_snapshot_state(snapshot)
-            return
-
-        raise ValueError(f"Unsupported kan reaction action: {response}")
-
-    discard = snapshot["pendingDiscard"]
-    had_pending_riichi = snapshot.get("pendingRiichiSeat") is not None
-
-    if action_type == "none":
-        finalize_pending_discard_to_river(snapshot)
-        snapshot["reactionWindow"] = None
-        # Riichi is accepted before the next draw.
-        if had_pending_riichi:
-            ROUND_PROGRESSION.resolve_pending_riichi_acceptance(snapshot)
-        if ROUND_PROGRESSION.maybe_mark_abortive_ryukyoku(snapshot):
-            return
-        snapshot["currentActor"] = discard["targetActor"]
-        snapshot["phase"] = "draw_or_discard"
-        persist_snapshot_state(snapshot)
-        return
-
-    finalize_pending_discard_to_river(snapshot)
-    snapshot["reactionWindow"] = None
-
-    if action_type == "hora":
-        winner = int(response.get("actor", discard["targetActor"]))
-        target = int(response.get("target", discard["targetActor"]))
-        result = compute_hora_result(snapshot, winner, target, str(discard["pai"]), False)
-        snapshot["lastAction"] = {
-            "type": "hora",
-            "actor": winner,
-            "target": target,
-            "pai": str(discard["pai"]),
-            "isTsumo": False,
-            "deltas": copy.deepcopy(result["deltas"]),
-            "uraMarkers": copy.deepcopy(result["uraMarkers"]),
-            "han": result.get("han"),
-            "fu": result.get("fu"),
-            "yaku": copy.deepcopy(result.get("yaku", [])),
-            "yakuDetails": copy.deepcopy(result.get("yakuDetails", [])),
-            "isOpenHand": result.get("isOpenHand"),
-            "cost": copy.deepcopy(result.get("cost", {})),
-        }
-        snapshot["actionHistory"].append(copy.deepcopy(response))
-        snapshot["phase"] = "game_end"
-        snapshot["currentActor"] = response.get("actor", discard["targetActor"])
-        persist_snapshot_state(snapshot)
-        return
-
-    # Riichi is accepted before processing the following meld.
-    if had_pending_riichi:
-        ROUND_PROGRESSION.resolve_pending_riichi_acceptance(snapshot)
-
-    if action_type in ("pon", "chi"):
-        actor = int(response.get("actor", -1))
-        if actor >= 0 and snapshot.get("riichiAccepted", [False, False, False, False])[actor]:
-            raise ValueError(f"Riichi player cannot {action_type}.")
-        ROUND_PROGRESSION.clear_all_ippatsu(snapshot)
-        actor = response["actor"]
-        consumed = get_reaction_hand_consumed(response, discard["pai"], normalize_tile_family)
-        resolved_consumed = resolve_reaction_hand_consumed(snapshot["hands"][actor], response, discard["pai"], normalize_tile_family)
-        remove_consumed_tiles(snapshot, actor, resolved_consumed)
-        response = copy.deepcopy(response)
-        response["consumed"] = copy.deepcopy(resolved_consumed)
-        response["from"] = int(discard["actor"])
-        snapshot["melds"][actor].append(copy.deepcopy(response))
-        snapshot["lastAction"] = copy.deepcopy(response)
-        snapshot["actionHistory"].append(copy.deepcopy(response))
-        snapshot["currentActor"] = actor
-        snapshot["phase"] = "discard"
-        persist_snapshot_state(snapshot)
-        return
-
-    if action_type == "daiminkan":
-        actor = int(response.get("actor", -1))
-        if actor >= 0 and snapshot.get("riichiAccepted", [False, False, False, False])[actor]:
-            raise ValueError(f"Riichi player cannot daiminkan.")
-        ROUND_PROGRESSION.clear_all_ippatsu(snapshot)
-        response = copy.deepcopy(response)
-        response["consumed"] = copy.deepcopy(
-            resolve_reaction_hand_consumed(snapshot["hands"][int(response["actor"])], response, discard["pai"], normalize_tile_family)
-        )
-        response["from"] = int(discard["actor"])
-        apply_self_kan_action(snapshot, response)
-        return
-
-    raise ValueError(f"Unsupported reaction action: {response}")
 
 
 def find_user_reaction_response(snapshot, action_type):
@@ -2161,7 +1528,11 @@ def find_user_reaction_response(snapshot, action_type):
         if action_type == response_type:
             if action_type == "chi":
                 continue
-            return {"seat": STATE["controlledSeat"], "response": response, "priority": get_reaction_priority(response_type)}
+            return {
+                "seat": STATE["controlledSeat"],
+                "response": response,
+                "priority": ROUND_ACTIONS.get_reaction_priority(response_type),
+            }
 
     if action_type == "none":
         return {
@@ -2227,7 +1598,7 @@ def synthesize_user_reaction_response(snapshot, action_type, variant=None, candi
     return {
         "seat": actor,
         "response": response,
-        "priority": get_reaction_priority(action_type),
+        "priority": ROUND_ACTIONS.get_reaction_priority(action_type),
     }
 
 
@@ -2253,23 +1624,33 @@ def create_user_discard_child_snapshot(parent_snapshot, tile, source="user", fro
             raise ValueError(f"Tile {tile} not in hand.")
 
         tsumogiri = bool(from_drawn)
-        materialize_reach_declaration_discard(next_snapshot, actor, tile, tsumogiri)
+        ROUND_ACTIONS.materialize_reach_declaration_discard(
+            next_snapshot,
+            actor,
+            tile,
+            tsumogiri,
+        )
         persist_snapshot_state(next_snapshot)
         next_snapshot["reactionWindow"] = (
             None
             if STATE.get("mode") == "play"
-            else evaluate_reactions(next_snapshot)
+            else ROUND_ACTIONS.evaluate_reactions(next_snapshot)
         )
         action = build_review_action_payload("dahai", pai=tile, source=source)
         action["riichi"] = True
         action["tsumogiri"] = bool(from_drawn)
         return next_snapshot, action
 
-    apply_discard(next_snapshot, actor, tile, from_drawn=from_drawn)
+    ROUND_ACTIONS.apply_discard(
+        next_snapshot,
+        actor,
+        tile,
+        from_drawn=from_drawn,
+    )
     next_snapshot["reactionWindow"] = (
         None
         if STATE.get("mode") == "play"
-        else evaluate_reactions(next_snapshot)
+        else ROUND_ACTIONS.evaluate_reactions(next_snapshot)
     )
     action = build_review_action_payload("dahai", pai=tile, source=source)
     action["tsumogiri"] = bool(from_drawn)
@@ -2392,7 +1773,7 @@ def create_discard_phase_special_child_snapshot(parent_snapshot, action_type, va
             "consumed": copy.deepcopy(entry.get("consumed") or []),
             "label": entry.get("label"),
         }
-        apply_self_kan_action(next_snapshot, response)
+        ROUND_ACTIONS.apply_self_kan_action(next_snapshot, response)
         action = copy.deepcopy(response)
         action["source"] = source
         return next_snapshot, action
@@ -2411,7 +1792,7 @@ def create_reaction_child_snapshot(parent_snapshot, action_type, variant=None, c
     if selected is None:
         raise ValueError(f"Unsupported or unavailable reaction action: {action_type} ({variant})")
     next_snapshot = copy.deepcopy(parent_snapshot)
-    apply_reaction_action(next_snapshot, selected)
+    ROUND_ACTIONS.apply_reaction_action(next_snapshot, selected)
     action = copy.deepcopy(selected["response"])
     action["source"] = "user_reaction"
     if action.get("type") == "none":
@@ -2422,7 +1803,7 @@ def create_reaction_child_snapshot(parent_snapshot, action_type, variant=None, c
 def _create_tsumo_node(game, parent_snapshot, actor, source="wall"):
     """Create a TSUMO child node: draw a tile for the actor, transitioning to discard phase."""
     next_snapshot = copy.deepcopy(parent_snapshot)
-    drawn_tile = draw_tile(next_snapshot, actor, source=source)
+    drawn_tile = ROUND_ACTIONS.draw_tile(next_snapshot, actor, source=source)
     next_snapshot["pendingRinshanDraw"] = False
     next_snapshot["phase"] = "discard"
     persist_snapshot_state(next_snapshot)
@@ -2446,7 +1827,7 @@ def _advance_reaction_window(game, snapshot):
     The parent (DAHAI) node's snapshot is NOT mutated. Child nodes capture
     the post-reaction state.
 
-    Riichi acceptance (reach_accepted) is handled inside apply_reaction_action
+    Riichi acceptance (reach_accepted) is handled while applying the reaction.
     Rule timing: before the next draw (none) or before the meld.
     (pon/chi/daiminkan). Hora (ron) does NOT accept riichi.
     """
@@ -2455,7 +1836,7 @@ def _advance_reaction_window(game, snapshot):
     if not isinstance(reaction_window, dict) or not isinstance(
         reaction_window.get("selected"), dict
     ):
-        snapshot["reactionWindow"] = evaluate_reactions(snapshot)
+        snapshot["reactionWindow"] = ROUND_ACTIONS.evaluate_reactions(snapshot)
     if controlled_seat_has_pending_action(snapshot):
         return
 
@@ -2466,8 +1847,8 @@ def _advance_reaction_window(game, snapshot):
     response = selected["response"]
     action_type = response.get("type", "none")
 
-    # apply_reaction_action already resolves any pending riichi acceptance.
-    apply_reaction_action(next_snapshot, selected)
+    # Applying the reaction already resolves any pending riichi acceptance.
+    ROUND_ACTIONS.apply_reaction_action(next_snapshot, selected)
 
     if next_snapshot["phase"] == "game_end":
         last = next_snapshot.get("lastAction") or {}
@@ -2513,7 +1894,7 @@ def _advance_reaction_window(game, snapshot):
                 promote_path_to_mainline(game, child_id)
                 ROUND_PROGRESSION.advance_terminal_round(game)
                 return
-            draw_one(next_snapshot, actor)
+            ROUND_ACTIONS.draw_one(next_snapshot, actor)
         action = {
             "type": "tsumo",
             "actor": actor,
@@ -2543,7 +1924,9 @@ def _advance_kan_reaction_window(game, snapshot):
     if not isinstance(reaction_window, dict) or not isinstance(
         reaction_window.get("selected"), dict
     ):
-        snapshot["kanReactionWindow"] = build_kan_reaction_window(snapshot)
+        snapshot["kanReactionWindow"] = ROUND_ACTIONS.build_kan_reaction_window(
+            snapshot
+        )
     if controlled_seat_has_pending_action(snapshot):
         return
 
@@ -2554,7 +1937,7 @@ def _advance_kan_reaction_window(game, snapshot):
     response = selected["response"]
     action_type = response.get("type", "none")
 
-    apply_reaction_action(next_snapshot, selected)
+    ROUND_ACTIONS.apply_reaction_action(next_snapshot, selected)
 
     if next_snapshot["phase"] == "game_end":
         last = next_snapshot.get("lastAction") or {}
@@ -2581,7 +1964,7 @@ def _advance_kan_reaction_window(game, snapshot):
 
     if action_type == "none":
         actor = next_snapshot["currentActor"]
-        draw_tile(next_snapshot, actor, source="rinshan")
+        ROUND_ACTIONS.draw_tile(next_snapshot, actor, source="rinshan")
         next_snapshot["pendingRinshanDraw"] = False
         next_snapshot["phase"] = "discard"
         persist_snapshot_state(next_snapshot)
@@ -2668,7 +2051,7 @@ def _process_ai_discard(game, snapshot, actor):
 
     if ai_action["type"] in ("ankan", "kakan"):
         next_snapshot = copy.deepcopy(snapshot)
-        apply_self_kan_action(next_snapshot, ai_action)
+        ROUND_ACTIONS.apply_self_kan_action(next_snapshot, ai_action)
         action = copy.deepcopy(ai_action)
         action["source"] = "ai"
         parent_id = game["currentNodeId"]
@@ -2733,7 +2116,12 @@ def _process_ai_discard(game, snapshot, actor):
     discard_tile = ai_action["pai"]
     tsumogiri = bool(ai_action.get("tsumogiri"))
     next_snapshot = copy.deepcopy(snapshot)
-    apply_discard(next_snapshot, actor, discard_tile, from_drawn=tsumogiri)
+    ROUND_ACTIONS.apply_discard(
+        next_snapshot,
+        actor,
+        discard_tile,
+        from_drawn=tsumogiri,
+    )
     next_snapshot["reactionWindow"] = None
     action = {
         "type": "dahai",
@@ -2762,7 +2150,7 @@ def _process_riichi_auto_tsumogiri(game, snapshot, actor):
 
     next_snapshot = copy.deepcopy(snapshot)
     next_snapshot["riichiDiscardState"] = None
-    apply_discard(next_snapshot, actor, drawn_tile)
+    ROUND_ACTIONS.apply_discard(next_snapshot, actor, drawn_tile)
     next_snapshot["reactionWindow"] = None
 
     action = {
@@ -2861,7 +2249,7 @@ def advance_game_flow(game):
         if not tile:
             raise ValueError(f"AI reach_declaration: no valid discard tile for actor {actor}")
 
-        tsumogiri = resolve_discard_tsumogiri(
+        tsumogiri = ROUND_ACTIONS.resolve_discard_tsumogiri(
             current_snapshot,
             actor,
             tile,
@@ -2870,7 +2258,12 @@ def advance_game_flow(game):
 
         next_snapshot = copy.deepcopy(current_snapshot)
         sync_snapshot_state(next_snapshot)
-        materialize_reach_declaration_discard(next_snapshot, actor, tile, tsumogiri)
+        ROUND_ACTIONS.materialize_reach_declaration_discard(
+            next_snapshot,
+            actor,
+            tile,
+            tsumogiri,
+        )
         persist_snapshot_state(next_snapshot)
         next_snapshot["reactionWindow"] = None
         action = {

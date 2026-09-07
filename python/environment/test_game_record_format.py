@@ -17,7 +17,7 @@ class GameRecordFormatTests(unittest.TestCase):
     def test_new_tsumo_node_uses_the_drawn_tile_instead_of_sorted_hand_order(self):
         game = {"currentNodeId": "parent"}
         with (
-            patch.object(service, "draw_tile", return_value="3m"),
+            patch.object(service.ROUND_ACTIONS, "draw_tile", return_value="3m"),
             patch.object(service, "persist_snapshot_state"),
             patch.object(service, "create_node", return_value="child") as create_node,
             patch.object(service, "attach_mainline"),
