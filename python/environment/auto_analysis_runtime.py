@@ -178,7 +178,12 @@ class AutoAnalysisRuntime:
     def complete_item(self, generation, item, success, error=None):
         with self.lock:
             context = self.context
-            if not isinstance(context, dict) or context.get("generation") != generation:
+            if (
+                not isinstance(context, dict)
+                or context.get("generation") != generation
+                or self.status.get("status") != "running"
+                or auto_analysis_plan.item_key(item) in context["attempted"]
+            ):
                 return None
             self.future = None
             context["attempted"].add(auto_analysis_plan.item_key(item))

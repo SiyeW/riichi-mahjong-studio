@@ -2767,6 +2767,8 @@ def _complete_auto_analysis_item_locked(generation, item, result=None, error=Non
         if context is None:
             return
         with AUTO_ANALYSIS_RUNTIME.lock:
+            if auto_analysis_plan.item_key(item) in context["attempted"]:
+                return
             game = context["game"]
             seat = context["seat"]
         if STATE.get("game") is not game:
