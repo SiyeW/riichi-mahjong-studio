@@ -39,8 +39,7 @@ class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
                 self.assertEqual(runtime.status['completed'], 0 if mode == 'cancel_then_raise' else len(items))
                 self.assertEqual(runtime.status['failed'], runtime.status['completed'])
                 self.assertIsNone(runtime.future)
-                self.assertFalse(runtime.scheduling_generations)
-                self.assertFalse(runtime.schedule_requested)
+                self.assert_can_schedule_again(runtime, generation)
 
     def test_immediate_completion_of_long_queue_does_not_recurse(self):
         runtime = AutoAnalysisRuntime()
@@ -74,8 +73,7 @@ class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
         self.assertEqual(runtime.status['status'], 'completed')
         self.assertEqual(runtime.status['failed'], len(items))
         self.assertIsNone(runtime.future)
-        self.assertEqual(runtime.scheduling_generations, set())
-        self.assertEqual(runtime.schedule_requested, set())
+        self.assert_can_schedule_again(runtime, generation)
 
     def test_dispatch_error_releases_scheduling_guard(self):
         runtime = AutoAnalysisRuntime()
@@ -83,8 +81,12 @@ class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
              patch.object(service, '_dispatch_next_auto_analysis_item', side_effect=RuntimeError('failed')):
             with self.assertRaisesRegex(RuntimeError, 'failed'):
                 service._schedule_next_auto_analysis_item(1)
-        self.assertEqual(runtime.scheduling_generations, set())
-        self.assertEqual(runtime.schedule_requested, set())
+        self.assert_can_schedule_again(runtime, 1)
+
+    def assert_can_schedule_again(self, runtime, generation):
+        dispatched = []
+        runtime.schedule(generation, dispatched.append)
+        self.assertEqual(dispatched, [generation])
 
     def test_rejected_submissions_finish_without_recursion_or_stuck_activity(self):
         runtime = AutoAnalysisRuntime()

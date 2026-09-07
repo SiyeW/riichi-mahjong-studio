@@ -10,6 +10,49 @@ from unittest import mock
 
 import auto_analysis_plan
 import service
+from auto_analysis_runtime import AutoAnalysisRuntime
+
+
+class AutoAnalysisSchedulingTest(unittest.TestCase):
+    def test_reentrant_requests_are_coalesced(self):
+        runtime = AutoAnalysisRuntime()
+        calls = []
+
+        def dispatch(generation):
+            calls.append(generation)
+            if len(calls) == 1:
+                runtime.schedule(generation, dispatch)
+                runtime.schedule(generation, dispatch)
+                self.assertEqual(calls, [generation])
+
+        runtime.schedule(1, dispatch)
+        self.assertEqual(calls, [1, 1])
+
+    def test_new_generation_does_not_consume_previous_requests(self):
+        runtime = AutoAnalysisRuntime()
+        calls = []
+
+        def dispatch(generation):
+            calls.append(generation)
+            if calls == [1]:
+                runtime.schedule(1, dispatch)
+                runtime.schedule(2, dispatch)
+
+        runtime.schedule(1, dispatch)
+        self.assertEqual(calls, [1, 2, 1])
+
+    def test_failed_dispatch_discards_pending_pass(self):
+        runtime = AutoAnalysisRuntime()
+
+        def dispatch(generation):
+            runtime.schedule(generation, dispatch)
+            raise RuntimeError('dispatch failed')
+
+        with self.assertRaisesRegex(RuntimeError, 'dispatch failed'):
+            runtime.schedule(1, dispatch)
+        calls = []
+        runtime.schedule(1, calls.append)
+        self.assertEqual(calls, [1])
 
 
 class AutoAnalysisPlanTest(unittest.TestCase):

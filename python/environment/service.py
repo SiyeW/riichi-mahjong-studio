@@ -2943,26 +2943,7 @@ def schedule_auto_analysis_reprioritization(game, start_node_id):
 
 
 def _schedule_next_auto_analysis_item(generation):
-    runtime = AUTO_ANALYSIS_RUNTIME
-    with runtime.lock:
-        if generation in runtime.scheduling_generations:
-            runtime.schedule_requested.add(generation)
-            return
-        runtime.scheduling_generations.add(generation)
-    try:
-        while True:
-            _dispatch_next_auto_analysis_item(generation)
-            with runtime.lock:
-                if generation in runtime.schedule_requested:
-                    runtime.schedule_requested.remove(generation)
-                    continue
-                runtime.scheduling_generations.remove(generation)
-                return
-    except BaseException:
-        with runtime.lock:
-            runtime.scheduling_generations.discard(generation)
-            runtime.schedule_requested.discard(generation)
-        raise
+    AUTO_ANALYSIS_RUNTIME.schedule(generation, _dispatch_next_auto_analysis_item)
 
 
 def _dispatch_next_auto_analysis_item(generation):

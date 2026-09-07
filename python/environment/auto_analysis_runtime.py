@@ -9,8 +9,8 @@ class AutoAnalysisRuntime:
     def __init__(self):
         self.lock = threading.RLock()
         self.generation = 0
-        self.scheduling_generations = set()
-        self.schedule_requested = set()
+        self._scheduling_generations = set()
+        self._schedule_requested = set()
         self.future = None
         self.context = None
         self.reprioritize_timer = None
@@ -36,6 +36,33 @@ class AutoAnalysisRuntime:
             "timeline": "",
             "timelineReady": 0,
         }
+
+    def schedule(self, generation, dispatch):
+        """Drain synchronous completion requests without recursive dispatch.
+
+        Dispatch runs outside the runtime lock: it may submit work, complete
+        synchronously, or start another generation. Each generation owns its
+        drain loop; reentrant requests only ask that loop for another pass.
+        """
+        with self.lock:
+            if generation in self._scheduling_generations:
+                self._schedule_requested.add(generation)
+                return
+            self._scheduling_generations.add(generation)
+        try:
+            while True:
+                dispatch(generation)
+                with self.lock:
+                    if generation in self._schedule_requested:
+                        self._schedule_requested.remove(generation)
+                        continue
+                    self._scheduling_generations.remove(generation)
+                    return
+        except BaseException:
+            with self.lock:
+                self._scheduling_generations.discard(generation)
+                self._schedule_requested.discard(generation)
+            raise
 
     def invalidate_timeline(self):
         with self.lock:
