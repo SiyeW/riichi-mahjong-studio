@@ -30,8 +30,8 @@ class ResearchModeActionBoundaryTest(unittest.TestCase):
             ("confirm_pending_review", {}),
         )
         with mock.patch.object(
-                service,
-                "get_training_config",
+                service.ENGINE_MANAGEMENT,
+                "training_config",
                 return_value={"thinkingTimeMinS": 0.25, "thinkingTimeMaxS": 1.0},
             ):
             for command, payload in commands:

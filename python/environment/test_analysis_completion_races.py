@@ -27,17 +27,25 @@ class AnalysisCompletionRaceTest(unittest.TestCase):
         self.stack.enter_context(mock.patch.dict(service.STATE, {
             "game": self.game, "controlledSeat": 0, "decisionRecommendationsEnabled": True,
         }))
-        for name, value in [("_BG_TASKS", {}), ("_BG_COMPLETED", set()),
-                            ("_DECISION_CACHE_EPOCH", 0), ("_OPPONENT_ANALYSIS_CACHE_EPOCH", 0)]:
+        for name, value in [("_BG_TASKS", {}), ("_BG_COMPLETED", set())]:
             self.stack.enter_context(mock.patch.object(service, name, value))
+        self.stack.enter_context(
+            mock.patch.object(service.ENGINE_MANAGEMENT, "_decision_cache_epoch", 0)
+        )
+        self.stack.enter_context(
+            mock.patch.object(service.ENGINE_MANAGEMENT, "_opponent_cache_epoch", 0)
+        )
         for name, result in [
             ("get_analysis_cache_key", "key"), ("play_prefetch_owns_decision", False),
-            ("auto_analysis_owns_item", False), ("get_action_engine_weight_path", ""),
+            ("auto_analysis_owns_item", False),
             ("get_cached_mjai_stream_bundle", {}), ("build_legal_actions", []),
             ("_set_auto_analysis_timeline_cached", None), ("update_cached_child_comparisons", []),
             ("build_state_payload", {}),
         ]:
             self.stack.enter_context(mock.patch.object(service, name, return_value=result))
+        self.stack.enter_context(
+            mock.patch.object(service.ENGINE_MANAGEMENT, "action_weight_path", return_value="")
+        )
         self.store = self.stack.enter_context(mock.patch.object(service, "_store_decision_analysis", return_value={}))
         self.emit = self.stack.enter_context(mock.patch.object(service, "emit"))
 
@@ -53,7 +61,10 @@ class AnalysisCompletionRaceTest(unittest.TestCase):
         self.assertEqual(len(service._BG_COMPLETED), 1)
         self.store.assert_called_once()
         ready = [call.args[0] for call in self.emit.call_args_list if call.args[0]["type"] == "analysis_ready"]
-        self.assertEqual(ready[0]["cacheEpoch"], service._DECISION_CACHE_EPOCH)
+        self.assertEqual(
+            ready[0]["cacheEpoch"],
+            service.ENGINE_MANAGEMENT.decision_cache_epoch,
+        )
 
     def test_failed_task_is_removed_without_marking_it_completed(self):
         future = Future()
@@ -66,7 +77,9 @@ class AnalysisCompletionRaceTest(unittest.TestCase):
     def test_epoch_is_checked_after_acquiring_the_state_lock(self):
         future = Future()
         self.submit(future)
-        lock = InvalidateOnEntry(lambda: setattr(service, "_DECISION_CACHE_EPOCH", 1))
+        lock = InvalidateOnEntry(
+            lambda: setattr(service.ENGINE_MANAGEMENT, "_decision_cache_epoch", 1)
+        )
         with mock.patch.object(service, "_STATE_LOCK", lock):
             future.set_result({"analysis": {"seat": 0}})
         self.store.assert_not_called()
@@ -96,17 +109,29 @@ class AnalysisCompletionRaceTest(unittest.TestCase):
         key = next(iter(service._BG_TASKS))
         replacement = Future()
         service._BG_TASKS[key] = replacement
-        service._DECISION_CACHE_EPOCH += 1
+        service.ENGINE_MANAGEMENT._decision_cache_epoch += 1
         future.set_result({"analysis": {"seat": 0}})
         self.assertIs(service._BG_TASKS[key], replacement)
         self.assertFalse(service._BG_COMPLETED)
 
     def test_opponent_epoch_is_checked_inside_the_state_lock(self):
         result = {"status": "ready", "context": {"cacheEpoch": 0}}
-        lock = InvalidateOnEntry(lambda: setattr(service, "_OPPONENT_ANALYSIS_CACHE_EPOCH", 1))
-        with (mock.patch.object(service, "_STATE_LOCK", lock),
-              mock.patch.object(service, "compact_opponent_analysis") as compact):
-            self.assertFalse(service._cache_opponent_analysis_result(result, require_current=False))
+        lock = InvalidateOnEntry(
+            lambda: setattr(service.ENGINE_MANAGEMENT, "_opponent_cache_epoch", 1)
+        )
+        with (
+            mock.patch.object(service.OPPONENT_ANALYSIS, "state_lock", lock),
+            mock.patch.object(
+                service.opponent_analysis_session,
+                "compact_opponent_analysis",
+            ) as compact,
+        ):
+            self.assertFalse(
+                service.OPPONENT_ANALYSIS.cache_result(
+                    result,
+                    require_current=False,
+                )
+            )
         compact.assert_not_called()
         self.emit.assert_not_called()
 

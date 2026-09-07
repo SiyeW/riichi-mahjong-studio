@@ -9,12 +9,12 @@ import service
 
 class ConfigPathTest(unittest.TestCase):
     def setUp(self):
-        self.previous_signature = service._PROJECT_CONFIG_SIGNATURE
-        self.previous_value = service._PROJECT_CONFIG_VALUE
+        self.previous_signature = service.ENGINE_MANAGEMENT._project_config_signature
+        self.previous_value = service.ENGINE_MANAGEMENT._project_config_value
 
     def tearDown(self):
-        service._PROJECT_CONFIG_SIGNATURE = self.previous_signature
-        service._PROJECT_CONFIG_VALUE = self.previous_value
+        service.ENGINE_MANAGEMENT._project_config_signature = self.previous_signature
+        service.ENGINE_MANAGEMENT._project_config_value = self.previous_value
 
     def test_explicit_config_path_is_used_by_backend(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -27,15 +27,14 @@ class ConfigPathTest(unittest.TestCase):
                 os.environ,
                 {"MJAI_TRAINER_CONFIG": str(config_path)},
             ):
-                service._PROJECT_CONFIG_SIGNATURE = None
-                service._PROJECT_CONFIG_VALUE = {}
+                service.ENGINE_MANAGEMENT.reset_project_config_cache()
 
                 self.assertEqual(
-                    service._project_config_paths(),
+                    service.ENGINE_MANAGEMENT.project_config_paths(),
                     (config_path.resolve(),),
                 )
                 self.assertEqual(
-                    service.load_project_config()["engines"]["outputAssignments"]["action-recommendation"],
+                    service.ENGINE_MANAGEMENT.load_project_config()["engines"]["outputAssignments"]["action-recommendation"],
                     "profile.debug",
                 )
 

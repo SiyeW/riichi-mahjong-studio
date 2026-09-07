@@ -14,10 +14,11 @@ except ModuleNotFoundError:
     psutil = None
 
 import auto_analysis_plan
-import engine_configuration
+import engine_management
 import game_setup
 import game_tree
 import legal_actions
+import opponent_analysis_session
 import play_prefetch_runtime
 import record_commands
 import record_session
@@ -39,21 +40,17 @@ from analysis_cache import (
     ANALYSIS_SOURCES_FIELD,
     OPPONENT_ANALYSIS_CACHE_FIELD,
     attach_analysis_context,
-    build_analysis_source,
     cache_key_context,
     compact_opponent_analysis,
     decision_cache_key,
     find_stale_cache_entry,
     migrate_analysis_cache_storage,
-    opponent_analysis_cache_key,
     prune_stale_cache_entries,
     register_analysis_source,
-    same_analysis_context,
 )
-from engine_assignments import resolve_engine_assignments
 from engine_runtime import EngineRuntimeRegistry
 from match_progression import apply_round_result_to_match_state
-from opponent_prediction_coordinator import ANALYSIS_OUTPUT_IDS, OpponentPredictionCoordinator
+from opponent_prediction_coordinator import OpponentPredictionCoordinator
 from opponent_prediction_gateway import get_latest_opponent_prediction_mjai
 from play_prefetch_runtime import PlayPrefetchRuntime
 from mjai_stream import build_mjai_events_from_actions, build_mjai_stream
@@ -119,18 +116,9 @@ _ENGINE_INSPECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_RELOAD_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _BG_TASKS = {}
 _BG_COMPLETED = set()
-_DECISION_CACHE_EPOCH = 0
-_OPPONENT_ANALYSIS_CACHE_EPOCH = 0
-_ACTIVE_DECISION_SOURCE_ID = None
-_ACTIVE_OPPONENT_ANALYSIS_SOURCE_ID = None
 _EMIT_LOCK = threading.Lock()
 _STATE_LOCK = threading.RLock()
 PLAY_PREFETCH_RUNTIME = PlayPrefetchRuntime()
-_PROJECT_CONFIG_LOCK = threading.Lock()
-_ENGINE_CONFIG_LOCK = threading.Lock()
-_PROJECT_CONFIG_SIGNATURE = None
-_PROJECT_CONFIG_VALUE = {}
-_RUNTIME_ENGINE_SETTINGS = None
 _MJAI_STREAM_CACHE = {}
 _MJAI_STREAM_CACHE_MAX = 64
 _LEGAL_ACTIONS_CACHE = {}
@@ -144,572 +132,25 @@ def debug_flow(message):
         print(message, file=sys.stderr)
 
 
-def prewarm_runtime(profile_id=""):
-    requested_profile_id = str(profile_id or "")
-    action_weight_path = get_action_engine_weight_path()
-    warmed = {
-        "teachingAnalysis": False,
-        "teachingPlay": False,
-        "opponentPlay": False,
-        "opponentAnalysis": False,
-    }
-    errors = {}
-    decision_profile_id = str(
-        ACTION_RECOMMENDATIONS.runtime_status().get("profileId") or ""
-    )
-    opponent_profile_ids = set(
-        OPPONENT_PREDICTIONS.runtime_status().get("profileIds") or []
-    )
-    prewarm_decision = bool(decision_profile_id) and (
-        not requested_profile_id or decision_profile_id == requested_profile_id
-    )
-    prewarm_opponent = bool(opponent_profile_ids) and (
-        not requested_profile_id or requested_profile_id in opponent_profile_ids
-    )
-
-    def _prewarm_decision():
-        if not ACTION_RECOMMENDATIONS.runtime_status().get("profileId"):
-            return False, None
-        try:
-            ready = ACTION_RECOMMENDATIONS.prewarm(0, action_weight_path)
-            error = (
-                None
-                if ready
-                else ACTION_RECOMMENDATIONS.activity_error() or "决策引擎预热失败"
-            )
-            return ready, error
-        except Exception as error:
-            return False, str(error)
-        finally:
-            _emit_decision_activity(
-                ACTION_RECOMMENDATIONS.active_seat(),
-                ACTION_RECOMMENDATIONS.activity_state(),
-                ACTION_RECOMMENDATIONS.activity_error(),
-            )
-
-    def _prewarm_opponent_analysis():
-        if not OPPONENT_PREDICTIONS.runtime_status().get("profileId"):
-            return False, None
-        try:
-            ready = OPPONENT_PREDICTIONS.prewarm(requested_profile_id or None)
-            error = (
-                None
-                if ready
-                else OPPONENT_PREDICTIONS.activity_error() or "对手分析引擎预热失败"
-            )
-            return ready, error
-        except Exception as error:
-            return False, str(error)
-        finally:
-            _emit_opponent_analysis_activity(
-                OPPONENT_PREDICTIONS.activity_state(),
-                OPPONENT_PREDICTIONS.activity_error(),
-            )
-
-    decision_future = (
-        _ENGINE_PREWARM_EXECUTOR.submit(_prewarm_decision)
-        if prewarm_decision
-        else None
-    )
-    opponent_future = (
-        _ENGINE_PREWARM_EXECUTOR.submit(_prewarm_opponent_analysis)
-        if prewarm_opponent
-        else None
-    )
-    decision_ready, decision_error = (
-        decision_future.result() if decision_future else (False, None)
-    )
-    opponent_ready, opponent_error = (
-        opponent_future.result() if opponent_future else (False, None)
-    )
-
-    warmed["teachingAnalysis"] = decision_ready
-    warmed["teachingPlay"] = decision_ready
-    warmed["opponentPlay"] = decision_ready
-    warmed["opponentAnalysis"] = opponent_ready
-    if decision_error:
-        errors["decision"] = decision_error
-    if opponent_error:
-        errors["opponent-analysis"] = opponent_error
-    return {
-        "warmed": warmed,
-        "device": ACTION_RECOMMENDATIONS.device_str,
-        "errors": errors,
-    }
-
-def _load_json_file(path):
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return {}
+def emit(payload):
+    with _EMIT_LOCK:
+        sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
+        sys.stdout.flush()
 
 
-def _project_config_paths():
-    configured_path = str(os.environ.get("MJAI_TRAINER_CONFIG") or "").strip()
-    if configured_path:
-        return (Path(configured_path).expanduser().resolve(),)
-    if getattr(sys, "frozen", False):
-        return (
-            Path(sys.executable).resolve().parent / "config.json",
-            PORTABLE_ROOT / "config.json",
-        )
-    return (PROJECT_ROOT / "config.json",)
-
-
-def load_project_config():
-    global _PROJECT_CONFIG_SIGNATURE, _PROJECT_CONFIG_VALUE
-
-    paths = _project_config_paths()
-    signature = []
-    for path in paths:
-        try:
-            stat = path.stat()
-            signature.append((str(path), stat.st_mtime_ns, stat.st_size))
-        except OSError:
-            signature.append((str(path), None, None))
-    signature = tuple(signature)
-
-    with _PROJECT_CONFIG_LOCK:
-        if signature == _PROJECT_CONFIG_SIGNATURE:
-            return _PROJECT_CONFIG_VALUE
-
-        base = _load_json_file(paths[0])
-        if len(paths) > 1:
-            user = _load_json_file(paths[1])
-            for key in (
-                "training",
-                "modeDefaults",
-                "audio",
-                "engines",
-            ):
-                if key in user:
-                    base[key] = user[key]
-        _PROJECT_CONFIG_SIGNATURE = signature
-        _PROJECT_CONFIG_VALUE = base
-        return _PROJECT_CONFIG_VALUE
-
-
-_DECISION_POSTPROCESSOR_VERSION = "decision-analysis-v2"
-
-
-def _analysis_source_display_name(kind):
-    config = load_project_config()
-    output_ids = (
-        {"action-recommendation"}
-        if kind == "decision"
-        else set(ANALYSIS_OUTPUT_IDS)
-    )
-    names = []
-    for assignment in resolve_engine_assignments(config, loaded_only=True):
-        if not output_ids.intersection(assignment["outputs"]):
-            continue
-        profile = assignment["profile"]
-        name = str(
-            profile.get("name")
-            or profile.get("engineId")
-            or assignment["profileId"]
-        )
-        if name and name not in names:
-            names.append(name)
-    return " + ".join(names) or str(kind)
-
-
-def _current_decision_analysis_source(model_path=None, *, include_display_name=False):
-    return build_analysis_source(
-        "decision",
-        ACTION_RECOMMENDATIONS.cache_identity(model_path),
-        _DECISION_POSTPROCESSOR_VERSION,
-        "action-recommendation",
-        display_name=(
-            _analysis_source_display_name("decision")
-            if include_display_name
-            else "决策引擎"
-        ),
-    )
-
-
-def _current_opponent_analysis_source(*, include_display_name=False):
-    config = load_project_config()
-    assigned_outputs = {
-        output_id
-        for assignment in resolve_engine_assignments(config)
-        for output_id in assignment["outputs"]
-    }
-    output_signature = "+".join(
-        output_id
-        for output_id in ANALYSIS_OUTPUT_IDS
-        if output_id in assigned_outputs
-    ) or "opponent-analysis"
-    return build_analysis_source(
-        "opponent",
-        OPPONENT_PREDICTIONS.cache_identity(),
-        None,
-        output_signature,
-        display_name=(
-            _analysis_source_display_name("opponent")
-            if include_display_name
-            else "Opponent analysis"
-        ),
-    )
-
-
-def _get_opponent_analysis_cache_key(seat=None):
-    resolved_seat = STATE["controlledSeat"] if seat is None else int(seat)
-    input_mode = _get_opponent_analysis_input_mode()
-    return _build_opponent_analysis_cache_key(resolved_seat, input_mode)
-
-
-def _build_opponent_analysis_cache_key(seat, input_mode):
-    return opponent_analysis_cache_key(
-        seat,
-        input_mode,
-        _current_opponent_analysis_source(),
-    )
-
-
-def _get_opponent_analysis_input_mode():
-    supported = set(OPPONENT_PREDICTIONS.supported_input_modes())
-    if STATE.get("visibleHands") and "full-information" in supported:
-        return "full-information"
-    return "public"
-
-
-def _current_opponent_analysis_context():
-    game = STATE.get("game")
-    if not STATE.get("gameLoaded") or not isinstance(game, dict):
-        return None
-    node_id = game.get("currentNodeId")
-    if node_id not in game.get("nodes", {}):
-        return None
-    seat = int(STATE["controlledSeat"])
-    input_mode = _get_opponent_analysis_input_mode()
-    return {
-        "gameId": game.get("gameId"),
-        "nodeId": node_id,
-        "seat": seat,
-        "inputMode": input_mode,
-        "cacheKey": _get_opponent_analysis_cache_key(seat),
-        "cacheEpoch": _OPPONENT_ANALYSIS_CACHE_EPOCH,
-    }
-
-
-def _cache_opponent_analysis_result(result, *, require_current):
-    # Epoch validation, cache writes and notifications share the command lock.
+def _invalidate_engine_analysis(reason):
     with _STATE_LOCK:
-        return _cache_opponent_analysis_result_locked(result, require_current=require_current)
-
-
-def _cache_opponent_analysis_result_locked(result, *, require_current):
-    context = result.get("context") if isinstance(result, dict) else None
-    if not isinstance(context, dict) or result.get("status") != "ready":
-        return False
-    if context.get("cacheEpoch") != _OPPONENT_ANALYSIS_CACHE_EPOCH:
-        return False
-
-    compact = compact_opponent_analysis(result)
-    changed = False
-    is_current = False
-    seat = int(context.get("seat", -1))
-    with _STATE_LOCK:
-        is_current = same_analysis_context(context, _current_opponent_analysis_context())
-        if require_current and not is_current:
-            return False
-        game = STATE.get("game")
-        if not isinstance(game, dict) or game.get("gameId") != context.get("gameId"):
-            return False
-        node = game.get("nodes", {}).get(context.get("nodeId"))
-        cache_key = str(context.get("cacheKey") or "")
-        if not isinstance(node, dict) or not cache_key or cache_key != _get_opponent_analysis_cache_key(seat):
-            return False
-
-        source = _current_opponent_analysis_source(include_display_name=True)
-        register_analysis_source(game, source, result)
-        cache = node.setdefault(OPPONENT_ANALYSIS_CACHE_FIELD, {})
-        prune_stale_cache_entries(cache, cache_key)
-        if cache.get(cache_key) != compact:
-            cache[cache_key] = compact
-            changed = True
-
-    if changed:
-        _set_auto_analysis_timeline_cached("opponent", context.get("nodeId"), True)
-        emit({
-            "type": "record_changed",
-            "gameId": context.get("gameId"),
-            "change": "opponent_analysis_cache",
-            "timestamp": now_iso(),
-        })
-    if is_current and STATE.get("opponentAnalysisEnabled"):
-        emit({
-            "type": "opponent_analysis_ready",
-            "gameId": context.get("gameId"),
-            "nodeId": context.get("nodeId"),
-            "seat": seat,
-            "opponentAnalysis": attach_analysis_context(compact, context),
-            "autoAnalysis": get_auto_analysis_status(
-                include_timeline=STATE.get("mode") == "research"
-            ),
-            "timestamp": now_iso(),
-        })
-    return True
-
-
-def _store_opponent_analysis_result(result):
-    _cache_opponent_analysis_result(result, require_current=True)
-
-
-def request_current_opponent_analysis(snapshot=None):
-    with _STATE_LOCK:
-        if not STATE.get("opponentAnalysisEnabled"):
-            return False
-        context = _current_opponent_analysis_context()
-        if context is None:
-            return False
-        OPPONENT_PREDICTIONS.set_latest_context(context)
-        game = STATE["game"]
-        node = game["nodes"][context["nodeId"]]
-        if context["cacheKey"] in node.get(OPPONENT_ANALYSIS_CACHE_FIELD, {}):
-            return False
-        if play_prefetch_owns_opponent(context["nodeId"]):
-            return False
-        if OPPONENT_PREDICTIONS.has_request(context):
-            return False
-        if auto_analysis_owns_item("opponent", context["nodeId"]):
-            return False
-        input_mode = context["inputMode"]
-        prediction_bundle = get_cached_mjai_stream_bundle(
-            game,
-            context["nodeId"],
-            context["seat"],
-            reveal_all=input_mode == "full-information",
+        cancel_auto_analysis(reason)
+        cancel_play_prefetch()
+        active_game = STATE.get("game")
+        purge_bg_analysis_tasks(
+            active_game.get("gameId") if isinstance(active_game, dict) else None
         )
-        target_bundle = get_cached_mjai_stream_bundle(
-            game,
-            context["nodeId"],
-            context["seat"],
-            reveal_all=True,
-        )
-        OPPONENT_PREDICTIONS.request_predict(
-            snapshot if snapshot is not None else node["snapshot"],
-            context["seat"],
-            STATE["visibleHands"],
-            input_mode=input_mode,
-            context=context,
-            on_complete=_store_opponent_analysis_result,
-            mjai_events=prediction_bundle["events"],
-            mjai_prefix_hashes=prediction_bundle["prefixHashes"],
-            mjai_events_hash=prediction_bundle["eventHash"],
-            target_mjai_events=target_bundle["events"],
-            target_mjai_prefix_hashes=target_bundle["prefixHashes"],
-            target_mjai_events_hash=target_bundle["eventHash"],
-        )
-        return True
+        OPPONENT_PREDICTIONS.cancel_all()
+        _invalidate_auto_analysis_timeline()
 
 
-def get_current_opponent_analysis():
-    if not STATE.get("opponentAnalysisEnabled"):
-        return {"status": "disabled", "predictions": {}, "ground_truth": {}}
-    context = _current_opponent_analysis_context()
-    if context is None:
-        return {"status": "unavailable", "predictions": {}, "ground_truth": {}}
-
-    latest = OPPONENT_PREDICTIONS.get_latest()
-    latest_context = latest.get("context") if isinstance(latest, dict) else None
-    if same_analysis_context(latest_context, context) and latest.get("status") == "ready":
-        return latest
-
-    node = STATE["game"]["nodes"][context["nodeId"]]
-    cached = node.get(OPPONENT_ANALYSIS_CACHE_FIELD, {}).get(context["cacheKey"])
-    if isinstance(cached, dict):
-        return attach_analysis_context(cached, context)
-
-    stale = find_stale_cache_entry(
-        STATE["game"],
-        node,
-        context["cacheKey"],
-        OPPONENT_ANALYSIS_CACHE_FIELD,
-    )
-    if same_analysis_context(latest_context, context):
-        if isinstance(stale, dict):
-            return attach_analysis_context(stale, context)
-        return latest
-
-    request_current_opponent_analysis(node["snapshot"])
-    if isinstance(stale, dict):
-        return attach_analysis_context(stale, context)
-    latest = OPPONENT_PREDICTIONS.get_latest()
-    latest_context = latest.get("context") if isinstance(latest, dict) else None
-    if same_analysis_context(latest_context, context):
-        return latest
-    return {
-        "status": "loading",
-        "predictions": {"opponents": {}, "ron_wait": {}},
-        "ground_truth": {"opponents": {}, "ron_wait": {}},
-        "context": copy.deepcopy(context),
-    }
-
-
-def _runtime_engine_config():
-    if isinstance(_RUNTIME_ENGINE_SETTINGS, dict):
-        return {"engines": _RUNTIME_ENGINE_SETTINGS}
-    return load_project_config()
-
-
-def normalize_training_mode(mode):
-    return engine_configuration.normalize_training_mode(mode)
-
-
-def get_default_training_config():
-    return engine_configuration.default_training_config()
-
-
-def get_training_config():
-    return engine_configuration.training_config(load_project_config())
-
-
-def get_action_engine_weight_path():
-    return engine_configuration.action_engine_weight_path(
-        _runtime_engine_config(),
-        _resolve_engine_resource_path,
-    )
-
-
-def _resolve_engine_resource_path(path_value):
-    return engine_configuration.resolve_resource_path(
-        path_value,
-        project_root=Path(__file__).resolve().parents[2],
-        frozen=getattr(sys, "frozen", False),
-        executable=sys.executable,
-    )
-
-
-def _resolve_configured_engine_command(selected):
-    return engine_configuration.resolve_command(selected, _resolve_engine_resource_path)
-
-
-def _resolve_configured_engine_cwd(selected, command):
-    return engine_configuration.resolve_cwd(
-        selected,
-        command,
-        _resolve_engine_resource_path,
-    )
-
-
-def _gateway_profile(config, output_id):
-    return engine_configuration.gateway_profile(
-        config,
-        output_id,
-        _resolve_engine_resource_path,
-    )
-
-
-def _engine_runtime_specifications(config):
-    return engine_configuration.runtime_specifications(
-        config,
-        _resolve_engine_resource_path,
-    )
-
-
-def configure_action_recommendation_engine(config):
-    selected = _gateway_profile(config, "action-recommendation") or {}
-    engine_client = ENGINE_RUNTIME_REGISTRY.get(selected.get("profile_id"))
-    ACTION_RECOMMENDATIONS.configure_profile(
-        profile_id=str(selected.get("profile_id") or ""),
-        engine_id=str(selected.get("engine_id") or ""),
-        engine_version=str(selected.get("engine_version") or ""),
-        model_id=str(selected.get("model_id") or ""),
-        model_format=str(selected.get("model_format") or ""),
-        expected_sha256=str(selected.get("expected_sha256") or ""),
-        model_path=str(selected.get("model_path") or "") or None,
-        weights=selected.get("weights") or [],
-        engine_command=selected.get("engine_command") or [],
-        engine_cwd=selected.get("engine_cwd"),
-        engine_options=selected.get("engine_options") or {},
-        engine_client=engine_client,
-    )
-
-
-def configure_opponent_prediction_engines(config):
-    profiles = {}
-    for output_id in ANALYSIS_OUTPUT_IDS:
-        profile = _gateway_profile(config, output_id)
-        if not profile:
-            continue
-        profile["input_modes"] = ["public"]
-        profile["engine_client"] = ENGINE_RUNTIME_REGISTRY.get(profile["profile_id"])
-        profiles[output_id] = profile
-    OPPONENT_PREDICTIONS.configure_profiles(profiles)
-
-
-def apply_runtime_engine_config(config=None, *, invalidate=False):
-    global _ACTIVE_DECISION_SOURCE_ID, _ACTIVE_OPPONENT_ANALYSIS_SOURCE_ID
-    global _DECISION_CACHE_EPOCH, _OPPONENT_ANALYSIS_CACHE_EPOCH
-    global _RUNTIME_ENGINE_SETTINGS
-
-    with _ENGINE_CONFIG_LOCK:
-        config = config if isinstance(config, dict) else load_project_config()
-        ENGINE_RUNTIME_REGISTRY.reconcile(_engine_runtime_specifications(config))
-        configure_action_recommendation_engine(config)
-        configure_opponent_prediction_engines(config)
-
-        engines = config.get("engines") if isinstance(config, dict) else None
-        _RUNTIME_ENGINE_SETTINGS = copy.deepcopy(engines) if isinstance(engines, dict) else {}
-
-        decision_source_id = _current_decision_analysis_source()["id"]
-        opponent_source_id = _current_opponent_analysis_source()["id"]
-        source_changed = (
-            _ACTIVE_DECISION_SOURCE_ID is not None
-            and _ACTIVE_DECISION_SOURCE_ID != decision_source_id
-        ) or (
-            _ACTIVE_OPPONENT_ANALYSIS_SOURCE_ID is not None
-            and _ACTIVE_OPPONENT_ANALYSIS_SOURCE_ID != opponent_source_id
-        )
-        _ACTIVE_DECISION_SOURCE_ID = decision_source_id
-        _ACTIVE_OPPONENT_ANALYSIS_SOURCE_ID = opponent_source_id
-
-    if invalidate and source_changed:
-        with _STATE_LOCK:
-            cancel_auto_analysis("分析模型已更改")
-            cancel_play_prefetch()
-            _DECISION_CACHE_EPOCH += 1
-            _OPPONENT_ANALYSIS_CACHE_EPOCH += 1
-            active_game = STATE.get("game")
-            purge_bg_analysis_tasks(
-                active_game.get("gameId") if isinstance(active_game, dict) else None
-            )
-            OPPONENT_PREDICTIONS.cancel_all()
-            _invalidate_auto_analysis_timeline()
-    return source_changed
-
-
-def reload_runtime_engines(profile_id):
-    requested_profile_id = str(profile_id or "")
-    if not requested_profile_id:
-        raise ValueError("engine profile id is required")
-    apply_runtime_engine_config(load_project_config(), invalidate=True)
-    matched = False
-    if (
-        str(ACTION_RECOMMENDATIONS.runtime_status().get("profileId") or "")
-        == requested_profile_id
-    ):
-        ACTION_RECOMMENDATIONS.prepare_reload()
-        matched = True
-    if requested_profile_id in set(
-        OPPONENT_PREDICTIONS.runtime_status().get("profileIds") or []
-    ):
-        OPPONENT_PREDICTIONS.prepare_reload(requested_profile_id)
-        matched = True
-    if not matched:
-        raise ValueError("engine profile is not assigned to a supported output")
-    return prewarm_runtime(requested_profile_id)
-
-
-def unload_runtime_engine(kind, profile_id):
-    normalized_kind = str(kind or "")
-    requested_profile_id = str(profile_id or "")
-    if not requested_profile_id:
-        raise ValueError("engine profile id is required")
+def _prepare_for_engine_unload():
     with _STATE_LOCK:
         cancel_auto_analysis("分析引擎已卸载")
         cancel_play_prefetch()
@@ -717,103 +158,44 @@ def unload_runtime_engine(kind, profile_id):
         purge_bg_analysis_tasks(
             active_game.get("gameId") if isinstance(active_game, dict) else None
         )
-    if normalized_kind == "decision":
-        if (
-            str(ACTION_RECOMMENDATIONS.runtime_status().get("profileId") or "")
-            != requested_profile_id
-        ):
-            raise ValueError("engine profile is not assigned to action recommendation")
-        ACTION_RECOMMENDATIONS.unload()
-    elif normalized_kind == "opponent-analysis":
-        if requested_profile_id not in set(
-            OPPONENT_PREDICTIONS.runtime_status().get("profileIds") or []
-        ):
-            raise ValueError("engine profile is not assigned to opponent analysis")
-        OPPONENT_PREDICTIONS.unload(requested_profile_id)
-    else:
-        raise ValueError("unknown engine kind")
-    return build_state_payload(consume_thinking_time=False)
 
 
-def describe_engine(payload):
-    from engine_process_client import EngineProcessClient
-
-    engine_id = str(payload.get("engineId") or "")
-    command = payload.get("engineCommand")
-    command = [str(part) for part in command] if isinstance(command, list) else None
-    if not command:
-        raise ValueError("engine executable is unavailable")
-    client = EngineProcessClient(
-        "selected",
-        command=command,
-        cwd=str(payload.get("engineCwd") or "") or None,
-        expected_engine_id=engine_id or "",
-        expected_engine_version=str(payload.get("engineVersion") or ""),
-    )
-    try:
-        hello = client.describe()
-    finally:
-        client.shutdown()
-    return hello
+ENGINE_MANAGEMENT = engine_management.EngineManagement(
+    STATE,
+    project_root=PROJECT_ROOT,
+    portable_root=PORTABLE_ROOT,
+    resource_root=Path(__file__).resolve().parents[2],
+    action_gateway=ACTION_RECOMMENDATIONS,
+    opponent_predictions=OPPONENT_PREDICTIONS,
+    runtime_registry=ENGINE_RUNTIME_REGISTRY,
+    prewarm_executor=_ENGINE_PREWARM_EXECUTOR,
+    emit=emit,
+    lifecycle=engine_management.EngineLifecycleCallbacks(
+        invalidate_analysis=_invalidate_engine_analysis,
+        prepare_for_unload=_prepare_for_engine_unload,
+        build_state=lambda: build_state_payload(consume_thinking_time=False),
+    ),
+)
 
 
-def emit(payload):
-    with _EMIT_LOCK:
-        sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
-        sys.stdout.flush()
-
-
-def get_decision_response_ms():
-    response_times = [0.0, 0.0, 0.0, 0.0]
-    analysis_ms = ACTION_RECOMMENDATIONS.average_response_ms()
-    if analysis_ms > 0:
-        response_times[STATE["controlledSeat"] % 4] = analysis_ms
-    return response_times
-
-
-def get_decision_activity():
-    return ACTION_RECOMMENDATIONS.get_activity()
-
-
-def get_decision_activity_errors():
-    return ACTION_RECOMMENDATIONS.get_activity_errors()
-
-
-def _emit_decision_activity(seat, state, error=None):
-    del state, error
-    decision_average_ms = get_decision_response_ms()
-    activity = get_decision_activity()
-    errors = get_decision_activity_errors()
-    normalized_seat = int(seat) % 4
-    effective_state = activity[normalized_seat]
-    emit({
-        "type": "model_activity",
-        "model": "decision",
-        "seat": normalized_seat,
-        "activityState": effective_state,
-        "active": effective_state == "running",
-        "error": errors[normalized_seat],
-        "averageMs": decision_average_ms[normalized_seat],
-        "runtime": ACTION_RECOMMENDATIONS.runtime_status(),
-        "timestamp": now_iso(),
-    })
-
-
-def _emit_opponent_analysis_activity(state, error=None):
-    emit({
-        "type": "model_activity",
-        "model": "opponent_analysis",
-        "activityState": str(state),
-        "active": state == "running",
-        "error": error,
-        "averageMs": OPPONENT_PREDICTIONS.average_response_ms(),
-        "runtime": OPPONENT_PREDICTIONS.runtime_status(),
-        "timestamp": now_iso(),
-    })
-
-
-ACTION_RECOMMENDATIONS.set_activity_callback(_emit_decision_activity)
-OPPONENT_PREDICTIONS.set_activity_callback(_emit_opponent_analysis_activity)
+OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
+    STATE,
+    _STATE_LOCK,
+    OPPONENT_PREDICTIONS,
+    ENGINE_MANAGEMENT,
+    opponent_analysis_session.OpponentAnalysisDependencies(
+        build_mjai_stream_bundle=lambda *args, **kwargs: get_cached_mjai_stream_bundle(
+            *args, **kwargs
+        ),
+        play_prefetch_owns=lambda node_id: play_prefetch_owns_opponent(node_id),
+        auto_analysis_owns=lambda kind, node_id: auto_analysis_owns_item(kind, node_id),
+        set_timeline_cached=lambda kind, node_id, cached: _set_auto_analysis_timeline_cached(
+            kind, node_id, cached
+        ),
+        get_auto_analysis_status=lambda **kwargs: get_auto_analysis_status(**kwargs),
+        emit=emit,
+    ),
+)
 
 
 def create_match_state(seed):
@@ -1540,8 +922,6 @@ def purge_bg_analysis_tasks(game_id, node_ids=None):
 
 
 def reset_runtime_for_game_change():
-    global _DECISION_CACHE_EPOCH, _OPPONENT_ANALYSIS_CACHE_EPOCH
-
     cancel_play_prefetch()
     cancel_auto_analysis("牌谱已切换", emit_progress=False, cancel_opponent_analysis=False)
     _invalidate_auto_analysis_timeline()
@@ -1557,8 +937,7 @@ def reset_runtime_for_game_change():
             "currentModel": None,
             "message": "",
         })
-    _DECISION_CACHE_EPOCH += 1
-    _OPPONENT_ANALYSIS_CACHE_EPOCH += 1
+    ENGINE_MANAGEMENT.advance_cache_epochs()
     for future in list(_BG_TASKS.values()):
         try:
             future.cancel()
@@ -2171,10 +1550,10 @@ def _submit_background_analysis(current_node, snapshot):
         return None
 
     seat = STATE["controlledSeat"]
-    model_path = get_action_engine_weight_path()
+    model_path = ENGINE_MANAGEMENT.action_weight_path()
     stream_bundle = get_cached_mjai_stream_bundle(game, node_id, seat)
     submitted_at = time.perf_counter()
-    cache_epoch = _DECISION_CACHE_EPOCH
+    cache_epoch = ENGINE_MANAGEMENT.decision_cache_epoch
     legal_actions = build_legal_actions(snapshot, controlled_seat=seat)
 
     if snapshot["phase"] in ("discard", "reach_declaration"):
@@ -2226,7 +1605,7 @@ def _submit_background_analysis(current_node, snapshot):
         try:
             wrapped = future.result()
             if (
-                cache_epoch != _DECISION_CACHE_EPOCH
+                cache_epoch != ENGINE_MANAGEMENT.decision_cache_epoch
                 or STATE.get("game") is not game
                 or game.get("nodes", {}).get(node_id) is not current_node
             ):
@@ -2309,15 +1688,15 @@ def get_analysis_cache_key(snapshot):
     return decision_cache_key(
         STATE["controlledSeat"],
         phase,
-        _current_decision_analysis_source(),
+        ENGINE_MANAGEMENT.decision_source(),
     )
 
 
 def _store_decision_analysis(game, node, cache_key, result, *, source=None):
     if not isinstance(game, dict) or not isinstance(node, dict) or not isinstance(result, dict):
         return None
-    source = copy.deepcopy(source) if isinstance(source, dict) else _current_decision_analysis_source()
-    source["displayName"] = _analysis_source_display_name("decision")
+    source = copy.deepcopy(source) if isinstance(source, dict) else ENGINE_MANAGEMENT.decision_source()
+    source["displayName"] = ENGINE_MANAGEMENT.source_display_name("decision")
     expected_source_id = (cache_key_context(cache_key) or {}).get("sourceId")
     if expected_source_id != source["id"]:
         return None
@@ -2392,7 +1771,7 @@ def backfill_cached_child_comparisons(game):
         analysis_key = decision_cache_key(
             controlled_seat,
             phase,
-            _current_decision_analysis_source(),
+            ENGINE_MANAGEMENT.decision_source(),
         )
         analysis = (parent_node.get("analysisCache") or {}).get(analysis_key)
         if not isinstance(analysis, dict) or analysis.get("error"):
@@ -2422,7 +1801,7 @@ def resolve_analysis_for_current_node(current_node, snapshot, legal_actions):
             ACTION_RECOMMENDATIONS,
             snapshot,
             STATE["controlledSeat"],
-            get_action_engine_weight_path(),
+            ENGINE_MANAGEMENT.action_weight_path(),
             mjai_events=stream_bundle["events"],
             mjai_prefix_hashes=stream_bundle["prefixHashes"],
             mjai_events_hash=stream_bundle["eventHash"],
@@ -2440,7 +1819,7 @@ def resolve_analysis_for_current_node(current_node, snapshot, legal_actions):
             ACTION_RECOMMENDATIONS,
             snapshot,
             STATE["controlledSeat"],
-            get_action_engine_weight_path(),
+            ENGINE_MANAGEMENT.action_weight_path(),
             mjai_events=stream_bundle["events"],
             mjai_prefix_hashes=stream_bundle["prefixHashes"],
             mjai_events_hash=stream_bundle["eventHash"],
@@ -2542,8 +1921,8 @@ def _ensure_auto_analysis_timeline_locked(game, seat, model_path):
         AUTO_ANALYSIS_RUNTIME.timeline_structure_revision,
         int(seat),
         str(model_path),
-        _current_decision_analysis_source(model_path)["id"],
-        _get_opponent_analysis_cache_key(seat),
+        ENGINE_MANAGEMENT.decision_source(model_path)["id"],
+        OPPONENT_ANALYSIS.cache_key(seat),
     )
     if AUTO_ANALYSIS_RUNTIME.timeline_matches(signature):
         return
@@ -2575,7 +1954,7 @@ def get_auto_analysis_status(*, include_timeline=True):
         game = STATE.get("game")
         game_loaded = STATE.get("gameLoaded") and isinstance(game, dict)
         seat = int(STATE.get("controlledSeat", 0))
-        model_path = get_action_engine_weight_path() if game_loaded else ""
+        model_path = ENGINE_MANAGEMENT.action_weight_path() if game_loaded else ""
         with AUTO_ANALYSIS_RUNTIME.lock:
             status = AUTO_ANALYSIS_RUNTIME.status_snapshot()
             if not game_loaded:
@@ -2608,7 +1987,7 @@ def _auto_decision_cache_key(seat, snapshot, model_path):
     return decision_cache_key(
         seat,
         phase,
-        _current_decision_analysis_source(model_path),
+        ENGINE_MANAGEMENT.decision_source(model_path),
     )
 
 
@@ -2627,9 +2006,9 @@ def _build_auto_analysis_plan(
         game.get("currentNodeId") if start_node_id is None else start_node_id,
         round_root_map,
     )
-    opponent_input_mode = _get_opponent_analysis_input_mode()
-    opponent_cache_key = _get_opponent_analysis_cache_key(seat)
-    decision_source = _current_decision_analysis_source(model_path)
+    opponent_input_mode = OPPONENT_ANALYSIS.input_mode()
+    opponent_cache_key = OPPONENT_ANALYSIS.cache_key(seat)
+    decision_source = ENGINE_MANAGEMENT.decision_source(model_path)
     items = []
     for round_root_id in round_order:
         for node_id in auto_analysis_plan.order_round_nodes(game, round_root_id, round_root_map):
@@ -2752,7 +2131,7 @@ def _complete_auto_analysis_item_locked(generation, item, result=None, error=Non
                 tree_updates = update_cached_child_comparisons(game, node, result, seat)
                 success = True
         else:
-            success = _cache_opponent_analysis_result(result, require_current=False)
+            success = OPPONENT_ANALYSIS.cache_result(result, require_current=False)
 
     context = AUTO_ANALYSIS_RUNTIME.complete_item(generation, item, success, error)
     if context is None:
@@ -2769,7 +2148,7 @@ def _complete_auto_analysis_item_locked(generation, item, result=None, error=Non
         if item.get("kind") == "decision" and context["game"].get("currentNodeId") == item.get("nodeId"):
             emit({
                 "type": "analysis_ready",
-                "cacheEpoch": _DECISION_CACHE_EPOCH,
+                "cacheEpoch": ENGINE_MANAGEMENT.decision_cache_epoch,
                 "nodeId": item["nodeId"],
                 "gameId": context["gameId"],
                 "analysisKey": item["cacheKey"],
@@ -2782,7 +2161,7 @@ def _complete_auto_analysis_item_locked(generation, item, result=None, error=Non
     if tree_updates:
         emit({
             "type": "auto_analysis_tree_updates",
-            "cacheEpoch": _DECISION_CACHE_EPOCH,
+            "cacheEpoch": ENGINE_MANAGEMENT.decision_cache_epoch,
             "gameId": context["gameId"],
             "treeComparisons": tree_updates,
             "treeRevision": int(context["game"].get("treeRevision", 0)),
@@ -2969,7 +2348,7 @@ def _dispatch_next_auto_analysis_item(generation):
             "seat": seat,
             "inputMode": input_mode,
             "cacheKey": item["cacheKey"],
-            "cacheEpoch": _OPPONENT_ANALYSIS_CACHE_EPOCH,
+            "cacheEpoch": ENGINE_MANAGEMENT.opponent_cache_epoch,
             "autoAnalysisGeneration": generation,
         }
         try:
@@ -3033,7 +2412,7 @@ def start_auto_analysis():
     cancel_auto_analysis(emit_progress=False)
     game = STATE["game"]
     seat = int(STATE["controlledSeat"])
-    model_path = get_action_engine_weight_path()
+    model_path = ENGINE_MANAGEMENT.action_weight_path()
     items = _build_auto_analysis_plan(game, seat, model_path)
     generation = AUTO_ANALYSIS_RUNTIME.start(
         game,
@@ -3171,7 +2550,7 @@ def build_view_payload(compact_tree=False):
         # Opponent analysis owns a separate worker and starts independently of the decision engine.
         # Ship the current node's cache (or an explicit miss) with the view so the
         # renderer can distinguish an instant cache swap from waiting for inference.
-        opponent_analysis = get_current_opponent_analysis()
+        opponent_analysis = OPPONENT_ANALYSIS.current()
     legal_actions = get_node_legal_actions(game, current_node_id)
     if legal_actions and STATE.get("decisionRecommendationsEnabled", True):
         # Rendering a position must never wait for decision-engine inference. Cached results
@@ -3209,7 +2588,7 @@ def build_state_payload(*, consume_thinking_time=True):
         "gameLoaded": STATE["gameLoaded"],
         "aiThinkingTimeS": get_and_reset_ai_thinking_time_s() if consume_thinking_time else 0.0,
         "modelPerformance": {
-            "decision": get_decision_response_ms(),
+            "decision": ENGINE_MANAGEMENT.decision_response_ms(),
             "opponentAnalysis": OPPONENT_PREDICTIONS.average_response_ms(),
         },
         "analysisVisibility": {
@@ -3217,10 +2596,10 @@ def build_state_payload(*, consume_thinking_time=True):
             "opponentAnalysis": bool(STATE.get("opponentAnalysisEnabled", False)),
         },
         "modelActivity": {
-            "decision": get_decision_activity(),
+            "decision": ACTION_RECOMMENDATIONS.get_activity(),
             "opponentAnalysis": OPPONENT_PREDICTIONS.activity_state(),
             "errors": {
-                "decision": get_decision_activity_errors(),
+                "decision": ACTION_RECOMMENDATIONS.get_activity_errors(),
                 "opponentAnalysis": OPPONENT_PREDICTIONS.activity_error(),
             },
         },
@@ -3500,7 +2879,7 @@ def resolve_discard_tsumogiri(snapshot, actor, tile, requested=None):
 
 def choose_ai_discard(snapshot, actor):
     sync_snapshot_state(snapshot)
-    model_path = get_action_engine_weight_path()
+    model_path = ENGINE_MANAGEMENT.action_weight_path()
     can_use_drawn_tile_options = actor_just_drew(snapshot, actor)
     response = choose_ai_action_for_current_node(snapshot, actor, model_path)
     requested_tsumogiri = response.get("tsumogiri") if isinstance(response.get("tsumogiri"), bool) else None
@@ -3722,7 +3101,7 @@ def build_kan_reaction_window(snapshot):
     reaction_thinking_time_s = 0.0
 
     for seat in seats_in_order:
-        model_path = get_action_engine_weight_path()
+        model_path = ENGINE_MANAGEMENT.action_weight_path()
         try:
             response = choose_ai_action_for_snapshot(snapshot, seat, model_path, accumulate_thinking=False)
         except Exception as error:  # pylint: disable=broad-except
@@ -3839,7 +3218,7 @@ def evaluate_reactions(snapshot):
         if seat == STATE["controlledSeat"]:
             response = {"type": "none", "actor": seat, "variant": "none", "label": "Pass"}
         else:
-            model_path = get_action_engine_weight_path()
+            model_path = ENGINE_MANAGEMENT.action_weight_path()
             try:
                 response = choose_ai_action_for_snapshot(snapshot, seat, model_path, accumulate_thinking=False)
             except Exception as error:  # pylint: disable=broad-except
@@ -4747,7 +4126,7 @@ def advance_game_flow(game):
         if current_snapshot["currentActor"] == STATE["controlledSeat"]:
             return
         actor = current_snapshot["currentActor"]
-        model_path = get_action_engine_weight_path()
+        model_path = ENGINE_MANAGEMENT.action_weight_path()
         response = choose_ai_action_for_current_node(current_snapshot, actor, model_path)
         debug_flow(f"[FLOW] advance reach_declaration AI actor={actor} response_type={response.get('type')} pai={response.get('pai')}")
 
@@ -4962,12 +4341,12 @@ def _commit_prefetched_opponent_result(context, draft_node_id):
         return False
 
     input_mode = str(context.get("opponentInputMode") or "public")
-    cache_key = _build_opponent_analysis_cache_key(context["seat"], input_mode)
+    cache_key = OPPONENT_ANALYSIS.build_cache_key(context["seat"], input_mode)
     cache = node.setdefault(OPPONENT_ANALYSIS_CACHE_FIELD, {})
     compact = compact_opponent_analysis(result)
     if cache.get(cache_key) == compact:
         return True
-    source = _current_opponent_analysis_source(include_display_name=True)
+    source = ENGINE_MANAGEMENT.opponent_source(include_display_name=True)
     expected_source_id = (cache_key_context(cache_key) or {}).get("sourceId")
     if expected_source_id != source["id"]:
         return False
@@ -4991,7 +4370,7 @@ def _commit_prefetched_opponent_result(context, draft_node_id):
             "seat": context["seat"],
             "inputMode": input_mode,
             "cacheKey": cache_key,
-            "cacheEpoch": _OPPONENT_ANALYSIS_CACHE_EPOCH,
+            "cacheEpoch": ENGINE_MANAGEMENT.opponent_cache_epoch,
         }
         emit({
             "type": "opponent_analysis_ready",
@@ -5058,8 +4437,8 @@ def _schedule_play_prefetch_opponent(context, draft_node_id):
         "nodeId": f"prefetch:{context['generation']}:{draft_node_id}",
         "seat": seat,
         "inputMode": input_mode,
-        "cacheKey": _get_opponent_analysis_cache_key(seat),
-        "cacheEpoch": _OPPONENT_ANALYSIS_CACHE_EPOCH,
+        "cacheKey": OPPONENT_ANALYSIS.cache_key(seat),
+        "cacheEpoch": ENGINE_MANAGEMENT.opponent_cache_epoch,
     }
     accepted = OPPONENT_PREDICTIONS.request_background_predict(
         snapshot,
@@ -5112,7 +4491,7 @@ def _commit_prefetched_decision_result(context, draft_node_id):
         node,
         cache_key,
         result,
-        source=_current_decision_analysis_source(context["modelPath"]),
+        source=ENGINE_MANAGEMENT.decision_source(context["modelPath"]),
     )
     if stored is None:
         return False
@@ -5124,7 +4503,7 @@ def _commit_prefetched_decision_result(context, draft_node_id):
     )
     emit({
         "type": "analysis_ready",
-        "cacheEpoch": _DECISION_CACHE_EPOCH,
+        "cacheEpoch": ENGINE_MANAGEMENT.decision_cache_epoch,
         "nodeId": actual_node_id,
         "gameId": context["gameId"],
         "analysisKey": cache_key,
@@ -5256,8 +4635,8 @@ def start_play_prefetch():
     generation, context = PLAY_PREFETCH_RUNTIME.start({
         "gameId": game.get("gameId"),
         "seat": int(STATE["controlledSeat"]),
-        "modelPath": get_action_engine_weight_path(),
-        "opponentInputMode": _get_opponent_analysis_input_mode(),
+        "modelPath": ENGINE_MANAGEMENT.action_weight_path(),
+        "opponentInputMode": OPPONENT_ANALYSIS.input_mode(),
         "draftGame": draft_game,
         "steps": deque(),
         "nodeIdMap": {game["currentNodeId"]: game["currentNodeId"]},
@@ -5619,7 +4998,7 @@ def should_trigger_review(comparison):
         return False
     if comparison is None:
         return False
-    training = get_training_config()
+    training = ENGINE_MANAGEMENT.training_config()
     mode = training.get("mode", "threshold_review")
     if mode == "preview_before_click":
         return False
@@ -5944,15 +5323,13 @@ def submit_reaction_action(action_type, variant=None, candidate_id=None):
 
 
 def clear_loaded_analysis_caches():
-    global _DECISION_CACHE_EPOCH, _OPPONENT_ANALYSIS_CACHE_EPOCH
     ensure_game_loaded()
     cancel_play_prefetch()
     game = STATE["game"]
     game_id = game.get("gameId")
 
     cancel_auto_analysis("缓存已清除")
-    _DECISION_CACHE_EPOCH += 1
-    _OPPONENT_ANALYSIS_CACHE_EPOCH += 1
+    decision_epoch, opponent_epoch = ENGINE_MANAGEMENT.advance_cache_epochs()
     purge_bg_analysis_tasks(game_id)
     OPPONENT_PREDICTIONS.cancel_all()
 
@@ -5980,8 +5357,8 @@ def clear_loaded_analysis_caches():
     game_tree.mark_tree_changed(game)
     return {
         "decisionEntries": decision_entries,
-        "decisionCacheEpoch": _DECISION_CACHE_EPOCH,
-        "opponentCacheEpoch": _OPPONENT_ANALYSIS_CACHE_EPOCH,
+        "decisionCacheEpoch": decision_epoch,
+        "opponentCacheEpoch": opponent_epoch,
         "opponentEntries": opponent_entries,
         "comparisons": comparisons,
         "pendingReview": had_pending_review,
@@ -5993,7 +5370,7 @@ def _prewarm_record_action_engine(seat):
     _BG_EXECUTOR.submit(
         ACTION_RECOMMENDATIONS.prewarm,
         seat,
-        get_action_engine_weight_path(),
+        ENGINE_MANAGEMENT.action_weight_path(),
     )
 
 
@@ -6008,7 +5385,7 @@ RECORD_SESSION = record_session.RecordSession(
         backfill_child_comparisons=backfill_cached_child_comparisons,
         update_child_comparisons=update_cached_child_comparisons,
         current_snapshot=get_current_snapshot,
-        request_opponent_analysis=request_current_opponent_analysis,
+        request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
         purge_mjai_cache=purge_stale_mjai_stream_cache,
         invalidate_auto_timeline=_invalidate_auto_analysis_timeline,
     ),
@@ -6028,7 +5405,7 @@ RECORD_COMMANDS = record_commands.RecordCommands(
         purge_background_analysis=purge_bg_analysis_tasks,
         purge_mjai_cache=purge_stale_mjai_stream_cache,
         sync_snapshot=sync_snapshot_state,
-        request_opponent_analysis=request_current_opponent_analysis,
+        request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
         promote_mainline=promote_path_to_mainline,
         invalidate_auto_timeline=_invalidate_auto_analysis_timeline,
     ),
@@ -6038,7 +5415,7 @@ RECORD_COMMANDS = record_commands.RecordCommands(
 def handle_command(request_id, command, payload):
     with _STATE_LOCK:
         payload = payload or {}
-        training = get_training_config()
+        training = ENGINE_MANAGEMENT.training_config()
         set_thinking_time_bounds(
             float(training.get("thinkingTimeMinS", 0.25)),
             float(training.get("thinkingTimeMaxS", 1.0)),
@@ -6058,7 +5435,7 @@ def handle_command(request_id, command, payload):
             return build_response(
                 request_id,
                 command,
-                {"description": describe_engine(payload)},
+                {"description": ENGINE_MANAGEMENT.describe(payload)},
             )
 
         if command == "create_game":
@@ -6110,7 +5487,7 @@ def handle_command(request_id, command, payload):
             cancel_play_prefetch()
             STATE["mode"] = next_mode
             if STATE["gameLoaded"] and STATE["mode"] == "research":
-                request_current_opponent_analysis(get_current_snapshot())
+                OPPONENT_ANALYSIS.request_current(get_current_snapshot())
             elif STATE["gameLoaded"] and STATE["mode"] == "play":
                 start_play_prefetch()
             return build_response(request_id, command)
@@ -6130,7 +5507,7 @@ def handle_command(request_id, command, payload):
                 enabled = bool(payload.get("opponentAnalysis"))
                 STATE["opponentAnalysisEnabled"] = enabled
                 if enabled and STATE.get("gameLoaded"):
-                    request_current_opponent_analysis(get_current_snapshot())
+                    OPPONENT_ANALYSIS.request_current(get_current_snapshot())
                 elif not enabled:
                     OPPONENT_PREDICTIONS.cancel_pending()
 
@@ -6150,7 +5527,7 @@ def handle_command(request_id, command, payload):
                 apply_pending_seat_switch_if_ready(get_current_snapshot() if STATE["gameLoaded"] else {})
                 if STATE["gameLoaded"]:
                     normalize_current_tree_cursor(STATE["game"], STATE["controlledSeat"])
-                    request_current_opponent_analysis(get_current_snapshot())
+                    OPPONENT_ANALYSIS.request_current(get_current_snapshot())
             elif STATE["gameLoaded"]:
                 start_play_prefetch()
             return build_response(request_id, command)
@@ -6158,7 +5535,7 @@ def handle_command(request_id, command, payload):
         if command == "toggle_visible_hands":
             STATE["visibleHands"] = not STATE["visibleHands"]
             if STATE["gameLoaded"] and STATE["mode"] == "research":
-                request_current_opponent_analysis(get_current_snapshot())
+                OPPONENT_ANALYSIS.request_current(get_current_snapshot())
             return build_response(request_id, command)
 
         if command == "get_game_view":
@@ -6172,7 +5549,7 @@ def handle_command(request_id, command, payload):
             # Trigger asynchronous opponent analysis in research mode.
             if STATE.get("gameLoaded") and STATE.get("mode") == "research":
                 snapshot = get_current_snapshot()
-                request_current_opponent_analysis(snapshot)
+                OPPONENT_ANALYSIS.request_current(snapshot)
             response = build_response(
                 request_id,
                 command,
@@ -6334,7 +5711,7 @@ def handle_command(request_id, command, payload):
             return build_response(request_id, command, {"debug": get_latest_action_recommendation_debug()})
 
         if command == "get_shanten":
-            return build_response(request_id, command, get_current_opponent_analysis())
+            return build_response(request_id, command, OPPONENT_ANALYSIS.current())
 
         if command == "get_shanten_mjai":
             return build_response(request_id, command, {"debug": get_latest_opponent_prediction_mjai()})
@@ -6367,11 +5744,11 @@ def process_command_request(request_id, command, payload, *, lightweight_status=
             response = {
                 "request_id": request_id,
                 "command": command,
-                "description": describe_engine(payload or {}),
+                "description": ENGINE_MANAGEMENT.describe(payload or {}),
                 "timestamp": now_iso(),
             }
         elif command == "reload_engines":
-            result = reload_runtime_engines(
+            result = ENGINE_MANAGEMENT.reload(
                 str((payload or {}).get("profileId") or "")
             )
             with _STATE_LOCK:
@@ -6384,7 +5761,7 @@ def process_command_request(request_id, command, payload, *, lightweight_status=
             response = {
                 "request_id": request_id,
                 "command": command,
-                "state": unload_runtime_engine(
+                "state": ENGINE_MANAGEMENT.unload(
                     (payload or {}).get("kind"),
                     (payload or {}).get("profileId"),
                 ),
@@ -6405,7 +5782,7 @@ def process_command_request(request_id, command, payload, *, lightweight_status=
 
 
 def main():
-    apply_runtime_engine_config(load_project_config())
+    ENGINE_MANAGEMENT.apply_runtime_config(ENGINE_MANAGEMENT.load_project_config())
     emit(
         {
             "type": "service_ready",

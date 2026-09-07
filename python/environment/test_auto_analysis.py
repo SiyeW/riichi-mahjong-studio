@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 import auto_analysis_plan
+import engine_configuration
 import service
 from auto_analysis_runtime import AutoAnalysisRuntime
 
@@ -143,7 +144,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         items = service._build_auto_analysis_plan(
             game,
             0,
-            service.get_action_engine_weight_path(),
+            service.ENGINE_MANAGEMENT.action_weight_path(),
         )
         passive_kinds = [item["kind"] for item in items if item["nodeId"] == passive_id]
 
@@ -222,7 +223,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
                 return_value={"events": [], "prefixHashes": [], "eventHash": 0},
             ),
         ):
-            requested = service.request_current_opponent_analysis(snapshot)
+            requested = service.OPPONENT_ANALYSIS.request_current(snapshot)
 
         self.assertTrue(requested)
         request_predict.assert_called_once()
@@ -343,35 +344,40 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             config_path = Path(directory) / "config.json"
             config_path.write_text('{"training":{"mode":"no_review"}}', encoding="utf-8")
-            with mock.patch.object(service, "PROJECT_ROOT", Path(directory)):
-                service._PROJECT_CONFIG_SIGNATURE = None
-                service._PROJECT_CONFIG_VALUE = {}
+            with mock.patch.object(
+                service.ENGINE_MANAGEMENT,
+                "project_root",
+                Path(directory),
+            ):
+                service.ENGINE_MANAGEMENT.reset_project_config_cache()
                 with mock.patch.object(
-                    service,
+                    service.ENGINE_MANAGEMENT,
                     "_load_json_file",
-                    wraps=service._load_json_file,
+                    wraps=service.ENGINE_MANAGEMENT._load_json_file,
                 ) as load_json:
-                    first = service.load_project_config()
-                    second = service.load_project_config()
+                    first = service.ENGINE_MANAGEMENT.load_project_config()
+                    second = service.ENGINE_MANAGEMENT.load_project_config()
                     stat = config_path.stat()
                     config_path.write_text('{"training":{"mode":"always_review"}}', encoding="utf-8")
                     os.utime(
                         config_path,
                         ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000),
                     )
-                    third = service.load_project_config()
+                    third = service.ENGINE_MANAGEMENT.load_project_config()
 
-            service._PROJECT_CONFIG_SIGNATURE = None
-            service._PROJECT_CONFIG_VALUE = {}
+            service.ENGINE_MANAGEMENT.reset_project_config_cache()
 
         self.assertIs(first, second)
         self.assertEqual(load_json.call_count, 2)
         self.assertEqual(third["training"]["mode"], "always_review")
 
     def test_training_defaults_match_desktop_settings(self):
-        self.assertEqual(service.normalize_training_mode(None), "threshold_review")
         self.assertEqual(
-            service.get_default_training_config()["mistakeThreshold"],
+            engine_configuration.normalize_training_mode(None),
+            "threshold_review",
+        )
+        self.assertEqual(
+            engine_configuration.default_training_config()["mistakeThreshold"],
             0.25,
         )
 
@@ -396,14 +402,16 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             with (
                 mock.patch.object(service.sys, "frozen", True, create=True),
                 mock.patch.object(service.sys, "executable", str(backend_root / "environment-service.exe")),
-                mock.patch.object(service, "PORTABLE_ROOT", portable_root),
+                mock.patch.object(
+                    service.ENGINE_MANAGEMENT,
+                    "portable_root",
+                    portable_root,
+                ),
             ):
-                service._PROJECT_CONFIG_SIGNATURE = None
-                service._PROJECT_CONFIG_VALUE = {}
-                config = service.load_project_config()
+                service.ENGINE_MANAGEMENT.reset_project_config_cache()
+                config = service.ENGINE_MANAGEMENT.load_project_config()
 
-            service._PROJECT_CONFIG_SIGNATURE = None
-            service._PROJECT_CONFIG_VALUE = {}
+            service.ENGINE_MANAGEMENT.reset_project_config_cache()
 
         self.assertEqual(
             config["engines"]["outputAssignments"]["action-recommendation"],
@@ -437,7 +445,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             service.ACTION_RECOMMENDATIONS,
             "configure_profile",
         ) as configure:
-            service.configure_action_recommendation_engine(config)
+            service.ENGINE_MANAGEMENT._configure_action_gateway(config)
 
         self.assertEqual(
             configure.call_args.kwargs["profile_id"],

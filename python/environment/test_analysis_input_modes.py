@@ -28,7 +28,7 @@ class AnalysisInputModeTests(unittest.TestCase):
         with patch.dict(service.STATE, visibleHands=False), \
              patch.object(service.OPPONENT_PREDICTIONS, 'supported_input_modes',
                           return_value=('public', 'full-information')):
-            self.assertEqual(service._get_opponent_analysis_input_mode(), 'public')
+            self.assertEqual(service.OPPONENT_ANALYSIS.input_mode(), 'public')
 
     def test_visible_hands_use_revealed_input_only_when_common_to_all_engines(self):
         for supported, expected in [(('public',), 'public'),
@@ -36,7 +36,7 @@ class AnalysisInputModeTests(unittest.TestCase):
             with self.subTest(supported=supported), \
                  patch.dict(service.STATE, visibleHands=True), \
                  patch.object(service.OPPONENT_PREDICTIONS, 'supported_input_modes', return_value=supported):
-                self.assertEqual(service._get_opponent_analysis_input_mode(), expected)
+                self.assertEqual(service.OPPONENT_ANALYSIS.input_mode(), expected)
 
 
 if __name__ == '__main__':

@@ -35,7 +35,7 @@ class DeletedNodeAnalysisTests(unittest.TestCase):
              patch.object(service, 'get_analysis_cache_key', return_value='test-key'), \
              patch.object(service, 'play_prefetch_owns_decision', return_value=False), \
              patch.object(service, 'auto_analysis_owns_item', return_value=False), \
-             patch.object(service, 'get_action_engine_weight_path', return_value=''), \
+             patch.object(service.ENGINE_MANAGEMENT, 'action_weight_path', return_value=''), \
              patch.object(service, 'get_cached_mjai_stream_bundle', return_value={}), \
              patch.object(service, 'build_legal_actions', return_value=[]), \
              patch.object(service._BG_EXECUTOR, 'submit', return_value=future), \
@@ -55,14 +55,14 @@ class DeletedNodeAnalysisTests(unittest.TestCase):
         self.assertEqual(self.node['analysisCache'], {})
 
     def test_late_opponent_result_cannot_recreate_deleted_node(self):
-        context = {'cacheEpoch': service._OPPONENT_ANALYSIS_CACHE_EPOCH,
+        context = {'cacheEpoch': service.ENGINE_MANAGEMENT.opponent_cache_epoch,
                    'gameId': self.game['gameId'], 'nodeId': 'deleted',
                    'seat': 0, 'cacheKey': 'test-key'}
         service.RECORD_COMMANDS.delete('deleted')
-        with patch.object(service, 'compact_opponent_analysis', return_value={}), \
-             patch.object(service, '_current_opponent_analysis_context', return_value=None), \
+        with patch.object(service.opponent_analysis_session, 'compact_opponent_analysis', return_value={}), \
+             patch.object(service.OPPONENT_ANALYSIS, 'current_context', return_value=None), \
              patch.object(service, 'emit') as emit:
-            result = service._cache_opponent_analysis_result(
+            result = service.OPPONENT_ANALYSIS.cache_result(
                 {'context': context, 'status': 'ready'}, require_current=False)
             self.assertFalse(result)
             emit.assert_not_called()

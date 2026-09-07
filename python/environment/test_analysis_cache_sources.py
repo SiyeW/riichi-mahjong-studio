@@ -4,6 +4,7 @@ from unittest import mock
 
 import analysis_cache
 import auto_analysis_plan
+import engine_configuration
 import service
 
 
@@ -37,11 +38,12 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         self.assertEqual(analysis_cache.quantize_probability(0.00124), 0.0012)
 
     def test_empty_engine_commands_remain_unconfigured(self):
-        decision_command = service._resolve_configured_engine_command(
+        decision_command = engine_configuration.resolve_command(
             {
                 "engineCommand": [],
                 "enginePath": "",
             },
+            service.ENGINE_MANAGEMENT.resolve_resource_path,
         )
 
         self.assertEqual(decision_command, [])
@@ -53,8 +55,8 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         service.STATE["gameLoaded"] = False
         try:
             with (
-                mock.patch.object(service, "configure_action_recommendation_engine") as decision_configure,
-                mock.patch.object(service, "configure_opponent_prediction_engines") as opponent_configure,
+                mock.patch.object(service.ENGINE_MANAGEMENT, "_configure_action_gateway") as decision_configure,
+                mock.patch.object(service.ENGINE_MANAGEMENT, "_configure_opponent_predictions") as opponent_configure,
             ):
                 service.handle_command("test", "get_game_view", {})
             decision_configure.assert_not_called()
@@ -64,8 +66,8 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             service.STATE["gameLoaded"] = previous_loaded
 
     def test_saved_engine_draft_does_not_replace_runtime_weight_path(self):
-        previous_runtime = service._RUNTIME_ENGINE_SETTINGS
-        service._RUNTIME_ENGINE_SETTINGS = {
+        previous_runtime = service.ENGINE_MANAGEMENT._runtime_engine_settings
+        service.ENGINE_MANAGEMENT._runtime_engine_settings = {
             "profiles": [{
                 "id": "profile.loaded",
                 "weights": [{
@@ -80,7 +82,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         }
         try:
             with mock.patch.object(
-                service,
+                service.ENGINE_MANAGEMENT,
                 "load_project_config",
                 return_value={"engines": {
                     "profiles": [{
@@ -92,9 +94,9 @@ class AnalysisCacheSourceTest(unittest.TestCase):
                     },
                 }},
             ):
-                self.assertEqual(service.get_action_engine_weight_path(), "C:\\loaded-model.pth")
+                self.assertEqual(service.ENGINE_MANAGEMENT.action_weight_path(), "C:\\loaded-model.pth")
         finally:
-            service._RUNTIME_ENGINE_SETTINGS = previous_runtime
+            service.ENGINE_MANAGEMENT._runtime_engine_settings = previous_runtime
 
     def test_engine_profiles_are_resolved_directly_by_output(self):
         config = {
@@ -131,8 +133,8 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             },
         }
 
-        action = service._gateway_profile(config, "action-recommendation")
-        opponent = service._gateway_profile(config, "opponent-shanten")
+        action = service.ENGINE_MANAGEMENT._gateway_profile(config, "action-recommendation")
+        opponent = service.ENGINE_MANAGEMENT._gateway_profile(config, "opponent-shanten")
 
         self.assertEqual(action["model_path"], "C:\\decision.onnx")
         self.assertEqual(action["engine_options"], {"temperature": 0.75})
@@ -161,7 +163,10 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             },
         }
 
-        specifications = service._engine_runtime_specifications(config)
+        specifications = engine_configuration.runtime_specifications(
+            config,
+            service.ENGINE_MANAGEMENT.resolve_resource_path,
+        )
 
         self.assertEqual(len(specifications), 1)
         self.assertEqual(specifications[0]["profile_id"], "profile.unified")
@@ -198,13 +203,18 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             },
         }
 
-        specifications = service._engine_runtime_specifications(config)
+        specifications = engine_configuration.runtime_specifications(
+            config,
+            service.ENGINE_MANAGEMENT.resolve_resource_path,
+        )
 
         self.assertEqual(
             [specification["profile_id"] for specification in specifications],
             ["profile.loaded"],
         )
-        self.assertIsNone(service._gateway_profile(config, "kyoku-outcome"))
+        self.assertIsNone(
+            service.ENGINE_MANAGEMENT._gateway_profile(config, "kyoku-outcome")
+        )
 
     def test_unrecognized_cache_keys_are_discarded(self):
         game = service.create_empty_game(101010)
@@ -273,8 +283,8 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "engineFingerprint": "sha256:runtime",
         }
         with mock.patch.object(
-            service,
-            "_current_decision_analysis_source",
+            service.ENGINE_MANAGEMENT,
+            "decision_source",
             return_value=copy.deepcopy(current_source),
         ):
             stored = service._store_decision_analysis(
@@ -302,7 +312,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "seat": 0,
             "inputMode": "public",
             "cacheKey": "o5::0::public::o-current",
-            "cacheEpoch": service._OPPONENT_ANALYSIS_CACHE_EPOCH,
+            "cacheEpoch": service.ENGINE_MANAGEMENT.opponent_cache_epoch,
         }
         node[service.OPPONENT_ANALYSIS_CACHE_FIELD] = {
             "o5::0::public::o-previous": {
@@ -319,7 +329,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         service.STATE["opponentAnalysisEnabled"] = True
         try:
             with (
-                mock.patch.object(service, "_current_opponent_analysis_context", return_value=context),
+                mock.patch.object(service.OPPONENT_ANALYSIS, "current_context", return_value=context),
                 mock.patch.object(
                     service.OPPONENT_PREDICTIONS,
                     "get_latest",
@@ -330,9 +340,9 @@ class AnalysisCacheSourceTest(unittest.TestCase):
                         "context": copy.deepcopy(context),
                     },
                 ),
-                mock.patch.object(service, "request_current_opponent_analysis") as request,
+                mock.patch.object(service.OPPONENT_ANALYSIS, "request_current") as request,
             ):
-                result = service.get_current_opponent_analysis()
+                result = service.OPPONENT_ANALYSIS.current()
         finally:
             service.STATE["game"] = previous_game
             service.STATE["gameLoaded"] = previous_loaded
@@ -351,7 +361,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "seat": 0,
             "inputMode": "public",
             "cacheKey": "o5::0::public::o-current",
-            "cacheEpoch": service._OPPONENT_ANALYSIS_CACHE_EPOCH,
+            "cacheEpoch": service.ENGINE_MANAGEMENT.opponent_cache_epoch,
         }
         node[service.OPPONENT_ANALYSIS_CACHE_FIELD] = {
             "o5::0::public::o-previous": {
@@ -368,15 +378,15 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         service.STATE["opponentAnalysisEnabled"] = True
         try:
             with (
-                mock.patch.object(service, "_current_opponent_analysis_context", return_value=context),
+                mock.patch.object(service.OPPONENT_ANALYSIS, "current_context", return_value=context),
                 mock.patch.object(
                     service.OPPONENT_PREDICTIONS,
                     "get_latest",
                     return_value={"status": "idle", "context": {}},
                 ),
-                mock.patch.object(service, "request_current_opponent_analysis") as request,
+                mock.patch.object(service.OPPONENT_ANALYSIS, "request_current") as request,
             ):
-                result = service.get_current_opponent_analysis()
+                result = service.OPPONENT_ANALYSIS.current()
         finally:
             service.STATE["game"] = previous_game
             service.STATE["gameLoaded"] = previous_loaded

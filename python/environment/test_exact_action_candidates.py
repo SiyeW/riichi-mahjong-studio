@@ -67,8 +67,8 @@ class ExactActionCandidatesTest(unittest.TestCase):
         self.assertFalse(comparison["isBest"])
         self.assertEqual(comparison["valueGap"], 0.0)
         with patch.object(
-            service,
-            "get_training_config",
+            service.ENGINE_MANAGEMENT,
+            "training_config",
             return_value={"mode": "threshold_review", "mistakeThreshold": 1.0},
         ):
             self.assertFalse(service.should_trigger_review(comparison))
