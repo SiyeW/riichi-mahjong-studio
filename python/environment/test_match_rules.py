@@ -63,7 +63,7 @@ class MatchEndRuleTests(unittest.TestCase):
         service.STATE["gameLoaded"] = True
 
         try:
-            service.advance_terminal_round(game)
+            service.ROUND_PROGRESSION.advance_terminal_round(game)
 
             round_node = game["nodes"][game["currentNodeId"]]
             self.assertEqual(round_node["snapshot"]["phase"], "round_result")

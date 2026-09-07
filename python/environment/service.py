@@ -23,6 +23,7 @@ import play_prefetch_runtime
 import record_commands
 import record_session
 import result_view
+import round_progression
 import snapshot_state
 import table_view
 import tree_view
@@ -44,7 +45,6 @@ from analysis_cache import (
     register_analysis_source,
 )
 from engine_runtime import EngineRuntimeRegistry
-from match_progression import apply_round_result_to_match_state
 from opponent_prediction_coordinator import OpponentPredictionCoordinator
 from opponent_prediction_gateway import get_latest_opponent_prediction_mjai
 from play_prefetch_runtime import PlayPrefetchRuntime
@@ -70,11 +70,7 @@ from settlement import (
     can_ankan,
     can_declare_riichi,
     compute_hora_result,
-    can_declare_ryukyoku,
     can_declare_tsumo,
-    count_yaochu_kinds,
-    compute_abortive_ryukyoku,
-    compute_exhaustive_ryukyoku,
     build_player_state,
     get_ankan_candidates,
 )
@@ -250,420 +246,23 @@ AUTO_ANALYSIS = auto_analysis_session.AutoAnalysisSession(
 )
 
 
+ROUND_PROGRESSION = round_progression.RoundProgression(
+    round_progression.RoundProgressionDependencies(
+        create_initial_snapshot=lambda match_state: create_initial_snapshot(match_state),
+        create_node=lambda *args, **kwargs: create_node(*args, **kwargs),
+        attach_mainline=lambda *args, **kwargs: attach_mainline(*args, **kwargs),
+        promote_mainline=lambda *args, **kwargs: promote_path_to_mainline(
+            *args, **kwargs
+        ),
+    )
+)
+
+
 def create_match_state(seed):
     return game_setup.create_match_state(
         seed,
         f"match_{STATE['nextGameId']:04d}",
     )
-
-
-def build_round_result_stub(snapshot, *, can_renchan=False, has_hora=False, has_abortive_ryukyoku=False, scores=None, kyotaku_left=None):
-    sync_snapshot_state(snapshot)
-    return {
-        "roundIndex": snapshot["roundIndex"],
-        "canRenchan": bool(can_renchan),
-        "hasHora": bool(has_hora),
-        "hasAbortiveRyukyoku": bool(has_abortive_ryukyoku),
-        "kyotakuLeft": snapshot["kyotaku"] if kyotaku_left is None else int(kyotaku_left),
-        "scores": copy.deepcopy(scores if scores is not None else snapshot["scores"]),
-    }
-
-
-def create_round_result_snapshot(snapshot, round_result, next_match_state):
-    sync_snapshot_state(snapshot)
-    result_snapshot = copy.deepcopy(snapshot)
-    result_snapshot["phase"] = "round_result"
-    result_snapshot["lastAction"] = {
-        "type": "round_result",
-        "actor": snapshot.get("dealer", 0),
-        "result": {
-            "canRenchan": bool(round_result["canRenchan"]),
-            "hasHora": bool(round_result["hasHora"]),
-            "hasAbortiveRyukyoku": bool(round_result["hasAbortiveRyukyoku"]),
-            "eventType": round_result.get("eventType"),
-            "eventData": copy.deepcopy(round_result.get("eventData") or {}),
-            "deltas": copy.deepcopy((round_result.get("eventData") or {}).get("deltas", [0, 0, 0, 0])),
-            "scores": copy.deepcopy(round_result["scores"]),
-            "kyotakuLeft": int(round_result["kyotakuLeft"]),
-        },
-    }
-    result_snapshot["pendingDiscard"] = None
-    result_snapshot["reactionWindow"] = None
-    result_snapshot["nextMatchState"] = copy.deepcopy(next_match_state)
-    persist_snapshot_state(result_snapshot)
-    return result_snapshot
-
-
-def create_match_end_snapshot(snapshot, round_result, ended_match_state):
-    end_snapshot = create_round_result_snapshot(snapshot, round_result, ended_match_state)
-    end_snapshot["phase"] = "match_end"
-    end_snapshot["lastAction"] = {
-        "type": "match_result",
-        "actor": ended_match_state.get("dealer", 0),
-        "result": {
-            "scores": copy.deepcopy(ended_match_state.get("scores", [25000, 25000, 25000, 25000])),
-            "roundIndex": ended_match_state.get("roundIndex", 0),
-            "bakaze": ended_match_state.get("bakaze", "E"),
-            "kyoku": ended_match_state.get("kyoku", 1),
-        },
-    }
-    return end_snapshot
-
-
-def ensure_match_end_node(game, round_node_id, round_snapshot, round_result, ended_match_state):
-    end_snapshot = create_match_end_snapshot(round_snapshot, round_result, ended_match_state)
-    end_action = {
-        "type": "match_end",
-        "source": "system",
-        "result": {
-            "scores": copy.deepcopy(ended_match_state.get("scores", [25000, 25000, 25000, 25000])),
-            "bakaze": ended_match_state.get("bakaze", "E"),
-            "kyoku": ended_match_state.get("kyoku", 1),
-        },
-    }
-    end_node_id = create_node(game, round_node_id, end_action, end_snapshot)
-    attach_mainline(round_node_id, end_node_id)
-    promote_path_to_mainline(game, end_node_id)
-    return end_node_id
-
-
-def create_next_kyoku_snapshot(snapshot, next_match_state):
-    next_snapshot = create_initial_snapshot(next_match_state)
-    next_snapshot["lastAction"] = {
-        "type": "start_kyoku",
-        "actor": next_match_state.get("dealer", 0),
-        "bakaze": next_match_state.get("bakaze", "E"),
-        "kyoku": next_match_state.get("kyoku", 1),
-    }
-    return next_snapshot
-
-
-def has_wall_draw_available(snapshot):
-    sync_snapshot_state(snapshot)
-    return snapshot["drawIndex"] < len(snapshot["wall"])
-
-
-def has_rinshan_draw_available(snapshot):
-    sync_snapshot_state(snapshot)
-    return len(snapshot.get("rinshanWall", [])) > 0
-
-
-def reveal_next_dora(snapshot):
-    next_index = len(snapshot.get("doraIndicators", []))
-    dora_stack = snapshot.get("doraIndicatorStack", [])
-    ura_stack = snapshot.get("uraIndicatorStack", [])
-    if next_index >= len(dora_stack) or next_index >= len(ura_stack):
-        return False
-    snapshot["doraIndicators"].append(dora_stack[next_index])
-    snapshot["uraIndicators"].append(ura_stack[next_index])
-    snapshot["actionHistory"].append(
-        {
-            "type": "dora",
-            "dora_marker": dora_stack[next_index],
-        }
-    )
-    snapshot["lastAction"] = {
-        "type": "dora",
-        "pai": dora_stack[next_index],
-    }
-    persist_snapshot_state(snapshot)
-    return True
-
-
-def get_pending_dora_counts(snapshot):
-    return snapshot_state.get_pending_dora_counts(snapshot)
-
-
-def set_pending_dora_counts(snapshot, immediate, delayed):
-    snapshot_state.set_pending_dora_counts(snapshot, immediate, delayed)
-
-
-def queue_dora_reveal(snapshot, *, after_action=False):
-    immediate, delayed = get_pending_dora_counts(snapshot)
-    if after_action:
-        delayed += 1
-    else:
-        immediate += 1
-    set_pending_dora_counts(snapshot, immediate, delayed)
-
-
-def promote_delayed_dora_reveal(snapshot):
-    immediate, delayed = get_pending_dora_counts(snapshot)
-    if delayed <= 0:
-        return False
-    delayed -= 1
-    immediate += 1
-    set_pending_dora_counts(snapshot, immediate, delayed)
-    return True
-
-
-def has_immediate_dora_reveal(snapshot):
-    immediate, _delayed = get_pending_dora_counts(snapshot)
-    return immediate > 0
-
-
-def consume_immediate_dora_reveal(snapshot):
-    immediate, delayed = get_pending_dora_counts(snapshot)
-    if immediate <= 0:
-        return False
-    immediate -= 1
-    set_pending_dora_counts(snapshot, immediate, delayed)
-    return True
-
-
-def reveal_all_pending_dora(snapshot):
-    immediate, delayed = get_pending_dora_counts(snapshot)
-    set_pending_dora_counts(snapshot, 0, 0)
-    total = immediate + delayed
-    revealed = False
-    for _ in range(total):
-        revealed = reveal_next_dora(snapshot) or revealed
-    return revealed
-
-
-def can_declare_kyuushu_kyuuhai(snapshot, actor, player_state=None):
-    sync_snapshot_state(snapshot)
-    if snapshot.get("phase") != "discard":
-        return False
-    if snapshot.get("currentActor") != actor:
-        return False
-    if snapshot["rivers"][actor]:
-        return False
-    if any(snapshot["melds"][seat] for seat in range(4)):
-        return False
-    if not can_declare_ryukyoku(snapshot, actor, state=player_state):
-        return False
-    return count_yaochu_kinds(snapshot["hands"][actor]) >= 9
-
-
-def detect_suufon_renda(snapshot):
-    sync_snapshot_state(snapshot)
-    if any(snapshot["melds"][seat] for seat in range(4)):
-        return False
-    first_discards = []
-    for seat in range(4):
-        river = snapshot["rivers"][seat]
-        if not river:
-            return False
-        first_discards.append(river[0].replace("r", ""))
-    if len(snapshot.get("actionHistory", [])) < 8:
-        return False
-    return len(set(first_discards)) == 1 and first_discards[0] in {"E", "S", "W", "N"}
-
-
-def detect_suukantsu(snapshot):
-    sync_snapshot_state(snapshot)
-    kan_melds = []
-    for seat_melds in snapshot["melds"]:
-        for meld in seat_melds:
-            if meld.get("type") in ("daiminkan", "ankan", "kakan"):
-                kan_melds.append(meld)
-    if len(kan_melds) < 4:
-        return False
-    actors = {int(meld.get("actor", -1)) for meld in kan_melds}
-    return len(actors) >= 2
-
-
-def count_accepted_riichis(snapshot):
-    sync_snapshot_state(snapshot)
-    return sum(1 for value in snapshot.get("riichiAccepted", [False, False, False, False]) if value)
-
-
-def ensure_ippatsu_flags(snapshot):
-    flags = snapshot.get("ippatsuEligible")
-    if not isinstance(flags, list) or len(flags) != 4:
-        flags = [False, False, False, False]
-        snapshot["ippatsuEligible"] = flags
-    return flags
-
-
-def clear_all_ippatsu(snapshot):
-    flags = ensure_ippatsu_flags(snapshot)
-    for seat in range(4):
-        flags[seat] = False
-
-
-def accept_riichi_for_seat(snapshot, seat, *, clear_pending=True):
-    sync_snapshot_state(snapshot)
-    seat = int(seat)
-    already_accepted = bool(snapshot["riichiAccepted"][seat])
-    if not already_accepted:
-        snapshot["riichiAccepted"][seat] = True
-        ensure_ippatsu_flags(snapshot)[seat] = True
-        snapshot["scores"][seat] -= 1000
-        snapshot["kyotaku"] += 1
-        accepted_event = {
-            "type": "reach_accepted",
-            "actor": seat,
-        }
-        snapshot["lastAction"] = copy.deepcopy(accepted_event)
-        snapshot["actionHistory"].append(copy.deepcopy(accepted_event))
-    if clear_pending:
-        snapshot["pendingRiichiSeat"] = None
-    persist_snapshot_state(snapshot)
-    return not already_accepted
-
-
-def resolve_pending_riichi_acceptance(snapshot):
-    sync_snapshot_state(snapshot)
-    seat = snapshot.get("pendingRiichiSeat")
-    if seat is None:
-        return False
-    return accept_riichi_for_seat(snapshot, seat, clear_pending=True)
-
-
-def mark_abortive_ryukyoku(snapshot, reason):
-    sync_snapshot_state(snapshot)
-    result = compute_abortive_ryukyoku(snapshot, reason)
-    snapshot["pendingDiscard"] = None
-    snapshot["reactionWindow"] = None
-    snapshot["phase"] = "game_end"
-    snapshot["lastAction"] = {
-        "type": "ryukyoku",
-        "actor": snapshot.get("dealer", 0),
-        "reason": result["reason"],
-        "reasonLabel": result["reasonLabel"],
-        "deltas": copy.deepcopy(result["deltas"]),
-    }
-    snapshot["actionHistory"].append(copy.deepcopy(snapshot["lastAction"]))
-    persist_snapshot_state(snapshot)
-
-
-def maybe_mark_abortive_ryukyoku(snapshot):
-    if count_accepted_riichis(snapshot) >= 4:
-        mark_abortive_ryukyoku(snapshot, "suucha_riichi")
-        return True
-    if detect_suufon_renda(snapshot):
-        mark_abortive_ryukyoku(snapshot, "suufon_renda")
-        return True
-    if detect_suukantsu(snapshot):
-        mark_abortive_ryukyoku(snapshot, "suukantsu")
-        return True
-    return False
-
-
-def mark_exhaustive_ryukyoku(snapshot):
-    sync_snapshot_state(snapshot)
-    result = compute_exhaustive_ryukyoku(snapshot)
-    snapshot["pendingDiscard"] = None
-    snapshot["reactionWindow"] = None
-    snapshot["phase"] = "game_end"
-    snapshot["lastAction"] = {
-        "type": "ryukyoku",
-        "actor": snapshot.get("dealer", 0),
-        "reason": result["reason"],
-        "reasonLabel": "荒牌流局",
-        "deltas": copy.deepcopy(result["deltas"]),
-        "tenpaiSeats": copy.deepcopy(result["tenpaiSeats"]),
-    }
-    snapshot["actionHistory"].append(copy.deepcopy(snapshot["lastAction"]))
-    persist_snapshot_state(snapshot)
-
-
-def build_terminal_round_result(snapshot):
-    sync_snapshot_state(snapshot)
-    last_action = snapshot.get("lastAction") or {}
-    action_type = last_action.get("type")
-    dealer = snapshot.get("dealer", 0)
-
-    if action_type == "hora":
-        winner = int(last_action.get("actor", dealer))
-        deltas = last_action.get("deltas", [0, 0, 0, 0])
-        old_scores = snapshot.get("scores", [25000, 25000, 25000, 25000])
-        return {
-            "roundIndex": snapshot["roundIndex"],
-            "canRenchan": winner == dealer,
-            "hasHora": True,
-            "hasAbortiveRyukyoku": False,
-            "kyotakuLeft": 0,
-            "scores": [old_scores[seat] + deltas[seat] for seat in range(4)],
-            "eventType": "hora",
-            "eventData": {
-                "actor": winner,
-                "target": int(last_action.get("target", winner)),
-                "pai": str(last_action.get("pai") or ""),
-                "deltas": copy.deepcopy(deltas),
-                "han": last_action.get("han"),
-                "fu": last_action.get("fu"),
-                "yaku": copy.deepcopy(last_action.get("yaku", [])),
-                "yakuDetails": copy.deepcopy(last_action.get("yakuDetails", [])),
-                "uraMarkers": copy.deepcopy(last_action.get("uraMarkers", [])),
-                "isOpenHand": last_action.get("isOpenHand"),
-                "cost": copy.deepcopy(last_action.get("cost", {})),
-            },
-        }
-
-    if action_type == "ryukyoku":
-        reason = str(last_action.get("reason") or "ryukyoku")
-        if reason == "exhaustive_draw":
-            tenpai_seats = copy.deepcopy(last_action.get("tenpaiSeats", []))
-            can_renchan = dealer in tenpai_seats
-            has_abortive = False
-        else:
-            tenpai_seats = []
-            can_renchan = True
-            has_abortive = True
-        deltas = last_action.get("deltas", [0, 0, 0, 0])
-        old_scores = snapshot.get("scores", [25000, 25000, 25000, 25000])
-        return {
-            "roundIndex": snapshot["roundIndex"],
-            "canRenchan": can_renchan,
-            "hasHora": False,
-            "hasAbortiveRyukyoku": has_abortive,
-            "kyotakuLeft": int(snapshot.get("kyotaku", 0)),
-            "scores": [old_scores[seat] + deltas[seat] for seat in range(4)],
-            "eventType": "ryukyoku",
-            "eventData": {
-                "deltas": copy.deepcopy(deltas),
-                "reason": reason,
-                "reasonLabel": last_action.get("reasonLabel") or get_abortive_reason_label(reason),
-                "tenpaiSeats": tenpai_seats,
-            },
-        }
-
-    return build_round_result_stub(
-        snapshot,
-        can_renchan=False,
-        has_hora=False,
-        has_abortive_ryukyoku=False,
-        scores=copy.deepcopy(snapshot.get("scores", [25000, 25000, 25000, 25000])),
-        kyotaku_left=int(snapshot.get("kyotaku", 0)),
-    )
-
-
-def commit_system_transition(game, parent_id, action, snapshot):
-    child_id = create_node(game, parent_id, action, snapshot)
-    attach_mainline(parent_id, child_id)
-    game["currentNodeId"] = child_id
-    promote_path_to_mainline(game, child_id)
-    return child_id
-
-
-def advance_terminal_round(game):
-    current_node_id = game["currentNodeId"]
-    current_snapshot = game["nodes"][current_node_id]["snapshot"]
-    round_result = build_terminal_round_result(current_snapshot)
-    next_match_state = apply_round_result_to_match_state(game["matchState"], round_result)
-    round_snapshot = create_round_result_snapshot(current_snapshot, round_result, next_match_state)
-    round_node_id = commit_system_transition(
-        game,
-        current_node_id,
-        {
-            "type": "round_result",
-            "source": "system",
-            "result": copy.deepcopy(round_result),
-        },
-        round_snapshot,
-    )
-    game["matchState"] = copy.deepcopy(next_match_state)
-    if next_match_state.get("ended"):
-        ensure_match_end_node(
-            game,
-            round_node_id,
-            round_snapshot,
-            round_result,
-            next_match_state,
-        )
 
 
 def sync_snapshot_state(snapshot):
@@ -1185,7 +784,7 @@ def build_legal_actions(snapshot, controlled_seat=None):
         build_player_state=build_player_state,
         can_declare_tsumo=can_declare_tsumo,
         can_declare_riichi=can_declare_riichi,
-        can_declare_kyuushu_kyuuhai=can_declare_kyuushu_kyuuhai,
+        can_declare_kyuushu_kyuuhai=ROUND_PROGRESSION.can_declare_kyuushu_kyuuhai,
         get_ankan_candidates=get_ankan_candidates,
         get_legal_kan_actions=get_legal_kan_actions,
         build_local_reaction_actions=_build_local_reaction_actions,
@@ -1793,7 +1392,7 @@ def draw_one(snapshot, seat):
 def draw_tile(snapshot, seat, source="wall"):
     sync_snapshot_state(snapshot)
     if source == "rinshan":
-        if not has_rinshan_draw_available(snapshot):
+        if not ROUND_PROGRESSION.has_rinshan_draw_available(snapshot):
             raise ValueError("Rinshan exhausted.")
         tile = snapshot["rinshanWall"][0]
         snapshot["rinshanWall"] = snapshot["rinshanWall"][1:]
@@ -1862,7 +1461,7 @@ def materialize_reach_declaration_discard(snapshot, actor, tile, tsumogiri):
     sync_snapshot_state(snapshot)
     if tile in snapshot["hands"][actor]:
         snapshot["hands"][actor].remove(tile)
-    promote_delayed_dora_reveal(snapshot)
+    ROUND_PROGRESSION.promote_delayed_dora_reveal(snapshot)
     snapshot["pendingDiscard"] = {
         "actor": actor,
         "pai": tile,
@@ -1899,7 +1498,7 @@ def apply_discard(snapshot, actor, tile, from_drawn=None):
     sync_snapshot_state(snapshot)
     if tile not in snapshot["hands"][actor]:
         raise ValueError(f"Tile {tile} not found in actor {actor} hand.")
-    ippatsu_flags = ensure_ippatsu_flags(snapshot)
+    ippatsu_flags = ROUND_PROGRESSION.ensure_ippatsu_flags(snapshot)
     tsumogiri = False
     if from_drawn is not None:
         tsumogiri = bool(from_drawn)
@@ -1922,7 +1521,7 @@ def apply_discard(snapshot, actor, tile, from_drawn=None):
         hand.pop(last_idx)
     else:
         hand.remove(tile)
-    promote_delayed_dora_reveal(snapshot)
+    ROUND_PROGRESSION.promote_delayed_dora_reveal(snapshot)
     if has_pending_riichi(snapshot, actor):
         stage_riichi_discard(snapshot, actor, tile, tsumogiri)
         return
@@ -2163,8 +1762,8 @@ def apply_self_kan_action(snapshot, response):
     # The riichi ankan prompt is a one-shot state. Carrying it into the
     # rinshan draw would expose a second, invalid skip prompt.
     snapshot["riichiDiscardState"] = None
-    clear_all_ippatsu(snapshot)
-    promote_delayed_dora_reveal(snapshot)
+    ROUND_PROGRESSION.clear_all_ippatsu(snapshot)
+    ROUND_PROGRESSION.promote_delayed_dora_reveal(snapshot)
     persist_snapshot_state(snapshot)
     if action_type == "ankan":
         consumed = response.get("consumed", [])
@@ -2184,9 +1783,9 @@ def apply_self_kan_action(snapshot, response):
     snapshot["actionHistory"].append(copy.deepcopy(response))
     persist_snapshot_state(snapshot)
     if action_type == "ankan":
-        queue_dora_reveal(snapshot, after_action=False)
+        ROUND_PROGRESSION.queue_dora_reveal(snapshot, after_action=False)
     else:
-        queue_dora_reveal(snapshot, after_action=True)
+        ROUND_PROGRESSION.queue_dora_reveal(snapshot, after_action=True)
     snapshot["currentActor"] = actor
     snapshot["pendingRinshanDraw"] = True
     snapshot["phase"] = "draw_or_discard"
@@ -2300,7 +1899,7 @@ def finalize_kakan_resolution(snapshot):
     snapshot["pendingKan"] = None
     snapshot["kanReactionWindow"] = None
     persist_snapshot_state(snapshot)
-    queue_dora_reveal(snapshot, after_action=True)
+    ROUND_PROGRESSION.queue_dora_reveal(snapshot, after_action=True)
     snapshot["pendingRinshanDraw"] = True
     snapshot["currentActor"] = actor
     snapshot["phase"] = "draw_or_discard"
@@ -2473,8 +2072,8 @@ def apply_reaction_action(snapshot, selected):
         snapshot["reactionWindow"] = None
         # Riichi is accepted before the next draw.
         if had_pending_riichi:
-            resolve_pending_riichi_acceptance(snapshot)
-        if maybe_mark_abortive_ryukyoku(snapshot):
+            ROUND_PROGRESSION.resolve_pending_riichi_acceptance(snapshot)
+        if ROUND_PROGRESSION.maybe_mark_abortive_ryukyoku(snapshot):
             return
         snapshot["currentActor"] = discard["targetActor"]
         snapshot["phase"] = "draw_or_discard"
@@ -2511,13 +2110,13 @@ def apply_reaction_action(snapshot, selected):
 
     # Riichi is accepted before processing the following meld.
     if had_pending_riichi:
-        resolve_pending_riichi_acceptance(snapshot)
+        ROUND_PROGRESSION.resolve_pending_riichi_acceptance(snapshot)
 
     if action_type in ("pon", "chi"):
         actor = int(response.get("actor", -1))
         if actor >= 0 and snapshot.get("riichiAccepted", [False, False, False, False])[actor]:
             raise ValueError(f"Riichi player cannot {action_type}.")
-        clear_all_ippatsu(snapshot)
+        ROUND_PROGRESSION.clear_all_ippatsu(snapshot)
         actor = response["actor"]
         consumed = get_reaction_hand_consumed(response, discard["pai"], normalize_tile_family)
         resolved_consumed = resolve_reaction_hand_consumed(snapshot["hands"][actor], response, discard["pai"], normalize_tile_family)
@@ -2537,7 +2136,7 @@ def apply_reaction_action(snapshot, selected):
         actor = int(response.get("actor", -1))
         if actor >= 0 and snapshot.get("riichiAccepted", [False, False, False, False])[actor]:
             raise ValueError(f"Riichi player cannot daiminkan.")
-        clear_all_ippatsu(snapshot)
+        ROUND_PROGRESSION.clear_all_ippatsu(snapshot)
         response = copy.deepcopy(response)
         response["consumed"] = copy.deepcopy(
             resolve_reaction_hand_consumed(snapshot["hands"][int(response["actor"])], response, discard["pai"], normalize_tile_family)
@@ -2709,9 +2308,9 @@ def create_discard_phase_special_child_snapshot(parent_snapshot, action_type, va
         return next_snapshot, action
 
     if action_type == "ryukyoku" and variant == "kyuushu_kyuuhai":
-        if not can_declare_kyuushu_kyuuhai(parent_snapshot, actor):
+        if not ROUND_PROGRESSION.can_declare_kyuushu_kyuuhai(parent_snapshot, actor):
             raise ValueError("This hand cannot declare 9 terminals abortive draw.")
-        mark_abortive_ryukyoku(next_snapshot, variant)
+        ROUND_PROGRESSION.mark_abortive_ryukyoku(next_snapshot, variant)
         action = {
             "type": "ryukyoku",
             "actor": STATE["controlledSeat"],
@@ -2734,8 +2333,8 @@ def create_discard_phase_special_child_snapshot(parent_snapshot, action_type, va
         if not winning_tile:
             raise ValueError("Unable to resolve the tsumo tile for settlement.")
 
-        promote_delayed_dora_reveal(next_snapshot)
-        reveal_all_pending_dora(next_snapshot)
+        ROUND_PROGRESSION.promote_delayed_dora_reveal(next_snapshot)
+        ROUND_PROGRESSION.reveal_all_pending_dora(next_snapshot)
         result = compute_hora_result(next_snapshot, actor, actor, winning_tile, True)
         next_snapshot["pendingDiscard"] = None
         next_snapshot["reactionWindow"] = None
@@ -2867,7 +2466,7 @@ def _advance_reaction_window(game, snapshot):
     response = selected["response"]
     action_type = response.get("type", "none")
 
-    # apply_reaction_action now handles resolve_pending_riichi_acceptance internally
+    # apply_reaction_action already resolves any pending riichi acceptance.
     apply_reaction_action(next_snapshot, selected)
 
     if next_snapshot["phase"] == "game_end":
@@ -2898,8 +2497,8 @@ def _advance_reaction_window(game, snapshot):
     if action_type == "none":
         actor = next_snapshot["currentActor"]
         if len(next_snapshot["hands"][actor]) % 3 != 2:
-            if not has_wall_draw_available(next_snapshot):
-                mark_exhaustive_ryukyoku(next_snapshot)
+            if not ROUND_PROGRESSION.has_wall_draw_available(next_snapshot):
+                ROUND_PROGRESSION.mark_exhaustive_ryukyoku(next_snapshot)
                 last = next_snapshot.get("lastAction") or {}
                 action = {
                     "type": "ryukyoku",
@@ -2912,7 +2511,7 @@ def _advance_reaction_window(game, snapshot):
                 attach_mainline(parent_id, child_id)
                 game["currentNodeId"] = child_id
                 promote_path_to_mainline(game, child_id)
-                advance_terminal_round(game)
+                ROUND_PROGRESSION.advance_terminal_round(game)
                 return
             draw_one(next_snapshot, actor)
         action = {
@@ -3016,9 +2615,13 @@ def _process_ai_discard(game, snapshot, actor):
                 next_snapshot["kyokuState"]["pendingRiichiSeat"] = actor
             next_snapshot["riichiDeclared"][actor] = True
             next_snapshot["actionHistory"].append({"type": "reach", "actor": actor})
-            accept_riichi_for_seat(next_snapshot, actor, clear_pending=True)
-        promote_delayed_dora_reveal(next_snapshot)
-        reveal_all_pending_dora(next_snapshot)
+            ROUND_PROGRESSION.accept_riichi_for_seat(
+                next_snapshot,
+                actor,
+                clear_pending=True,
+            )
+        ROUND_PROGRESSION.promote_delayed_dora_reveal(next_snapshot)
+        ROUND_PROGRESSION.reveal_all_pending_dora(next_snapshot)
         result = compute_hora_result(next_snapshot, actor, actor, str(ai_action.get("pai") or ""), True)
         next_snapshot["pendingDiscard"] = None
         next_snapshot["reactionWindow"] = None
@@ -3075,7 +2678,7 @@ def _process_ai_discard(game, snapshot, actor):
         promote_path_to_mainline(game, child_id)
         if next_snapshot["phase"] != "game_end":
             return
-        advance_terminal_round(game)
+        ROUND_PROGRESSION.advance_terminal_round(game)
         return
 
     if ai_action["type"] == "reach":
@@ -3185,7 +2788,7 @@ def advance_game_flow(game):
         return
 
     if current_snapshot["phase"] == "game_end":
-        advance_terminal_round(game)
+        ROUND_PROGRESSION.advance_terminal_round(game)
         return
 
     if current_snapshot["phase"] == "round_result":
@@ -3204,7 +2807,7 @@ def advance_game_flow(game):
             "kyotakuLeft": int(last_result.get("kyotakuLeft", current_snapshot.get("kyotaku", 0))),
         }
         if match_state.get("ended"):
-            game["currentNodeId"] = ensure_match_end_node(
+            game["currentNodeId"] = ROUND_PROGRESSION.ensure_match_end_node(
                 game,
                 game["currentNodeId"],
                 current_snapshot,
@@ -3212,8 +2815,11 @@ def advance_game_flow(game):
                 match_state,
             )
         else:
-            next_kyoku_snapshot = create_next_kyoku_snapshot(current_snapshot, match_state)
-            commit_system_transition(
+            next_kyoku_snapshot = ROUND_PROGRESSION.create_next_kyoku_snapshot(
+                current_snapshot,
+                match_state,
+            )
+            ROUND_PROGRESSION.commit_system_transition(
                 game,
                 game["currentNodeId"],
                 {
@@ -3282,11 +2888,11 @@ def advance_game_flow(game):
         promote_path_to_mainline(game, child_id)
         return
 
-    if has_immediate_dora_reveal(current_snapshot):
+    if ROUND_PROGRESSION.has_immediate_dora_reveal(current_snapshot):
         next_snapshot = copy.deepcopy(current_snapshot)
-        consume_immediate_dora_reveal(next_snapshot)
-        reveal_next_dora(next_snapshot)
-        maybe_mark_abortive_ryukyoku(next_snapshot)
+        ROUND_PROGRESSION.consume_immediate_dora_reveal(next_snapshot)
+        ROUND_PROGRESSION.reveal_next_dora(next_snapshot)
+        ROUND_PROGRESSION.maybe_mark_abortive_ryukyoku(next_snapshot)
         persist_snapshot_state(next_snapshot)
         action = copy.deepcopy(next_snapshot.get("lastAction") or {"type": "dora", "actor": current_snapshot.get("currentActor", 0)})
         parent_id = game["currentNodeId"]
@@ -3316,9 +2922,9 @@ def advance_game_flow(game):
         if len(current_snapshot["hands"][actor]) % 3 == 2:
             current_snapshot["phase"] = "discard"
         else:
-            if not has_wall_draw_available(current_snapshot):
-                mark_exhaustive_ryukyoku(current_snapshot)
-                advance_terminal_round(game)
+            if not ROUND_PROGRESSION.has_wall_draw_available(current_snapshot):
+                ROUND_PROGRESSION.mark_exhaustive_ryukyoku(current_snapshot)
+                ROUND_PROGRESSION.advance_terminal_round(game)
                 return
             _create_tsumo_node(game, current_snapshot, actor)
             return
@@ -4198,11 +3804,11 @@ def submit_discard_phase_special_action(action_type, variant=None):
         return
 
     if action_type in ("ankan", "kakan") and next_snapshot["phase"] == "game_end":
-        advance_terminal_round(game)
+        ROUND_PROGRESSION.advance_terminal_round(game)
         return
 
     if action_type == "ryukyoku":
-        advance_terminal_round(game)
+        ROUND_PROGRESSION.advance_terminal_round(game)
 
 
 def submit_discard(tile, from_drawn=None):

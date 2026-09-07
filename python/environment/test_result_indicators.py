@@ -25,7 +25,7 @@ class ResultIndicatorTests(unittest.TestCase):
             "uraMarkers": ["2p", "7s"],
         }
 
-        result = service.build_terminal_round_result(snapshot)
+        result = service.ROUND_PROGRESSION.build_terminal_result(snapshot)
 
         self.assertEqual(result["eventData"]["uraMarkers"], ["2p", "7s"])
 
@@ -67,12 +67,19 @@ class ResultIndicatorTests(unittest.TestCase):
         next_match_state = copy.deepcopy(snapshot["matchState"])
         next_match_state["scores"] = round_result["scores"][:]
 
-        result_snapshot = service.create_round_result_snapshot(snapshot, round_result, next_match_state)
+        result_snapshot = service.ROUND_PROGRESSION.create_result_snapshot(
+            snapshot,
+            round_result,
+            next_match_state,
+        )
         result_info = service.build_result_info(result_snapshot)
 
         self.assertEqual(result_snapshot["scores"], [25000, 25000, 25000, 25000])
         self.assertEqual(result_info["scores"], [33000, 17000, 25000, 25000])
-        next_snapshot = service.create_next_kyoku_snapshot(result_snapshot, next_match_state)
+        next_snapshot = service.ROUND_PROGRESSION.create_next_kyoku_snapshot(
+            result_snapshot,
+            next_match_state,
+        )
         self.assertEqual(next_snapshot["scores"], [33000, 17000, 25000, 25000])
 
     def test_ryukyoku_result_uses_direct_normalized_title(self):

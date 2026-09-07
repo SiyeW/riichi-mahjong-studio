@@ -79,7 +79,11 @@ class PlayPrefetchTest(unittest.TestCase):
             mock.patch.object(service, "can_declare_tsumo", return_value=False),
             mock.patch.object(service, "get_legal_kan_actions", return_value=[]),
             mock.patch.object(service, "can_declare_riichi", return_value=False),
-            mock.patch.object(service, "can_declare_kyuushu_kyuuhai", return_value=False),
+            mock.patch.object(
+                service.ROUND_PROGRESSION,
+                "can_declare_kyuushu_kyuuhai",
+                return_value=False,
+            ),
         ):
             actions = service.build_legal_actions(snapshot, controlled_seat=0)
 
