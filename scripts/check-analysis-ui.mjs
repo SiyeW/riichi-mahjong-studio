@@ -18,7 +18,7 @@ try {
   await page.addInitScript(() => {
     window.setupRmsAnalysisTest = vm => {
       window.analysisCheck = {
-        vm, reads: 0, epoch: 0, wallReads: 0,
+        vm, reads: 0, epoch: 0, wallReads: 0, settingsSaves: [],
         result(expectedValue = 1) {
           return {
             status: 'ready',
@@ -86,7 +86,15 @@ try {
           }
         },
         setAnalysisVisibility: async () => ({ state: JSON.parse(JSON.stringify(vm.status)) }),
-        saveSettings: async settings => settings,
+        saveSettings: async settings => { check.settingsSaves.push(JSON.parse(JSON.stringify(settings))); return settings },
+        describeEngine: async request => ({
+          protocol: { name: 'riichi-engine-protocol', major: 2, minor: 2 },
+          engine: { id: request.engineId || 'ui-test-engine', name: 'UI Test Engine', version: request.engineVersion || '1.0.0' },
+          outputContracts: [{ id: 'opponent-shanten', methods: ['analysis.get'] }],
+          weightSlots: [],
+          devices: [{ type: 'cpu', title: 'CPU' }],
+          optionsSchema: { type: 'object', properties: {} },
+        }),
         toggleVisibleHands: async () => ({ ...JSON.parse(JSON.stringify(vm.status)), visibleHands: !vm.status.visibleHands }),
         getGameView: async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: JSON.parse(JSON.stringify(vm.gameView)) }),
         clearAnalysisCaches: async () => {
@@ -138,6 +146,24 @@ try {
     { open: false, tiles: [] },
     'closing the record clears wall view state through its owner',
   )
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    vm.settings.engines.profiles = [{
+      id: 'profile.ui-test', name: 'UI Test Engine', engineId: 'ui-test-engine', engineVersion: '1.0.0',
+      enginePath: 'C:\\ui-test\\engine.exe', engineCommand: ['C:\\ui-test\\engine.exe'], engineCwd: '',
+      builtIn: false, available: true, autoName: false, weights: [], device: 'cpu', options: {},
+    }]
+    vm.settings.engines.outputAssignments['opponent-shanten'] = 'profile.ui-test'
+    vm.openEngineWindow()
+  })
+  await page.locator('.engine-window').waitFor()
+  assert.equal(await page.evaluate(() => window.analysisCheck.vm.showEngineWindow), true)
+  await page.locator('.engine-profile-detail input[type="text"]').first().fill('Renamed UI Test Engine')
+  await page.evaluate(() => window.analysisCheck.vm.closeEngineWindow())
+  await page.waitForFunction(() => window.analysisCheck.settingsSaves.some(save => (
+    save.engines?.profiles?.[0]?.name === 'Renamed UI Test Engine'
+  )))
+  assert.equal(await page.locator('.engine-window').count(), 0, 'engine profile owner closes and flushes its editor')
   assert.equal(
     await page.locator('.auto-analysis-progress small').evaluate(element => getComputedStyle(element).opacity),
     '1',

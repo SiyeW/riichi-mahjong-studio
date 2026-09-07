@@ -18,6 +18,7 @@ export interface AnalysisTestApi {
   readonly opponentAnalysisIsLoading: boolean
   readonly showWallView: boolean
   readonly wallTiles: Array<{ index: number; tile: string; status: string }>
+  readonly showEngineWindow: boolean
   handlePythonEvent: (event: TrainerPythonEvent) => void
   fetchShantenOnce: () => Promise<void>
   jumpToNode: (nodeId: string) => Promise<void>
@@ -25,6 +26,8 @@ export interface AnalysisTestApi {
   clearLoadedAnalysisCaches: () => Promise<void>
   openWallView: () => Promise<void>
   closeWallView: (clearResult?: boolean) => void
+  openEngineWindow: () => void
+  closeEngineWindow: () => void
 }
 
 declare global {
