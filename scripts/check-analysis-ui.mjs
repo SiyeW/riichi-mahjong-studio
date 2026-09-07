@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { createServer } from 'vite'
 import { chromium } from 'playwright'
+import { checkWorkspaceDock } from './check-workspace-dock.mjs'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
 const root = path.resolve(import.meta.dirname, '..')
@@ -762,6 +763,7 @@ try {
       })
     })
   }
+  await checkWorkspaceDock(page)
   assert.deepEqual(errors, [])
   console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing, hand-toggle hints, responsive geometry, narrow console and shared tile artwork passed.')
 } finally {
