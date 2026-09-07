@@ -19,8 +19,8 @@ class InvalidNodeOperationTests(unittest.TestCase):
             for operation, node_id in operations:
                 with self.subTest(operation=operation.__name__, node_id=node_id):
                     before = copy.deepcopy(game)
-                    with patch.object(service, 'cancel_play_prefetch') as prefetch, \
-                         patch.object(service, 'cancel_auto_analysis') as auto, \
+                    with patch.object(service.RECORD_COMMANDS.dependencies, 'cancel_play_prefetch') as prefetch, \
+                         patch.object(service.RECORD_COMMANDS.dependencies, 'cancel_auto_analysis') as auto, \
                          patch.object(service.RECORD_COMMANDS.dependencies, 'purge_background_analysis') as purge:
                         with self.assertRaises(ValueError):
                             operation(node_id)

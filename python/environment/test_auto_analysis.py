@@ -58,7 +58,7 @@ class AutoAnalysisSchedulingTest(unittest.TestCase):
 
 class AutoAnalysisPlanTest(unittest.TestCase):
     def setUp(self):
-        service.cancel_auto_analysis(emit_progress=False)
+        service.AUTO_ANALYSIS.cancel(emit_progress=False)
         service.STATE["controlledSeat"] = 0
         service.STATE["nextGameId"] = 1
         service.STATE["mode"] = "research"
@@ -141,7 +141,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "depth": int(start_node["depth"]) + 1,
         }
 
-        items = service._build_auto_analysis_plan(
+        items = service.AUTO_ANALYSIS.build_plan(
             game,
             0,
             service.ENGINE_MANAGEMENT.action_weight_path(),
@@ -156,11 +156,11 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         service.STATE["gameLoaded"] = True
 
         with (
-            mock.patch.object(service, "_auto_analysis_kind_enabled", return_value=False),
-            mock.patch.object(service._BG_EXECUTOR, "submit") as submit,
+            mock.patch.object(service.AUTO_ANALYSIS, "kind_enabled", return_value=False),
+            mock.patch.object(service.AUTO_ANALYSIS.executor, "submit") as submit,
             mock.patch.object(service.OPPONENT_PREDICTIONS, "request_background_predict") as request,
         ):
-            status = service.start_auto_analysis()
+            status = service.AUTO_ANALYSIS.start()
 
         self.assertEqual(status["status"], "completed")
         self.assertEqual(status["failed"], 0)
@@ -184,19 +184,19 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         with (
             mock.patch.object(
-                service,
-                "_auto_analysis_kind_enabled",
+                service.AUTO_ANALYSIS,
+                "kind_enabled",
                 side_effect=lambda kind: kind == "decision",
             ),
             mock.patch.object(
-                service,
-                "_run_auto_decision_item",
+                service.AUTO_ANALYSIS,
+                "run_decision_item",
                 side_effect=RuntimeError("模型加载失败"),
             ),
-            mock.patch.object(service._BG_EXECUTOR, "submit", side_effect=submit_immediately),
+            mock.patch.object(service.AUTO_ANALYSIS.executor, "submit", side_effect=submit_immediately),
             mock.patch.object(service.OPPONENT_PREDICTIONS, "request_background_predict") as request,
         ):
-            status = service.start_auto_analysis()
+            status = service.AUTO_ANALYSIS.start()
 
         self.assertEqual(status["status"], "completed")
         self.assertGreater(status["failed"], 0)
@@ -216,7 +216,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         with (
             mock.patch.object(service.OPPONENT_PREDICTIONS, "has_request", return_value=False),
             mock.patch.object(service.OPPONENT_PREDICTIONS, "request_predict") as request_predict,
-            mock.patch.object(service, "auto_analysis_owns_item", return_value=False),
+            mock.patch.object(service.AUTO_ANALYSIS, "owns_item", return_value=False),
             mock.patch.object(
                 service,
                 "get_cached_mjai_stream_bundle",
@@ -506,17 +506,17 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "discardEntries": [],
         }
         with (
-            mock.patch.object(service, "emit"),
-            mock.patch.object(service, "_auto_analysis_kind_enabled", return_value=True),
-            mock.patch.object(service, "_run_auto_decision_item", return_value=decision_result),
-            mock.patch.object(service._BG_EXECUTOR, "submit", side_effect=submit_immediately),
+            mock.patch.object(service.AUTO_ANALYSIS.dependencies, "emit"),
+            mock.patch.object(service.AUTO_ANALYSIS, "kind_enabled", return_value=True),
+            mock.patch.object(service.AUTO_ANALYSIS, "run_decision_item", return_value=decision_result),
+            mock.patch.object(service.AUTO_ANALYSIS.executor, "submit", side_effect=submit_immediately),
             mock.patch.object(
                 service.OPPONENT_PREDICTIONS,
                 "request_background_predict",
                 side_effect=complete_opponent_analysis,
             ),
         ):
-            status = service.start_auto_analysis()
+            status = service.AUTO_ANALYSIS.start()
 
         self.assertEqual(status["status"], "completed")
         self.assertEqual(status["completed"], status["total"])
@@ -536,7 +536,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         }
         service.STATE["game"] = game
         service.STATE["gameLoaded"] = True
-        service.AUTO_ANALYSIS_RUNTIME.context = {
+        service.AUTO_ANALYSIS.runtime.context = {
             "generation": 1,
             "game": game,
             "gameId": game["gameId"],
@@ -547,7 +547,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "attempted": set(),
             "treeRevision": int(game["treeRevision"]),
         }
-        service.AUTO_ANALYSIS_RUNTIME.status.update({
+        service.AUTO_ANALYSIS.runtime.status.update({
             "status": "running",
             "currentNodeId": None,
             "currentModel": None,
@@ -562,12 +562,12 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             return {"events": [], "prefixHashes": [0], "eventHash": 0}
 
         with (
-            mock.patch.object(service, "_auto_analysis_kind_enabled", return_value=True),
-            mock.patch.object(service, "get_cached_mjai_stream_bundle", side_effect=prepare_stream),
-            mock.patch.object(service, "_emit_auto_analysis_progress"),
+            mock.patch.object(service.AUTO_ANALYSIS, "kind_enabled", return_value=True),
+            mock.patch.object(service.AUTO_ANALYSIS.dependencies, "build_mjai_stream_bundle", side_effect=prepare_stream),
+            mock.patch.object(service.AUTO_ANALYSIS, "emit_progress"),
             mock.patch.object(service.OPPONENT_PREDICTIONS, "request_background_predict", return_value=True),
         ):
-            service._schedule_next_auto_analysis_item(1)
+            service.AUTO_ANALYSIS.schedule_next(1)
 
         self.assertEqual(lock_was_available, [True, True])
 
@@ -594,24 +594,24 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         }
         service.STATE["game"] = game
         service.STATE["gameLoaded"] = True
-        service._invalidate_auto_analysis_timeline()
+        service.AUTO_ANALYSIS.invalidate_timeline()
 
-        first = service.get_auto_analysis_status()
+        first = service.AUTO_ANALYSIS.status()
         game["currentNodeId"] = child_id
-        second = service.get_auto_analysis_status()
+        second = service.AUTO_ANALYSIS.status()
 
         self.assertEqual(first["timeline"], second["timeline"])
         self.assertTrue(first["timeline"].endswith("o"))
 
         decision_index = next(
             index
-            for index, item in enumerate(service.AUTO_ANALYSIS_RUNTIME.timeline["items"])
+            for index, item in enumerate(service.AUTO_ANALYSIS.runtime.timeline["items"])
             if item["kind"] == "decision"
         )
-        decision_item = service.AUTO_ANALYSIS_RUNTIME.timeline["items"][decision_index]
+        decision_item = service.AUTO_ANALYSIS.runtime.timeline["items"][decision_index]
         root["analysisCache"][decision_item["cacheKey"]] = {"error": None}
-        service._set_auto_analysis_timeline_cached("decision", root_id, True)
-        cached = service.get_auto_analysis_status()
+        service.AUTO_ANALYSIS.set_timeline_cached("decision", root_id, True)
+        cached = service.AUTO_ANALYSIS.status()
 
         self.assertEqual(cached["timeline"][decision_index], "M")
         self.assertEqual(cached["timelineReady"], first["timelineReady"] + 1)
@@ -675,7 +675,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             opponent_item(current_id),
             opponent_item(before_id),
         ])
-        service.AUTO_ANALYSIS_RUNTIME.context = {
+        service.AUTO_ANALYSIS.runtime.context = {
             "generation": 1,
             "game": game,
             "gameId": game["gameId"],
@@ -686,7 +686,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "attempted": set(),
             "treeRevision": int(game["treeRevision"]),
         }
-        service.AUTO_ANALYSIS_RUNTIME.status.update({
+        service.AUTO_ANALYSIS.runtime.status.update({
             "status": "running",
             "completed": 0,
             "total": len(pending),
@@ -699,15 +699,15 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         })
 
         with mock.patch.object(
-            service,
-            "_auto_analysis_kind_enabled",
+            service.AUTO_ANALYSIS,
+            "kind_enabled",
             return_value=True,
         ):
-            service.reprioritize_auto_analysis_from_node(game, current_id)
+            service.AUTO_ANALYSIS.reprioritize(game, current_id)
 
         ordered_items = [
             (item["nodeId"], item["kind"])
-            for item in service.AUTO_ANALYSIS_RUNTIME.context["pending"]
+            for item in service.AUTO_ANALYSIS.runtime.context["pending"]
         ]
         self.assertEqual(
             ordered_items,
@@ -721,8 +721,8 @@ class AutoAnalysisPlanTest(unittest.TestCase):
                 (side_id, "opponent"),
             ],
         )
-        self.assertTrue(service.auto_analysis_owns_item("decision", current_id))
-        self.assertTrue(service.auto_analysis_owns_item("opponent", current_id))
+        self.assertTrue(service.AUTO_ANALYSIS.owns_item("decision", current_id))
+        self.assertTrue(service.AUTO_ANALYSIS.owns_item("opponent", current_id))
 
     def test_wheel_focus_is_immediate_but_full_reorder_is_debounced(self):
         game = service.create_empty_game(666666)
@@ -732,7 +732,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             {"kind": "decision", "nodeId": root_id, "cacheKey": "test", "cached": False},
             {"kind": "opponent", "nodeId": root_id, "cacheKey": "test", "cached": False},
         ])
-        service.AUTO_ANALYSIS_RUNTIME.context = {
+        service.AUTO_ANALYSIS.runtime.context = {
             "generation": 1,
             "game": game,
             "gameId": game["gameId"],
@@ -743,15 +743,15 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             "attempted": set(),
             "treeRevision": int(game["treeRevision"]),
         }
-        service.AUTO_ANALYSIS_RUNTIME.status["status"] = "running"
+        service.AUTO_ANALYSIS.runtime.status["status"] = "running"
 
-        with mock.patch.object(service.threading, "Timer") as timer_type:
+        with mock.patch.object(service.AUTO_ANALYSIS.dependencies, "timer_factory") as timer_type:
             timer = timer_type.return_value
-            service.schedule_auto_analysis_reprioritization(game, root_id)
+            service.AUTO_ANALYSIS.schedule_reprioritization(game, root_id)
 
         ordered = [
             (item["nodeId"], item["kind"])
-            for item in service.AUTO_ANALYSIS_RUNTIME.context["pending"]
+            for item in service.AUTO_ANALYSIS.runtime.context["pending"]
         ]
         self.assertEqual(
             ordered,

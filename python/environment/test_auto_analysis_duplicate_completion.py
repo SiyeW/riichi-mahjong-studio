@@ -51,11 +51,11 @@ class DuplicateCompletionTests(unittest.TestCase):
         runtime.context['gameId'] = 'test'
         current_game = game if reason == 'duplicate' else {} if reason == 'replaced' else None
         with patch.dict(service.STATE, {'game': current_game}), \
-             patch.object(service, 'AUTO_ANALYSIS_RUNTIME', runtime), \
+             patch.object(service.AUTO_ANALYSIS, 'runtime', runtime), \
              patch.object(service.DECISION_ANALYSIS, 'store') as store, \
-             patch.object(service, '_schedule_next_auto_analysis_item') as schedule, \
-             patch.object(service, 'emit') as emit:
-            service._complete_auto_analysis_item(1, item, result={'choices': []})
+             patch.object(service.AUTO_ANALYSIS, 'schedule_next') as schedule, \
+             patch.object(service.AUTO_ANALYSIS.dependencies, 'emit') as emit:
+            service.AUTO_ANALYSIS.complete_item(1, item, result={'choices': []})
         store.assert_not_called()
         schedule.assert_not_called()
         emit.assert_not_called()

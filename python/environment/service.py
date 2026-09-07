@@ -12,7 +12,7 @@ try:
 except ModuleNotFoundError:
     psutil = None
 
-import auto_analysis_plan
+import auto_analysis_session
 import decision_analysis_session
 import engine_management
 import game_setup
@@ -27,22 +27,18 @@ import snapshot_state
 import table_view
 import tree_view
 from action_recommendation_adapter import (
-    analyze_action_choices,
-    analyze_discard_choices,
     choose_ai_action,
     get_and_reset_ai_thinking_time_s,
     get_latest_action_recommendation_debug,
     set_thinking_time_bounds,
 )
 from action_recommendation_gateway import ActionRecommendationGateway
-from auto_analysis_runtime import AutoAnalysisRuntime
 from analysis_cache import (
     ANALYSIS_SOURCES_FIELD,
     OPPONENT_ANALYSIS_CACHE_FIELD,
     attach_analysis_context,
     cache_key_context,
     compact_opponent_analysis,
-    decision_cache_key,
     migrate_analysis_cache_storage,
     prune_stale_cache_entries,
     register_analysis_source,
@@ -122,7 +118,6 @@ _LEGAL_ACTIONS_CACHE = {}
 _LEGAL_ACTIONS_CACHE_MAX = 4096
 _MJAI_HASH_MASK = (1 << 64) - 1
 _MJAI_HASH_MULTIPLIER = 1000003
-AUTO_ANALYSIS_RUNTIME = AutoAnalysisRuntime()
 DEBUG_FLOW = os.environ.get("MJAI_FLOW_DEBUG", "").lower() in ("1", "true", "yes", "on")
 def debug_flow(message):
     if DEBUG_FLOW:
@@ -137,19 +132,19 @@ def emit(payload):
 
 def _invalidate_engine_analysis(reason):
     with _STATE_LOCK:
-        cancel_auto_analysis(reason)
+        AUTO_ANALYSIS.cancel(reason)
         cancel_play_prefetch()
         active_game = STATE.get("game")
         DECISION_ANALYSIS.purge(
             active_game.get("gameId") if isinstance(active_game, dict) else None
         )
         OPPONENT_PREDICTIONS.cancel_all()
-        _invalidate_auto_analysis_timeline()
+        AUTO_ANALYSIS.invalidate_timeline()
 
 
 def _prepare_for_engine_unload():
     with _STATE_LOCK:
-        cancel_auto_analysis("分析引擎已卸载")
+        AUTO_ANALYSIS.cancel("分析引擎已卸载")
         cancel_play_prefetch()
         active_game = STATE.get("game")
         DECISION_ANALYSIS.purge(
@@ -185,11 +180,11 @@ OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
             *args, **kwargs
         ),
         play_prefetch_owns=lambda node_id: play_prefetch_owns_opponent(node_id),
-        auto_analysis_owns=lambda kind, node_id: auto_analysis_owns_item(kind, node_id),
-        set_timeline_cached=lambda kind, node_id, cached: _set_auto_analysis_timeline_cached(
+        auto_analysis_owns=lambda kind, node_id: AUTO_ANALYSIS.owns_item(kind, node_id),
+        set_timeline_cached=lambda kind, node_id, cached: AUTO_ANALYSIS.set_timeline_cached(
             kind, node_id, cached
         ),
-        get_auto_analysis_status=lambda **kwargs: get_auto_analysis_status(**kwargs),
+        get_auto_analysis_status=lambda **kwargs: AUTO_ANALYSIS.status(**kwargs),
         emit=emit,
     ),
 )
@@ -205,7 +200,7 @@ DECISION_ANALYSIS = decision_analysis_session.DecisionAnalysisSession(
         play_prefetch_owns=lambda node_id, analysis_key: play_prefetch_owns_decision(
             node_id, analysis_key
         ),
-        auto_analysis_owns=lambda kind, node_id: auto_analysis_owns_item(kind, node_id),
+        auto_analysis_owns=lambda kind, node_id: AUTO_ANALYSIS.owns_item(kind, node_id),
         build_mjai_stream_bundle=lambda *args, **kwargs: get_cached_mjai_stream_bundle(
             *args, **kwargs
         ),
@@ -216,10 +211,40 @@ DECISION_ANALYSIS = decision_analysis_session.DecisionAnalysisSession(
             *args, **kwargs
         ),
         sync_snapshot=lambda snapshot: sync_snapshot_state(snapshot),
-        set_timeline_cached=lambda kind, node_id, cached: _set_auto_analysis_timeline_cached(
+        set_timeline_cached=lambda kind, node_id, cached: AUTO_ANALYSIS.set_timeline_cached(
             kind, node_id, cached
         ),
         build_state=lambda: build_state_payload(),
+        emit=emit,
+    ),
+)
+
+
+AUTO_ANALYSIS = auto_analysis_session.AutoAnalysisSession(
+    STATE,
+    _STATE_LOCK,
+    ACTION_RECOMMENDATIONS,
+    OPPONENT_PREDICTIONS,
+    ENGINE_MANAGEMENT,
+    DECISION_ANALYSIS,
+    OPPONENT_ANALYSIS,
+    _BG_EXECUTOR,
+    auto_analysis_session.AutoAnalysisDependencies(
+        play_prefetch_active=lambda: (
+            getattr(PLAY_PREFETCH_RUNTIME.local, "game", None) is not None
+        ),
+        build_mjai_stream_bundle=lambda *args, **kwargs: get_cached_mjai_stream_bundle(
+            *args, **kwargs
+        ),
+        get_node_legal_actions=lambda *args, **kwargs: get_node_legal_actions(
+            *args, **kwargs
+        ),
+        build_legal_actions=lambda *args, **kwargs: build_legal_actions(
+            *args, **kwargs
+        ),
+        sync_snapshot=lambda snapshot: sync_snapshot_state(snapshot),
+        ensure_game_loaded=lambda: ensure_game_loaded(),
+        build_state=lambda *args, **kwargs: build_state_payload(*args, **kwargs),
         emit=emit,
     ),
 )
@@ -842,7 +867,7 @@ def reset_current_round_with_full_wall(full_wall):
 
     game["nodes"][new_round_root_id] = new_round_root_node
     game_tree.mark_tree_changed(game)
-    _invalidate_auto_analysis_timeline()
+    AUTO_ANALYSIS.invalidate_timeline()
     game["currentNodeId"] = new_round_root_id
     promote_path_to_mainline(game, new_round_root_id)
     game["matchState"] = copy.deepcopy(next_snapshot["matchState"])
@@ -918,20 +943,7 @@ def _get_mjai_stream_cache_key(game, node_id, seat, reveal_all=False):
 
 def reset_runtime_for_game_change():
     cancel_play_prefetch()
-    cancel_auto_analysis("牌谱已切换", emit_progress=False, cancel_opponent_analysis=False)
-    _invalidate_auto_analysis_timeline()
-    with AUTO_ANALYSIS_RUNTIME.lock:
-        AUTO_ANALYSIS_RUNTIME.status.update({
-            "status": "idle",
-            "completed": 0,
-            "total": 0,
-            "cached": 0,
-            "analyzed": 0,
-            "failed": 0,
-            "currentNodeId": None,
-            "currentModel": None,
-            "message": "",
-        })
+    AUTO_ANALYSIS.reset_for_game_change()
     ENGINE_MANAGEMENT.advance_cache_epochs()
     DECISION_ANALYSIS.reset()
     _MJAI_STREAM_CACHE.clear()
@@ -1106,7 +1118,7 @@ def choose_ai_action_for_snapshot(snapshot, seat, model_path, *, accumulate_thin
 
 def _refresh_reused_imported_child(game, child_id, action, snapshot):
     if game_tree.refresh_reused_imported_child(game, child_id, action, snapshot):
-        _invalidate_auto_analysis_timeline()
+        AUTO_ANALYSIS.invalidate_timeline()
 
 
 def create_node(game, parent_id, action, snapshot):
@@ -1122,7 +1134,7 @@ def create_node(game, parent_id, action, snapshot):
         is_decision=is_decision,
     )
     if int(game.get("treeRevision", 0)) != previous_revision:
-        _invalidate_auto_analysis_timeline()
+        AUTO_ANALYSIS.invalidate_timeline()
     return node_id
 
 
@@ -1142,14 +1154,14 @@ def attach_mainline(parent_id, child_id, *, force=False):
         child_id,
         replace_existing=_may_promote_mainline(game, force),
     ):
-        _invalidate_auto_analysis_timeline()
+        AUTO_ANALYSIS.invalidate_timeline()
 
 
 def promote_path_to_mainline(game, node_id, *, force=False):
     if not _may_promote_mainline(game, force):
         return
     if game_tree.promote_path_to_mainline(game, node_id):
-        _invalidate_auto_analysis_timeline()
+        AUTO_ANALYSIS.invalidate_timeline()
 
 
 def replace_pending_review_main_child(game, parent_id, proposed_id, chosen_id):
@@ -1160,7 +1172,7 @@ def replace_pending_review_main_child(game, parent_id, proposed_id, chosen_id):
         chosen_id,
     )
     if changed:
-        _invalidate_auto_analysis_timeline()
+        AUTO_ANALYSIS.invalidate_timeline()
     return changed
 
 
@@ -1515,529 +1527,6 @@ def apply_pending_seat_switch_if_ready(snapshot):
     return True
 
 
-def _invalidate_auto_analysis_timeline():
-    if getattr(PLAY_PREFETCH_RUNTIME.local, "game", None) is not None:
-        return
-    AUTO_ANALYSIS_RUNTIME.invalidate_timeline()
-
-
-def _ensure_auto_analysis_timeline_locked(game, seat, model_path):
-    signature = (
-        id(game),
-        AUTO_ANALYSIS_RUNTIME.timeline_structure_revision,
-        int(seat),
-        str(model_path),
-        ENGINE_MANAGEMENT.decision_source(model_path)["id"],
-        OPPONENT_ANALYSIS.cache_key(seat),
-    )
-    if AUTO_ANALYSIS_RUNTIME.timeline_matches(signature):
-        return
-
-    round_root_map = auto_analysis_plan.build_round_root_map(game)
-    start_node_id = auto_analysis_plan.timeline_start_node(game, round_root_map)
-    items = _build_auto_analysis_plan(
-        game,
-        seat,
-        model_path,
-        start_node_id=start_node_id,
-        round_root_map=round_root_map,
-    )
-    AUTO_ANALYSIS_RUNTIME.replace_timeline(signature, items)
-
-
-def _set_auto_analysis_timeline_cached(kind, node_id, cached):
-    AUTO_ANALYSIS_RUNTIME.set_timeline_cached(kind, node_id, cached)
-
-
-def get_auto_analysis_status(*, include_timeline=True):
-    if not include_timeline:
-        status = AUTO_ANALYSIS_RUNTIME.status_snapshot()
-        status["timeline"] = ""
-        status["timelineReady"] = 0
-        return status
-
-    with _STATE_LOCK:
-        game = STATE.get("game")
-        game_loaded = STATE.get("gameLoaded") and isinstance(game, dict)
-        seat = int(STATE.get("controlledSeat", 0))
-        model_path = ENGINE_MANAGEMENT.action_weight_path() if game_loaded else ""
-        with AUTO_ANALYSIS_RUNTIME.lock:
-            status = AUTO_ANALYSIS_RUNTIME.status_snapshot()
-            if not game_loaded:
-                status["timeline"] = ""
-                status["timelineReady"] = 0
-                return status
-
-            _ensure_auto_analysis_timeline_locked(game, seat, model_path)
-            status["timeline"], status["timelineReady"] = AUTO_ANALYSIS_RUNTIME.timeline_progress(
-                status.get("currentModel"),
-                status.get("currentNodeId"),
-            )
-            return status
-
-
-def _emit_auto_analysis_progress():
-    game = STATE.get("game")
-    emit({
-        "type": "auto_analysis_progress",
-        "gameId": game.get("gameId") if isinstance(game, dict) else None,
-        "autoAnalysis": get_auto_analysis_status(),
-        "timestamp": now_iso(),
-    })
-
-
-def _auto_decision_cache_key(seat, snapshot, model_path):
-    phase = snapshot.get("phase")
-    if phase == "draw_or_discard":
-        phase = "discard"
-    return decision_cache_key(
-        seat,
-        phase,
-        ENGINE_MANAGEMENT.decision_source(model_path),
-    )
-
-
-def _build_auto_analysis_plan(
-    game,
-    seat,
-    model_path,
-    *,
-    start_node_id=None,
-    round_root_map=None,
-):
-    if round_root_map is None:
-        round_root_map = auto_analysis_plan.build_round_root_map(game)
-    round_order = auto_analysis_plan.order_rounds(
-        game,
-        game.get("currentNodeId") if start_node_id is None else start_node_id,
-        round_root_map,
-    )
-    opponent_input_mode = OPPONENT_ANALYSIS.input_mode()
-    opponent_cache_key = OPPONENT_ANALYSIS.cache_key(seat)
-    decision_source = ENGINE_MANAGEMENT.decision_source(model_path)
-    items = []
-    for round_root_id in round_order:
-        for node_id in auto_analysis_plan.order_round_nodes(game, round_root_id, round_root_map):
-            node = game["nodes"][node_id]
-            snapshot = node.get("snapshot") or {}
-            sync_snapshot_state(snapshot)
-            phase = snapshot.get("phase")
-            if phase in ("draw_or_discard", "discard", "reach_declaration", "reaction_window", "kan_reaction_window"):
-                legal_actions = get_node_legal_actions(game, node_id, controlled_seat=seat)
-                if legal_actions:
-                    decision_cache_key = _auto_decision_cache_key(seat, snapshot, model_path)
-                    decision_result = (node.get("analysisCache") or {}).get(decision_cache_key)
-                    items.append({
-                        "kind": "decision",
-                        "nodeId": node_id,
-                        "roundRootId": round_root_id,
-                        "cacheKey": decision_cache_key,
-                        "source": copy.deepcopy(decision_source),
-                        "cached": isinstance(decision_result, dict) and not decision_result.get("error"),
-                    })
-
-            opponent_result = (node.get(OPPONENT_ANALYSIS_CACHE_FIELD) or {}).get(opponent_cache_key)
-            items.append({
-                "kind": "opponent",
-                "nodeId": node_id,
-                "roundRootId": round_root_id,
-                "cacheKey": opponent_cache_key,
-                "inputMode": opponent_input_mode,
-                "cached": isinstance(opponent_result, dict) and opponent_result.get("status") == "ready",
-            })
-    return items
-
-
-def _auto_analysis_kind_enabled(kind):
-    if kind == "decision":
-        return not ACTION_RECOMMENDATIONS.runtime_status().get("unloaded", False)
-    return not OPPONENT_PREDICTIONS.runtime_status().get("unloaded", False)
-
-
-def auto_analysis_owns_item(kind, node_id):
-    return AUTO_ANALYSIS_RUNTIME.owns_item(kind, node_id, STATE.get("game"))
-
-
-def cancel_auto_analysis(message="已停止", *, emit_progress=True, cancel_opponent_analysis=True):
-    was_running, future, reprioritize_timer, status = AUTO_ANALYSIS_RUNTIME.cancel(message)
-    if future is not None:
-        try:
-            future.cancel()
-        except Exception:
-            pass
-    if reprioritize_timer is not None:
-        reprioritize_timer.cancel()
-    if cancel_opponent_analysis:
-        OPPONENT_PREDICTIONS.cancel_background()
-    if was_running and emit_progress:
-        _emit_auto_analysis_progress()
-    return status
-
-
-def _run_auto_decision_item(game, item, seat, model_path):
-    node = game["nodes"][item["nodeId"]]
-    snapshot = node["snapshot"]
-    stream_bundle = get_cached_mjai_stream_bundle(game, item["nodeId"], seat)
-    legal_actions = build_legal_actions(snapshot, controlled_seat=seat)
-    if snapshot.get("phase") in ("draw_or_discard", "discard", "reach_declaration"):
-        return analyze_discard_choices(
-            ACTION_RECOMMENDATIONS,
-            snapshot,
-            seat,
-            model_path,
-            mjai_events=stream_bundle["events"],
-            mjai_prefix_hashes=stream_bundle["prefixHashes"],
-            mjai_events_hash=stream_bundle["eventHash"],
-            legal_actions=legal_actions,
-            role="auto-analysis",
-            position_id=item["nodeId"],
-        )
-    return analyze_action_choices(
-        ACTION_RECOMMENDATIONS,
-        snapshot,
-        seat,
-        model_path,
-        mjai_events=stream_bundle["events"],
-        mjai_prefix_hashes=stream_bundle["prefixHashes"],
-        mjai_events_hash=stream_bundle["eventHash"],
-        legal_actions=legal_actions,
-        role="auto-analysis",
-        position_id=item["nodeId"],
-    )
-
-
-def _complete_auto_analysis_item(generation, item, result=None, error=None):
-    with _STATE_LOCK:
-        completed = _complete_auto_analysis_item_locked(generation, item, result, error)
-    if completed:
-        _schedule_next_auto_analysis_item(generation)
-
-
-def _complete_auto_analysis_item_locked(generation, item, result=None, error=None):
-    """Store and publish a completion while the caller holds _STATE_LOCK."""
-    context = AUTO_ANALYSIS_RUNTIME.completion_context(generation, item)
-    if context is None or context["game"] is not STATE.get("game"):
-        return
-    game = context["game"]
-    seat = context["seat"]
-    success = False
-    tree_updates = []
-    node = game.get("nodes", {}).get(item.get("nodeId"))
-    if isinstance(node, dict) and isinstance(result, dict) and not result.get("error"):
-        if item.get("kind") == "decision":
-            stored = DECISION_ANALYSIS.store(
-                game,
-                node,
-                item["cacheKey"],
-                result,
-                source=item.get("source"),
-            )
-            if stored is not None:
-                _set_auto_analysis_timeline_cached("decision", item.get("nodeId"), True)
-                tree_updates = DECISION_ANALYSIS.update_child_comparisons(
-                    game,
-                    node,
-                    result,
-                    seat,
-                )
-                success = True
-        else:
-            success = OPPONENT_ANALYSIS.cache_result(result, require_current=False)
-
-    context = AUTO_ANALYSIS_RUNTIME.complete_item(generation, item, success, error)
-    if context is None:
-        return
-
-    if success:
-        if item.get("kind") == "decision":
-            emit({
-                "type": "record_changed",
-                "gameId": context["gameId"],
-                "change": "decision_analysis_cache",
-                "timestamp": now_iso(),
-            })
-        if item.get("kind") == "decision" and context["game"].get("currentNodeId") == item.get("nodeId"):
-            emit({
-                "type": "analysis_ready",
-                "cacheEpoch": ENGINE_MANAGEMENT.decision_cache_epoch,
-                "nodeId": item["nodeId"],
-                "gameId": context["gameId"],
-                "analysisKey": item["cacheKey"],
-                "analysis": result,
-                "treeComparisons": tree_updates,
-                "treeRevision": int(context["game"].get("treeRevision", 0)),
-                "state": build_state_payload(),
-                "timestamp": now_iso(),
-            })
-    if tree_updates:
-        emit({
-            "type": "auto_analysis_tree_updates",
-            "cacheEpoch": ENGINE_MANAGEMENT.decision_cache_epoch,
-            "gameId": context["gameId"],
-            "treeComparisons": tree_updates,
-            "treeRevision": int(context["game"].get("treeRevision", 0)),
-            "timestamp": now_iso(),
-        })
-    _emit_auto_analysis_progress()
-    return True
-
-
-def _on_auto_decision_complete(generation, item, future):
-    try:
-        result = future.result()
-        _complete_auto_analysis_item(generation, item, result=result)
-    except Exception as exc:  # pylint: disable=broad-except
-        _complete_auto_analysis_item(generation, item, error=exc)
-
-
-def _on_auto_opponent_analysis_complete(generation, item, result):
-    status = str(result.get("status") or "") if isinstance(result, dict) else ""
-    error = None if status == "ready" else status or "对手分析未返回结果"
-    _complete_auto_analysis_item(generation, item, result=result, error=error)
-
-
-def _extend_auto_analysis_plan(context):
-    items = _build_auto_analysis_plan(context["game"], context["seat"], context["modelPath"])
-    return AUTO_ANALYSIS_RUNTIME.extend_plan(context, items, _auto_analysis_kind_enabled)
-
-
-def reprioritize_auto_analysis_from_node(game, start_node_id, expected_serial=None):
-    changed = False
-    cached_updates = False
-    with AUTO_ANALYSIS_RUNTIME.lock:
-        context = AUTO_ANALYSIS_RUNTIME.context
-        if (
-            not isinstance(context, dict)
-            or AUTO_ANALYSIS_RUNTIME.status.get("status") != "running"
-            or context.get("game") is not game
-        ):
-            return False
-        if expected_serial is not None and expected_serial != AUTO_ANALYSIS_RUNTIME.reprioritize_serial:
-            return False
-
-        if context.get("treeRevision") != int(game.get("treeRevision", 0)):
-            changed = _extend_auto_analysis_plan(context) or changed
-
-        context_generation = context.get("generation")
-
-    # Topology traversal can be expensive for large branched records. Keep it
-    # outside the lock used by status and navigation responses.
-    navigation_rank = auto_analysis_plan.navigation_rank(game, start_node_id)
-
-    with AUTO_ANALYSIS_RUNTIME.lock:
-        context = AUTO_ANALYSIS_RUNTIME.context
-        if (
-            not isinstance(context, dict)
-            or context.get("generation") != context_generation
-            or context.get("game") is not game
-            or AUTO_ANALYSIS_RUNTIME.status.get("status") != "running"
-        ):
-            return False
-        if expected_serial is not None and expected_serial != AUTO_ANALYSIS_RUNTIME.reprioritize_serial:
-            return False
-
-        reordered, cached_updates = AUTO_ANALYSIS_RUNTIME.reprioritize_pending(
-            context,
-            game,
-            navigation_rank,
-            auto_analysis_plan.item_is_cached,
-            _auto_analysis_kind_enabled,
-        )
-        changed = reordered or changed
-
-    if cached_updates:
-        _emit_auto_analysis_progress()
-    return changed
-
-
-def schedule_auto_analysis_reprioritization(game, start_node_id):
-    with AUTO_ANALYSIS_RUNTIME.lock:
-        context = AUTO_ANALYSIS_RUNTIME.context
-        if (
-            not isinstance(context, dict)
-            or AUTO_ANALYSIS_RUNTIME.status.get("status") != "running"
-            or context.get("game") is not game
-        ):
-            return False
-
-        # The frame under the cursor remains first priority immediately. The
-        # more expensive whole-record ordering waits until wheel input settles.
-        focused = []
-        remaining = []
-        for item in context["pending"]:
-            if item.get("nodeId") == start_node_id:
-                focused.append(item)
-            else:
-                remaining.append(item)
-        context["pending"] = deque(focused + remaining)
-
-        previous_timer = AUTO_ANALYSIS_RUNTIME.reprioritize_timer
-        AUTO_ANALYSIS_RUNTIME.reprioritize_serial += 1
-        serial = AUTO_ANALYSIS_RUNTIME.reprioritize_serial
-
-        def apply_settled_focus():
-            with AUTO_ANALYSIS_RUNTIME.lock:
-                if serial != AUTO_ANALYSIS_RUNTIME.reprioritize_serial:
-                    return
-                AUTO_ANALYSIS_RUNTIME.reprioritize_timer = None
-            reprioritize_auto_analysis_from_node(
-                game,
-                start_node_id,
-                expected_serial=serial,
-            )
-
-        timer = threading.Timer(AUTO_ANALYSIS_RUNTIME.reprioritize_delay_s, apply_settled_focus)
-        timer.daemon = True
-        AUTO_ANALYSIS_RUNTIME.reprioritize_timer = timer
-
-    if previous_timer is not None:
-        previous_timer.cancel()
-    timer.start()
-    return True
-
-
-def _schedule_next_auto_analysis_item(generation):
-    AUTO_ANALYSIS_RUNTIME.schedule(generation, _dispatch_next_auto_analysis_item)
-
-
-def _dispatch_next_auto_analysis_item(generation):
-    while True:
-        with _STATE_LOCK:
-            with AUTO_ANALYSIS_RUNTIME.lock:
-                selection, item, context = AUTO_ANALYSIS_RUNTIME.take_next_item(
-                    generation,
-                    STATE.get("game"),
-                    auto_analysis_plan.item_is_cached,
-                    _auto_analysis_kind_enabled,
-                )
-                if selection == "inactive":
-                    return
-                game = context["game"]
-                if selection == "empty":
-                    if _extend_auto_analysis_plan(context) and context["pending"]:
-                        continue
-                    AUTO_ANALYSIS_RUNTIME.finish(generation)
-                    finished = True
-                else:
-                    finished = False
-                    seat = context["seat"]
-                    model_path = context["modelPath"]
-                    game_id = context["gameId"]
-
-        if finished:
-            _emit_auto_analysis_progress()
-            return
-
-        if item["kind"] == "decision":
-            try:
-                future = _BG_EXECUTOR.submit(
-                    _run_auto_decision_item,
-                    game,
-                    item,
-                    seat,
-                    model_path,
-                )
-            except Exception as exc:
-                with _STATE_LOCK:
-                    completed = _complete_auto_analysis_item_locked(generation, item, error=exc)
-                if not completed:
-                    return
-                continue
-            AUTO_ANALYSIS_RUNTIME.set_future(generation, future)
-            future.add_done_callback(
-                lambda completed_future, g=generation, current_item=item: (
-                    _on_auto_decision_complete(g, current_item, completed_future)
-                )
-            )
-            _emit_auto_analysis_progress()
-            return
-
-        input_mode = str(item.get("inputMode") or "public")
-        opponent_context = {
-            "gameId": game_id,
-            "nodeId": item["nodeId"],
-            "seat": seat,
-            "inputMode": input_mode,
-            "cacheKey": item["cacheKey"],
-            "cacheEpoch": ENGINE_MANAGEMENT.opponent_cache_epoch,
-            "autoAnalysisGeneration": generation,
-        }
-        try:
-            prediction_bundle = get_cached_mjai_stream_bundle(
-                game,
-                item["nodeId"],
-                seat,
-                reveal_all=input_mode == "full-information",
-            )
-            target_bundle = get_cached_mjai_stream_bundle(
-                game,
-                item["nodeId"],
-                seat,
-                reveal_all=True,
-            )
-        except Exception as exc:  # pylint: disable=broad-except
-            still_current = AUTO_ANALYSIS_RUNTIME.is_active(generation, game)
-            if still_current:
-                _complete_auto_analysis_item(generation, item, error=exc)
-            return
-        still_current = AUTO_ANALYSIS_RUNTIME.is_active(generation, game)
-        if not still_current:
-            return
-        try:
-            accepted = OPPONENT_PREDICTIONS.request_background_predict(
-                game["nodes"][item["nodeId"]]["snapshot"],
-                seat,
-                input_mode=input_mode,
-                context=opponent_context,
-                on_complete=lambda result, g=generation, current_item=item: (
-                    _on_auto_opponent_analysis_complete(g, current_item, result)
-                ),
-                mjai_events=prediction_bundle["events"],
-                mjai_prefix_hashes=prediction_bundle["prefixHashes"],
-                mjai_events_hash=prediction_bundle["eventHash"],
-                target_mjai_events=target_bundle["events"],
-                target_mjai_prefix_hashes=target_bundle["prefixHashes"],
-                target_mjai_events_hash=target_bundle["eventHash"],
-            )
-        except Exception as exc:
-            _complete_auto_analysis_item(generation, item, error=exc)
-            return
-        if accepted:
-            _emit_auto_analysis_progress()
-            return
-
-        if not _auto_analysis_kind_enabled("opponent"):
-            _schedule_next_auto_analysis_item(generation)
-            return
-
-        _complete_auto_analysis_item(
-            generation,
-            item,
-            error=OPPONENT_PREDICTIONS.activity_error() or "对手分析任务重复",
-        )
-        return
-
-
-def start_auto_analysis():
-    ensure_game_loaded()
-    cancel_auto_analysis(emit_progress=False)
-    game = STATE["game"]
-    seat = int(STATE["controlledSeat"])
-    model_path = ENGINE_MANAGEMENT.action_weight_path()
-    items = _build_auto_analysis_plan(game, seat, model_path)
-    generation = AUTO_ANALYSIS_RUNTIME.start(
-        game,
-        seat,
-        model_path,
-        items,
-        _auto_analysis_kind_enabled,
-    )
-
-    _emit_auto_analysis_progress()
-    _schedule_next_auto_analysis_item(generation)
-    return get_auto_analysis_status()
-
-
 def tree_node_is_visible_to_seat(node, seat):
     return tree_view.node_is_visible_to_seat(node, seat)
 
@@ -2222,7 +1711,7 @@ def build_state_payload(*, consume_thinking_time=True):
             "decision": ACTION_RECOMMENDATIONS.runtime_status(),
             "opponentAnalysis": OPPONENT_PREDICTIONS.runtime_status(),
         },
-        "autoAnalysis": get_auto_analysis_status(
+        "autoAnalysis": AUTO_ANALYSIS.status(
             include_timeline=STATE.get("mode") == "research"
         ),
     }
@@ -3886,7 +3375,7 @@ def play_prefetch_owns_opponent(actual_node_id):
 
 def play_prefetch_owns_decision(actual_node_id, analysis_key):
     def expected_key(context, node):
-        return _auto_decision_cache_key(
+        return DECISION_ANALYSIS.cache_key_for(
             context["seat"],
             node["snapshot"],
             context["modelPath"],
@@ -3968,7 +3457,7 @@ def _commit_prefetched_opponent_result(context, draft_node_id):
     register_analysis_source(game, source, result)
     prune_stale_cache_entries(cache, cache_key)
     cache[cache_key] = compact
-    _set_auto_analysis_timeline_cached("opponent", actual_node_id, True)
+    AUTO_ANALYSIS.set_timeline_cached("opponent", actual_node_id, True)
     emit({
         "type": "record_changed",
         "gameId": context["gameId"],
@@ -4097,7 +3586,11 @@ def _commit_prefetched_decision_result(context, draft_node_id):
     node = game.get("nodes", {}).get(actual_node_id)
     if not isinstance(node, dict):
         return False
-    cache_key = _auto_decision_cache_key(context["seat"], node["snapshot"], context["modelPath"])
+    cache_key = DECISION_ANALYSIS.cache_key_for(
+        context["seat"],
+        node["snapshot"],
+        context["modelPath"],
+    )
     cache = node.setdefault("analysisCache", {})
     if cache.get(cache_key) == result:
         return True
@@ -4149,7 +3642,7 @@ def _run_play_prefetch_decision(context, draft_node_id):
     )
     if not legal_actions:
         return
-    cache_key = _auto_decision_cache_key(
+    cache_key = DECISION_ANALYSIS.cache_key_for(
         context["seat"],
         node["snapshot"],
         context["modelPath"],
@@ -4159,7 +3652,7 @@ def _run_play_prefetch_decision(context, draft_node_id):
             return
         context["decisionPending"].add(draft_node_id)
     try:
-        result = _run_auto_decision_item(
+        result = AUTO_ANALYSIS.run_decision_item(
             context["draftGame"],
             {
                 "nodeId": draft_node_id,
@@ -4943,7 +4436,7 @@ def clear_loaded_analysis_caches():
     game = STATE["game"]
     game_id = game.get("gameId")
 
-    cancel_auto_analysis("缓存已清除")
+    AUTO_ANALYSIS.cancel("缓存已清除")
     decision_epoch, opponent_epoch = ENGINE_MANAGEMENT.advance_cache_epochs()
     DECISION_ANALYSIS.purge(game_id)
     OPPONENT_PREDICTIONS.cancel_all()
@@ -4968,7 +4461,7 @@ def clear_loaded_analysis_caches():
     had_pending_review = game.get("pendingReview") is not None
     game["pendingReview"] = None
     game[ANALYSIS_SOURCES_FIELD] = {}
-    _invalidate_auto_analysis_timeline()
+    AUTO_ANALYSIS.invalidate_timeline()
     game_tree.mark_tree_changed(game)
     return {
         "decisionEntries": decision_entries,
@@ -5002,7 +4495,7 @@ RECORD_SESSION = record_session.RecordSession(
         current_snapshot=get_current_snapshot,
         request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
         purge_mjai_cache=purge_stale_mjai_stream_cache,
-        invalidate_auto_timeline=_invalidate_auto_analysis_timeline,
+        invalidate_auto_timeline=AUTO_ANALYSIS.invalidate_timeline,
     ),
 )
 
@@ -5015,14 +4508,14 @@ RECORD_COMMANDS = record_commands.RecordCommands(
         round_root_for_node=resolve_round_root_id_for_node,
         collect_subtree_ids=collect_subtree_ids,
         cancel_play_prefetch=cancel_play_prefetch,
-        cancel_auto_analysis=cancel_auto_analysis,
-        schedule_auto_reprioritization=schedule_auto_analysis_reprioritization,
+        cancel_auto_analysis=AUTO_ANALYSIS.cancel,
+        schedule_auto_reprioritization=AUTO_ANALYSIS.schedule_reprioritization,
         purge_background_analysis=DECISION_ANALYSIS.purge,
         purge_mjai_cache=purge_stale_mjai_stream_cache,
         sync_snapshot=sync_snapshot_state,
         request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
         promote_mainline=promote_path_to_mainline,
-        invalidate_auto_timeline=_invalidate_auto_analysis_timeline,
+        invalidate_auto_timeline=AUTO_ANALYSIS.invalidate_timeline,
     ),
 )
 
@@ -5039,11 +4532,11 @@ def handle_command(request_id, command, payload):
             return build_status_response(request_id)
 
         if command == "start_auto_analysis":
-            auto_analysis = start_auto_analysis()
+            auto_analysis = AUTO_ANALYSIS.start()
             return build_response(request_id, command, {"autoAnalysis": auto_analysis})
 
         if command == "cancel_auto_analysis":
-            auto_analysis = cancel_auto_analysis()
+            auto_analysis = AUTO_ANALYSIS.cancel()
             return build_response(request_id, command, {"autoAnalysis": auto_analysis})
 
         if command == "describe_engine":
@@ -5131,7 +4624,7 @@ def handle_command(request_id, command, payload):
 
         if command == "request_seat_switch":
             seat = normalize_seat(payload.get("seat"))
-            cancel_auto_analysis("主视角已切换")
+            AUTO_ANALYSIS.cancel("主视角已切换")
             cancel_play_prefetch()
             STATE["pendingSeatSwitch"] = seat
             if STATE["gameLoaded"] and STATE["mode"] == "play":

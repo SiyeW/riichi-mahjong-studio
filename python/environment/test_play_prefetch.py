@@ -356,7 +356,7 @@ class PlayPrefetchTest(unittest.TestCase):
         self.assertEqual(game, before)
 
     def test_play_state_payload_skips_hidden_auto_analysis_timeline(self):
-        with mock.patch.object(service, "_ensure_auto_analysis_timeline_locked") as ensure_timeline:
+        with mock.patch.object(service.AUTO_ANALYSIS, "_ensure_timeline_locked") as ensure_timeline:
             payload = service.build_state_payload(consume_thinking_time=False)
 
         ensure_timeline.assert_not_called()
@@ -365,7 +365,7 @@ class PlayPrefetchTest(unittest.TestCase):
 
     def test_research_state_payload_builds_auto_analysis_timeline(self):
         service.STATE["mode"] = "research"
-        with mock.patch.object(service, "_ensure_auto_analysis_timeline_locked") as ensure_timeline:
+        with mock.patch.object(service.AUTO_ANALYSIS, "_ensure_timeline_locked") as ensure_timeline:
             service.build_state_payload(consume_thinking_time=False)
 
         ensure_timeline.assert_called_once()

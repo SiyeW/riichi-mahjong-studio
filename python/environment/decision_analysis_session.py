@@ -107,13 +107,25 @@ class DecisionAnalysisSession:
         self._completed.clear()
 
     def cache_key(self, snapshot: dict[str, Any]) -> str:
+        return self.cache_key_for(
+            int(self.state["controlledSeat"]),
+            snapshot,
+            None,
+        )
+
+    def cache_key_for(
+        self,
+        seat: int,
+        snapshot: dict[str, Any],
+        model_path: Optional[str],
+    ) -> str:
         phase = snapshot.get("phase")
         if phase == "draw_or_discard":
             phase = "discard"
         return decision_cache_key(
-            self.state["controlledSeat"],
+            seat,
             phase,
-            self.engine_management.decision_source(),
+            self.engine_management.decision_source(model_path),
         )
 
     def store(

@@ -28,13 +28,14 @@ class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
 
                 bundle = {'events': [], 'prefixHashes': [], 'eventHash': 0}
                 with patch.dict(service.STATE, {'game': game}), \
-                     patch.object(service, 'AUTO_ANALYSIS_RUNTIME', runtime), \
+                     patch.object(service.AUTO_ANALYSIS, 'runtime', runtime), \
                      patch.object(service.OPPONENT_PREDICTIONS, 'request_background_predict', side_effect=submit), \
-                     patch.object(service, 'get_cached_mjai_stream_bundle', return_value=bundle), \
-                     patch.object(service, '_auto_analysis_kind_enabled', return_value=True), \
-                     patch.object(service, '_extend_auto_analysis_plan', return_value=False), \
-                     patch.object(service, '_emit_auto_analysis_progress'), patch.object(service, 'emit'):
-                    service._schedule_next_auto_analysis_item(generation)
+                     patch.object(service.AUTO_ANALYSIS.dependencies, 'build_mjai_stream_bundle', return_value=bundle), \
+                     patch.object(service.AUTO_ANALYSIS, 'kind_enabled', return_value=True), \
+                     patch.object(service.AUTO_ANALYSIS, '_extend_plan', return_value=False), \
+                     patch.object(service.AUTO_ANALYSIS, 'emit_progress'), \
+                     patch.object(service.AUTO_ANALYSIS.dependencies, 'emit'):
+                    service.AUTO_ANALYSIS.schedule_next(generation)
                 self.assertEqual(runtime.status['status'], 'canceled' if mode == 'cancel_then_raise' else 'completed')
                 self.assertEqual(runtime.status['completed'], 0 if mode == 'cancel_then_raise' else len(items))
                 self.assertEqual(runtime.status['failed'], runtime.status['completed'])
@@ -61,13 +62,13 @@ class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
             return future
 
         with patch.dict(service.STATE, {'game': game}), \
-             patch.object(service, 'AUTO_ANALYSIS_RUNTIME', runtime), \
-             patch.object(service._BG_EXECUTOR, 'submit', side_effect=immediate) as submit, \
-             patch.object(service, '_auto_analysis_kind_enabled', return_value=True), \
-             patch.object(service, '_extend_auto_analysis_plan', return_value=False), \
-             patch.object(service, '_emit_auto_analysis_progress'), \
-             patch.object(service, 'emit'):
-            service._schedule_next_auto_analysis_item(generation)
+             patch.object(service.AUTO_ANALYSIS, 'runtime', runtime), \
+             patch.object(service.AUTO_ANALYSIS.executor, 'submit', side_effect=immediate) as submit, \
+             patch.object(service.AUTO_ANALYSIS, 'kind_enabled', return_value=True), \
+             patch.object(service.AUTO_ANALYSIS, '_extend_plan', return_value=False), \
+             patch.object(service.AUTO_ANALYSIS, 'emit_progress'), \
+             patch.object(service.AUTO_ANALYSIS.dependencies, 'emit'):
+            service.AUTO_ANALYSIS.schedule_next(generation)
         self.assertEqual(submit.call_count, len(items))
         self.assertLessEqual(max(depths) - min(depths), 2)
         self.assertEqual(runtime.status['status'], 'completed')
@@ -77,10 +78,10 @@ class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
 
     def test_dispatch_error_releases_scheduling_guard(self):
         runtime = AutoAnalysisRuntime()
-        with patch.object(service, 'AUTO_ANALYSIS_RUNTIME', runtime), \
-             patch.object(service, '_dispatch_next_auto_analysis_item', side_effect=RuntimeError('failed')):
+        with patch.object(service.AUTO_ANALYSIS, 'runtime', runtime), \
+             patch.object(service.AUTO_ANALYSIS, '_dispatch_next', side_effect=RuntimeError('failed')):
             with self.assertRaisesRegex(RuntimeError, 'failed'):
-                service._schedule_next_auto_analysis_item(1)
+                service.AUTO_ANALYSIS.schedule_next(1)
         self.assert_can_schedule_again(runtime, 1)
 
     def assert_can_schedule_again(self, runtime, generation):
@@ -95,13 +96,13 @@ class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
         game = {'gameId': 'test', 'nodes': {item['nodeId']: {} for item in items}}
         generation = runtime.start(game, 0, 'unused', items, lambda kind: True)
         with patch.dict(service.STATE, {'game': game}), \
-             patch.object(service, 'AUTO_ANALYSIS_RUNTIME', runtime), \
-             patch.object(service._BG_EXECUTOR, 'submit', side_effect=RuntimeError('executor closed')) as submit, \
-             patch.object(service, '_auto_analysis_kind_enabled', return_value=True), \
-             patch.object(service, '_extend_auto_analysis_plan', return_value=False), \
-             patch.object(service, '_emit_auto_analysis_progress'), \
-             patch.object(service, 'emit'):
-            service._schedule_next_auto_analysis_item(generation)
+             patch.object(service.AUTO_ANALYSIS, 'runtime', runtime), \
+             patch.object(service.AUTO_ANALYSIS.executor, 'submit', side_effect=RuntimeError('executor closed')) as submit, \
+             patch.object(service.AUTO_ANALYSIS, 'kind_enabled', return_value=True), \
+             patch.object(service.AUTO_ANALYSIS, '_extend_plan', return_value=False), \
+             patch.object(service.AUTO_ANALYSIS, 'emit_progress'), \
+             patch.object(service.AUTO_ANALYSIS.dependencies, 'emit'):
+            service.AUTO_ANALYSIS.schedule_next(generation)
         self.assertEqual(submit.call_count, len(items))
         self.assertEqual(runtime.status['status'], 'completed')
         self.assertEqual(runtime.status['failed'], len(items))
@@ -120,11 +121,11 @@ class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
             raise RuntimeError('executor closed')
 
         with patch.dict(service.STATE, {'game': game}), \
-             patch.object(service, 'AUTO_ANALYSIS_RUNTIME', runtime), \
-             patch.object(service._BG_EXECUTOR, 'submit', side_effect=reject), \
-             patch.object(service, '_auto_analysis_kind_enabled', return_value=True), \
-             patch.object(service, '_emit_auto_analysis_progress'):
-            service._schedule_next_auto_analysis_item(generation)
+             patch.object(service.AUTO_ANALYSIS, 'runtime', runtime), \
+             patch.object(service.AUTO_ANALYSIS.executor, 'submit', side_effect=reject), \
+             patch.object(service.AUTO_ANALYSIS, 'kind_enabled', return_value=True), \
+             patch.object(service.AUTO_ANALYSIS, 'emit_progress'):
+            service.AUTO_ANALYSIS.schedule_next(generation)
         self.assertEqual(runtime.status['status'], 'canceled')
         self.assertEqual(runtime.status['completed'], 0)
         self.assertIsNone(runtime.context)
