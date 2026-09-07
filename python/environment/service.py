@@ -2971,13 +2971,20 @@ def _schedule_next_auto_analysis_item(generation):
             return
 
         if item["kind"] == "decision":
-            future = _BG_EXECUTOR.submit(
-                _run_auto_decision_item,
-                game,
-                item,
-                seat,
-                model_path,
-            )
+            try:
+                future = _BG_EXECUTOR.submit(
+                    _run_auto_decision_item,
+                    game,
+                    item,
+                    seat,
+                    model_path,
+                )
+            except Exception as exc:
+                with _STATE_LOCK:
+                    completed = _complete_auto_analysis_item_locked(generation, item, error=exc)
+                if not completed:
+                    return
+                continue
             AUTO_ANALYSIS_RUNTIME.set_future(generation, future)
             future.add_done_callback(
                 lambda completed_future, g=generation, current_item=item: (
