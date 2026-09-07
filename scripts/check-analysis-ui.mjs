@@ -18,7 +18,7 @@ try {
   await page.addInitScript(() => {
     window.setupRmsAnalysisTest = vm => {
       window.analysisCheck = {
-        vm, reads: 0, epoch: 0,
+        vm, reads: 0, epoch: 0, wallReads: 0,
         result(expectedValue = 1) {
           return {
             status: 'ready',
@@ -74,6 +74,17 @@ try {
         getRecordDirty: async () => false,
         onRecordDirtyChanged: callback => { check.notifyDirty = callback; return () => {} },
         getShanten: async () => { check.reads++; return check.result() },
+        getWallView: async () => {
+          check.wallReads++
+          return {
+            tiles: [{ index: 0, tile: '1m', status: 'available' }],
+            complete: true,
+            canReconstruct: false,
+            seed: 123,
+            origin: 'generated',
+            sourceUrl: null,
+          }
+        },
         setAnalysisVisibility: async () => ({ state: JSON.parse(JSON.stringify(vm.status)) }),
         saveSettings: async settings => settings,
         toggleVisibleHands: async () => ({ ...JSON.parse(JSON.stringify(vm.status)), visibleHands: !vm.status.visibleHands }),
@@ -111,6 +122,22 @@ try {
   await page.goto(server.resolvedUrls.local[0], { waitUntil: 'domcontentloaded', timeout: 30000 })
   await page.waitForFunction(() => window.analysisCheck?.vm.tileArtworkReady)
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
+  await page.evaluate(() => window.analysisCheck.vm.openWallView())
+  assert.deepEqual(
+    await page.evaluate(() => ({
+      open: window.analysisCheck.vm.showWallView,
+      tiles: window.analysisCheck.vm.wallTiles,
+      reads: window.analysisCheck.wallReads,
+    })),
+    { open: true, tiles: [{ index: 0, tile: '1m', status: 'available' }], reads: 1 },
+    'wall view owns and publishes its loaded state',
+  )
+  await page.evaluate(() => window.analysisCheck.vm.closeWallView(true))
+  assert.deepEqual(
+    await page.evaluate(() => ({ open: window.analysisCheck.vm.showWallView, tiles: window.analysisCheck.vm.wallTiles })),
+    { open: false, tiles: [] },
+    'closing the record clears wall view state through its owner',
+  )
   assert.equal(
     await page.locator('.auto-analysis-progress small').evaluate(element => getComputedStyle(element).opacity),
     '1',

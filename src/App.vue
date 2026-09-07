@@ -1260,7 +1260,7 @@
         <div class="floating-panel-header-actions">
           <button v-if="wallViewComplete" class="floating-panel-action" @click="copyWallToClipboard" :disabled="!wallTiles.length">{{ t('common.copy') }}</button>
           <button v-if="wallViewComplete && !isReadOnlyRecord" class="floating-panel-action" @click="importWallFromClipboard">{{ t('common.import') }}</button>
-          <button class="floating-panel-close" :aria-label="t('wall.close')" @click="showWallView = false">&times;</button>
+          <button class="floating-panel-close" :aria-label="t('wall.close')" @click="closeWallView()">&times;</button>
         </div>
       </div>
       <p v-if="wallClipboardMessage" class="wall-clipboard-message">{{ wallClipboardMessage }}</p>
@@ -1585,6 +1585,7 @@ import { decisionPositionKey, sameViewRequestContext } from './analysisPosition'
 import { acceptsAnalysisEpoch } from './analysisEpoch'
 import { backendStoppedState } from './backendStoppedState'
 import { useWorkspaceDock } from './useWorkspaceDock'
+import { useWallView } from './useWallView'
 import {
   normalizeWorkspaceLayout,
 } from './workspaceSettings'
@@ -1835,17 +1836,6 @@ const showAboutPanel = ref(false)
 const showRecordImportPanel = ref(false)
 const showCustomTenhouExport = ref(false)
 const customTenhouExportRefreshKey = ref(0)
-const showWallView = ref(false)
-const wallTiles = ref<Array<{ index: number; tile: string; status: string }>>([])
-const wallLoading = ref(false)
-const wallViewComplete = ref(false)
-const wallCanReconstruct = ref(false)
-const wallSeed = ref<number | null>(null)
-const wallOrigin = ref<'generated' | 'imported' | 'reconstructed'>('generated')
-const wallSourceUrl = ref('')
-const wallReconstructionSeed = ref('')
-const wallReconstructing = ref(false)
-let wallRefreshGeneration = 0
 const showMjaiDebug = ref(false)
 const mjaiDebugData = ref<Record<string, unknown>>({})
 const mjaiDebugJson = computed(() => JSON.stringify(mjaiDebugData.value, null, 2))
@@ -3046,30 +3036,12 @@ function startDragFloatingPanel(e: MouseEvent) {
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
 }
-const wallClipboardMessage = ref('')
 const quickTrainingModes = computed(() => [
   { value: 'no_review', label: t('mode.noReview') },
   { value: 'threshold_review', label: t('mode.difference') },
   { value: 'always_review', label: t('mode.all') },
   { value: 'preview_before_click', label: t('mode.preview') },
 ] as const)
-const wallTileRows = computed(() => {
-  const rows: Array<Array<Array<{ index: number; tile: string; status: string }>>> = []
-  const sectionEnds = [53, 122, wallTiles.value.length]
-  let sectionStart = 0
-  for (const sectionEnd of sectionEnds) {
-    if (sectionEnd <= sectionStart) continue
-    const groups: Array<Array<{ index: number; tile: string; status: string }>> = []
-    for (let i = sectionStart; i < sectionEnd; i += 4) {
-      groups.push(wallTiles.value.slice(i, Math.min(i + 4, sectionEnd)))
-    }
-    for (let i = 0; i < groups.length; i += 4) {
-      rows.push(groups.slice(i, i + 4))
-    }
-    sectionStart = sectionEnd
-  }
-  return rows
-})
 const quickSettingsCollapsed = ref(false)
 const treePanelCollapsed = ref(false)
 const analysisPanelCollapsed = ref(false)
@@ -3479,6 +3451,34 @@ async function retryBackend() {
 const activeAudioPlayers = new Set<HTMLAudioElement>()
 
 const isReadOnlyRecord = computed(() => Boolean(gameView.readOnly))
+const {
+  showWallView,
+  wallTiles,
+  wallLoading,
+  wallViewComplete,
+  wallCanReconstruct,
+  wallSeed,
+  wallOrigin,
+  wallSourceUrl,
+  wallReconstructionSeed,
+  wallReconstructing,
+  wallClipboardMessage,
+  wallTileRows,
+  openWallView,
+  closeWallView,
+  refreshWallView,
+  reconstructImportedWalls,
+  copyWallToClipboard,
+  importWallFromClipboard,
+  reportReconstructedRounds,
+} = useWallView({
+  gameView,
+  readOnlyRecord: isReadOnlyRecord,
+  t,
+  focus: () => focusFloatingPanel('wall'),
+  applyStatus,
+  applyGameView,
+})
 const READ_ONLY_RECORD_HINT = computed(() => t('mode.readOnlyHint'))
 
 const modeButtonLabel = computed(() => {
@@ -7077,7 +7077,7 @@ async function handleRecordImported(result: TrainerRecordImportResult) {
   showRecordImportPanel.value = false
   if (result.reconstruction) {
     await openWallView()
-    wallClipboardMessage.value = t('wall.reconstructedRounds', { count: result.reconstruction.roundCount })
+    reportReconstructedRounds(result.reconstruction.roundCount)
   }
 }
 
@@ -7162,9 +7162,8 @@ async function closeGame() {
     gameplayResponseGeneration += 1
     cancelPendingWheelNavigation()
     clearAutoAdvanceTimer()
-    showWallView.value = false
+    closeWallView(true)
     closeRoundMapOverlay()
-    wallTiles.value = []
     const response = await window.trainerAPI.closeGame()
     applyStatus(response.state)
     applyGameView(response.view)
@@ -7425,132 +7424,6 @@ function handleSoundTransitions(
   }
 }
 
-async function refreshWallView(closeOnError = false, showLoading = false) {
-  if (!showWallView.value || !window.trainerAPI?.getWallView || !gameView.table) return
-  const generation = ++wallRefreshGeneration
-  const expectedGameId = gameView.gameId
-  const expectedNodeId = gameView.currentNodeId
-  if (showLoading) {
-    wallLoading.value = true
-    wallTiles.value = []
-    wallViewComplete.value = false
-    wallCanReconstruct.value = false
-    wallSeed.value = null
-    wallOrigin.value = 'generated'
-    wallSourceUrl.value = ''
-  }
-  try {
-    const result = await window.trainerAPI.getWallView()
-    if (
-      generation !== wallRefreshGeneration
-      || !showWallView.value
-      || gameView.gameId !== expectedGameId
-      || gameView.currentNodeId !== expectedNodeId
-    ) return
-    wallTiles.value = result.tiles || []
-    wallViewComplete.value = Boolean(result.complete)
-    wallCanReconstruct.value = Boolean(result.canReconstruct)
-    wallSeed.value = result.seed ?? null
-    wallOrigin.value = result.origin || 'generated'
-    wallSourceUrl.value = result.sourceUrl || ''
-  } catch {
-    if (closeOnError && generation === wallRefreshGeneration) showWallView.value = false
-  } finally {
-    if (generation === wallRefreshGeneration) wallLoading.value = false
-  }
-}
-
-async function openWallView() {
-  if (!window.trainerAPI?.getWallView) return
-  showWallView.value = true
-  focusFloatingPanel('wall')
-  wallClipboardMessage.value = ''
-  await refreshWallView(true, true)
-}
-
-async function reconstructImportedWalls() {
-  if (!window.trainerAPI?.reconstructWalls || wallReconstructing.value) return
-  wallReconstructing.value = true
-  wallClipboardMessage.value = ''
-  try {
-    const response = await window.trainerAPI.reconstructWalls(wallReconstructionSeed.value)
-    applyStatus(response.state)
-    applyGameView(response.view)
-    wallReconstructionSeed.value = ''
-    await refreshWallView(false, true)
-    wallClipboardMessage.value = t('wall.reconstructedRounds', { count: response.reconstruction.roundCount })
-  } catch (error) {
-    wallClipboardMessage.value = error instanceof Error ? error.message : t('wall.reconstructFailed')
-  } finally {
-    wallReconstructing.value = false
-  }
-}
-
-const TENHOU_HONOR_TO_TILE: Record<string, string> = {
-  '1z': 'E',
-  '2z': 'S',
-  '3z': 'W',
-  '4z': 'N',
-  '5z': 'P',
-  '6z': 'F',
-  '7z': 'C',
-}
-const TILE_TO_TENHOU_HONOR = Object.fromEntries(
-  Object.entries(TENHOU_HONOR_TO_TILE).map(([tenhou, tile]) => [tile, tenhou]),
-) as Record<string, string>
-
-function encodeWallClipboardTile(tile: string): string {
-  if (TILE_TO_TENHOU_HONOR[tile]) return TILE_TO_TENHOU_HONOR[tile]
-  const redFive = tile.match(/^5([mps])r$/)
-  return redFive ? `0${redFive[1]}` : tile
-}
-
-function parseWallClipboardText(text: string): string[] {
-  const compact = text.replace(/\s+/g, '')
-  if (!compact) return []
-  const matches = compact.match(/5[mps]r|0[mps]|[1-9][mps]|[1-7]z|[ESWNPFC]/g)
-  if (!matches || matches.join('') !== compact) return []
-  return matches.map((tile) => {
-    if (TENHOU_HONOR_TO_TILE[tile]) return TENHOU_HONOR_TO_TILE[tile]
-    const redFive = tile.match(/^0([mps])$/)
-    return redFive ? `5${redFive[1]}r` : tile
-  })
-}
-
-async function copyWallToClipboard() {
-  if (!wallTiles.value.length || !window.trainerAPI?.writeClipboardText) return
-  const text = wallTiles.value.map((tile) => encodeWallClipboardTile(tile.tile)).join('')
-  try {
-    await window.trainerAPI.writeClipboardText(text)
-    wallClipboardMessage.value = t('wall.copied')
-  } catch {
-    wallClipboardMessage.value = t('wall.copyFailed')
-  }
-}
-
-async function importWallFromClipboard() {
-  if (!window.trainerAPI?.importWall || !window.trainerAPI?.readClipboardText || isReadOnlyRecord.value) return
-  try {
-    const raw = await window.trainerAPI.readClipboardText()
-    const tiles = parseWallClipboardText(raw)
-    if (tiles.length !== 136) {
-      wallClipboardMessage.value = t('wall.invalidClipboard')
-      return
-    }
-    const confirmed = window.confirm(t('wall.importConfirm'))
-    if (!confirmed) {
-      wallClipboardMessage.value = t('wall.importCanceled')
-      return
-    }
-    const response = await window.trainerAPI.importWall(tiles)
-    applyStatus(response.state)
-    applyGameView(response.view)
-    await refreshWallView()
-    wallClipboardMessage.value = t('wall.imported')
-  } catch (error) {
-    wallClipboardMessage.value = error instanceof Error ? error.message : t('wall.importFailed')
-  }
-}
 
 async function toggleMode() {
   if (!window.trainerAPI || !status.gameLoaded || isReadOnlyRecord.value) return
@@ -8478,11 +8351,15 @@ if (import.meta.env.MODE === 'ui-test') {
     bootstrapError,
     tileArtworkReady,
     opponentAnalysisIsLoading,
+    showWallView,
+    wallTiles,
     handlePythonEvent,
     fetchShantenOnce,
     jumpToNode,
     toggleAnalysisDock,
     clearLoadedAnalysisCaches,
+    openWallView,
+    closeWallView,
   }))
 }
 </script>

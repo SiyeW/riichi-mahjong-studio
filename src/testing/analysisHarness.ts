@@ -16,11 +16,15 @@ export interface AnalysisTestApi {
   readonly bootstrapError: string
   readonly tileArtworkReady: boolean
   readonly opponentAnalysisIsLoading: boolean
+  readonly showWallView: boolean
+  readonly wallTiles: Array<{ index: number; tile: string; status: string }>
   handlePythonEvent: (event: TrainerPythonEvent) => void
   fetchShantenOnce: () => Promise<void>
   jumpToNode: (nodeId: string) => Promise<void>
   toggleAnalysisDock: () => void
   clearLoadedAnalysisCaches: () => Promise<void>
+  openWallView: () => Promise<void>
+  closeWallView: (clearResult?: boolean) => void
 }
 
 declare global {
