@@ -78,7 +78,7 @@ class GameRecordFormatTests(unittest.TestCase):
             },
         }
 
-        service._migrate_terminal_table_scores(game)
+        game_record_storage.migrate_terminal_table_scores(game)
 
         self.assertEqual(game["nodes"]["hora"]["snapshot"]["scores"], [25000] * 4)
         self.assertEqual(game["nodes"]["result"]["snapshot"]["scores"], [25000] * 4)
@@ -104,7 +104,7 @@ class GameRecordFormatTests(unittest.TestCase):
             },
         }
 
-        service._migrate_discard_tsumogiri(game)
+        game_record_storage.migrate_discard_tsumogiri(game)
 
         self.assertTrue(game["nodes"]["node"]["action"]["tsumogiri"])
 
@@ -187,7 +187,7 @@ class GameRecordFormatTests(unittest.TestCase):
         self.assertNotIn("meta", record["game"]["nodes"]["n_1"]["action"])
 
         with patch.object(service, "request_current_opponent_analysis"):
-            service.load_game_record(record)
+            service.RECORD_SESSION.load(record)
         loaded = service.STATE["game"]
         self.assertEqual(loaded["nodes"]["n_root"]["depth"], 0)
         self.assertEqual(loaded["nodes"]["n_1"]["parentId"], "n_root")
@@ -233,7 +233,7 @@ class GameRecordFormatTests(unittest.TestCase):
         stored = record["game"]["nodes"]["n_1"]["snapshot"]
         self.assertTrue(stored["actionHistoryReset"])
         with patch.object(service, "request_current_opponent_analysis"):
-            service.load_game_record(record)
+            service.RECORD_SESSION.load(record)
         self.assertEqual(
             service.STATE["game"]["nodes"]["n_1"]["snapshot"]["actionHistory"],
             [{"type": "start_kyoku"}],

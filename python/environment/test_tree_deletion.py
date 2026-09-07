@@ -49,12 +49,12 @@ class TreeDeletionTest(unittest.TestCase):
         service.STATE["gameLoaded"] = True
 
         with (
-            mock.patch.object(service, "cancel_auto_analysis"),
-            mock.patch.object(service, "purge_bg_analysis_tasks"),
-            mock.patch.object(service, "purge_stale_mjai_stream_cache"),
-            mock.patch.object(service, "request_current_opponent_analysis"),
+            mock.patch.object(service.RECORD_COMMANDS.dependencies, "cancel_auto_analysis"),
+            mock.patch.object(service.RECORD_COMMANDS.dependencies, "purge_background_analysis"),
+            mock.patch.object(service.RECORD_COMMANDS.dependencies, "purge_mjai_cache"),
+            mock.patch.object(service.RECORD_COMMANDS.dependencies, "request_opponent_analysis"),
         ):
-            deleted_count = service.delete_node(target_id)
+            deleted_count = service.RECORD_COMMANDS.delete(target_id)
 
         self.assertEqual(deleted_count, 3)
         self.assertNotIn(target_id, game["nodes"])
@@ -78,12 +78,12 @@ class TreeDeletionTest(unittest.TestCase):
         service.STATE["gameLoaded"] = True
 
         with (
-            mock.patch.object(service, "cancel_auto_analysis"),
-            mock.patch.object(service, "purge_bg_analysis_tasks"),
-            mock.patch.object(service, "purge_stale_mjai_stream_cache"),
-            mock.patch.object(service, "request_current_opponent_analysis"),
+            mock.patch.object(service.RECORD_COMMANDS.dependencies, "cancel_auto_analysis"),
+            mock.patch.object(service.RECORD_COMMANDS.dependencies, "purge_background_analysis"),
+            mock.patch.object(service.RECORD_COMMANDS.dependencies, "purge_mjai_cache"),
+            mock.patch.object(service.RECORD_COMMANDS.dependencies, "request_opponent_analysis"),
         ):
-            service.delete_node(side_id)
+            service.RECORD_COMMANDS.delete(side_id)
 
         self.assertEqual(game["nodes"][parent_id]["children"], [main_id])
         self.assertEqual(game["nodes"][parent_id]["mainChildId"], main_id)
@@ -96,7 +96,7 @@ class TreeDeletionTest(unittest.TestCase):
         service.STATE["gameLoaded"] = True
 
         with self.assertRaisesRegex(ValueError, "root node"):
-            service.delete_node(game["rootNodeId"])
+            service.RECORD_COMMANDS.delete(game["rootNodeId"])
 
 
 if __name__ == "__main__":

@@ -22,8 +22,8 @@ class DeletedNodeAnalysisTests(unittest.TestCase):
                              decisionRecommendationsEnabled=True)
         self.addCleanup(service.STATE.update, self.saved)
         self.addCleanup(service.STATE.clear)
-        for name in ('cancel_play_prefetch', 'cancel_auto_analysis', 'request_current_opponent_analysis'):
-            mock = patch.object(service, name)
+        for name in ('cancel_play_prefetch', 'cancel_auto_analysis', 'request_opponent_analysis'):
+            mock = patch.object(service.RECORD_COMMANDS.dependencies, name)
             mock.start()
             self.addCleanup(mock.stop)
 
@@ -43,7 +43,7 @@ class DeletedNodeAnalysisTests(unittest.TestCase):
              patch.object(service, 'emit') as emit:
             service._submit_background_analysis(self.node, self.node['snapshot'])
             self.assertEqual(len(service._BG_TASKS), 1)
-            service.delete_node('deleted')
+            service.RECORD_COMMANDS.delete('deleted')
             self.assertFalse(future.cancelled())
             self.assertFalse(service._BG_TASKS)
             emit.reset_mock()
@@ -58,7 +58,7 @@ class DeletedNodeAnalysisTests(unittest.TestCase):
         context = {'cacheEpoch': service._OPPONENT_ANALYSIS_CACHE_EPOCH,
                    'gameId': self.game['gameId'], 'nodeId': 'deleted',
                    'seat': 0, 'cacheKey': 'test-key'}
-        service.delete_node('deleted')
+        service.RECORD_COMMANDS.delete('deleted')
         with patch.object(service, 'compact_opponent_analysis', return_value={}), \
              patch.object(service, '_current_opponent_analysis_context', return_value=None), \
              patch.object(service, 'emit') as emit:

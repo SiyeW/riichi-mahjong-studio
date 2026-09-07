@@ -43,9 +43,9 @@ class LegacyNodeLinksTests(unittest.TestCase):
             service.STATE.update(game=old_game, gameLoaded=True)
             record = {'formatVersion': 2, 'game': copy.deepcopy(old_game), 'state': {}}
             record['game']['nodes']['n_root']['parentId'] = 'n_root'
-            with patch.object(service, 'reset_runtime_for_game_change') as reset:
+            with patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime') as reset:
                 with self.assertRaisesRegex(ValueError, 'cycle'):
-                    service.load_game_record(record)
+                    service.RECORD_SESSION.load(record)
                 reset.assert_not_called()
             self.assertIs(service.STATE['game'], old_game)
         finally:

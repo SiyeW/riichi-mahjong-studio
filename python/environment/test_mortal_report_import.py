@@ -176,9 +176,9 @@ class MortalReportImportTests(unittest.TestCase):
 
         saved_state = dict(service.STATE)
         try:
-            with patch.object(service, 'request_current_opponent_analysis'), \
-                 patch.object(service, 'reset_runtime_for_game_change'):
-                service.import_mortal_report(report, 'https://example.invalid/report.json')
+            with patch.object(service.RECORD_SESSION.dependencies, 'request_opponent_analysis'), \
+                 patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'):
+                service.RECORD_SESSION.import_mortal(report, 'https://example.invalid/report.json')
             self.assertTrue(service.STATE['gameLoaded'])
             self.assertEqual(service.STATE['controlledSeat'], controlled_seat)
             imported_keys = [

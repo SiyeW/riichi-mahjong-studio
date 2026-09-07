@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 import service
+import record_session
 
 
 class CreateGameFailureTests(unittest.TestCase):
@@ -25,10 +26,10 @@ class CreateGameFailureTests(unittest.TestCase):
             self.assertIsNot(game, self.old_game)
             game['nodes']['n_root']['comment'] = 'abandoned'
             raise RuntimeError('engine unavailable')
-        with patch.object(service, 'advance_to_next_user_turn', side_effect=fail), \
-             patch.object(service, 'reset_runtime_for_game_change') as reset:
+        with patch.object(service.RECORD_SESSION.dependencies, 'advance_to_next_user_turn', side_effect=fail), \
+             patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime') as reset:
             with self.assertRaisesRegex(RuntimeError, 'engine unavailable'):
-                service.create_game()
+                service.RECORD_SESSION.create()
             self.assertEqual(reset.call_count, 2)
         self.assertIs(service.STATE['game'], self.old_game)
         self.assertEqual(self.old_game, self.old_copy)
@@ -36,28 +37,28 @@ class CreateGameFailureTests(unittest.TestCase):
             self.assertEqual(service.STATE[key], value)
 
     def test_prewarm_submission_failure_also_rolls_back(self):
-        with patch.object(service, 'advance_to_next_user_turn'), \
-             patch.object(service, 'reset_runtime_for_game_change'), \
+        with patch.object(service.RECORD_SESSION.dependencies, 'advance_to_next_user_turn'), \
+             patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'), \
              patch.object(service._BG_EXECUTOR, 'submit', side_effect=RuntimeError('executor closed')):
             with self.assertRaisesRegex(RuntimeError, 'executor closed'):
-                service.create_game()
+                service.RECORD_SESSION.create()
         self.assertIs(service.STATE['game'], self.old_game)
 
     def test_real_advance_with_unavailable_engine_keeps_exportable_record(self):
-        before = service.serialize_game_record()
-        with patch.object(service.random, 'randint', side_effect=[123456, 1]), \
+        before = service.RECORD_SESSION.serialize()
+        with patch.object(record_session.random, 'randint', side_effect=[123456, 1]), \
              patch.object(service.ACTION_RECOMMENDATIONS, 'analyze_candidates', side_effect=RuntimeError('engine unavailable')):
             with self.assertRaisesRegex(Exception, 'engine unavailable|引擎未加载'):
                 service.handle_command('test', 'create_game', {})
-        after = service.serialize_game_record()
+        after = service.RECORD_SESSION.serialize()
         self.assertEqual(before['game'], after['game'])
         self.assertEqual(before['state'], after['state'])
 
     def test_success_replaces_old_record(self):
-        with patch.object(service, 'advance_to_next_user_turn'), \
-             patch.object(service, 'reset_runtime_for_game_change') as reset, \
+        with patch.object(service.RECORD_SESSION.dependencies, 'advance_to_next_user_turn'), \
+             patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime') as reset, \
              patch.object(service._BG_EXECUTOR, 'submit'):
-            service.create_game()
+            service.RECORD_SESSION.create()
             reset.assert_called_once()
         self.assertIsNot(service.STATE['game'], self.old_game)
         self.assertEqual(service.STATE['mode'], 'play')

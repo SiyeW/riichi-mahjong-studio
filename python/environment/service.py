@@ -1,8 +1,6 @@
 import copy
 import json
 import os
-import random
-import re
 import sys
 import threading
 import time
@@ -21,6 +19,8 @@ import game_setup
 import game_tree
 import legal_actions
 import play_prefetch_runtime
+import record_commands
+import record_session
 import result_view
 import snapshot_state
 import table_view
@@ -52,26 +52,11 @@ from analysis_cache import (
 )
 from engine_assignments import resolve_engine_assignments
 from engine_runtime import EngineRuntimeRegistry
-from game_record_storage import (
-    hydrate_game_structure,
-    hydrate_round_walls,
-    migrate_discard_tsumogiri,
-    migrate_terminal_table_scores,
-    repair_tsumo_action_tiles,
-    serialize_game_record_parts,
-)
 from match_progression import apply_round_result_to_match_state
 from opponent_prediction_coordinator import ANALYSIS_OUTPUT_IDS, OpponentPredictionCoordinator
 from opponent_prediction_gateway import get_latest_opponent_prediction_mjai
 from play_prefetch_runtime import PlayPrefetchRuntime
 from mjai_stream import build_mjai_events_from_actions, build_mjai_stream
-from mortal_report_import import attach_mortal_review_cache, build_mortal_report_game, repair_mortal_report_game
-from custom_tenhou import (
-    build_custom_tenhou_game,
-    export_custom_tenhou,
-    normalize_custom_tenhou_input,
-)
-from wall_reconstruction import reconstruct_imported_walls
 from service_debug import run_debug_scenario
 from service_helpers import (
     DORA_INDICATOR_POSITIONS,
@@ -81,7 +66,6 @@ from service_helpers import (
     build_comparison_result,
     build_special_action_comparison_result,
     build_reaction_comparison_result,
-    build_round_seed_stream,
     get_reaction_expected_hand_count,
     get_reaction_hand_consumed,
     resolve_reaction_hand_consumed,
@@ -308,7 +292,6 @@ def load_project_config():
 
 
 _DECISION_POSTPROCESSOR_VERSION = "decision-analysis-v2"
-_NODE_COMMENT_MAX_LENGTH = 20_000
 
 
 def _analysis_source_display_name(kind):
@@ -370,14 +353,6 @@ def _current_opponent_analysis_source(*, include_display_name=False):
             else "Opponent analysis"
         ),
     )
-
-
-def _migrate_discard_tsumogiri(game):
-    return migrate_discard_tsumogiri(game)
-
-
-def _migrate_terminal_table_scores(game):
-    return migrate_terminal_table_scores(game)
 
 
 def _get_opponent_analysis_cache_key(seat=None):
@@ -1595,12 +1570,6 @@ def reset_runtime_for_game_change():
     _LEGAL_ACTIONS_CACHE.clear()
     OPPONENT_PREDICTIONS.cancel_all()
     ACTION_RECOMMENDATIONS.reset_session()
-
-
-def reserve_loaded_game_id(game_id):
-    match = re.fullmatch(r"game_(\d+)", str(game_id or ""))
-    if match:
-        STATE["nextGameId"] = max(STATE["nextGameId"], int(match.group(1)) + 1)
 
 
 def _mjai_event_hash(event):
@@ -3227,113 +3196,6 @@ def build_view_payload(compact_tree=False):
         "pendingReview": copy.deepcopy(game.get("pendingReview")),
         "tree": build_tree_cursor_view(game, current_node_id) if compact_tree else build_tree_view(game, current_node_id),
     }
-
-
-def serialize_game_record():
-    ensure_game_loaded()
-    game_copy = copy.deepcopy(STATE["game"])
-    state_copy = {
-        "mode": STATE["mode"],
-        "controlledSeat": STATE["controlledSeat"],
-        "pendingSeatSwitch": STATE["pendingSeatSwitch"],
-        "visibleHands": STATE["visibleHands"],
-    }
-    return serialize_game_record_parts(game_copy, state_copy)
-
-
-def load_game_record(record):
-    if not isinstance(record, dict):
-        raise ValueError("Record must be an object.")
-    format_version = int(record.get("formatVersion") or 0)
-    if format_version not in (1, 2, 3):
-        raise ValueError("Unsupported record format version.")
-
-    game = record.get("game")
-    state = record.get("state") or {}
-    if not isinstance(game, dict) or not game.get("nodes"):
-        raise ValueError("Record is missing game data.")
-
-    hydrate_game_structure(game, format_version)
-    hydrate_round_walls(game)
-
-    game.setdefault("matchId", game.get("gameId", "game"))
-    game.setdefault("metadata", {"label": game.get("matchId", game.get("gameId", "game")), "source": "imported-record"})
-    game.setdefault(
-        "matchConfig",
-        {
-            "matchType": "hanchan",
-            "players": 4,
-            "westEntryEnabled": True,
-            "maxBakaze": "W",
-            "maxKyoku": 4,
-        },
-    )
-    if "matchState" not in game:
-        root_snapshot = next(iter(game["nodes"].values()))["snapshot"]
-        sync_snapshot_state(root_snapshot)
-        game["matchState"] = copy.deepcopy(root_snapshot["matchState"])
-        game["matchState"]["matchId"] = game["matchId"]
-        game["matchState"]["seed"] = game.get("seed", 0)
-        game["matchState"].setdefault("matchType", "hanchan")
-        game["matchState"].setdefault("players", 4)
-        game["matchState"].setdefault("westEntryEnabled", True)
-        game["matchState"].setdefault("maxBakaze", "W")
-        game["matchState"].setdefault("maxKyoku", 4)
-        game["matchState"].setdefault("roundSeeds", build_round_seed_stream(random.Random(int(game.get("seed", 0)))))
-    game.setdefault("pendingReview", None)
-    game.setdefault("treeRevision", 1)
-    repair_mortal_report_game(game)
-    repair_tsumo_action_tiles(game)
-    repair_reaction_decision_nodes(game)
-    if game_tree.repair_main_branch_links(game):
-        game["treeRevision"] = int(game.get("treeRevision", 0)) + 1
-    migrate_analysis_cache_storage(game)
-    static_match_fields = (
-        "matchId",
-        "matchType",
-        "players",
-        "westEntryEnabled",
-        "maxBakaze",
-        "maxKyoku",
-        "seed",
-        "roundSeeds",
-    )
-    for node in game["nodes"].values():
-        snapshot = node["snapshot"]
-        sync_snapshot_state(snapshot)
-        snapshot_match_state = snapshot["matchState"]
-        for field in static_match_fields:
-            if field in game["matchState"]:
-                snapshot_match_state[field] = copy.deepcopy(game["matchState"][field])
-    _migrate_discard_tsumogiri(game)
-    _migrate_terminal_table_scores(game)
-
-    candidate = copy.deepcopy(game)
-    mode = "research" if is_read_only_game(game) else normalize_mode(state.get("mode"))
-    controlled_seat = normalize_seat(state.get("controlledSeat", 0))
-    visible_hands = bool(state.get("visibleHands"))
-    previous = {key: STATE[key] for key in (
-        "game", "gameLoaded", "mode", "controlledSeat", "pendingSeatSwitch", "visibleHands",
-    )}
-    reset_runtime_for_game_change()
-    try:
-        reserve_loaded_game_id(candidate.get("gameId"))
-        STATE["game"] = candidate
-        STATE["gameLoaded"] = True
-        STATE["mode"] = mode
-        STATE["controlledSeat"] = controlled_seat
-        STATE["pendingSeatSwitch"] = None
-        STATE["visibleHands"] = visible_hands
-        normalize_current_tree_cursor(candidate, controlled_seat)
-        backfill_cached_child_comparisons(candidate)
-        if mode == "research":
-            request_current_opponent_analysis()
-    except Exception:
-        try:
-            reset_runtime_for_game_change()
-        finally:
-            STATE.update(previous)
-        raise
 
 
 def build_state_payload(*, consume_thinking_time=True):
@@ -6081,238 +5943,6 @@ def submit_reaction_action(action_type, variant=None, candidate_id=None):
     finalize_pending_review_advance(game, next_snapshot)
 
 
-def create_game():
-    seed = random.randint(100000, 999999)
-    controlled_seat = random.randint(0, 3)
-    game = create_empty_game(seed)
-    previous = {key: STATE[key] for key in (
-        "game", "gameLoaded", "mode", "controlledSeat", "pendingSeatSwitch", "visibleHands",
-    )}
-    reset_runtime_for_game_change()
-    try:
-        STATE["controlledSeat"] = controlled_seat
-        STATE["pendingSeatSwitch"] = None
-        STATE["game"] = game
-        STATE["gameLoaded"] = True
-        STATE["mode"] = "play"
-        advance_to_next_user_turn(game)
-        _BG_EXECUTOR.submit(
-            ACTION_RECOMMENDATIONS.prewarm,
-            controlled_seat,
-            get_action_engine_weight_path(),
-        )
-    except Exception:
-        # Do not let work started for the abandoned game publish into the old one.
-        try:
-            reset_runtime_for_game_change()
-        finally:
-            STATE.update(previous)
-        raise
-
-
-def close_game():
-    reset_runtime_for_game_change()
-    STATE["game"] = None
-    STATE["gameLoaded"] = False
-    STATE["mode"] = "play"
-    STATE["pendingSeatSwitch"] = None
-    STATE["visibleHands"] = False
-
-
-def activate_imported_game(game, controlled_seat):
-    previous = {key: STATE[key] for key in (
-        "game", "gameLoaded", "mode", "controlledSeat", "pendingSeatSwitch", "visibleHands",
-    )}
-    reset_runtime_for_game_change()
-    try:
-        STATE["game"] = game
-        STATE["gameLoaded"] = True
-        STATE["mode"] = "research"
-        STATE["controlledSeat"] = controlled_seat
-        STATE["pendingSeatSwitch"] = None
-        STATE["visibleHands"] = False
-        request_current_opponent_analysis(get_current_snapshot())
-    except Exception:
-        try:
-            reset_runtime_for_game_change()
-        finally:
-            STATE.update(previous)
-        raise
-
-
-def import_mortal_report(report, source_url, source_import_url=None, reconstruct_walls=False, seed=None):
-    game_id = f"game_{STATE['nextGameId']:04d}"
-    STATE["nextGameId"] += 1
-    game, controlled_seat = build_mortal_report_game(
-        report,
-        str(source_url or ""),
-        game_id,
-        now_iso(),
-    )
-    official_analyses = attach_mortal_review_cache(
-        game,
-        report,
-        controlled_seat,
-    )
-    repair_reaction_decision_nodes(game)
-    for node_id, analysis in official_analyses.items():
-        node = game.get("nodes", {}).get(node_id)
-        if isinstance(node, dict):
-            update_cached_child_comparisons(game, node, analysis, controlled_seat)
-    game.setdefault("treeRevision", 1)
-    game["metadata"]["sourceImportUrl"] = str(source_import_url or source_url or "")
-    reconstruction = None
-    if reconstruct_walls:
-        reconstruction = reconstruct_imported_walls(game, seed, generated_at=now_iso())
-    activate_imported_game(game, controlled_seat)
-    return reconstruction
-
-
-def import_custom_tenhou(raw_input, reconstruct_walls=False, seed=None):
-    document = normalize_custom_tenhou_input(raw_input)
-    game_id = f"game_{STATE['nextGameId']:04d}"
-    STATE["nextGameId"] += 1
-    game, controlled_seat = build_custom_tenhou_game(
-        document,
-        game_id,
-        now_iso(),
-    )
-    repair_reaction_decision_nodes(game)
-    game.setdefault("treeRevision", 1)
-    reconstruction = None
-    if reconstruct_walls:
-        reconstruction = reconstruct_imported_walls(game, seed, generated_at=now_iso())
-    activate_imported_game(game, controlled_seat)
-    return reconstruction
-
-
-def export_current_custom_tenhou():
-    ensure_game_loaded()
-    return export_custom_tenhou(STATE["game"])
-
-
-def reconstruct_loaded_imported_walls(seed=None):
-    ensure_game_loaded()
-    game = STATE["game"]
-    if not is_read_only_game(game):
-        raise ValueError("当前牌谱已经有完整牌山。")
-    result = reconstruct_imported_walls(game, seed, generated_at=now_iso())
-    game.setdefault("treeRevision", 1)
-    purge_stale_mjai_stream_cache(game["gameId"])
-    _invalidate_auto_analysis_timeline()
-    return result
-
-
-def jump_to_node(node_id):
-    ensure_game_loaded()
-    game = STATE["game"]
-    if node_id not in game["nodes"]:
-        raise ValueError(f"Unknown node id: {node_id}")
-    previous_round_root_id = resolve_round_root_id_for_node(game, game["currentNodeId"])
-    cancel_play_prefetch()
-    game["currentNodeId"] = node_id
-    game["pendingReview"] = None
-    schedule_auto_analysis_reprioritization(game, node_id)
-    # Sync STATE from the jumped-to snapshot so riichiDiscardState etc. are consistent
-    snapshot = game["nodes"][node_id].get("snapshot")
-    if snapshot and STATE.get("mode") == "research":
-        sync_snapshot_state(snapshot)
-        request_current_opponent_analysis(snapshot)
-    return previous_round_root_id == resolve_round_root_id_for_node(game, node_id)
-
-
-def set_main_branch(node_id):
-    ensure_writable_game()
-    game = STATE["game"]
-    if node_id not in game["nodes"]:
-        raise ValueError(f"Unknown node id: {node_id}")
-    promote_path_to_mainline(game, node_id, force=True)
-
-
-def set_node_comment(node_id, value):
-    ensure_game_loaded()
-    game = STATE["game"]
-    node = game["nodes"].get(node_id)
-    if not isinstance(node, dict):
-        raise ValueError(f"Unknown node id: {node_id}")
-
-    comment = str(value or "").replace("\r\n", "\n").replace("\r", "\n")
-    if len(comment) > _NODE_COMMENT_MAX_LENGTH:
-        raise ValueError(
-            f"Node comment exceeds {_NODE_COMMENT_MAX_LENGTH} characters."
-        )
-
-    previous = str(node.get("comment") or "")
-    if comment:
-        node["comment"] = comment
-    else:
-        node.pop("comment", None)
-    return previous != comment, comment
-
-
-def delete_node(node_id):
-    ensure_writable_game()
-    game = STATE["game"]
-    nodes = game["nodes"]
-    node = nodes.get(node_id)
-    if not isinstance(node, dict):
-        raise ValueError(f"Unknown node id: {node_id}")
-    if node_id != game.get("currentNodeId"):
-        raise ValueError("Only the current node can be deleted.")
-
-    parent_id = node.get("parentId")
-    if not parent_id or parent_id not in nodes:
-        raise ValueError("The root node cannot be deleted.")
-
-    subtree_ids = collect_subtree_ids(game, node_id)
-    subtree_id_set = set(subtree_ids)
-    parent = nodes[parent_id]
-    remaining_children = [
-        child_id
-        for child_id in parent.get("children", [])
-        if child_id != node_id and child_id in nodes
-    ]
-
-    cancel_play_prefetch()
-    cancel_auto_analysis("节点已删除")
-    purge_bg_analysis_tasks(game.get("gameId"), subtree_ids)
-    purge_stale_mjai_stream_cache(game.get("gameId"))
-
-    parent["children"] = remaining_children
-    if parent.get("mainChildId") == node_id:
-        parent["mainChildId"] = remaining_children[0] if remaining_children else None
-
-    for subtree_id in subtree_ids:
-        nodes.pop(subtree_id, None)
-
-    if game.get("mainLeafNodeId") in subtree_id_set:
-        cursor_id = game.get("rootNodeId")
-        seen = set()
-        while cursor_id in nodes and cursor_id not in seen:
-            seen.add(cursor_id)
-            cursor = nodes[cursor_id]
-            main_child_id = cursor.get("mainChildId")
-            if main_child_id not in cursor.get("children", []) or main_child_id not in nodes:
-                cursor["mainChildId"] = None
-                break
-            cursor_id = main_child_id
-        game["mainLeafNodeId"] = cursor_id if cursor_id in nodes else parent_id
-
-    game["currentNodeId"] = parent_id
-    game["pendingReview"] = None
-    parent_snapshot = parent.get("snapshot")
-    if isinstance(parent_snapshot, dict):
-        sync_snapshot_state(parent_snapshot)
-        game["matchState"] = copy.deepcopy(parent_snapshot["matchState"])
-        game["matchState"]["matchId"] = game.get("matchId", game.get("gameId", "game"))
-
-    game_tree.mark_tree_changed(game)
-    _invalidate_auto_analysis_timeline()
-    if STATE.get("mode") == "research":
-        request_current_opponent_analysis(parent_snapshot)
-    return len(subtree_ids)
-
-
 def clear_loaded_analysis_caches():
     global _DECISION_CACHE_EPOCH, _OPPONENT_ANALYSIS_CACHE_EPOCH
     ensure_game_loaded()
@@ -6359,6 +5989,52 @@ def clear_loaded_analysis_caches():
     }
 
 
+def _prewarm_record_action_engine(seat):
+    _BG_EXECUTOR.submit(
+        ACTION_RECOMMENDATIONS.prewarm,
+        seat,
+        get_action_engine_weight_path(),
+    )
+
+
+RECORD_SESSION = record_session.RecordSession(
+    STATE,
+    record_session.RecordSessionDependencies(
+        reset_runtime=reset_runtime_for_game_change,
+        create_empty_game=create_empty_game,
+        advance_to_next_user_turn=advance_to_next_user_turn,
+        prewarm_action_engine=_prewarm_record_action_engine,
+        repair_reaction_decisions=repair_reaction_decision_nodes,
+        backfill_child_comparisons=backfill_cached_child_comparisons,
+        update_child_comparisons=update_cached_child_comparisons,
+        current_snapshot=get_current_snapshot,
+        request_opponent_analysis=request_current_opponent_analysis,
+        purge_mjai_cache=purge_stale_mjai_stream_cache,
+        invalidate_auto_timeline=_invalidate_auto_analysis_timeline,
+    ),
+)
+
+
+RECORD_COMMANDS = record_commands.RecordCommands(
+    STATE,
+    record_commands.RecordCommandDependencies(
+        ensure_loaded=ensure_game_loaded,
+        ensure_writable=ensure_writable_game,
+        round_root_for_node=resolve_round_root_id_for_node,
+        collect_subtree_ids=collect_subtree_ids,
+        cancel_play_prefetch=cancel_play_prefetch,
+        cancel_auto_analysis=cancel_auto_analysis,
+        schedule_auto_reprioritization=schedule_auto_analysis_reprioritization,
+        purge_background_analysis=purge_bg_analysis_tasks,
+        purge_mjai_cache=purge_stale_mjai_stream_cache,
+        sync_snapshot=sync_snapshot_state,
+        request_opponent_analysis=request_current_opponent_analysis,
+        promote_mainline=promote_path_to_mainline,
+        invalidate_auto_timeline=_invalidate_auto_analysis_timeline,
+    ),
+)
+
+
 def handle_command(request_id, command, payload):
     with _STATE_LOCK:
         payload = payload or {}
@@ -6386,7 +6062,7 @@ def handle_command(request_id, command, payload):
             )
 
         if command == "create_game":
-            create_game()
+            RECORD_SESSION.create()
             play_prefetch = start_play_prefetch()
             return build_response(
                 request_id,
@@ -6395,11 +6071,11 @@ def handle_command(request_id, command, payload):
             )
 
         if command == "close_game":
-            close_game()
+            RECORD_SESSION.close()
             return build_response(request_id, command)
 
         if command == "import_mortal_report":
-            reconstruction = import_mortal_report(
+            reconstruction = RECORD_SESSION.import_mortal(
                 payload.get("report"),
                 payload.get("sourceUrl"),
                 payload.get("sourceImportUrl"),
@@ -6409,7 +6085,7 @@ def handle_command(request_id, command, payload):
             return build_response(request_id, command, {"reconstruction": reconstruction})
 
         if command == "import_custom_tenhou":
-            reconstruction = import_custom_tenhou(
+            reconstruction = RECORD_SESSION.import_custom(
                 payload.get("input"),
                 bool(payload.get("reconstructWalls")),
                 payload.get("seed"),
@@ -6420,7 +6096,7 @@ def handle_command(request_id, command, payload):
             return build_response(
                 request_id,
                 command,
-                {"customTenhou": export_current_custom_tenhou()},
+                {"customTenhou": RECORD_SESSION.export_custom()},
             )
 
         if run_debug_scenario(command, sys.modules[__name__]):
@@ -6509,7 +6185,7 @@ def handle_command(request_id, command, payload):
                 return {
                     "request_id": request_id,
                     "command": command,
-                    "record": serialize_game_record(),
+                    "record": RECORD_SESSION.serialize(),
                     "state": {
                         "analysisVisibility": {
                             "decisionRecommendations": bool(STATE.get("decisionRecommendationsEnabled", True)),
@@ -6521,16 +6197,16 @@ def handle_command(request_id, command, payload):
                 request_id,
                 command,
                 {
-                    "record": serialize_game_record(),
+                    "record": RECORD_SESSION.serialize(),
                 },
             )
 
         if command == "import_game_record":
-            load_game_record(payload.get("record"))
+            RECORD_SESSION.load(payload.get("record"))
             return build_response(request_id, command)
 
         if command == "jump_to_node":
-            stayed_in_round = jump_to_node(str(payload.get("nodeId") or ""))
+            stayed_in_round = RECORD_COMMANDS.jump(str(payload.get("nodeId") or ""))
             try:
                 client_tree_revision = int(payload.get("treeRevision"))
             except (TypeError, ValueError):
@@ -6539,12 +6215,12 @@ def handle_command(request_id, command, payload):
             return build_response(request_id, command, compact_tree=stayed_in_round and tree_is_current)
 
         if command == "set_main_branch":
-            set_main_branch(str(payload.get("nodeId") or ""))
+            RECORD_COMMANDS.set_main_branch(str(payload.get("nodeId") or ""))
             return build_response(request_id, command)
 
         if command == "set_node_comment":
             node_id = str(payload.get("nodeId") or "")
-            changed, comment = set_node_comment(node_id, payload.get("comment"))
+            changed, comment = RECORD_COMMANDS.set_comment(node_id, payload.get("comment"))
             return {
                 "request_id": request_id,
                 "command": command,
@@ -6555,7 +6231,7 @@ def handle_command(request_id, command, payload):
             }
 
         if command == "delete_node":
-            deleted_count = delete_node(str(payload.get("nodeId") or ""))
+            deleted_count = RECORD_COMMANDS.delete(str(payload.get("nodeId") or ""))
             return build_response(request_id, command, {"deletedCount": deleted_count})
 
         if command == "submit_user_action":
@@ -6645,7 +6321,7 @@ def handle_command(request_id, command, payload):
             }
 
         if command == "reconstruct_walls":
-            reconstruction = reconstruct_loaded_imported_walls(payload.get("seed"))
+            reconstruction = RECORD_SESSION.reconstruct_walls(payload.get("seed"))
             return build_response(request_id, command, {"reconstruction": reconstruction})
 
         if command == "import_wall":

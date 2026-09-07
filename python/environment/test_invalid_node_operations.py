@@ -12,9 +12,9 @@ class InvalidNodeOperationTests(unittest.TestCase):
             game = service.create_empty_game(123456)
             service.STATE.update(game=game, gameLoaded=True, mode='research')
             operations = [
-                (service.jump_to_node, 'missing'),
-                (service.delete_node, 'missing'),
-                (service.delete_node, game['rootNodeId']),
+                (service.RECORD_COMMANDS.jump, 'missing'),
+                (service.RECORD_COMMANDS.delete, 'missing'),
+                (service.RECORD_COMMANDS.delete, game['rootNodeId']),
             ]
             for operation, node_id in operations:
                 with self.subTest(operation=operation.__name__, node_id=node_id):

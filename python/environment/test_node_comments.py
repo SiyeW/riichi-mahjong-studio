@@ -13,7 +13,7 @@ class NodeCommentTest(unittest.TestCase):
         game = service.STATE["game"]
         node_id = game["currentNodeId"]
 
-        changed, comment = service.set_node_comment(node_id, "先看牌效率\n再看打点")
+        changed, comment = service.RECORD_COMMANDS.set_comment(node_id, "先看牌效率\n再看打点")
 
         self.assertTrue(changed)
         self.assertEqual(comment, "先看牌效率\n再看打点")
@@ -21,7 +21,7 @@ class NodeCommentTest(unittest.TestCase):
             service.build_view_payload()["nodeComment"],
             "先看牌效率\n再看打点",
         )
-        record = service.serialize_game_record()
+        record = service.RECORD_SESSION.serialize()
         self.assertEqual(
             record["game"]["nodes"][node_id]["comment"],
             "先看牌效率\n再看打点",
@@ -29,18 +29,18 @@ class NodeCommentTest(unittest.TestCase):
 
     def test_unchanged_comment_does_not_report_a_mutation(self):
         node_id = service.STATE["game"]["currentNodeId"]
-        service.set_node_comment(node_id, "保留")
+        service.RECORD_COMMANDS.set_comment(node_id, "保留")
 
-        changed, _comment = service.set_node_comment(node_id, "保留")
+        changed, _comment = service.RECORD_COMMANDS.set_comment(node_id, "保留")
 
         self.assertFalse(changed)
 
     def test_empty_comment_removes_the_optional_field(self):
         game = service.STATE["game"]
         node_id = game["currentNodeId"]
-        service.set_node_comment(node_id, "删除我")
+        service.RECORD_COMMANDS.set_comment(node_id, "删除我")
 
-        changed, comment = service.set_node_comment(node_id, "")
+        changed, comment = service.RECORD_COMMANDS.set_comment(node_id, "")
 
         self.assertTrue(changed)
         self.assertEqual(comment, "")
@@ -51,7 +51,7 @@ class NodeCommentTest(unittest.TestCase):
         game.setdefault("metadata", {})["readOnly"] = True
         node_id = game["currentNodeId"]
 
-        changed, _comment = service.set_node_comment(node_id, "在线牌谱评注")
+        changed, _comment = service.RECORD_COMMANDS.set_comment(node_id, "在线牌谱评注")
 
         self.assertTrue(changed)
         self.assertEqual(game["nodes"][node_id]["comment"], "在线牌谱评注")
@@ -61,7 +61,7 @@ class NodeCommentTest(unittest.TestCase):
         node_id = game["currentNodeId"]
 
         with self.assertRaisesRegex(ValueError, "exceeds"):
-            service.set_node_comment(node_id, "x" * 20_001)
+            service.RECORD_COMMANDS.set_comment(node_id, "x" * 20_001)
 
         self.assertNotIn("comment", game["nodes"][node_id])
 

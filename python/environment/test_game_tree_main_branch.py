@@ -56,7 +56,7 @@ class MainBranchPolicyTest(unittest.TestCase):
         self.assertEqual(game["nodes"][parent_id]["mainChildId"], original_main_id)
         self.assertEqual(game["mainLeafNodeId"], original_main_id)
 
-        service.set_main_branch(side_branch_id)
+        service.RECORD_COMMANDS.set_main_branch(side_branch_id)
 
         self.assertEqual(game["nodes"][parent_id]["mainChildId"], side_branch_id)
         self.assertEqual(game["mainLeafNodeId"], side_branch_id)

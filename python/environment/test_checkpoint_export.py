@@ -34,13 +34,13 @@ class CheckpointExportTests(unittest.TestCase):
         node = game['nodes'][node_id]
         node[OPPONENT_ANALYSIS_CACHE_FIELD] = {'test': {'probabilities': [0.2, 0.8]}}
         with patch.dict(service.STATE, {'game': game, 'gameLoaded': True}):
-            record = service.serialize_game_record()
+            record = service.RECORD_SESSION.serialize()
         record['game']['nodes'][node_id][OPPONENT_ANALYSIS_CACHE_FIELD]['test']['probabilities'].clear()
         self.assertEqual(node[OPPONENT_ANALYSIS_CACHE_FIELD]['test']['probabilities'], [0.2, 0.8])
 
     def test_checkpoint_exports_record_without_building_or_consuming_ui_state(self):
         record = {'game': {'gameId': 'test'}}
-        with patch.object(service, 'serialize_game_record', return_value=record), \
+        with patch.object(service.RECORD_SESSION, 'serialize', return_value=record), \
              patch.object(service, 'build_view_payload', side_effect=AssertionError('unneeded view')), \
              patch.object(service, 'build_state_payload', side_effect=AssertionError('unneeded runtime state')):
             result = service.handle_command('request', 'export_game_record', {'checkpoint': True})
@@ -50,7 +50,7 @@ class CheckpointExportTests(unittest.TestCase):
         self.assertIn('analysisVisibility', result['state'])
 
     def test_normal_export_keeps_the_existing_response(self):
-        with patch.object(service, 'serialize_game_record', return_value={'game': {}}), \
+        with patch.object(service.RECORD_SESSION, 'serialize', return_value={'game': {}}), \
              patch.object(service, 'build_response', return_value={'view': 'unchanged'}) as build:
             result = service.handle_command('request', 'export_game_record', {})
         self.assertEqual(result, {'view': 'unchanged'})
