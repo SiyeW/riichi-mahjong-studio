@@ -1580,13 +1580,18 @@ import { installAnalysisTestHarness } from './testing/analysisHarness'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
 import { flushBeforeClose } from './flushBeforeClose'
 import { settingsChanges, mergeSettingsReply } from './settingsChanges'
-import { decisionPositionKey, sameViewRequestContext } from './analysisPosition'
-import { acceptsAnalysisEpoch } from './analysisEpoch'
+import { sameViewRequestContext } from './analysisPosition'
 import { backendStoppedState } from './backendStoppedState'
 import { useWorkspaceDock } from './useWorkspaceDock'
 import { useWallView } from './useWallView'
 import { useEngineProfiles } from './useEngineProfiles'
 import { useAutomaticAnalysis } from './useAutomaticAnalysis'
+import {
+  RON_WAIT_OPPONENT_KEYS,
+  SHANTEN_SHORT_LABELS,
+  shantenResultHasRows,
+  useAnalysisSession,
+} from './useAnalysisSession'
 import {
   normalizeWorkspaceLayout,
 } from './workspaceSettings'
@@ -1842,8 +1847,6 @@ const mjaiDebugData = ref<Record<string, unknown>>({})
 const mjaiDebugJson = computed(() => JSON.stringify(mjaiDebugData.value, null, 2))
 const shantenMjaiData = ref<Record<string, unknown>>({})
 const shantenMjaiJson = computed(() => JSON.stringify(shantenMjaiData.value, null, 2))
-const clearingAnalysisCaches = ref(false)
-const analysisCacheClearMessage = ref('')
 
 watchEffect(() => {
   setLanguagePreference(showSettingsPanel.value
@@ -1995,221 +1998,13 @@ function closeConsoleDock() {
     consoleVisible: false,
   })
 }
-const decisionRecommendationsEnabled = ref(true)
-type DecisionAnalysis = NonNullable<TrainerGameView['analysis']>
-const decisionAnalysisEventCache = new Map<string, DecisionAnalysis>()
-const ronWaitPredData = ref<Record<string, number[]>>({})
-const ronWaitGTData = ref<Record<string, number[]>>({})
-const shantenPredData = ref<Record<string, number[]>>({})
-const shantenGTData = ref<Record<string, number[]>>({})
-const shantenViewMode = ref<'predictions' | 'ground_truth'>('predictions')
-const suppressOpponentAnalysisTransitions = ref(false)
-let opponentAnalysisResetGeneration = 0
-let minimumDecisionCacheEpoch: number | null = null
-let minimumOpponentCacheEpoch: number | null = null
-let deferredShantenResult: Record<string, unknown> | null = null
-
-const shantenData = computed(() => (
-  shantenViewMode.value === 'ground_truth' ? shantenGTData.value : shantenPredData.value
-))
-const shantenRawData = ref<Record<string, Record<string, unknown>>>({})
-const shantenRawJson = computed(() => JSON.stringify(shantenRawData.value, null, 2))
-const shantenStatus = ref('—')
-const SHANTEN_LABELS = computed(() => [
-  t('shanten.tenpai'),
-  t('shanten.one'),
-  t('shanten.two'),
-  t('shanten.three'),
-  t('shanten.four'),
-  t('shanten.five'),
-  t('shanten.six'),
-  t('shanten.furiten'),
-])
-const SHANTEN_SHORT_LABELS = ['0','1','2','3','4','5','6','X']
 const RON_BAR_ADAPTIVE_MIN = DEFAULT_PROBABILITY_SCALE
-const RON_WAIT_OPPONENT_KEYS = ['kamicha', 'toimen', 'shimocha'] as const
 function southRonRiskBarHeight(prob: number): string {
   return probabilityScalePercent(prob, southRonRiskAdaptiveMax.value)
 }
 function southRonRiskBarScale(prob: number): number {
   return probabilityScaleRatio(prob, southRonRiskAdaptiveMax.value)
 }
-let shantenReadGeneration = 0
-let _analysisVisibilityGeneration = 0
-
-function hasShantenRows(group: Record<string, number[]> | undefined): group is Record<string, number[]> {
-  return Boolean(group && Object.values(group).some((values) => Array.isArray(values) && values.length > 0))
-}
-
-function shantenResultHasRows(result: Record<string, unknown> | null | undefined): boolean {
-  if (!result) return false
-  const predictions = result.predictions as Record<string, unknown> | undefined
-  const groundTruth = result.ground_truth as Record<string, unknown> | undefined
-  const outputs = result.outputs as Record<string, unknown> | undefined
-  return Boolean(outputs && Object.keys(outputs).length) || [predictions, groundTruth].some((section) => (
-    hasShantenRows(section?.opponents as Record<string, number[]> | undefined)
-    || hasShantenRows(section?.ron_wait as Record<string, number[]> | undefined)
-  ))
-}
-
-const hasOpponentGroundTruth = computed(() => (
-  hasShantenRows(shantenGTData.value) || hasShantenRows(ronWaitGTData.value)
-))
-
-function shantenResultMatchesCurrentPosition(result: Record<string, unknown>): boolean {
-  const context = result.context as Record<string, unknown> | undefined
-  if (!context) return false
-  if (!acceptsAnalysisEpoch(context.cacheEpoch, minimumOpponentCacheEpoch)) return false
-  return context.gameId === gameView.gameId
-    && context.nodeId === gameView.currentNodeId
-    && Number(context.seat) === status.controlledSeat
-}
-
-function suppressOpponentAnalysisMotion() {
-  const resetGeneration = ++opponentAnalysisResetGeneration
-  suppressOpponentAnalysisTransitions.value = true
-  deferredShantenResult = null
-
-  // Keep transitions disabled until the replacement values have reached the screen.
-  void nextTick(() => {
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        if (resetGeneration !== opponentAnalysisResetGeneration) return
-        suppressOpponentAnalysisTransitions.value = false
-        const deferredResult = deferredShantenResult
-        deferredShantenResult = null
-        if (deferredResult) applyShantenResult(deferredResult)
-      })
-    })
-  })
-}
-
-function clearOpponentAnalysisWithoutMotion() {
-  suppressOpponentAnalysisMotion()
-  shantenPredData.value = {}
-  shantenGTData.value = {}
-  ronWaitPredData.value = {}
-  ronWaitGTData.value = {}
-  shantenRawData.value = {}
-  shantenStatus.value = '—'
-}
-
-function applyShantenResult(
-  result: Record<string, unknown>,
-  options: { withoutMotion?: boolean; clearWhenEmpty?: boolean } = {},
-): boolean {
-  if (!shantenResultMatchesCurrentPosition(result)) return false
-  gameView.opponentAnalysis = result
-  if (suppressOpponentAnalysisTransitions.value && !options.withoutMotion) {
-    deferredShantenResult = result
-    return true
-  }
-
-  const raw = result.raw as Record<string, unknown> | undefined
-  shantenStatus.value = String(result.status || '?')
-  shantenRawData.value = raw
-    ? raw as Record<string, Record<string, unknown>>
-    : {}
-
-  const predictions = result.predictions as Record<string, unknown> | undefined
-  const groundTruth = result.ground_truth as Record<string, unknown> | undefined
-  const predOpponents = predictions?.opponents as Record<string, number[]> | undefined
-  const predRonWait = predictions?.ron_wait as Record<string, number[]> | undefined
-  const gtOpponents = groundTruth?.opponents as Record<string, number[]> | undefined
-  const gtRonWait = groundTruth?.ron_wait as Record<string, number[]> | undefined
-  const hasPredOpponents = hasShantenRows(predOpponents)
-  const hasPredRonWait = hasShantenRows(predRonWait)
-  const hasGtOpponents = hasShantenRows(gtOpponents)
-  const hasGtRonWait = hasShantenRows(gtRonWait)
-  const protocolOutputs = result.outputs as Record<string, unknown> | undefined
-  const hasResult = hasPredOpponents || hasPredRonWait || hasGtOpponents || hasGtRonWait
-    || Boolean(protocolOutputs && Object.keys(protocolOutputs).length)
-
-  if (!hasResult) {
-    if (options.clearWhenEmpty) clearOpponentAnalysisWithoutMotion()
-    return true
-  }
-
-  if (options.withoutMotion) suppressOpponentAnalysisMotion()
-  shantenPredData.value = hasPredOpponents ? { ...predOpponents } : {}
-  ronWaitPredData.value = hasPredRonWait ? { ...predRonWait } : {}
-  shantenGTData.value = hasGtOpponents ? { ...gtOpponents } : {}
-  ronWaitGTData.value = hasGtRonWait ? { ...gtRonWait } : {}
-  return true
-}
-
-async function fetchShantenOnce() {
-  if (clearingAnalysisCaches.value || !opponentAnalysisNeeded.value || !gameView.table || !window.trainerAPI?.getShanten) return
-  const generation = ++shantenReadGeneration
-  try {
-    const result = await window.trainerAPI.getShanten()
-    if (generation !== shantenReadGeneration || !opponentAnalysisNeeded.value) return
-    applyShantenResult(result, {
-      clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value,
-    })
-  } catch (e: unknown) {
-    if (generation !== shantenReadGeneration) return
-    shantenStatus.value = 'err: ' + String(e)
-  }
-}
-
-watch(showAnalysisDock, async (open) => {
-  await nextTick()
-  scheduleTableZoomRecalc()
-  if (!open) {
-    await syncAnalysisVisibilityToBackend()
-    return
-  }
-  // Read cached results on opening; new results arrive through backend events.
-  if (await syncAnalysisVisibilityToBackend()) void fetchShantenOnce()
-})
-
-async function toggleDecisionRecommendations(event?: Event) {
-  if (status.mode !== 'research') return
-  event?.preventDefault()
-  event?.stopPropagation()
-  const enabled = !decisionRecommendationsEnabled.value
-  decisionRecommendationsEnabled.value = enabled
-  if (!enabled) {
-    decisionAnalysisEventCache.clear()
-    gameView.analysis = null
-  }
-  if (await syncAnalysisVisibilityToBackend(true)) {
-    if (opponentAnalysisNeeded.value) void fetchShantenOnce()
-  } else {
-    decisionRecommendationsEnabled.value = !enabled
-  }
-}
-
-async function syncAnalysisVisibilityToBackend(refreshView = false): Promise<boolean> {
-  if (!window.trainerAPI?.setAnalysisVisibility) return false
-  const generation = ++_analysisVisibilityGeneration
-  try {
-    const response = await window.trainerAPI.setAnalysisVisibility({
-      decisionRecommendations: effectiveDecisionRecommendationsEnabled.value,
-      opponentAnalysis: opponentAnalysisNeeded.value,
-    })
-    if (generation !== _analysisVisibilityGeneration) return true
-    applyStatus(response.state)
-    if (refreshView) applyGameView(response.view)
-    return true
-  } catch {
-    return generation !== _analysisVisibilityGeneration
-  }
-}
-
-const shantenOpponents = computed(() => {
-  const c = status.controlledSeat
-  const opponents = [
-    { key: 'kamicha', seat: (c + 3) % 4, label: t('seat.kamicha') },
-    { key: 'toimen', seat: (c + 2) % 4, label: t('seat.toimen') },
-    { key: 'shimocha', seat: (c + 1) % 4, label: t('seat.shimocha') },
-  ] as const
-  return opponents.map((opp) => ({
-    ...opp,
-    probabilities: shantenData.value[opp.key] || [],
-  }))
-})
 // Shared drag state for floating analysis panels.
 let floatingPanelDragPos: { x: number; y: number } | null = null
 function startDragFloatingPanel(e: MouseEvent) {
@@ -2357,6 +2152,59 @@ const gameView = reactive<TrainerGameView>({
 })
 
 const {
+  SHANTEN_LABELS,
+  acceptsDecisionEventEpoch,
+  acceptsOpponentEventEpoch,
+  analysisCacheClearMessage,
+  applyOpponentAnalysisEvent,
+  applyShantenResult,
+  cacheDecisionAnalysis,
+  canToggleDecisionRecommendations,
+  clearLoadedAnalysisCaches,
+  clearOpponentAnalysisWithoutMotion,
+  clearingAnalysisCaches,
+  decisionRecommendationsEnabled,
+  effectiveDecisionRecommendationsEnabled,
+  fetchShantenOnce,
+  hasOpponentGroundTruth,
+  invalidateOpponentRead,
+  opponentAnalysisIsLoading,
+  opponentAnalysisLoadError,
+  opponentAnalysisNeeded,
+  opponentAnalysisPermanentlyUnavailable,
+  resetForBackendLifecycle,
+  resetForNewGame,
+  resolveNextDecisionAnalysis,
+  ronWaitPredData,
+  shantenOpponents,
+  shantenRawData,
+  shantenRawJson,
+  shantenStatus,
+  shantenViewMode,
+  showTrainingRecommendations,
+  suppressOpponentAnalysisTransitions,
+  syncAnalysisVisibilityToBackend,
+  toggleDecisionRecommendations,
+} = useAnalysisSession({
+  settings,
+  status,
+  gameView,
+  showAnalysisDock,
+  t,
+  normalizeTrainingMode,
+  applyStatus,
+  applyGameView,
+  scheduleTableZoomRecalc,
+  clearDecisionPresentation: (treeRevision) => {
+    gameView.analysis = null
+    gameView.comparison = null
+    gameView.pendingReview = null
+    treeNodeList.value.forEach((node) => { node.comparison = null })
+    if (gameView.tree) gameView.tree.revision = treeRevision
+  },
+})
+
+const {
   autoAnalysisCanvasEl,
   autoAnalysisLabel,
   autoAnalysisPercent,
@@ -2474,31 +2322,6 @@ function normalizeModelActivityState(value: unknown): TrainerModelActivityState 
   if (value === 'loading' || value === 'running' || value === 'error') return value
   return value === true ? 'running' : 'idle'
 }
-
-const hasOpponentAnalysisResult = computed(() => (
-  shantenResultHasRows(gameView.opponentAnalysis)
-  || hasShantenRows(shantenPredData.value)
-  || hasShantenRows(ronWaitPredData.value)
-  || hasShantenRows(shantenGTData.value)
-  || hasShantenRows(ronWaitGTData.value)
-))
-const opponentAnalysisLoadError = computed(() => {
-  const modelError = status.modelActivity?.errors?.opponentAnalysis
-  if (modelError) return String(modelError)
-  return shantenStatus.value.startsWith('err:') ? shantenStatus.value.slice(4).trim() : ''
-})
-const opponentAnalysisPermanentlyUnavailable = computed(() => (
-  status.modelRuntime.opponentAnalysis.unloaded
-  || normalizeModelActivityState(status.modelActivity?.opponentAnalysis) === 'error'
-))
-const opponentAnalysisIsLoading = computed(() => {
-  const activity = normalizeModelActivityState(status.modelActivity?.opponentAnalysis)
-  if (status.modelRuntime.opponentAnalysis.unloaded) return false
-  if (activity === 'loading') return true
-  if (activity === 'error' || opponentAnalysisLoadError.value) return false
-  return !hasOpponentAnalysisResult.value
-    && (activity === 'running' || gameView.opponentAnalysis?.status === 'loading')
-})
 
 const quickThinkingDragValue = ref<number | null>(null)
 const quickVolumeDragValue = ref<number | null>(null)
@@ -3064,35 +2887,6 @@ const specialActions = computed(() => (
     && !(action.type === 'reach' && gameView.table?.pendingRiichiSeat === status.controlledSeat)
   )).sort(compareSpecialActions)
 ))
-
-const canToggleDecisionRecommendations = computed(() => status.mode === 'research')
-const effectiveDecisionRecommendationsEnabled = computed(() => (
-  status.mode === 'play' || decisionRecommendationsEnabled.value
-))
-
-const showTrainingRecommendations = computed(() => {
-  if (!effectiveDecisionRecommendationsEnabled.value) return false
-  if (status.mode === 'research') return true
-  if (gameView.pendingReview) return true
-  return normalizeTrainingMode(settings.training.mode) === 'preview_before_click'
-})
-
-const opponentAnalysisNeeded = computed(() => (
-  showTrainingRecommendations.value || showAnalysisDock.value
-))
-
-watch(
-  () => [showTrainingRecommendations.value, effectiveDecisionRecommendationsEnabled.value, status.mode] as const,
-  async ([, decisionEnabled, mode], [, previousDecisionEnabled, previousMode]) => {
-    const modeChanged = mode !== previousMode
-    // The toggle performs its own view-refreshing sync; a second watcher request
-    // would supersede that response and discard the restored cached analysis.
-    if (decisionEnabled !== previousDecisionEnabled && !modeChanged) return
-    if (await syncAnalysisVisibilityToBackend(modeChanged) && opponentAnalysisNeeded.value) {
-      void fetchShantenOnce()
-    }
-  },
-)
 
 const showTreeComparisons = computed(() => (
   status.mode === 'research' || normalizeTrainingMode(settings.training.mode) !== 'no_review'
@@ -5823,11 +5617,6 @@ watch(reduceMotionEnabled, (reduced) => {
   cancelPendingDiscardReturnFlight()
 })
 
-function cacheDecisionAnalysis(gameId: string | null | undefined, nodeId: string | null | undefined, analysis: DecisionAnalysis) {
-  const key = decisionPositionKey(gameId, nodeId, status.controlledSeat)
-  if (key) decisionAnalysisEventCache.set(key, analysis)
-}
-
 function playPrefetchPositionKey(gameId: string | null | undefined, nodeId: string | null | undefined) {
   if (!gameId || !nodeId) return null
   return `${gameId}\u0000${nodeId}`
@@ -5839,20 +5628,6 @@ function applyPlayPrefetchStatus(prefetch?: TrainerEnvironmentResponse['playPref
   playPrefetchReady.value = Boolean(prefetch?.ready || eventReady)
   playPrefetchWaiting.value = Boolean(prefetch?.waiting && !playPrefetchReady.value)
   scheduleAutoAdvance()
-}
-
-function resolveNextDecisionAnalysis(nextView: TrainerGameView, isNewGame: boolean): TrainerGameView['analysis'] {
-  if (isNewGame) decisionAnalysisEventCache.clear()
-  if (nextView.analysis) {
-    cacheDecisionAnalysis(nextView.gameId, nextView.currentNodeId, nextView.analysis)
-    return nextView.analysis
-  }
-  if (!effectiveDecisionRecommendationsEnabled.value || !nextView.legalActions.length) return null
-
-  const key = decisionPositionKey(nextView.gameId, nextView.currentNodeId, status.controlledSeat)
-  const eventAnalysis = key ? decisionAnalysisEventCache.get(key) : null
-  if (eventAnalysis) return eventAnalysis
-  return null
 }
 
 function opponentAnalysisRoundKey(view: TrainerGameView): string | null {
@@ -5876,7 +5651,7 @@ function treeContainsNode(tree: TrainerGameView['tree'], nodeId: string | null |
 }
 
 function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewTransitionDirection = 'forward') {
-  ++shantenReadGeneration
+  invalidateOpponentRead()
   const previousSoundView: SoundTransitionView = {
     table: gameView.table,
     legalActions: gameView.legalActions,
@@ -5907,8 +5682,7 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
     ? preparePendingDiscardReturnFlight(previousPendingDiscard.actor)
     : null
   if (isNewGame) {
-    minimumDecisionCacheEpoch = null
-    minimumOpponentCacheEpoch = null
+    resetForNewGame()
     cancelPendingWheelNavigation()
     latestNavigationIntentId += 1
     nodeComments.clear()
@@ -7046,17 +6820,10 @@ function handlePythonEvent(event: TrainerPythonEvent) {
     return
   }
   if (event.type === 'service_ready' || event.type === 'service_stopped') {
-    // Epochs are local to a backend process, not to the desktop session.
-    minimumDecisionCacheEpoch = null
-    minimumOpponentCacheEpoch = null
-    ++shantenReadGeneration
+    resetForBackendLifecycle()
     gameplayResponseGeneration += 1
     latestNavigationIntentId += 1
     cancelPendingWheelNavigation()
-    decisionAnalysisEventCache.clear()
-    gameView.analysis = null
-    gameView.opponentAnalysis = null
-    clearOpponentAnalysisWithoutMotion()
     if (event.type === 'service_stopped') {
       backendRecoveryNeeded.value = true
       backendHasCheckpoint.value = Boolean(event.hasCheckpoint)
@@ -7071,10 +6838,10 @@ function handlePythonEvent(event: TrainerPythonEvent) {
   }
   if (event.type === 'opponent_analysis_ready') {
     const context = event.opponentAnalysis?.context as Record<string, unknown> | undefined
-    if (clearingAnalysisCaches.value || !acceptsAnalysisEpoch(context?.cacheEpoch, minimumOpponentCacheEpoch)) return
+    if (!acceptsOpponentEventEpoch(context?.cacheEpoch)) return
   }
   if (event.type === 'analysis_ready' || event.type === 'auto_analysis_tree_updates') {
-    if (clearingAnalysisCaches.value || !acceptsAnalysisEpoch(event.cacheEpoch, minimumDecisionCacheEpoch)) return
+    if (!acceptsDecisionEventEpoch(event.cacheEpoch)) return
   }
   if (event.type === 'auto_analysis_progress' && event.autoAnalysis) {
     if (event.gameId && event.gameId !== gameView.gameId) return
@@ -7168,14 +6935,10 @@ function handlePythonEvent(event: TrainerPythonEvent) {
     return
   }
   if (event.type === 'opponent_analysis_ready' && event.opponentAnalysis) {
-    if (clearingAnalysisCaches.value) return
     if (event.gameId && event.gameId !== gameView.gameId) return
     if (event.nodeId && event.nodeId !== gameView.currentNodeId) return
     if (Number.isInteger(event.seat) && Number(event.seat) !== status.controlledSeat) return
-    if (!shantenResultMatchesCurrentPosition(event.opponentAnalysis)) return
-    // A late one-shot read must not overwrite this newer result.
-    ++shantenReadGeneration
-    applyShantenResult(event.opponentAnalysis)
+    applyOpponentAnalysisEvent(event.opponentAnalysis)
     return
   }
   if (event.type === 'analysis_ready' && event.nodeId && event.analysis) {
@@ -7198,7 +6961,7 @@ function handlePythonEvent(event: TrainerPythonEvent) {
     if (gameView.tree && typeof event.treeRevision === 'number') {
       gameView.tree.revision = event.treeRevision
     }
-    const analysis = event.analysis as DecisionAnalysis
+    const analysis = event.analysis as NonNullable<TrainerGameView['analysis']>
     cacheDecisionAnalysis(event.gameId || gameView.gameId, event.nodeId, analysis)
     if (event.nodeId === gameView.currentNodeId) {
       gameView.analysis = analysis
@@ -7229,46 +6992,6 @@ async function fetchAndShowMjaiDebug() {
     } catch {
       shantenMjaiData.value = { error: 'Failed to fetch shanten mjai' }
     }
-  }
-}
-
-async function clearLoadedAnalysisCaches() {
-  if (!window.trainerAPI?.clearAnalysisCaches || clearingAnalysisCaches.value) return
-  const gameId = gameView.gameId
-  clearingAnalysisCaches.value = true
-  ++shantenReadGeneration
-  analysisCacheClearMessage.value = ''
-  try {
-    const response = await window.trainerAPI.clearAnalysisCaches()
-    if (gameId !== gameView.gameId) return
-    minimumDecisionCacheEpoch = response.cleared.decisionCacheEpoch
-    minimumOpponentCacheEpoch = response.cleared.opponentCacheEpoch
-    applyStatus(response.state)
-    decisionAnalysisEventCache.clear()
-    gameView.analysis = null
-    gameView.comparison = null
-    gameView.pendingReview = null
-    treeNodeList.value.forEach((node) => {
-      node.comparison = null
-    })
-    if (gameView.tree) gameView.tree.revision = response.cleared.treeRevision
-
-    ++shantenReadGeneration
-    gameView.opponentAnalysis = null
-    clearOpponentAnalysisWithoutMotion()
-    shantenStatus.value = t('debug.cacheCleared')
-
-    const { decisionEntries, opponentEntries, comparisons } = response.cleared
-    analysisCacheClearMessage.value = t('debug.cacheSummary', {
-      decision: decisionEntries,
-      opponent: opponentEntries,
-      comparisons,
-    })
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    analysisCacheClearMessage.value = t('debug.clearFailed', { message })
-  } finally {
-    clearingAnalysisCaches.value = false
   }
 }
 
