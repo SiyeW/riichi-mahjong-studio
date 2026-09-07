@@ -50,6 +50,27 @@ export async function checkWorkspaceDock(page) {
   await page.mouse.up()
   await page.waitForFunction(width => document.querySelector('[data-dock-target="console"]').getBoundingClientRect().width > width + 30, widthBefore)
 
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    vm.settings.display.workspaceLayout = {
+      ...vm.workspaceLayout,
+      layout: { type: 'split', direction: 'vertical', weights: [3, 1], children: [
+        { type: 'item', id: 'table' }, { type: 'item', id: 'console' },
+      ] },
+    }
+  })
+  await page.waitForFunction(() => document.querySelector('.dock-layout-split.is-vertical'))
+  const verticalSeparator = page.locator('.dock-layout-resizer.is-vertical').first()
+  const verticalBounds = await verticalSeparator.boundingBox()
+  const vx = verticalBounds.x + verticalBounds.width / 2
+  const vy = verticalBounds.y + verticalBounds.height / 2
+  const heightBefore = (await consoleLeaf.boundingBox()).height
+  await page.mouse.move(vx, vy)
+  await page.mouse.down()
+  await page.mouse.move(vx, vy - 60)
+  await page.mouse.up()
+  await page.waitForFunction(height => document.querySelector('[data-dock-target="console"]').getBoundingClientRect().height > height + 30, heightBefore)
+
   const nextHandle = await handle.boundingBox()
   await page.mouse.move(nextHandle.x + 20, nextHandle.y + 8)
   await page.mouse.down()

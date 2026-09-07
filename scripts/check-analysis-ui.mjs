@@ -765,7 +765,7 @@ try {
   }
   await checkWorkspaceDock(page)
   assert.deepEqual(errors, [])
-  console.log('Analysis UI: event updates, persistent hover, navigation, reopening, stale replies, cache clearing, hand-toggle hints, responsive geometry, narrow console and shared tile artwork passed.')
+  console.log('Analysis UI: events, hover, navigation, cache, geometry, artwork and workspace docking passed.')
 } finally {
   await browser?.close()
   await server.close()
