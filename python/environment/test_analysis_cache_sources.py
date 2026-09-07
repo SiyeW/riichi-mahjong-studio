@@ -287,7 +287,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             "decision_source",
             return_value=copy.deepcopy(current_source),
         ):
-            stored = service._store_decision_analysis(
+            stored = service.DECISION_ANALYSIS.store(
                 game,
                 node,
                 current_key,

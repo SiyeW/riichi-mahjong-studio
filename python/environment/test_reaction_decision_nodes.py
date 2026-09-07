@@ -221,7 +221,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
             ],
         }
 
-        updates = service.update_cached_child_comparisons(
+        updates = service.DECISION_ANALYSIS.update_child_comparisons(
             game,
             game["nodes"][discard_id],
             analysis,
@@ -318,7 +318,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         with (
             mock.patch.object(service, "get_legal_kan_actions", return_value=[kan]),
             mock.patch.object(service, "get_ankan_candidates", return_value=["9s"]),
-            mock.patch.object(service, "ensure_analysis_cached"),
+            mock.patch.object(service.DECISION_ANALYSIS, "ensure_cached"),
         ):
             service.submit_riichi_ankan_skip()
 

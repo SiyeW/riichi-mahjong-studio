@@ -10,8 +10,7 @@ class GameSessionResetTest(unittest.TestCase):
         service.STATE["game"] = None
         service.STATE["gameLoaded"] = False
         service.STATE["nextGameId"] = 1
-        service._BG_TASKS.clear()
-        service._BG_COMPLETED.clear()
+        service.DECISION_ANALYSIS.reset()
         service._MJAI_STREAM_CACHE.clear()
 
     @staticmethod

@@ -21,7 +21,7 @@ class InvalidNodeOperationTests(unittest.TestCase):
                     before = copy.deepcopy(game)
                     with patch.object(service, 'cancel_play_prefetch') as prefetch, \
                          patch.object(service, 'cancel_auto_analysis') as auto, \
-                         patch.object(service, 'purge_bg_analysis_tasks') as purge:
+                         patch.object(service.RECORD_COMMANDS.dependencies, 'purge_background_analysis') as purge:
                         with self.assertRaises(ValueError):
                             operation(node_id)
                         prefetch.assert_not_called()

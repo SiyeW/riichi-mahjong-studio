@@ -52,7 +52,7 @@ class DuplicateCompletionTests(unittest.TestCase):
         current_game = game if reason == 'duplicate' else {} if reason == 'replaced' else None
         with patch.dict(service.STATE, {'game': current_game}), \
              patch.object(service, 'AUTO_ANALYSIS_RUNTIME', runtime), \
-             patch.object(service, '_store_decision_analysis') as store, \
+             patch.object(service.DECISION_ANALYSIS, 'store') as store, \
              patch.object(service, '_schedule_next_auto_analysis_item') as schedule, \
              patch.object(service, 'emit') as emit:
             service._complete_auto_analysis_item(1, item, result={'choices': []})

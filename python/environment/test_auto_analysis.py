@@ -326,11 +326,11 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         revision = game["treeRevision"]
 
         with mock.patch.object(
-            service,
-            "_build_cached_child_comparison",
+            service.DECISION_ANALYSIS,
+            "_build_child_comparison",
             return_value={"chosenKey": "1m"},
         ):
-            updates = service.update_cached_child_comparisons(
+            updates = service.DECISION_ANALYSIS.update_child_comparisons(
                 game,
                 parent,
                 {"discardEntries": []},

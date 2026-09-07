@@ -30,27 +30,27 @@ class DeletedNodeAnalysisTests(unittest.TestCase):
     def test_running_decision_result_is_discarded_after_node_deletion(self):
         future = Future()
         future.set_running_or_notify_cancel()
-        with patch.object(service, '_BG_TASKS', {}), \
-             patch.object(service, '_BG_COMPLETED', set()), \
-             patch.object(service, 'get_analysis_cache_key', return_value='test-key'), \
+        with patch.object(service.DECISION_ANALYSIS, '_tasks', {}), \
+             patch.object(service.DECISION_ANALYSIS, '_completed', set()), \
+             patch.object(service.DECISION_ANALYSIS, 'cache_key', return_value='test-key'), \
              patch.object(service, 'play_prefetch_owns_decision', return_value=False), \
              patch.object(service, 'auto_analysis_owns_item', return_value=False), \
              patch.object(service.ENGINE_MANAGEMENT, 'action_weight_path', return_value=''), \
-             patch.object(service, 'get_cached_mjai_stream_bundle', return_value={}), \
-             patch.object(service, 'build_legal_actions', return_value=[]), \
-             patch.object(service._BG_EXECUTOR, 'submit', return_value=future), \
-             patch.object(service, '_store_decision_analysis') as store, \
-             patch.object(service, 'emit') as emit:
-            service._submit_background_analysis(self.node, self.node['snapshot'])
-            self.assertEqual(len(service._BG_TASKS), 1)
+             patch.object(service.DECISION_ANALYSIS.dependencies, 'build_mjai_stream_bundle', return_value={}), \
+             patch.object(service.DECISION_ANALYSIS.dependencies, 'build_legal_actions', return_value=[]), \
+             patch.object(service.DECISION_ANALYSIS.executor, 'submit', return_value=future), \
+             patch.object(service.DECISION_ANALYSIS, 'store') as store, \
+             patch.object(service.DECISION_ANALYSIS.dependencies, 'emit') as emit:
+            service.DECISION_ANALYSIS.submit_background(self.node, self.node['snapshot'])
+            self.assertEqual(len(service.DECISION_ANALYSIS._tasks), 1)
             service.RECORD_COMMANDS.delete('deleted')
             self.assertFalse(future.cancelled())
-            self.assertFalse(service._BG_TASKS)
+            self.assertFalse(service.DECISION_ANALYSIS._tasks)
             emit.reset_mock()
             future.set_result({'analysis': {'value': 1}})
             store.assert_not_called()
             emit.assert_not_called()
-            self.assertFalse(service._BG_COMPLETED)
+            self.assertFalse(service.DECISION_ANALYSIS._completed)
         self.assertNotIn('deleted', self.game['nodes'])
         self.assertEqual(self.node['analysisCache'], {})
 

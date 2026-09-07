@@ -225,7 +225,7 @@ class PlayPrefetchTest(unittest.TestCase):
             replay_snapshot,
         )
 
-        with mock.patch.object(service, "ensure_analysis_cached"):
+        with mock.patch.object(service.DECISION_ANALYSIS, "ensure_cached"):
             service.submit_discard(tile, from_drawn=False)
 
         live_child_id = game["currentNodeId"]
