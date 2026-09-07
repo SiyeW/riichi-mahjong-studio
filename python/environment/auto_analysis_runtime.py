@@ -9,6 +9,8 @@ class AutoAnalysisRuntime:
     def __init__(self):
         self.lock = threading.RLock()
         self.generation = 0
+        self.scheduling_generations = set()
+        self.schedule_requested = set()
         self.future = None
         self.context = None
         self.reprioritize_timer = None
