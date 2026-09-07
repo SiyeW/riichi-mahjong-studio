@@ -8,6 +8,40 @@ from auto_analysis_runtime import AutoAnalysisRuntime
 
 
 class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
+    def test_prediction_submission_and_callback_combinations_finish_cleanly(self):
+        for mode in ('raise', 'callback', 'callback_then_raise', 'cancel_then_raise'):
+            with self.subTest(mode=mode):
+                runtime = AutoAnalysisRuntime()
+                items = [{'kind': 'opponent', 'nodeId': str(i), 'cacheKey': 'test', 'cached': False}
+                         for i in range(1200)]
+                game = {'gameId': 'test', 'nodes': {item['nodeId']: {'snapshot': {}} for item in items}}
+                generation = runtime.start(game, 0, 'unused', items, lambda kind: True)
+
+                def submit(*args, **kwargs):
+                    if mode.startswith('callback'):
+                        kwargs['on_complete']({'status': 'prediction_error', 'context': kwargs['context']})
+                    if mode == 'cancel_then_raise':
+                        runtime.cancel('canceled')
+                    if mode != 'callback':
+                        raise RuntimeError('submission failed')
+                    return True
+
+                bundle = {'events': [], 'prefixHashes': [], 'eventHash': 0}
+                with patch.dict(service.STATE, {'game': game}), \
+                     patch.object(service, 'AUTO_ANALYSIS_RUNTIME', runtime), \
+                     patch.object(service.OPPONENT_PREDICTIONS, 'request_background_predict', side_effect=submit), \
+                     patch.object(service, 'get_cached_mjai_stream_bundle', return_value=bundle), \
+                     patch.object(service, '_auto_analysis_kind_enabled', return_value=True), \
+                     patch.object(service, '_extend_auto_analysis_plan', return_value=False), \
+                     patch.object(service, '_emit_auto_analysis_progress'), patch.object(service, 'emit'):
+                    service._schedule_next_auto_analysis_item(generation)
+                self.assertEqual(runtime.status['status'], 'canceled' if mode == 'cancel_then_raise' else 'completed')
+                self.assertEqual(runtime.status['completed'], 0 if mode == 'cancel_then_raise' else len(items))
+                self.assertEqual(runtime.status['failed'], runtime.status['completed'])
+                self.assertIsNone(runtime.future)
+                self.assertFalse(runtime.scheduling_generations)
+                self.assertFalse(runtime.schedule_requested)
+
     def test_immediate_completion_of_long_queue_does_not_recurse(self):
         runtime = AutoAnalysisRuntime()
         items = [{'kind': 'decision', 'nodeId': str(index), 'cacheKey': 'test', 'cached': False}

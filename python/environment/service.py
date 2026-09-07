@@ -3048,21 +3048,25 @@ def _dispatch_next_auto_analysis_item(generation):
         still_current = AUTO_ANALYSIS_RUNTIME.is_active(generation, game)
         if not still_current:
             return
-        accepted = OPPONENT_PREDICTIONS.request_background_predict(
-            game["nodes"][item["nodeId"]]["snapshot"],
-            seat,
-            input_mode=input_mode,
-            context=opponent_context,
-            on_complete=lambda result, g=generation, current_item=item: (
-                _on_auto_opponent_analysis_complete(g, current_item, result)
-            ),
-            mjai_events=prediction_bundle["events"],
-            mjai_prefix_hashes=prediction_bundle["prefixHashes"],
-            mjai_events_hash=prediction_bundle["eventHash"],
-            target_mjai_events=target_bundle["events"],
-            target_mjai_prefix_hashes=target_bundle["prefixHashes"],
-            target_mjai_events_hash=target_bundle["eventHash"],
-        )
+        try:
+            accepted = OPPONENT_PREDICTIONS.request_background_predict(
+                game["nodes"][item["nodeId"]]["snapshot"],
+                seat,
+                input_mode=input_mode,
+                context=opponent_context,
+                on_complete=lambda result, g=generation, current_item=item: (
+                    _on_auto_opponent_analysis_complete(g, current_item, result)
+                ),
+                mjai_events=prediction_bundle["events"],
+                mjai_prefix_hashes=prediction_bundle["prefixHashes"],
+                mjai_events_hash=prediction_bundle["eventHash"],
+                target_mjai_events=target_bundle["events"],
+                target_mjai_prefix_hashes=target_bundle["prefixHashes"],
+                target_mjai_events_hash=target_bundle["eventHash"],
+            )
+        except Exception as exc:
+            _complete_auto_analysis_item(generation, item, error=exc)
+            return
         if accepted:
             _emit_auto_analysis_progress()
             return
