@@ -16,6 +16,7 @@ import numpy as np
 from engine_assignments import OUTPUT_CONTRACTS_BY_ID
 from engine_process_client import EngineProcessClient  # noqa: E402
 from engine_runtime import initialize_engine_client
+from engine_notification_subscription import EngineNotificationSubscription
 
 TILE34_NAMES = [
     *(f"{number}m" for number in range(1, 10)),
@@ -95,8 +96,13 @@ class OpponentPredictionGateway:
         self._model_ready = False
         self._initialization_lock = threading.Lock()
         self._lifecycle_generation = 0
-        self._runtime_notification_listener = None
         self._lock = threading.Lock()
+        self._runtime_notifications = EngineNotificationSubscription(
+            self._lock,
+            lambda: self._process_client,
+            lambda: self._lifecycle_generation,
+            lambda *args, **kwargs: self._on_engine_notification(*args, **kwargs),
+        )
         self._activity_lock = threading.Lock()
         self._activity_callback: Optional[Callable[[str, Optional[str]], None]] = None
         self._activity_state = "idle"
@@ -116,23 +122,6 @@ class OpponentPredictionGateway:
         self._reset_preparers_pending = False
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
-
-    def _detach_runtime_notifications(self) -> None:
-        listener = self._runtime_notification_listener
-        self._runtime_notification_listener = None
-        if listener is not None:
-            self._process_client.remove_notification_listener(listener)
-
-    def _attach_runtime_notifications(self, client: Any) -> None:
-        def listener(method: str, params: Dict[str, Any]) -> None:
-            with self._lock:
-                if self._process_client is not client or self._runtime_notification_listener is not listener:
-                    return
-                generation = self._lifecycle_generation
-            self._on_engine_notification(method, params, expected_generation=generation)
-
-        self._runtime_notification_listener = listener
-        client.add_notification_listener(listener)
 
     def _on_engine_notification(
         self,
@@ -336,7 +325,7 @@ class OpponentPredictionGateway:
             return
         self._invalidate_initialization()
         self.cancel_all()
-        self._detach_runtime_notifications()
+        self._runtime_notifications.detach()
         self._process_client.shutdown()
         (
             self._profile_id,
@@ -362,7 +351,7 @@ class OpponentPredictionGateway:
         self._device_preference = configured_device
         if engine_client is not None:
             self._process_client = engine_client
-            self._attach_runtime_notifications(engine_client)
+            self._runtime_notifications.attach(engine_client)
         else:
             self._process_client = EngineProcessClient(
                 "opponent-analysis",
@@ -1124,7 +1113,7 @@ class OpponentPredictionGateway:
 
     def shutdown(self):
         self._invalidate_initialization()
-        self._detach_runtime_notifications()
+        self._runtime_notifications.detach()
         self._running = False
         self._pending_event.set()
         self._process_client.shutdown()

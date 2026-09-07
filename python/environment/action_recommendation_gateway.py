@@ -12,6 +12,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from engine_process_client import EngineProcessClient
 from engine_runtime import initialize_engine_client
+from engine_notification_subscription import EngineNotificationSubscription
 from engine_assignments import OUTPUT_CONTRACTS_BY_ID
 from action_recommendation_adapter import resolve_engine_weight_path
 
@@ -48,7 +49,12 @@ class ActionRecommendationGateway:
         self._lock = threading.Lock()
         self._initialization_lock = threading.Lock()
         self._lifecycle_generation = 0
-        self._runtime_notification_listener = None
+        self._runtime_notifications = EngineNotificationSubscription(
+            self._lock,
+            lambda: self._client,
+            lambda: self._lifecycle_generation,
+            lambda *args, **kwargs: self._on_engine_notification(*args, **kwargs),
+        )
         self._activity_state = "idle"
         self._activity_error: Optional[str] = None
         self._error_latched = False
@@ -142,7 +148,7 @@ class ActionRecommendationGateway:
         if next_config == current_config and not client_changed:
             return
         self._invalidate_initialization()
-        self._detach_runtime_notifications()
+        self._runtime_notifications.detach()
         self._client.shutdown()
         (
             self._profile_id,
@@ -167,7 +173,7 @@ class ActionRecommendationGateway:
         self._external_engine = bool(self._engine_command)
         if engine_client is not None:
             self._client = engine_client
-            self._attach_runtime_notifications(engine_client)
+            self._runtime_notifications.attach(engine_client)
         else:
             self._client = EngineProcessClient(
                 self._engine_kind,
@@ -609,23 +615,6 @@ class ActionRecommendationGateway:
         ).encode()
         return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
-    def _detach_runtime_notifications(self) -> None:
-        listener = self._runtime_notification_listener
-        self._runtime_notification_listener = None
-        if listener is not None:
-            self._client.remove_notification_listener(listener)
-
-    def _attach_runtime_notifications(self, client: Any) -> None:
-        def listener(method: str, params: Dict[str, Any]) -> None:
-            with self._lock:
-                if self._client is not client or self._runtime_notification_listener is not listener:
-                    return
-                generation = self._lifecycle_generation
-            self._on_engine_notification(method, params, expected_generation=generation)
-
-        self._runtime_notification_listener = listener
-        client.add_notification_listener(listener)
-
     def _on_engine_notification(
         self,
         method: str,
@@ -854,5 +843,5 @@ class ActionRecommendationGateway:
 
     def shutdown(self) -> None:
         self._invalidate_initialization()
-        self._detach_runtime_notifications()
+        self._runtime_notifications.detach()
         self._client.shutdown()
