@@ -1214,6 +1214,7 @@ import { useWallView } from './useWallView'
 import { useEngineProfiles } from './useEngineProfiles'
 import { useActionAnnouncement } from './useActionAnnouncement'
 import { useAutomaticAnalysis } from './useAutomaticAnalysis'
+import { useAutoAdvance } from './useAutoAdvance'
 import { useBranchNavigation } from './useBranchNavigation'
 import { useBranchTreePresentation } from './useBranchTreePresentation'
 import { useDiscardFlight, type GameViewTransitionDirection } from './useDiscardFlight'
@@ -1733,7 +1734,6 @@ watch(
   () => { void fetchShantenOnce() },
 )
 
-const autoAdvanceTimer = ref<number | null>(null)
 const actionRequestInFlight = ref(false)
 const advanceRequestInFlight = ref(false)
 let gameplayResponseGeneration = 0
@@ -1773,6 +1773,17 @@ const { handleSoundTransitions } = useSoundTransitions({
 })
 
 const isReadOnlyRecord = computed(() => Boolean(gameView.readOnly))
+const { clearAutoAdvanceTimer, scheduleAutoAdvance } = useAutoAdvance({
+  gameView,
+  status,
+  settings,
+  readOnlyRecord: isReadOnlyRecord,
+  prefetchReady: playPrefetchReady,
+  prefetchWaiting: playPrefetchWaiting,
+  motionDelayMs: () => autoAdvanceMotionDelayMs(),
+  hasPendingMotion: () => hasPendingDiscardFlight(),
+  advance: () => advanceGame(),
+})
 const {
   showWallView,
   wallTiles,
@@ -2284,13 +2295,6 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
   if (showCustomTenhouExport.value) customTenhouExportRefreshKey.value += 1
 }
 
-function clearAutoAdvanceTimer() {
-  if (autoAdvanceTimer.value !== null) {
-    window.clearTimeout(autoAdvanceTimer.value)
-    autoAdvanceTimer.value = null
-  }
-}
-
 function hasRecommendationAnalysis(): boolean {
   const analysis = gameView.analysis
   return Boolean(analysis?.discardEntries?.length || analysis?.reactionEntries?.length || analysis?.specialEntries?.length)
@@ -2509,88 +2513,6 @@ async function confirmPendingReview() {
   applyGameView(response.view)
   applyPlayPrefetchStatus(response.playPrefetch)
 }
-
-const ANKAN_CHOICE_TIMEOUT_MS = 6000
-
-function scheduleAutoAdvance() {
-  clearAutoAdvanceTimer()
-  if (!window.trainerAPI || status.mode !== 'play' || gameView.pendingReview || isReadOnlyRecord.value) return
-  const isTerminal = gameView.table?.phase === 'round_result' || gameView.table?.phase === 'match_end'
-  if (gameView.table?.resultInfo || isTerminal) return
-  const d = settings.modeDefaults.autoAdvanceDelayMs
-  const motionDelay = autoAdvanceMotionDelayMs()
-  const scheduleAdvance = (delayMs: number) => {
-    autoAdvanceTimer.value = window.setTimeout(() => {
-      autoAdvanceTimer.value = null
-      // The animation's actual finish event reschedules advancement precisely.
-      if (hasPendingDiscardFlight()) return
-      void advanceGame()
-    }, Math.max(delayMs, motionDelay))
-  }
-  if (playPrefetchReady.value) {
-    scheduleAdvance(d)
-    return
-  }
-  if (playPrefetchWaiting.value) return
-  if (gameView.table?.autoAdvanceMode === 'ai_think') {
-    scheduleAdvance(0)
-    return
-  }
-  if (gameView.table?.phase === 'game_end') {
-    scheduleAdvance(d)
-    return
-  }
-  if (gameView.table?.phase === 'reach_declaration') {
-    if (gameView.legalActions.length > 0) return
-    scheduleAdvance(d)
-    return
-  }
-  if (gameView.table && gameView.table.phase === 'draw_or_discard' && gameView.table.currentActor === status.controlledSeat) {
-    scheduleAdvance(30)
-    return
-  }
-  if (gameView.table?.riichiDiscardState === 'pending_pause') {
-    scheduleAdvance(d)
-    return
-  }
-  if (gameView.table?.riichiDiscardState === 'ankan_choice') {
-    scheduleAdvance(ANKAN_CHOICE_TIMEOUT_MS)
-    return
-  }
-  if (gameView.table?.riichiAccepted?.[status.controlledSeat] && gameView.table?.riichiDiscardState == null && gameView.legalActions.length === 0) {
-    scheduleAdvance(d)
-    return
-  }
-  if (gameView.legalActions.length > 0) return
-  if (gameView.table && (gameView.table.phase === 'discard' || gameView.table.phase === 'draw_or_discard') && gameView.table.currentActor !== status.controlledSeat) {
-    scheduleAdvance(d)
-    return
-  }
-  if (gameView.table?.reactionWindow) {
-    const reactionDelay = Math.max(d, Math.round((gameView.table.reactionWindow.thinkingTimeS || 0) * 1000))
-    scheduleAdvance(reactionDelay)
-    return
-  }
-  if (gameView.table?.kanReactionWindow) {
-    const reactionDelay = Math.max(d, Math.round((gameView.table.kanReactionWindow.thinkingTimeS || 0) * 1000))
-    scheduleAdvance(reactionDelay)
-  }
-}
-
-watch(
-  () => [
-    gameView.currentNodeId,
-    gameView.table?.phase,
-    gameView.table?.autoAdvanceMode,
-    gameView.table?.riichiDiscardState,
-    gameView.table?.reactionWindow,
-    gameView.table?.kanReactionWindow,
-    gameView.legalActions.length,
-    gameView.pendingReview?.proposedNodeId,
-    status.mode,
-  ],
-  () => { scheduleAutoAdvance() },
-)
 
 watchEffect(() => {
   document.title = windowTitle.value
@@ -2834,7 +2756,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  clearAutoAdvanceTimer()
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('wheel', onUiScaleWheel, true)
   document.documentElement.classList.remove('reduce-motion')
