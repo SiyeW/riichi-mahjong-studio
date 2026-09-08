@@ -18,7 +18,7 @@ const { registerSettingsIpc } = require('./ipc/settings-ipc')
 const { registerSoundProtocol } = require('./protocol/sound-protocol')
 const { createEnvironmentService } = require('./services/environment-service')
 const { createRecordWorkflow } = require('./services/record-workflow')
-const { buildRuntimeMetrics } = require('./runtime-metrics')
+const { createRuntimeMetricsCollector } = require('./services/runtime-metrics-collector')
 const { loadSettings } = require('./state/settings')
 const { createSessionStore } = require('./state/session-store')
 const {
@@ -65,7 +65,6 @@ const gameFileStore = createGameFileStore(portableRoot)
 gameFileStore.ensureDefaultDirectory()
 let mainWindow = null
 let startupServicesStarted = false
-let runtimeMetricsBackendError = ''
 
 const engineIpcController = createEngineIpcController({
   ipcMain,
@@ -95,26 +94,10 @@ const {
   t,
 })
 
-async function collectRuntimeMetrics() {
-  let backendMetrics = null
-  try {
-    const response = await environmentBackend.environmentGateway.getRuntimeMetrics()
-    backendMetrics = response?.metrics || null
-    runtimeMetricsBackendError = ''
-  } catch (error) {
-    // The footer remains available while the backend starts or restarts.
-    const message = error instanceof Error ? error.message : String(error)
-    if (message !== runtimeMetricsBackendError) {
-      console.warn(`[runtime-metrics] backend metrics unavailable: ${message}`)
-      runtimeMetricsBackendError = message
-    }
-  }
-  return buildRuntimeMetrics({
-    processMetrics: app.getAppMetrics(),
-    backendMetrics,
-    systemMemory: process.getSystemMemoryInfo(),
-  })
-}
+const collectRuntimeMetrics = createRuntimeMetricsCollector({
+  app,
+  environmentGateway: environmentBackend.environmentGateway,
+})
 
 function startStartupServices() {
   if (startupServicesStarted) {
