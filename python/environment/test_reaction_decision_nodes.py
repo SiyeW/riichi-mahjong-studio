@@ -372,8 +372,8 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         )
         game["nodes"][discard_id]["mainChildId"] = child_id
 
-        inserted = service.repair_reaction_decision_nodes(game)
-        inserted_again = service.repair_reaction_decision_nodes(game)
+        inserted = service.REACTION_DECISIONS.repair(game)
+        inserted_again = service.REACTION_DECISIONS.repair(game)
 
         pass_id = game["nodes"][discard_id]["mainChildId"]
         self.assertEqual(inserted, 1)
@@ -396,7 +396,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         child_id = service.create_node(game, discard_id, response, snapshot)
         game["nodes"][discard_id]["mainChildId"] = child_id
 
-        inserted = service.repair_reaction_decision_nodes(game)
+        inserted = service.REACTION_DECISIONS.repair(game)
 
         self.assertEqual(inserted, 0)
         self.assertEqual(game["nodes"][discard_id]["mainChildId"], child_id)
@@ -419,7 +419,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         )
         game["nodes"][discard_id]["mainChildId"] = child_id
 
-        inserted = service.repair_reaction_decision_nodes(game)
+        inserted = service.REACTION_DECISIONS.repair(game)
 
         pass_id = game["nodes"][discard_id]["mainChildId"]
         self.assertEqual(inserted, 1)

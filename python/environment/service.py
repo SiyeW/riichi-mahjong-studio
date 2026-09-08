@@ -20,6 +20,7 @@ import game_tree
 import legal_actions
 import opponent_analysis_session
 import play_prefetch_session
+import reaction_decision_history
 import record_commands
 import record_session
 import review_session
@@ -262,7 +263,7 @@ GAME_FLOW = game_flow.GameFlow(
         apply_pending_seat_switch=lambda snapshot: apply_pending_seat_switch_if_ready(
             snapshot
         ),
-        materialize_automatic_reaction_decisions=lambda *args, **kwargs: _materialize_automatic_reaction_decisions(
+        materialize_automatic_reaction_decisions=lambda *args, **kwargs: REACTION_DECISIONS.materialize_automatic(
             *args, **kwargs
         ),
         create_node=lambda *args, **kwargs: create_node(*args, **kwargs),
@@ -283,9 +284,7 @@ REVIEW_SESSION = review_session.ReviewSession(
     ENGINE_MANAGEMENT,
     GAME_FLOW,
     review_session.ReviewSessionDependencies(
-        get_active_reaction_window=lambda snapshot: get_active_reaction_window(
-            snapshot
-        ),
+        get_active_reaction_window=reaction_decision_history.get_active_reaction_window,
         build_local_reaction_actions=lambda *args, **kwargs: _build_local_reaction_actions(
             *args, **kwargs
         ),
@@ -803,242 +802,15 @@ def controlled_seat_has_pending_action(snapshot):
     return len(build_legal_actions(snapshot)) > 0
 
 
-def _reaction_window_field(snapshot):
-    if snapshot.get("phase") == "reaction_window":
-        return "reactionWindow"
-    if snapshot.get("phase") == "kan_reaction_window":
-        return "kanReactionWindow"
-    return None
-
-
-def _reaction_decision_snapshot(snapshot, seat):
-    next_snapshot = copy.deepcopy(snapshot)
-    window_field = _reaction_window_field(next_snapshot)
-    if window_field is None:
-        return next_snapshot
-    reaction_window = next_snapshot.get(window_field)
-    if not isinstance(reaction_window, dict):
-        return next_snapshot
-    resolved_seats = [
-        int(value)
-        for value in reaction_window.get("resolvedSeats", [])
-        if isinstance(value, int) or str(value).isdigit()
-    ]
-    if seat not in resolved_seats:
-        resolved_seats.append(seat)
-    reaction_window["resolvedSeats"] = resolved_seats
-    return next_snapshot
-
-
-def _reaction_decision_action(response, seat, source):
-    action = copy.deepcopy(response) if isinstance(response, dict) else {}
-    action["actor"] = seat
-    action_type = str(action.get("type") or "none")
-    action["type"] = action_type
-    if action_type == "none":
-        action.setdefault("variant", "none")
-        action.setdefault("label", "Pass")
-    action["decisionOnly"] = True
-    action["source"] = source
-    return action
-
-
-def _append_reaction_decision_node(game, response, seat, source="ai_reaction_decision"):
-    parent_id = game["currentNodeId"]
-    parent_snapshot = game["nodes"][parent_id]["snapshot"]
-    if len(build_legal_actions(parent_snapshot, controlled_seat=seat)) <= 1:
-        return None
-    action = _reaction_decision_action(response, seat, source)
-    next_snapshot = _reaction_decision_snapshot(parent_snapshot, seat)
-    child_id = create_node(game, parent_id, action, next_snapshot)
-    child = game["nodes"][child_id]
-    child["type"] = "decision"
-    child["isDecision"] = True
-    attach_mainline(parent_id, child_id)
-    game["currentNodeId"] = child_id
-    promote_path_to_mainline(game, child_id)
-    return child_id
-
-
-def _materialize_automatic_reaction_decisions(game, snapshot, selected):
-    window_field = _reaction_window_field(snapshot)
-    reaction_window = snapshot.get(window_field) if window_field else None
-    if not isinstance(reaction_window, dict):
-        return snapshot
-    selected = selected if isinstance(selected, dict) else {}
-    selected_seat = selected.get("seat")
-    selected_response = selected.get("response") if isinstance(selected.get("response"), dict) else {}
-    selected_type = str(selected_response.get("type") or "none")
-
-    for item in reaction_window.get("reactions", []):
-        if not isinstance(item, dict):
-            continue
-        try:
-            seat = normalize_seat(item.get("seat"))
-        except (TypeError, ValueError):
-            continue
-        response = item.get("response") if isinstance(item.get("response"), dict) else {}
-        if selected_type != "none" and seat == selected_seat:
-            continue
-        _append_reaction_decision_node(game, response, seat)
-
-    return game["nodes"][game["currentNodeId"]]["snapshot"]
-
-
-def _shift_subtree_depth(game, root_id, delta):
-    pending = [root_id]
-    seen = set()
-    while pending:
-        node_id = pending.pop()
-        if node_id in seen:
-            continue
-        seen.add(node_id)
-        node = game.get("nodes", {}).get(node_id)
-        if not isinstance(node, dict):
-            continue
-        node["depth"] = int(node.get("depth", 0)) + delta
-        pending.extend(node.get("children", []))
-
-
-def _insert_reaction_decision_chain(game, parent_id, child_id, decisions, source):
-    if not decisions:
-        return 0
-    nodes = game["nodes"]
-    parent = nodes[parent_id]
-    child = nodes[child_id]
-    original_children = list(parent.get("children", []))
-    if child_id not in original_children:
-        return 0
-
-    previous_id = parent_id
-    previous_snapshot = parent["snapshot"]
-    inserted_ids = []
-    for seat, response in decisions:
-        node_id = f"n_{game['nextNodeIndex']}"
-        game["nextNodeIndex"] += 1
-        while node_id in nodes:
-            node_id = f"n_{game['nextNodeIndex']}"
-            game["nextNodeIndex"] += 1
-        action = _reaction_decision_action(response, seat, source)
-        next_snapshot = _reaction_decision_snapshot(previous_snapshot, seat)
-        nodes[node_id] = {
-            "id": node_id,
-            "type": "decision",
-            "parentId": previous_id,
-            "children": [],
-            "mainChildId": None,
-            "action": action,
-            "actor": seat,
-            "isDecision": True,
-            "snapshot": next_snapshot,
-            "analysisCache": {},
-            "depth": int(nodes[previous_id].get("depth", 0)) + 1,
-        }
-        if previous_id != parent_id:
-            nodes[previous_id]["children"] = [node_id]
-            nodes[previous_id]["mainChildId"] = node_id
-        inserted_ids.append(node_id)
-        previous_id = node_id
-        previous_snapshot = next_snapshot
-
-    first_id = inserted_ids[0]
-    parent["children"] = [first_id if value == child_id else value for value in original_children]
-    if parent.get("mainChildId") == child_id:
-        parent["mainChildId"] = first_id
-    nodes[previous_id]["children"] = [child_id]
-    nodes[previous_id]["mainChildId"] = child_id
-    child["parentId"] = previous_id
-    _shift_subtree_depth(game, child_id, len(inserted_ids))
-    game_tree.mark_tree_changed(game)
-    return len(inserted_ids)
-
-
-def repair_reaction_decision_nodes(game):
-    nodes = game.get("nodes") if isinstance(game, dict) else None
-    if not isinstance(nodes, dict):
-        return 0
-    source_kind = str((game.get("metadata") or {}).get("source") or "")
-    local_record = source_kind == "local-environment"
-    edges = [
-        (parent_id, child_id)
-        for parent_id, parent in list(nodes.items())
-        if isinstance(parent, dict)
-        for child_id in list(parent.get("children", []))
-        if child_id in nodes
-    ]
-    inserted = 0
-    for parent_id, child_id in edges:
-        parent = nodes.get(parent_id)
-        child = nodes.get(child_id)
-        if not isinstance(parent, dict) or not isinstance(child, dict):
-            continue
-        if child.get("type") == "decision":
-            continue
-        snapshot = parent.get("snapshot") or {}
-        phase = str(snapshot.get("phase") or "")
-        if phase not in ("reaction_window", "kan_reaction_window"):
-            continue
-        window_field = _reaction_window_field(snapshot)
-        reaction_window = snapshot.get(window_field) if window_field else None
-        if not isinstance(reaction_window, dict):
-            continue
-        child_action = child.get("action") or {}
-        child_type = str(child_action.get("type") or "")
-        if child_type == "none":
-            continue
-
-        no_reaction_followups = {"tsumo", "reach_accepted", "ryukyoku"}
-        effective_reactions = {"chi", "pon", "daiminkan", "hora"}
-        if phase == "kan_reaction_window":
-            no_reaction_followups.add("dora")
-        if child_type in no_reaction_followups:
-            mode = "all_passed"
-        elif local_record and child_type in effective_reactions:
-            mode = "recorded_responses"
-        else:
-            continue
-
-        working_snapshot = snapshot
-        decisions = []
-        for item in reaction_window.get("reactions", []):
-            if not isinstance(item, dict):
-                continue
-            try:
-                seat = normalize_seat(item.get("seat"))
-            except (TypeError, ValueError):
-                continue
-            response = item.get("response") if isinstance(item.get("response"), dict) else {}
-            response_type = str(response.get("type") or "none")
-            if mode == "all_passed" and response_type != "none":
-                continue
-            if (
-                mode == "recorded_responses"
-                and seat == child_action.get("actor")
-                and response_type == child_type
-            ):
-                continue
-            if len(build_legal_actions(working_snapshot, controlled_seat=seat)) <= 1:
-                continue
-            decisions.append((seat, response))
-            working_snapshot = _reaction_decision_snapshot(working_snapshot, seat)
-
-        decision_source = "recorded_reaction_decision" if local_record else "inferred_reaction_pass"
-        inserted += _insert_reaction_decision_chain(
-            game,
-            parent_id,
-            child_id,
-            decisions,
-            decision_source,
-        )
-    return inserted
-
-
-def get_active_reaction_window(snapshot):
-    if snapshot.get("phase") == "reaction_window":
-        return snapshot.get("reactionWindow") or {}
-    if snapshot.get("phase") == "kan_reaction_window":
-        return snapshot.get("kanReactionWindow") or {}
-    return {}
+REACTION_DECISIONS = reaction_decision_history.ReactionDecisionHistory(
+    reaction_decision_history.ReactionDecisionDependencies(
+        normalize_seat=normalize_seat,
+        build_legal_actions=build_legal_actions,
+        create_node=create_node,
+        attach_mainline=attach_mainline,
+        promote_mainline=promote_path_to_mainline,
+    )
+)
 
 
 def get_legal_kan_actions(snapshot, actor):
@@ -1388,7 +1160,7 @@ RECORD_SESSION = record_session.RecordSession(
         create_empty_game=create_empty_game,
         advance_to_next_user_turn=GAME_FLOW.advance,
         prewarm_action_engine=_prewarm_record_action_engine,
-        repair_reaction_decisions=repair_reaction_decision_nodes,
+        repair_reaction_decisions=REACTION_DECISIONS.repair,
         backfill_child_comparisons=DECISION_ANALYSIS.backfill_child_comparisons,
         update_child_comparisons=DECISION_ANALYSIS.update_child_comparisons,
         current_snapshot=get_current_snapshot,
