@@ -8,6 +8,7 @@ import {
   watch,
   type Ref,
 } from 'vue'
+import { useNextMoveHints } from './useNextMoveHints'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -156,6 +157,15 @@ const treeNodeList = computed(() => {
 })
 
 const fullNodeMapById = computed(() => new Map(treeNodeList.value.map((node) => [node.id, node])))
+const nodeMapById = fullNodeMapById
+const {
+  specialNextMoveClass,
+  tileNextMoveClass,
+} = useNextMoveHints({
+  nodeMapById,
+  currentNodeId: () => gameView.currentNodeId || null,
+  controlledSeat: () => status.controlledSeat,
+})
 
 const roundSummaryList = computed(() => gameView.tree?.rounds || [] as TrainerRoundSummary[])
 
@@ -1185,102 +1195,6 @@ function roundMapDotStrokeWidth(dot: { isCurrent: boolean; isMainline: boolean }
   const base = dot.isCurrent ? 1.5 : (dot.isMainline ? 0.8 : 0)
   return base * treeUiScale.value
 }
-
-const nodeMapById = fullNodeMapById
-
-interface NextMoveHint {
-  type: 'dahai' | 'special'
-  childNodeId: string
-  isMainBranch: boolean
-  pai?: string
-  tsumogiri?: boolean
-  actionType?: string
-  actionVariant?: string
-  consumed?: string[]
-}
-
-function normalizeSpecialActionVariant(actionType?: string, actionVariant?: string): string | undefined {
-  if (actionVariant) return actionVariant
-  return actionType === 'reach' ? 'declare' : undefined
-}
-
-const nextMoveHints = computed<NextMoveHint[]>(() => {
-  const nodeId = gameView.currentNodeId
-  if (!nodeId) return []
-  const node = nodeMapById.value.get(nodeId)
-  if (!node) return []
-  const children = node.children || []
-  if (!children.length) return []
-  const mainChildId = node.mainChildId
-
-  const hints: NextMoveHint[] = []
-  for (const childId of children) {
-    const child = nodeMapById.value.get(childId)
-    if (!child || !child.action) continue
-    const action = child.action as Record<string, unknown>
-    const isMainBranch = childId === mainChildId
-
-    if (action.type === 'dahai' && typeof action.pai === 'string' && Number(action.actor) === status.controlledSeat) {
-      hints.push({
-        type: 'dahai',
-        childNodeId: childId,
-        isMainBranch,
-        pai: action.pai,
-        tsumogiri: Boolean(action.tsumogiri),
-      })
-    } else if (
-      typeof action.type === 'string'
-      && Number(action.actor) === status.controlledSeat
-    ) {
-      hints.push({
-        type: 'special',
-        childNodeId: childId,
-        isMainBranch,
-        actionType: action.type,
-        actionVariant: normalizeSpecialActionVariant(
-          action.type,
-          typeof action.variant === 'string' ? action.variant : undefined,
-        ),
-        consumed: Array.isArray(action.consumed) ? action.consumed.map(String) : [],
-      })
-    }
-  }
-  return hints
-})
-
-function getTileNextMoveHint(tile: string, fromDrawn: boolean): NextMoveHint | null {
-  return nextMoveHints.value.find((hint) => (
-    hint.type === 'dahai'
-    && hint.pai === tile
-    && Boolean(hint.tsumogiri) === fromDrawn
-  )) || null
-}
-
-function getSpecialNextMoveHint(action: TrainerAction): NextMoveHint | null {
-  const consumed = [...(action.consumed || [])].sort().join(',')
-  return nextMoveHints.value.find(
-    (hint) => (
-      hint.type === 'special'
-      && hint.actionType === action.type
-      && hint.actionVariant === normalizeSpecialActionVariant(action.type, action.variant)
-      && [...(hint.consumed || [])].sort().join(',') === consumed
-    ),
-  ) || null
-}
-
-function tileNextMoveClass(tile: string, fromDrawn: boolean): string {
-  const hint = getTileNextMoveHint(tile, fromDrawn)
-  if (!hint) return ''
-  return hint.isMainBranch ? 'tile-next-main' : 'tile-next-side'
-}
-
-function specialNextMoveClass(action: TrainerAction): string {
-  const hint = getSpecialNextMoveHint(action)
-  if (!hint) return ''
-  return hint.isMainBranch ? 'special-next-main' : 'special-next-side'
-}
-
-
 
   watch(
     () => gameView.currentNodeId,
