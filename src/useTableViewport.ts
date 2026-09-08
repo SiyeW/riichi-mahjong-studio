@@ -2,10 +2,9 @@ import { nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 
 export function useTableViewport(options: {
   uiScale: Readonly<Ref<number>>
-  treePanelCollapsed: Readonly<Ref<boolean>>
   afterLayoutChange: () => void
 }) {
-  const { uiScale, treePanelCollapsed, afterLayoutChange } = options
+  const { uiScale, afterLayoutChange } = options
   const tableStageEl = ref<HTMLElement | null>(null)
   const tableZoom = ref(1)
   let tableZoomRaf = 0
@@ -72,12 +71,6 @@ export function useTableViewport(options: {
   watch(uiScale, async () => {
     await nextTick()
     scheduleTableZoomRecalc()
-    afterLayoutChange()
-  })
-
-  watch(treePanelCollapsed, async (collapsed) => {
-    if (collapsed) return
-    await nextTick()
     afterLayoutChange()
   })
 

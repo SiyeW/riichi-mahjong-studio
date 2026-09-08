@@ -1,4 +1,4 @@
-import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { sameViewRequestContext } from './analysisPosition'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
 
@@ -35,7 +35,6 @@ const branchReturnMap = ref<Record<string, string>>({})
 const deleteNodeConfirmationId = ref<string | null>(null)
 let deleteNodeConfirmationTimer: number | null = null
 const nodeMutationRequestInFlight = ref(false)
-const nodeCommentEl = ref<HTMLTextAreaElement | null>(null)
 const nodeCommentDraft = ref('')
 const nodeComments = createNodeCommentQueue(
   async (update) => {
@@ -64,29 +63,9 @@ function cancelPendingWheelNavigation() {
   wheelNavigationGeneration = 0
 }
 
-function resizeNodeComment() {
-  void nextTick(() => {
-    const element = nodeCommentEl.value
-    if (!element) return
-    element.style.height = 'auto'
-    const style = getComputedStyle(element)
-    const maximum = Number.parseFloat(style.maxHeight)
-    const borderHeight = Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.borderBottomWidth)
-    const naturalHeight = element.scrollHeight + borderHeight
-    const height = Number.isFinite(maximum)
-      ? Math.min(naturalHeight, maximum)
-      : naturalHeight
-    element.style.height = `${height}px`
-    element.style.overflowY = Number.isFinite(maximum) && naturalHeight > maximum + 1
-      ? 'auto'
-      : 'hidden'
-  })
-}
-
 function syncNodeCommentFromView(view: TrainerGameView) {
   const key = nodeCommentKey(view.gameId, view.currentNodeId)
   nodeCommentDraft.value = nodeComments.get(key) ?? String(view.nodeComment || '')
-  resizeNodeComment()
 }
 
 function onNodeCommentInput() {
@@ -96,7 +75,6 @@ function onNodeCommentInput() {
   const comment = nodeCommentDraft.value
   nodeComments.set(key, nodeId, comment)
   markRecordDirty()
-  resizeNodeComment()
   if (nodeCommentSaveTimer !== null) window.clearTimeout(nodeCommentSaveTimer)
   nodeCommentSaveTimer = window.setTimeout(() => {
     nodeCommentSaveTimer = null
@@ -366,10 +344,8 @@ function navigateTreeByOffset(offset: number) {
     jumpToNode,
     navigateTreeByOffset,
     nodeCommentDraft,
-    nodeCommentEl,
     nodeMutationRequestInFlight,
     onNodeCommentInput,
-    resizeNodeComment,
     resetForNewGame,
     setCurrentNodeAsMainBranch,
     syncFromGameView,

@@ -711,124 +711,45 @@
           @thinking-change="commitQuickThinkingTime"
         />
 
-        <div class="settings-preview settings-preview-tree" :class="{ collapsed: treePanelCollapsed }">
-          <button class="panel-section-toggle" @click="treePanelCollapsed = !treePanelCollapsed">
-            <h3>{{ t('tree.title') }}</h3>
-            <span>{{ treePanelCollapsed ? t('console.expand') : t('console.collapse') }}</span>
-          </button>
-          <template v-if="!treePanelCollapsed">
-            <div v-adaptive-button-grid="{ columns: [3, 2, 1], spanLastWhenIncomplete: true }" class="tree-actions">
-              <button @click="setCurrentNodeAsMainBranch" :disabled="!canSetCurrentNodeAsMainBranch || nodeMutationRequestInFlight">{{ t('tree.setMain') }}</button>
-              <button
-                class="tree-delete-button"
-                :class="{ 'confirm-delete': deleteNodeConfirmationPending }"
-                :disabled="!canDeleteCurrentNode || nodeMutationRequestInFlight"
-                @click="deleteCurrentNode"
-              >
-                {{ deleteNodeConfirmationPending ? t('common.confirmDelete') : t('tree.deleteNode') }}
-              </button>
-              <button :disabled="!gameView.currentNodeId" @click="openCustomTenhouExport">{{ t('common.export') }}</button>
-            </div>
-            <div
-              v-if="treeDots.length"
-              ref="treeScrollEl"
-              class="tree-scroll tree-scroll-svg"
-              @pointerenter="suspendTreeAutoFollow"
-              @pointerleave="resumeTreeAutoFollow"
-              @scroll="onTreeScroll"
-            >
-              <div class="tree-canvas" :style="treeCanvasStyle">
-                <div class="tree-axis" :style="{ height: `${treeSvgH}px` }">
-                  <span class="tree-axis-sizer" aria-hidden="true">
-                    <span v-for="label in treeRowActionLabels" :key="label">{{ label }}</span>
-                  </span>
-                  <button
-                    v-for="row in visibleTreeRows"
-                    :key="row.depth"
-                    type="button"
-                    class="tree-axis-label"
-                    :class="{ 'is-controlled': row.isControlledAction }"
-                    :style="{ top: `${row.y}px` }"
-                    v-ui-tooltip="row.label"
-                    @click="jumpToNode(row.nodeId)"
-                  >
-                    {{ row.label }}
-                  </button>
-                </div>
-                <svg class="tree-svg" :width="treeSvgW" :height="treeSvgH">
-                  <line
-                    :x1="treeBaseX"
-                    y1="0"
-                    :x2="treeBaseX"
-                    :y2="treeSvgH"
-                    stroke="rgba(159,213,200,0.22)"
-                    stroke-width="1"
-                  />
-                  <path
-                    v-for="edge in visibleTreeEdges"
-                    :key="`${edge.from}-${edge.to}`"
-                    :d="edge.d"
-                    fill="none"
-                    :stroke="treeEdgeStroke(edge)"
-                    :stroke-width="treeEdgeWidth(edge)"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                  <rect
-                    v-for="region in visibleTreeHitRegions"
-                    :key="`tree-hit-${region.dot.id}`"
-                    :x="region.x"
-                    :y="region.y"
-                    :width="region.width"
-                    :height="region.height"
-                    class="tree-hit-region"
-                    @mouseenter="treeHoveredNodeId = region.dot.id"
-                    @mouseleave="treeHoveredNodeId = null"
-                    @click="jumpToNode(region.dot.id)"
-                  />
-                  <template v-for="dot in visibleTreeDots" :key="dot.id">
-                    <rect
-                      v-if="dot.shape === 'square'"
-                      :x="dot.x - treeSquareRadius(dot)"
-                      :y="dot.y - treeSquareRadius(dot)"
-                      :width="treeSquareRadius(dot) * 2"
-                      :height="treeSquareRadius(dot) * 2"
-                      :rx="treeSquareCornerRadius"
-                      :ry="treeSquareCornerRadius"
-                      :class="['tree-dot', 'is-square', isCurrentTreeDot(dot) ? 'is-current' : '', dot.isMainline ? 'is-mainline' : '', treeHoveredNodeId === dot.id ? 'is-hovered' : '']"
-                      :fill="dot.fill"
-                      :stroke="isCurrentTreeDot(dot) ? 'white' : (dot.isMainline ? 'rgba(220,244,240,0.45)' : 'none')"
-                      :stroke-width="treeDotStrokeWidth(dot)"
-                    />
-                    <circle
-                      v-else
-                      :cx="dot.x"
-                      :cy="dot.y"
-                      :r="treeDotRadius(dot)"
-                      :class="['tree-dot', isCurrentTreeDot(dot) ? 'is-current' : '', dot.isMainline ? 'is-mainline' : '', treeHoveredNodeId === dot.id ? 'is-hovered' : '']"
-                      :fill="dot.fill"
-                      :stroke="isCurrentTreeDot(dot) ? 'white' : (dot.isMainline ? 'rgba(220,244,240,0.45)' : 'none')"
-                      :stroke-width="treeDotStrokeWidth(dot)"
-                    />
-                  </template>
-                </svg>
-              </div>
-            </div>
-            <p v-else class="empty-copy">—</p>
-            <textarea
-              v-if="gameView.currentNodeId"
-              ref="nodeCommentEl"
-              v-model="nodeCommentDraft"
-              class="node-comment"
-              rows="1"
-              maxlength="20000"
-              :placeholder="t('tree.commentPlaceholder')"
-              :aria-label="t('tree.currentComment')"
-              @input="onNodeCommentInput"
-              @blur="flushNodeCommentInBackground"
-            />
-          </template>
-        </div>
+        <BranchTreePanel
+          :can-set-main="canSetCurrentNodeAsMainBranch"
+          :can-delete="canDeleteCurrentNode"
+          :delete-confirmation-pending="deleteNodeConfirmationPending"
+          :node-mutation-in-flight="nodeMutationRequestInFlight"
+          :current-node-id="gameView.currentNodeId"
+          :node-comment="nodeCommentDraft"
+          :hovered-node-id="treeHoveredNodeId"
+          :tree-dots="treeDots"
+          :tree-canvas-style="treeCanvasStyle"
+          :tree-base-x="treeBaseX"
+          :tree-row-action-labels="treeRowActionLabels"
+          :tree-square-corner-radius="treeSquareCornerRadius"
+          :tree-svg-h="treeSvgH"
+          :tree-svg-w="treeSvgW"
+          :visible-tree-dots="visibleTreeDots"
+          :visible-tree-edges="visibleTreeEdges"
+          :visible-tree-hit-regions="visibleTreeHitRegions"
+          :visible-tree-rows="visibleTreeRows"
+          :is-current-tree-dot="isCurrentTreeDot"
+          :tree-dot-radius="treeDotRadius"
+          :tree-dot-stroke-width="treeDotStrokeWidth"
+          :tree-edge-stroke="treeEdgeStroke"
+          :tree-edge-width="treeEdgeWidth"
+          :tree-square-radius="treeSquareRadius"
+          :register-tree-scroll-element="registerTreeScrollElement"
+          @set-main="setCurrentNodeAsMainBranch"
+          @delete-node="deleteCurrentNode"
+          @export="openCustomTenhouExport"
+          @jump-to-node="jumpToNode"
+          @tree-scroll="onTreeScroll"
+          @suspend-auto-follow="suspendTreeAutoFollow"
+          @resume-auto-follow="resumeTreeAutoFollow"
+          @expanded="updateTreeViewport"
+          @update:node-comment="nodeCommentDraft = $event"
+          @update:hovered-node-id="treeHoveredNodeId = $event"
+          @comment-input="onNodeCommentInput"
+          @comment-blur="flushNodeCommentInBackground"
+        />
 
 
         <DecisionEvaluationPanel
@@ -1091,7 +1012,6 @@ import {
 import {
   normalizeWorkspaceLayout,
 } from './workspaceSettings'
-import { vAdaptiveButtonGrid } from './adaptiveButtonGrid'
 import {
   DEFAULT_PROBABILITY_SCALE,
   probabilityScalePercent,
@@ -1099,6 +1019,7 @@ import {
 } from './analysisProbabilityScale'
 import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
+import BranchTreePanel from './components/BranchTreePanel.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DecisionEvaluationPanel from './components/DecisionEvaluationPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
@@ -1369,17 +1290,14 @@ function startDragFloatingPanel(e: MouseEvent) {
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
 }
-const treePanelCollapsed = ref(false)
 const {
   tableStageEl,
   tableZoom,
   scheduleTableZoomRecalc,
 } = useTableViewport({
   uiScale,
-  treePanelCollapsed,
   afterLayoutChange: () => {
     updateTreeViewport()
-    resizeNodeComment()
   },
 })
 
@@ -1933,6 +1851,11 @@ const {
   focusRoundMap: () => focusFloatingPanel('roundMap'),
 })
 
+function registerTreeScrollElement(element: Element | null) {
+  treeScrollEl.value = element instanceof HTMLElement ? element : null
+  if (treeScrollEl.value) void nextTick(updateTreeViewport)
+}
+
 const { actionAnnouncement } = useActionAnnouncement({
   gameView,
   findNode: (nodeId) => nodeMapById.value.get(nodeId),
@@ -1954,10 +1877,8 @@ const {
   jumpToNode,
   navigateTreeByOffset,
   nodeCommentDraft,
-  nodeCommentEl,
   nodeMutationRequestInFlight,
   onNodeCommentInput,
-  resizeNodeComment,
   resetForNewGame: resetBranchNavigationForNewGame,
   setCurrentNodeAsMainBranch,
   syncFromGameView: syncBranchNavigationFromGameView,
