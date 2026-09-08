@@ -6,11 +6,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-try:
-    import psutil
-except ModuleNotFoundError:
-    psutil = None
-
 import auto_analysis_session
 import decision_analysis_session
 import engine_management
@@ -27,6 +22,7 @@ import record_session
 import review_session
 import round_actions
 import round_progression
+import runtime_metrics
 import snapshot_state
 from action_recommendation_adapter import (
     choose_ai_action,
@@ -868,51 +864,6 @@ def apply_pending_seat_switch_if_ready(snapshot):
     return True
 
 
-def _private_memory_bytes(process):
-    if psutil is None:
-        return 0
-    try:
-        memory = process.memory_full_info()
-        value = getattr(memory, "uss", None)
-        if value is not None:
-            return max(0, int(value))
-    except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
-        pass
-
-    try:
-        return max(0, int(process.memory_info().rss))
-    except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
-        return 0
-
-
-def build_runtime_memory_metrics():
-    if psutil is None:
-        raise RuntimeError("Runtime memory metrics require psutil.")
-    root = psutil.Process(os.getpid())
-    backend_private_bytes = _private_memory_bytes(root)
-    engine_private_bytes = 0
-    engine_process_count = 0
-    seen = {root.pid}
-    try:
-        descendants = root.children(recursive=True)
-    except (psutil.AccessDenied, psutil.NoSuchProcess):
-        descendants = []
-    for process in descendants:
-        if process.pid in seen:
-            continue
-        seen.add(process.pid)
-        private_bytes = _private_memory_bytes(process)
-        if private_bytes <= 0:
-            continue
-        engine_private_bytes += private_bytes
-        engine_process_count += 1
-    return {
-        "backendPrivateBytes": backend_private_bytes,
-        "enginePrivateBytes": engine_private_bytes,
-        "engineProcessCount": engine_process_count,
-    }
-
-
 def clear_loaded_analysis_caches():
     ensure_game_loaded()
     PLAY_PREFETCH.cancel()
@@ -1373,7 +1324,7 @@ def process_command_request(request_id, command, payload, *, lightweight_status=
             response = {
                 "request_id": request_id,
                 "command": command,
-                "metrics": build_runtime_memory_metrics(),
+                "metrics": runtime_metrics.collect_runtime_memory_metrics(),
                 "timestamp": now_iso(),
             }
         elif command == "describe_engine":

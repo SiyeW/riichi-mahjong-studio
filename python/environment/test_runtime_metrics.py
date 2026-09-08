@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-import service
+import runtime_metrics
 
 
 class FakeProcess:
@@ -14,7 +14,7 @@ class FakeProcess:
 
     def memory_full_info(self):
         if self.deny_full_info:
-            raise service.psutil.AccessDenied(self.pid)
+            raise runtime_metrics.psutil.AccessDenied(self.pid)
         return SimpleNamespace(uss=self.private_bytes)
 
     def memory_info(self):
@@ -27,9 +27,9 @@ class FakeProcess:
 
 class RuntimeMemoryMetricTests(unittest.TestCase):
     def test_missing_psutil_only_disables_runtime_metrics(self):
-        with mock.patch.object(service, "psutil", None):
+        with mock.patch.object(runtime_metrics, "psutil", None):
             with self.assertRaisesRegex(RuntimeError, "require psutil"):
-                service.build_runtime_memory_metrics()
+                runtime_metrics.collect_runtime_memory_metrics()
 
     def test_backend_and_descendant_private_memory_are_separated(self):
         first_engine = FakeProcess(11, 200)
@@ -37,10 +37,10 @@ class RuntimeMemoryMetricTests(unittest.TestCase):
         root = FakeProcess(10, 100, [first_engine, second_engine, first_engine])
 
         with (
-            mock.patch.object(service.os, "getpid", return_value=10),
-            mock.patch.object(service.psutil, "Process", return_value=root),
+            mock.patch.object(runtime_metrics.os, "getpid", return_value=10),
+            mock.patch.object(runtime_metrics.psutil, "Process", return_value=root),
         ):
-            metrics = service.build_runtime_memory_metrics()
+            metrics = runtime_metrics.collect_runtime_memory_metrics()
 
         self.assertTrue(root.recursive_requested)
         self.assertEqual(metrics["backendPrivateBytes"], 100)
