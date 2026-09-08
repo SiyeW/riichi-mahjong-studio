@@ -16,6 +16,7 @@ const {
   shell,
 } = require('electron')
 const { registerApplicationIpc } = require('./ipc/application-ipc')
+const { registerAnalysisIpc } = require('./ipc/analysis-ipc')
 const { createEngineIpcController } = require('./ipc/engine-ipc')
 const { registerSettingsIpc } = require('./ipc/settings-ipc')
 const { createEnvironmentService } = require('./services/environment-service')
@@ -464,6 +465,11 @@ function registerIpcHandlers() {
     t,
   })
   engineIpcController.register()
+  registerAnalysisIpc({
+    ipcMain,
+    environmentGateway: environmentBackend.environmentGateway,
+    markRecordDirty,
+  })
   ipcMain.handle('record:dirty-get', () => gameFileStore.isDirty())
 
   ipcMain.handle('status:get', () => sessionStore.getSnapshot())
@@ -631,24 +637,6 @@ function registerIpcHandlers() {
     markRecordDirty()
     return response
   })
-  ipcMain.handle('analysis:visibility', (event, visibility) => environmentBackend.environmentGateway.setAnalysisVisibility(visibility))
-  ipcMain.handle('game:shanten', () => environmentBackend.environmentGateway.getShanten())
-  ipcMain.handle('debug:shanten-mjai', () => environmentBackend.environmentGateway.getShantenMjai())
-  ipcMain.handle('debug:clear-analysis-caches', async () => {
-    const response = await environmentBackend.environmentGateway.clearAnalysisCaches()
-    const cleared = response.cleared || {}
-    if (
-      Number(cleared.mortalEntries || 0) > 0
-      || Number(cleared.opponentEntries || 0) > 0
-      || Number(cleared.comparisons || 0) > 0
-      || Boolean(cleared.pendingReview)
-    ) {
-      markRecordDirty()
-    }
-    return response
-  })
-  ipcMain.handle('analysis:auto-start', () => environmentBackend.environmentGateway.startAutoAnalysis())
-  ipcMain.handle('analysis:auto-cancel', () => environmentBackend.environmentGateway.cancelAutoAnalysis())
 }
 
 app.whenReady().then(() => {
