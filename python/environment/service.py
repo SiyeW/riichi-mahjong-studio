@@ -14,6 +14,7 @@ import environment_view
 import game_flow
 import game_setup
 import game_tree
+import gameplay_commands
 import legal_actions
 import opponent_analysis_session
 import play_prefetch_session
@@ -954,6 +955,16 @@ RECORD_COMMANDS = record_commands.RecordCommands(
     ),
 )
 
+GAMEPLAY_COMMANDS = gameplay_commands.GameplayCommands(
+    STATE,
+    ensure_play_mode=ensure_play_mode,
+    get_current_snapshot=get_current_snapshot,
+    play_prefetch=PLAY_PREFETCH,
+    opponent_analysis=OPPONENT_ANALYSIS,
+    review_session=REVIEW_SESSION,
+    view_builder=VIEW_BUILDER,
+)
+
 
 def handle_command(request_id, command, payload):
     with _STATE_LOCK:
@@ -1106,20 +1117,7 @@ def handle_command(request_id, command, payload):
             return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "advance_game":
-            ensure_play_mode()
-            if STATE["game"].get("pendingReview"):
-                return VIEW_BUILDER.build_response(request_id, command)
-            play_prefetch = PLAY_PREFETCH.advance_game(STATE["game"])
-            # Trigger asynchronous opponent analysis in research mode.
-            if STATE.get("gameLoaded") and STATE.get("mode") == "research":
-                snapshot = get_current_snapshot()
-                OPPONENT_ANALYSIS.request_current(snapshot)
-            response = VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"playPrefetch": play_prefetch},
-            )
-            return response
+            return GAMEPLAY_COMMANDS.advance(request_id, command)
 
         if command == "export_game_record":
             if payload.get("checkpoint") is True:
@@ -1184,64 +1182,10 @@ def handle_command(request_id, command, payload):
             )
 
         if command == "submit_user_action":
-            ensure_play_mode()
-            PLAY_PREFETCH.cancel()
-            action_type = payload.get("type")
-            game = STATE["game"]
-            if not game:
-                raise ValueError("No active game.")
-            current_snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-
-            if current_snapshot["phase"] == "discard":
-                if action_type == "dahai":
-                    REVIEW_SESSION.submit_discard(str(payload.get("pai") or ""), payload.get("fromDrawn"))
-                elif action_type == "hora":
-                    REVIEW_SESSION.submit_self_hora()
-                elif action_type in ("ankan", "kakan"):
-                    REVIEW_SESSION.submit_self_kan(str(payload.get("variant") or action_type))
-                elif action_type == "reach":
-                    REVIEW_SESSION.toggle_riichi()
-                elif action_type == "ryukyoku":
-                    REVIEW_SESSION.submit_abortive_draw(str(payload.get("variant") or ""))
-                elif action_type == "none":
-                    if current_snapshot.get("riichiDiscardState") == "ankan_choice":
-                        REVIEW_SESSION.submit_riichi_ankan_skip()
-                    else:
-                        raise ValueError("Skip is only legal during riichi ankan choice.")
-                else:
-                    raise ValueError(f"Unsupported discard-phase action type: {action_type}")
-            elif current_snapshot["phase"] == "reach_declaration":
-                if action_type == "dahai":
-                    REVIEW_SESSION.submit_riichi_discard(str(payload.get("pai") or ""), payload.get("fromDrawn"))
-                else:
-                    raise ValueError(f"Unsupported reach-declaration-phase action type: {action_type}")
-            elif current_snapshot["phase"] in ("reaction_window", "kan_reaction_window"):
-                if action_type == "dahai":
-                    return VIEW_BUILDER.build_response(request_id, command)
-                REVIEW_SESSION.submit_reaction(
-                    str(action_type or ""),
-                    str(payload.get("variant") or "") or None,
-                    str(payload.get("candidateId") or "") or None,
-                )
-            else:
-                raise ValueError(f"Unsupported action phase for submit_user_action: {current_snapshot['phase']}")
-            play_prefetch = PLAY_PREFETCH.start()
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"playPrefetch": play_prefetch},
-            )
+            return GAMEPLAY_COMMANDS.submit(request_id, command, payload)
 
         if command == "confirm_pending_review":
-            ensure_play_mode()
-            PLAY_PREFETCH.cancel()
-            REVIEW_SESSION.finalize(confirm_proposed=True)
-            play_prefetch = PLAY_PREFETCH.start()
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"playPrefetch": play_prefetch},
-            )
+            return GAMEPLAY_COMMANDS.confirm_pending_review(request_id, command)
 
         if command == "get_wall_view":
             ensure_game_loaded()
