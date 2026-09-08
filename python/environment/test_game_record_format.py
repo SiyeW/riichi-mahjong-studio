@@ -19,9 +19,13 @@ class GameRecordFormatTests(unittest.TestCase):
         with (
             patch.object(service.ROUND_ACTIONS, "draw_tile", return_value="3m"),
             patch.object(service, "persist_snapshot_state"),
-            patch.object(service, "create_node", return_value="child") as create_node,
-            patch.object(service, "attach_mainline"),
-            patch.object(service, "promote_path_to_mainline"),
+            patch.object(
+                service.TREE_EDITS,
+                "create_node",
+                return_value="child",
+            ) as create_node,
+            patch.object(service.TREE_EDITS, "attach_mainline"),
+            patch.object(service.TREE_EDITS, "promote_path_to_mainline"),
         ):
             service.GAME_FLOW.create_tsumo_node(game, {"hands": [["C"], [], [], []]}, 0)
 
@@ -211,7 +215,7 @@ class GameRecordFormatTests(unittest.TestCase):
         )
         self.assertEqual(service.STATE["pendingSeatSwitch"], None)
 
-        child_id = service.create_node(
+        child_id = service.TREE_EDITS.create_node(
             loaded,
             "n_1",
             {"type": "test_transition", "actor": 0},

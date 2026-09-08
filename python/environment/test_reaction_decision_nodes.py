@@ -370,7 +370,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         )
         service.ROUND_ACTIONS.draw_one(snapshot, 1)
         snapshot["phase"] = "discard"
-        child_id = service.create_node(
+        child_id = service.TREE_EDITS.create_node(
             game,
             discard_id,
             {"type": "tsumo", "actor": 1, "pai": snapshot["hands"][1][-1]},
@@ -399,7 +399,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
             "consumed": ["1m", "1m"],
             "variant": "pon",
         }
-        child_id = service.create_node(game, discard_id, response, snapshot)
+        child_id = service.TREE_EDITS.create_node(game, discard_id, response, snapshot)
         game["nodes"][discard_id]["mainChildId"] = child_id
 
         inserted = service.REACTION_DECISIONS.repair(game)
@@ -417,7 +417,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         )
         service.ROUND_ACTIONS.draw_one(snapshot, 1)
         snapshot["phase"] = "discard"
-        child_id = service.create_node(
+        child_id = service.TREE_EDITS.create_node(
             game,
             discard_id,
             {"type": "tsumo", "actor": 1, "pai": snapshot["hands"][1][-1]},

@@ -59,7 +59,7 @@ class RoundMapSummaryTests(unittest.TestCase):
                 "scores": final_scores,
             },
         }
-        result_id = service.create_node(
+        result_id = service.TREE_EDITS.create_node(
             game,
             round_root_id,
             {"type": "round_result", "source": "system"},
@@ -77,7 +77,7 @@ class RoundMapSummaryTests(unittest.TestCase):
                 "kyoku": 4,
             },
         }
-        end_id = service.create_node(
+        end_id = service.TREE_EDITS.create_node(
             game,
             result_id,
             {"type": "match_end", "source": "system"},
@@ -105,7 +105,7 @@ class RoundMapSummaryTests(unittest.TestCase):
             "result": {"scores": final_scores},
         }
         result_snapshot["actionHistory"].append(copy.deepcopy(result_snapshot["lastAction"]))
-        result_id = service.create_node(
+        result_id = service.TREE_EDITS.create_node(
             game,
             round_root_id,
             {"type": "round_result", "source": "mortal-report"},
@@ -116,7 +116,7 @@ class RoundMapSummaryTests(unittest.TestCase):
         end_snapshot = copy.deepcopy(result_snapshot)
         end_snapshot["phase"] = "match_end"
         end_snapshot["lastAction"] = {"type": "match_end", "source": "mortal-report"}
-        end_id = service.create_node(
+        end_id = service.TREE_EDITS.create_node(
             game,
             result_id,
             {"type": "match_end", "source": "mortal-report"},
@@ -139,7 +139,7 @@ class RoundMapSummaryTests(unittest.TestCase):
         main_snapshot["phase"] = "discard"
         main_snapshot["scores"] = [24000, 25000, 25000, 25000]
         main_snapshot["matchState"]["scores"] = main_snapshot["scores"][:]
-        main_id = service.create_node(
+        main_id = service.TREE_EDITS.create_node(
             game,
             round_root_id,
             {"type": "dahai", "actor": 0, "pai": "1m", "source": "test"},
@@ -152,7 +152,7 @@ class RoundMapSummaryTests(unittest.TestCase):
         side_snapshot["kyoku"] = 2
         side_snapshot["matchState"]["roundIndex"] = 1
         side_snapshot["matchState"]["kyoku"] = 2
-        side_id = service.create_node(
+        side_id = service.TREE_EDITS.create_node(
             game,
             round_root_id,
             {"type": "start_kyoku", "source": "test"},

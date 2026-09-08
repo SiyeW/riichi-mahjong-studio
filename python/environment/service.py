@@ -15,6 +15,7 @@ import environment_view
 import game_flow
 import game_setup
 import game_tree
+import game_tree_coordinator
 import gameplay_commands
 import legal_action_provider
 import legal_actions
@@ -222,9 +223,9 @@ AUTO_ANALYSIS = auto_analysis_session.AutoAnalysisSession(
 ROUND_PROGRESSION = round_progression.RoundProgression(
     round_progression.RoundProgressionDependencies(
         create_initial_snapshot=lambda match_state: create_initial_snapshot(match_state),
-        create_node=lambda *args, **kwargs: create_node(*args, **kwargs),
-        attach_mainline=lambda *args, **kwargs: attach_mainline(*args, **kwargs),
-        promote_mainline=lambda *args, **kwargs: promote_path_to_mainline(
+        create_node=lambda *args, **kwargs: TREE_EDITS.create_node(*args, **kwargs),
+        attach_mainline=lambda *args, **kwargs: TREE_EDITS.attach_mainline(*args, **kwargs),
+        promote_mainline=lambda *args, **kwargs: TREE_EDITS.promote_path_to_mainline(
             *args, **kwargs
         ),
     )
@@ -264,9 +265,9 @@ GAME_FLOW = game_flow.GameFlow(
         materialize_automatic_reaction_decisions=lambda *args, **kwargs: REACTION_DECISIONS.materialize_automatic(
             *args, **kwargs
         ),
-        create_node=lambda *args, **kwargs: create_node(*args, **kwargs),
-        attach_mainline=lambda *args, **kwargs: attach_mainline(*args, **kwargs),
-        promote_mainline=lambda *args, **kwargs: promote_path_to_mainline(
+        create_node=lambda *args, **kwargs: TREE_EDITS.create_node(*args, **kwargs),
+        attach_mainline=lambda *args, **kwargs: TREE_EDITS.attach_mainline(*args, **kwargs),
+        promote_mainline=lambda *args, **kwargs: TREE_EDITS.promote_path_to_mainline(
             *args, **kwargs
         ),
         debug=debug_flow,
@@ -289,15 +290,15 @@ REVIEW_SESSION = review_session.ReviewSession(
         build_legal_actions=lambda *args, **kwargs: build_legal_actions(
             *args, **kwargs
         ),
-        refresh_reused_child=lambda *args, **kwargs: _refresh_reused_imported_child(
+        refresh_reused_child=lambda *args, **kwargs: TREE_EDITS.refresh_reused_imported_child(
             *args, **kwargs
         ),
-        create_node=lambda *args, **kwargs: create_node(*args, **kwargs),
-        attach_mainline=lambda *args, **kwargs: attach_mainline(*args, **kwargs),
-        promote_mainline=lambda *args, **kwargs: promote_path_to_mainline(
+        create_node=lambda *args, **kwargs: TREE_EDITS.create_node(*args, **kwargs),
+        attach_mainline=lambda *args, **kwargs: TREE_EDITS.attach_mainline(*args, **kwargs),
+        promote_mainline=lambda *args, **kwargs: TREE_EDITS.promote_path_to_mainline(
             *args, **kwargs
         ),
-        replace_pending_review_main_child=lambda *args, **kwargs: replace_pending_review_main_child(
+        replace_pending_review_main_child=lambda *args, **kwargs: TREE_EDITS.replace_pending_review_main_child(
             *args, **kwargs
         ),
     ),
@@ -325,9 +326,9 @@ PLAY_PREFETCH = play_prefetch_session.PlayPrefetchSession(
         find_existing_child=lambda *args, **kwargs: REVIEW_SESSION.find_existing_child(
             *args, **kwargs
         ),
-        create_node=lambda *args, **kwargs: create_node(*args, **kwargs),
-        attach_mainline=lambda *args, **kwargs: attach_mainline(*args, **kwargs),
-        promote_mainline=lambda *args, **kwargs: promote_path_to_mainline(
+        create_node=lambda *args, **kwargs: TREE_EDITS.create_node(*args, **kwargs),
+        attach_mainline=lambda *args, **kwargs: TREE_EDITS.attach_mainline(*args, **kwargs),
+        promote_mainline=lambda *args, **kwargs: TREE_EDITS.promote_path_to_mainline(
             *args, **kwargs
         ),
         emit=emit,
@@ -437,7 +438,7 @@ def reset_current_round_with_full_wall(full_wall):
     game_tree.mark_tree_changed(game)
     AUTO_ANALYSIS.invalidate_timeline()
     game["currentNodeId"] = new_round_root_id
-    promote_path_to_mainline(game, new_round_root_id)
+    TREE_EDITS.promote_path_to_mainline(game, new_round_root_id)
     game["matchState"] = copy.deepcopy(next_snapshot["matchState"])
     game["matchState"]["matchId"] = game.get("matchId", game.get("gameId", "game"))
     MJAI_STREAMS.purge_game(game["gameId"])
@@ -551,66 +552,6 @@ def choose_ai_action_for_snapshot(snapshot, seat, model_path, *, accumulate_thin
     )
 
 
-def _refresh_reused_imported_child(game, child_id, action, snapshot):
-    if game_tree.refresh_reused_imported_child(game, child_id, action, snapshot):
-        AUTO_ANALYSIS.invalidate_timeline()
-
-
-def create_node(game, parent_id, action, snapshot):
-    sync_snapshot_state(snapshot)
-    parent = game["nodes"][parent_id]
-    is_decision = action_is_meaningful_decision(parent.get("snapshot"), action)
-    previous_revision = int(game.get("treeRevision", 0))
-    node_id = game_tree.create_node(
-        game,
-        parent_id,
-        action,
-        snapshot,
-        is_decision=is_decision,
-    )
-    if int(game.get("treeRevision", 0)) != previous_revision:
-        AUTO_ANALYSIS.invalidate_timeline()
-    return node_id
-
-
-def _may_promote_mainline(game, force=False):
-    return (
-        force
-        or STATE.get("mode") != "play"
-        or PLAY_PREFETCH.active_draft() is game
-    )
-
-
-def attach_mainline(parent_id, child_id, *, force=False):
-    game = PLAY_PREFETCH.active_draft() or STATE["game"]
-    if game_tree.attach_main_child(
-        game,
-        parent_id,
-        child_id,
-        replace_existing=_may_promote_mainline(game, force),
-    ):
-        AUTO_ANALYSIS.invalidate_timeline()
-
-
-def promote_path_to_mainline(game, node_id, *, force=False):
-    if not _may_promote_mainline(game, force):
-        return
-    if game_tree.promote_path_to_mainline(game, node_id):
-        AUTO_ANALYSIS.invalidate_timeline()
-
-
-def replace_pending_review_main_child(game, parent_id, proposed_id, chosen_id):
-    changed = game_tree.replace_pending_review_main_child(
-        game,
-        parent_id,
-        proposed_id,
-        chosen_id,
-    )
-    if changed:
-        AUTO_ANALYSIS.invalidate_timeline()
-    return changed
-
-
 def build_legal_actions(snapshot, controlled_seat=None):
     if controlled_seat is None:
         controlled_seat = STATE["controlledSeat"]
@@ -654,13 +595,24 @@ LEGAL_ACTIONS = legal_action_provider.LegalActionProvider(
 )
 
 
+TREE_EDITS = game_tree_coordinator.GameTreeCoordinator(
+    STATE,
+    game_tree_coordinator.GameTreeDependencies(
+        sync_snapshot=sync_snapshot_state,
+        is_meaningful_decision=action_is_meaningful_decision,
+        active_draft=lambda: PLAY_PREFETCH.active_draft(),
+        invalidate_analysis_timeline=lambda: AUTO_ANALYSIS.invalidate_timeline(),
+    ),
+)
+
+
 REACTION_DECISIONS = reaction_decision_history.ReactionDecisionHistory(
     reaction_decision_history.ReactionDecisionDependencies(
         normalize_seat=normalize_seat,
         build_legal_actions=build_legal_actions,
-        create_node=create_node,
-        attach_mainline=attach_mainline,
-        promote_mainline=promote_path_to_mainline,
+        create_node=TREE_EDITS.create_node,
+        attach_mainline=TREE_EDITS.attach_mainline,
+        promote_mainline=TREE_EDITS.promote_path_to_mainline,
     )
 )
 
@@ -800,7 +752,7 @@ RECORD_COMMANDS = record_commands.RecordCommands(
         purge_mjai_cache=MJAI_STREAMS.purge_game,
         sync_snapshot=sync_snapshot_state,
         request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
-        promote_mainline=promote_path_to_mainline,
+        promote_mainline=TREE_EDITS.promote_path_to_mainline,
         invalidate_auto_timeline=AUTO_ANALYSIS.invalidate_timeline,
     ),
 )

@@ -29,15 +29,15 @@ class MainBranchPolicyTest(unittest.TestCase):
             "tsumogiri": source == "user",
             "source": source,
         }
-        return service.create_node(game, parent_id, action, snapshot)
+        return service.TREE_EDITS.create_node(game, parent_id, action, snapshot)
 
     def test_new_game_play_nodes_extend_an_empty_branch_end(self):
         game = service.STATE["game"]
         parent_id = game["currentNodeId"]
         child_id = self._create_child(parent_id, "user")
 
-        service.attach_mainline(parent_id, child_id)
-        service.promote_path_to_mainline(game, child_id)
+        service.TREE_EDITS.attach_mainline(parent_id, child_id)
+        service.TREE_EDITS.promote_path_to_mainline(game, child_id)
 
         self.assertEqual(game["nodes"][parent_id]["mainChildId"], child_id)
         self.assertEqual(game["mainLeafNodeId"], child_id)
@@ -46,12 +46,12 @@ class MainBranchPolicyTest(unittest.TestCase):
         game = service.STATE["game"]
         parent_id = game["currentNodeId"]
         original_main_id = self._create_child(parent_id, "mortal-report")
-        service.attach_mainline(parent_id, original_main_id, force=True)
-        service.promote_path_to_mainline(game, original_main_id, force=True)
+        service.TREE_EDITS.attach_mainline(parent_id, original_main_id, force=True)
+        service.TREE_EDITS.promote_path_to_mainline(game, original_main_id, force=True)
 
         side_branch_id = self._create_child(parent_id, "user")
-        service.attach_mainline(parent_id, side_branch_id)
-        service.promote_path_to_mainline(game, side_branch_id)
+        service.TREE_EDITS.attach_mainline(parent_id, side_branch_id)
+        service.TREE_EDITS.promote_path_to_mainline(game, side_branch_id)
 
         self.assertEqual(game["nodes"][parent_id]["mainChildId"], original_main_id)
         self.assertEqual(game["mainLeafNodeId"], original_main_id)
@@ -73,8 +73,8 @@ class MainBranchPolicyTest(unittest.TestCase):
             "tsumogiri": False,
             "source": "mortal-report",
         }
-        imported_id = service.create_node(game, parent_id, imported_action, imported_snapshot)
-        service.attach_mainline(parent_id, imported_id, force=True)
+        imported_id = service.TREE_EDITS.create_node(game, parent_id, imported_action, imported_snapshot)
+        service.TREE_EDITS.attach_mainline(parent_id, imported_id, force=True)
 
         live_snapshot = copy.deepcopy(game["nodes"][parent_id]["snapshot"])
         live_snapshot["turn"] = 2
@@ -82,8 +82,8 @@ class MainBranchPolicyTest(unittest.TestCase):
             **imported_action,
             "source": "ai",
         }
-        live_id = service.create_node(game, parent_id, live_action, live_snapshot)
-        service.attach_mainline(parent_id, live_id)
+        live_id = service.TREE_EDITS.create_node(game, parent_id, live_action, live_snapshot)
+        service.TREE_EDITS.attach_mainline(parent_id, live_id)
 
         self.assertEqual(live_id, imported_id)
         self.assertEqual(game["nodes"][parent_id]["children"], [imported_id])
@@ -105,8 +105,8 @@ class MainBranchPolicyTest(unittest.TestCase):
             "han": 8,
             "source": "mortal-report",
         }
-        imported_id = service.create_node(game, parent_id, imported_action, imported_snapshot)
-        service.attach_mainline(parent_id, imported_id, force=True)
+        imported_id = service.TREE_EDITS.create_node(game, parent_id, imported_action, imported_snapshot)
+        service.TREE_EDITS.attach_mainline(parent_id, imported_id, force=True)
 
         live_snapshot = copy.deepcopy(imported_snapshot)
         live_snapshot["lastAction"] = {
@@ -127,7 +127,7 @@ class MainBranchPolicyTest(unittest.TestCase):
             "consumed": [],
             "source": "user_reaction",
         }
-        live_id = service.create_node(game, parent_id, live_action, live_snapshot)
+        live_id = service.TREE_EDITS.create_node(game, parent_id, live_action, live_snapshot)
 
         self.assertEqual(live_id, imported_id)
         self.assertEqual(game["nodes"][parent_id]["children"], [imported_id])
@@ -176,14 +176,14 @@ class MainBranchPolicyTest(unittest.TestCase):
         game = service.STATE["game"]
         parent_id = game["currentNodeId"]
         original_main_id = self._create_child(parent_id, "mortal-report")
-        service.attach_mainline(parent_id, original_main_id, force=True)
-        service.promote_path_to_mainline(game, original_main_id, force=True)
+        service.TREE_EDITS.attach_mainline(parent_id, original_main_id, force=True)
+        service.TREE_EDITS.promote_path_to_mainline(game, original_main_id, force=True)
 
         side_branch_id = self._create_child(parent_id, "user")
         continuation_id = self._create_child(side_branch_id, "ai")
-        service.attach_mainline(parent_id, side_branch_id)
-        service.attach_mainline(side_branch_id, continuation_id)
-        service.promote_path_to_mainline(game, continuation_id)
+        service.TREE_EDITS.attach_mainline(parent_id, side_branch_id)
+        service.TREE_EDITS.attach_mainline(side_branch_id, continuation_id)
+        service.TREE_EDITS.promote_path_to_mainline(game, continuation_id)
 
         self.assertEqual(game["nodes"][parent_id]["mainChildId"], original_main_id)
         self.assertEqual(game["nodes"][side_branch_id]["mainChildId"], continuation_id)
@@ -209,7 +209,7 @@ class MainBranchPolicyTest(unittest.TestCase):
         self.assertEqual(game["mainLeafNodeId"], proposed_id)
 
         chosen_id = self._create_child(parent_id, "user_review")
-        replaced = service.replace_pending_review_main_child(
+        replaced = service.TREE_EDITS.replace_pending_review_main_child(
             game,
             parent_id,
             proposed_id,

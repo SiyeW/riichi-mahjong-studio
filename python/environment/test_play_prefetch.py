@@ -236,7 +236,7 @@ class PlayPrefetchTest(unittest.TestCase):
             "discard": copy.deepcopy(replay_snapshot["pendingDiscard"]),
             "reactions": [],
         }
-        replay_child_id = service.create_node(
+        replay_child_id = service.TREE_EDITS.create_node(
             game,
             parent_id,
             replay_action,
@@ -267,7 +267,7 @@ class PlayPrefetchTest(unittest.TestCase):
             "discard": copy.deepcopy(next_snapshot["pendingDiscard"]),
             "reactions": [],
         }
-        child_id = service.create_node(
+        child_id = service.TREE_EDITS.create_node(
             game,
             game["currentNodeId"],
             action,
@@ -314,15 +314,15 @@ class PlayPrefetchTest(unittest.TestCase):
                 "pai": "1m",
                 "source": "test",
             }
-            child_id = service.create_node(
+            child_id = service.TREE_EDITS.create_node(
                 target_game,
                 parent_id,
                 action,
                 next_snapshot,
             )
-            service.attach_mainline(parent_id, child_id)
+            service.TREE_EDITS.attach_mainline(parent_id, child_id)
             target_game["currentNodeId"] = child_id
-            service.promote_path_to_mainline(target_game, child_id)
+            service.TREE_EDITS.promote_path_to_mainline(target_game, child_id)
 
         with mock.patch.object(service.GAME_FLOW, "advance", side_effect=fake_advance):
             step = service.PLAY_PREFETCH._capture_step(context)
