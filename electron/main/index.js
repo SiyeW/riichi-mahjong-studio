@@ -14,6 +14,7 @@ const {
 const { registerApplicationIpc } = require('./ipc/application-ipc')
 const { registerAnalysisIpc } = require('./ipc/analysis-ipc')
 const { createEngineIpcController } = require('./ipc/engine-ipc')
+const { registerEnvironmentIpc } = require('./ipc/environment-ipc')
 const { registerGameIpc } = require('./ipc/game-ipc')
 const { registerRecordIpc } = require('./ipc/record-ipc')
 const { registerSettingsIpc } = require('./ipc/settings-ipc')
@@ -275,30 +276,15 @@ function registerIpcHandlers() {
     markRecordDirty,
     publishRecordDirty,
   })
-  ipcMain.handle('backend:restart', async () => {
-    const fromCheckpoint = environmentBackend.environmentGateway.needsRecovery()
-    if (!fromCheckpoint) await requestRendererFlush(mainWindow, ipcMain, t('native.closeSaveTimeout'))
-    let response
-    try {
-      response = await environmentBackend.environmentGateway.restartBackend()
-    } catch (error) {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('python:event', { type: 'service_recovery_failed', error: String(error.message || error) })
-      }
-      throw error
-    }
-    if (fromCheckpoint && response.state?.gameLoaded) markRecordDirty()
-    if (fromCheckpoint && !response.state?.gameLoaded) {
-      gameFileStore.closeRecord()
-      publishRecordDirty(true)
-    }
-    gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('python:event', { type: 'service_restored', state: response.state, view: response.view })
-    }
-    return response
+  registerEnvironmentIpc({
+    ipcMain,
+    environmentGateway: environmentBackend.environmentGateway,
+    gameFileStore,
+    getMainWindow: () => mainWindow,
+    markRecordDirty,
+    publishRecordDirty,
+    t,
   })
-  ipcMain.handle('debug:latest-mjai', () => environmentBackend.environmentGateway.getLatestMjaiDebug())
   registerRecordIpc({
     ipcMain,
     shell,
