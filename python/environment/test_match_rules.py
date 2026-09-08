@@ -3,8 +3,8 @@ from unittest import mock
 
 import match_progression
 import game_flow
+import rule_kernel
 import service
-import settlement
 
 
 class MatchEndRuleTests(unittest.TestCase):
@@ -120,17 +120,17 @@ class RiichiPointRuleTests(unittest.TestCase):
 
     def test_riichi_requires_at_least_1000_points(self):
         self.assertFalse(
-            settlement.can_declare_riichi(self._riichi_snapshot(999), 0)
+            rule_kernel.can_declare_riichi(self._riichi_snapshot(999), 0)
         )
         self.assertTrue(
-            settlement.can_declare_riichi(self._riichi_snapshot(1000), 0)
+            rule_kernel.can_declare_riichi(self._riichi_snapshot(1000), 0)
         )
 
     def test_riichi_accepts_shared_immutable_wall_storage(self):
         snapshot = self._riichi_snapshot(25000)
         snapshot["wall"] = tuple(snapshot["wall"])
 
-        self.assertTrue(settlement.can_declare_riichi(snapshot, 0))
+        self.assertTrue(rule_kernel.can_declare_riichi(snapshot, 0))
         self.assertTrue(
             any(
                 action.get("type") == "reach"

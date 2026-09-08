@@ -7,13 +7,9 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 import snapshot_state
+from hora_calculation import compute_hora_result
+from rule_kernel import can_ankan, can_declare_riichi, can_declare_tsumo
 from service_helpers import actor_just_drew
-from settlement import (
-    can_ankan,
-    can_declare_riichi,
-    can_declare_tsumo,
-    compute_hora_result,
-)
 
 
 @dataclass

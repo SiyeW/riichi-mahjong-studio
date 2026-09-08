@@ -9,17 +9,14 @@ from typing import Any, Callable
 import game_tree
 import legal_actions
 import snapshot_state
+from hora_calculation import compute_hora_result
+from rule_kernel import can_declare_riichi, can_declare_tsumo
 from service_helpers import (
     actor_just_drew,
     build_comparison_result,
     build_reaction_comparison_result,
     build_special_action_comparison_result,
     get_abortive_reason_label,
-)
-from settlement import (
-    can_declare_riichi,
-    can_declare_tsumo,
-    compute_hora_result,
 )
 
 

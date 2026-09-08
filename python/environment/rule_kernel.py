@@ -22,6 +22,7 @@ if str(VENDOR_DIR) not in sys.path:
 
 from mahjong.agari import Agari  # noqa: E402
 from mahjong.shanten import Shanten  # noqa: E402
+from hora_calculation import compute_hora_result
 
 
 TILE_INDEX_TO_FAMILY = [
@@ -220,7 +221,6 @@ def can_declare_tsumo(snapshot: dict[str, Any], seat: int, state: RuleState | No
         return False
     win_tile = str(_latest_action(snapshot).get("pai") or "")
     try:
-        from settlement import compute_hora_result
         compute_hora_result(_working_snapshot(snapshot, seat, hand), seat, seat, win_tile, True)
         return True
     except (ImportError, ValueError, KeyError, IndexError):
@@ -293,7 +293,6 @@ def can_declare_ron(snapshot: dict[str, Any], seat: int, state: RuleState | None
         return False
     hand.append(tile)
     try:
-        from settlement import compute_hora_result
         compute_hora_result(_working_snapshot(snapshot, seat, hand[:-1]), seat, int(actor), tile, False)
         return True
     except (ImportError, ValueError, KeyError, IndexError):

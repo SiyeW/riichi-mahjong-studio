@@ -8,9 +8,9 @@ from typing import Any, Callable
 
 import snapshot_state
 from match_progression import apply_round_result_to_match_state
+from rule_kernel import can_declare_ryukyoku
 from service_helpers import get_abortive_reason_label
 from settlement import (
-    can_declare_ryukyoku,
     compute_abortive_ryukyoku,
     compute_exhaustive_ryukyoku,
     count_yaochu_kinds,

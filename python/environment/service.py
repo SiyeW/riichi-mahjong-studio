@@ -52,7 +52,7 @@ from service_helpers import (
     actor_just_drew,
     now_iso,
 )
-from settlement import (
+from rule_kernel import (
     can_ankan,
     can_declare_riichi,
     can_declare_tsumo,

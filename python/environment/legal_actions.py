@@ -2,16 +2,13 @@ import copy
 from itertools import combinations, product
 
 import snapshot_state
+from rule_kernel import can_declare_ron, get_valid_riichi_discards
 from service_helpers import (
     actor_just_drew,
     get_forbidden_discard_families_after_self_furo,
     normalize_tile_family,
     sort_tiles,
     unique_preserving_order,
-)
-from settlement import (
-    can_declare_ron,
-    get_valid_riichi_discards,
 )
 
 

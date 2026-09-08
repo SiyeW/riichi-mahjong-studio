@@ -1,6 +1,6 @@
 import unittest
 
-import settlement
+import hora_calculation
 
 from mahjong.constants import EAST, SOUTH
 from mahjong.hand_calculating.hand_config import HandConfig
@@ -12,7 +12,7 @@ class SettlementScoringRulesTests(unittest.TestCase):
         config = HandConfig(
             is_tsumo=is_tsumo,
             player_wind=EAST if is_dealer else SOUTH,
-            options=settlement.build_network_scoring_rules(),
+            options=hora_calculation.build_network_scoring_rules(),
         )
         return ScoresCalculator.calculate_scores(han=han, fu=fu, config=config)
 

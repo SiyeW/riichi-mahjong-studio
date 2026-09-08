@@ -8,6 +8,7 @@ from typing import Any, Callable
 
 import legal_actions
 import snapshot_state
+from hora_calculation import compute_hora_result
 from service_helpers import (
     get_reaction_expected_hand_count,
     get_reaction_hand_consumed,
@@ -15,7 +16,6 @@ from service_helpers import (
     resolve_reaction_hand_consumed,
     sort_tiles,
 )
-from settlement import compute_hora_result
 
 
 @dataclass
