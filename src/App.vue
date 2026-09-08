@@ -1220,6 +1220,7 @@ import { useRecordSession } from './useRecordSession'
 import { useRoundResultPresentation } from './useRoundResultPresentation'
 import { useRuntimeMetrics } from './useRuntimeMetrics'
 import { useSettingsSession } from './useSettingsSession'
+import { useSoundTransitions, type SoundTransitionView } from './useSoundTransitions'
 import { useTablePresentation } from './useTablePresentation'
 import { useTableViewport } from './useTableViewport'
 import { useTileArtwork } from './useTileArtwork'
@@ -1765,7 +1766,11 @@ async function retryBackend() {
     backendRetrying.value = false
   }
 }
-const activeAudioPlayers = new Set<HTMLAudioElement>()
+const { handleSoundTransitions } = useSoundTransitions({
+  settings,
+  status,
+  isBlocked: () => Boolean(bootstrapError.value),
+})
 
 const isReadOnlyRecord = computed(() => Boolean(gameView.readOnly))
 const {
@@ -2428,13 +2433,6 @@ function openCustomTenhouExport() {
   focusFloatingPanel('customExport')
 }
 
-function getSoundSource(event: string): string | null {
-  const selectedPack = settings.runtime?.soundPackCatalog.packs.find(
-    (pack) => pack.id === settings.audio.soundPackId,
-  )
-  return selectedPack?.sounds[event] || null
-}
-
 async function prepareRendererForDisplay() {
   await nextTick()
   updateTreeViewport()
@@ -2442,106 +2440,6 @@ async function prepareRendererForDisplay() {
   await prepareTileArtwork()
   await bootstrapRefresh
 }
-
-function playSoundEvent(event: string) {
-  const src = getSoundSource(event)
-  const volume = Math.max(0, Math.min(1, settings.audio.volume / 100))
-  if (!src || volume <= 0) return
-  const audio = new Audio(src)
-  audio.volume = volume
-  audio.preload = 'auto'
-  activeAudioPlayers.add(audio)
-  const cleanup = () => {
-    activeAudioPlayers.delete(audio)
-    audio.removeEventListener('ended', cleanup)
-    audio.removeEventListener('error', cleanup)
-  }
-  audio.addEventListener('ended', cleanup)
-  audio.addEventListener('error', cleanup)
-  void audio.play().catch(cleanup)
-}
-
-function announcementSoundEvent(type: string): string | null {
-  const map: Record<string, string> = {
-    pon: 'call.pon',
-    daiminkan: 'call.kan',
-    ankan: 'call.kan',
-    kakan: 'call.kan',
-    chi: 'call.chi',
-    reach: 'call.riichi',
-    ron: 'win.ron',
-    tsumo: 'win.tsumo',
-  }
-  return map[type] || null
-}
-
-function actionSignature(action: NonNullable<TrainerGameView['table']>['lastAction']) {
-  if (!action) return ''
-  return [
-    action.type || '',
-    action.actor ?? '',
-    action.pai || '',
-    action.variant || '',
-    action.target ?? '',
-    action.reason || '',
-    action.riichi ? '1' : '0',
-    Array.isArray(action.consumed) ? action.consumed.join(',') : '',
-  ].join('|')
-}
-
-type SoundTransitionView = Pick<TrainerGameView, 'table' | 'legalActions' | 'pendingReview'>
-
-function hasSpecialChoiceActions(view: SoundTransitionView): boolean {
-  return (view.legalActions || []).some((action) => action.type !== 'dahai')
-}
-
-function handleSoundTransitions(
-  prevView: SoundTransitionView,
-  nextView: SoundTransitionView,
-  isNewGame: boolean,
-  transitionDirection: GameViewTransitionDirection,
-) {
-  if (bootstrapError.value || isNewGame) return
-  if (!prevView.table || !nextView.table) return
-
-  const hadPendingDiscard = Boolean(prevView.table.pendingDiscard || prevView.table.pendingRiichiDiscard)
-  const hasPendingDiscard = Boolean(nextView.table.pendingDiscard || nextView.table.pendingRiichiDiscard)
-  if (transitionDirection === 'forward' && hadPendingDiscard && !hasPendingDiscard) {
-    playSoundEvent('action.confirmed')
-  }
-
-  const prevActionSig = actionSignature(prevView.table.lastAction)
-  const nextAction = nextView.table.lastAction
-  const nextActionSig = actionSignature(nextAction)
-  if (nextAction && nextActionSig && nextActionSig !== prevActionSig) {
-    if (nextAction.type === 'dahai') {
-      playSoundEvent('tile.discard')
-    } else if (nextAction.type === 'reach') {
-      const soundEvent = announcementSoundEvent('reach')
-      if (soundEvent) playSoundEvent(soundEvent)
-    } else if (['chi', 'pon', 'daiminkan', 'ankan', 'kakan'].includes(nextAction.type)) {
-      const soundEvent = announcementSoundEvent(nextAction.type)
-      if (soundEvent) playSoundEvent(soundEvent)
-    } else if (nextAction.type === 'hora') {
-      const variant = nextAction.variant === 'tsumo' || nextAction.actor === nextAction.target ? 'tsumo' : 'ron'
-      const soundEvent = announcementSoundEvent(variant)
-      if (soundEvent) playSoundEvent(soundEvent)
-    }
-  }
-
-  if (status.mode === 'play' && !hasSpecialChoiceActions(prevView) && hasSpecialChoiceActions(nextView)) {
-    playSoundEvent('action.required')
-  }
-
-  if (status.mode === 'play' && !prevView.pendingReview && nextView.pendingReview) {
-    playSoundEvent('review.required')
-  }
-
-  if (!prevView.table.resultInfo && nextView.table.resultInfo) {
-    playSoundEvent('round.result')
-  }
-}
-
 
 async function toggleMode() {
   if (!window.trainerAPI || !status.gameLoaded || isReadOnlyRecord.value) return
