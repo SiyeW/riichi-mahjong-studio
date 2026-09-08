@@ -1590,8 +1590,10 @@ import { useDiscardFlight, type GameViewTransitionDirection } from './useDiscard
 import { useDecisionPresentation } from './useDecisionPresentation'
 import { useRecordSession } from './useRecordSession'
 import { useRoundResultPresentation } from './useRoundResultPresentation'
+import { useRuntimeMetrics } from './useRuntimeMetrics'
 import { useSettingsSession } from './useSettingsSession'
 import { useTablePresentation } from './useTablePresentation'
+import { useTableViewport } from './useTableViewport'
 import { useTileArtwork } from './useTileArtwork'
 import {
   SHANTEN_SHORT_LABELS,
@@ -1875,6 +1877,18 @@ function startDragFloatingPanel(e: MouseEvent) {
 const quickSettingsCollapsed = ref(false)
 const treePanelCollapsed = ref(false)
 const analysisPanelCollapsed = ref(false)
+const {
+  tableStageEl,
+  tableZoom,
+  scheduleTableZoomRecalc,
+} = useTableViewport({
+  uiScale,
+  treePanelCollapsed,
+  afterLayoutChange: () => {
+    updateTreeViewport()
+    resizeNodeComment()
+  },
+})
 
 const status = reactive<TrainerStatusSnapshot>({
   aiThinkingTimeS: 0,
@@ -1924,49 +1938,13 @@ const relativeSeatOptions = computed(() => ([
   { label: t('seat.shimocha'), seat: (status.controlledSeat + 1) % 4 },
   { label: t('seat.toimen'), seat: (status.controlledSeat + 2) % 4 },
 ]))
-const runtimeMetrics = ref<TrainerRuntimeMetrics | null>(null)
-let runtimeMetricsTimer: number | null = null
-let runtimeMetricsRequestInFlight = false
-
-function formatMemorySize(value: number | null | undefined) {
-  if (value === null || value === undefined) return '—'
-  const bytes = Number(value)
-  if (!Number.isFinite(bytes) || bytes < 0) return '—'
-  const gibibytes = bytes / (1024 ** 3)
-  if (gibibytes >= 1) return `${gibibytes.toFixed(gibibytes < 10 ? 2 : 1)} GB`
-  const mebibytes = bytes / (1024 ** 2)
-  return `${Math.round(mebibytes)} MB`
-}
-
-const runtimeMemoryRows = computed(() => {
-  const metrics = runtimeMetrics.value
-  if (!metrics) return [{ label: t('status.memoryInfo'), value: t('status.reading') }]
-  const engineCount = metrics.engineProcessCount === null
-    ? ''
-    : t('status.engineProcesses', { count: metrics.engineProcessCount })
-  return [
-    { label: 'Electron', value: formatMemorySize(metrics.electronBytes) },
-    { label: t('status.pythonBackend'), value: formatMemorySize(metrics.backendBytes) },
-    { label: t('status.engines', { count: engineCount }), value: formatMemorySize(metrics.engineBytes) },
-    { label: t('status.systemTotal'), value: formatMemorySize(metrics.systemTotalBytes) },
-  ]
-})
-
-const runtimeMemoryDetail = computed(() => (
-  runtimeMemoryRows.value.map((row) => `${row.label}：${row.value}`).join('\n')
-))
-
-async function refreshRuntimeMetrics() {
-  if (!window.trainerAPI?.getRuntimeMetrics || runtimeMetricsRequestInFlight) return
-  runtimeMetricsRequestInFlight = true
-  try {
-    runtimeMetrics.value = await window.trainerAPI.getRuntimeMetrics()
-  } catch {
-    // Keep the last successful sample while the backend or application is restarting.
-  } finally {
-    runtimeMetricsRequestInFlight = false
-  }
-}
+const {
+  runtimeMetrics,
+  runtimeMemoryRows,
+  runtimeMemoryDetail,
+  formatMemorySize,
+  startRuntimeMetrics,
+} = useRuntimeMetrics(t)
 const showTsumogiriTone = computed(() => (
   status.mode !== 'play' || settings.display.showTsumogiriInPlay !== false
 ))
@@ -2395,7 +2373,6 @@ const {
   t,
   relativeSeatLabel,
 })
-const tableZoom = ref(1)
 const {
   ROUND_BASE_X,
   activeRoundRootId,
@@ -3164,81 +3141,6 @@ watchEffect(() => {
   document.title = windowTitle.value
 })
 
-const tableStageEl = ref<HTMLElement | null>(null)
-let tableZoomRaf = 0
-let tableZoomPassesPending = 0
-const handleWindowResize = () => scheduleTableZoomRecalc()
-
-function scheduleTableZoomRecalc(passes = 12) {
-  tableZoomPassesPending = Math.max(tableZoomPassesPending, passes)
-  if (tableZoomRaf) return
-  tableZoomRaf = window.requestAnimationFrame(() => {
-    tableZoomRaf = 0
-    recalcTableZoom()
-    tableZoomPassesPending = Math.max(0, tableZoomPassesPending - 1)
-    if (tableZoomPassesPending > 0) {
-      scheduleTableZoomRecalc(tableZoomPassesPending)
-    } else {
-      tableZoomPassesPending = 0
-    }
-  })
-}
-
-function recalcTableZoom() {
-  const stage = tableStageEl.value
-  if (!stage) return false
-  const currentZoom = Math.max(0.1, tableZoom.value)
-  const style = window.getComputedStyle(stage)
-  const padX = parseFloat(style.paddingLeft || '0') + parseFloat(style.paddingRight || '0')
-  const padY = parseFloat(style.paddingTop || '0') + parseFloat(style.paddingBottom || '0')
-  const availW = Math.max(0, stage.clientWidth - padX)
-  const availH = Math.max(0, stage.clientHeight - padY)
-
-  let nextZoom = currentZoom
-
-  if (availW > 0 && availH > 0) {
-    const zoomByWidth = ((3 * availW) + 16) / 1978
-    const zoomByHeight = (availH + 7.04) / 720.5099
-    nextZoom = Math.max(0.1, Math.min(zoomByWidth, zoomByHeight))
-  }
-
-  if (availW > 0 && availH > 0) {
-    const padLeft = parseFloat(style.paddingLeft || '0')
-    const padRight = parseFloat(style.paddingRight || '0')
-    const padTop = parseFloat(style.paddingTop || '0')
-    const padBottom = parseFloat(style.paddingBottom || '0')
-    const contentScrollW = Math.max(0, stage.scrollWidth - padLeft - padRight)
-    const contentScrollH = Math.max(0, stage.scrollHeight - padTop - padBottom)
-    const overflowScale = Math.min(
-      contentScrollW > 0 ? availW / contentScrollW : 1,
-      contentScrollH > 0 ? availH / contentScrollH : 1,
-    )
-    if (Number.isFinite(overflowScale) && overflowScale > 0 && overflowScale < 1) {
-      nextZoom *= overflowScale
-    }
-  }
-
-  if (Math.abs(nextZoom - tableZoom.value) > 0.0001) {
-    tableZoom.value = nextZoom
-    return true
-  }
-  return false
-}
-
-watch(uiScale, async () => {
-  await nextTick()
-  scheduleTableZoomRecalc()
-  updateTreeViewport()
-  resizeNodeComment()
-})
-
-watch(treePanelCollapsed, async (collapsed) => {
-  if (collapsed) return
-  await nextTick()
-  updateTreeViewport()
-  resizeNodeComment()
-})
-
 function onTableWheel(event: WheelEvent) {
   event.preventDefault()
   if (status.mode !== 'research') return
@@ -3510,14 +3412,9 @@ function onKeyDown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  window.addEventListener('resize', handleWindowResize)
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('wheel', onUiScaleWheel, { capture: true, passive: false })
-  scheduleTableZoomRecalc()
-  void refreshRuntimeMetrics()
-  runtimeMetricsTimer = window.setInterval(() => {
-    void refreshRuntimeMetrics()
-  }, 2000)
+  startRuntimeMetrics()
   void prepareRendererForDisplay()
   if (window.trainerAPI?.onPythonEvent) {
     unsubscribePythonEvents = window.trainerAPI.onPythonEvent(handlePythonEvent)
@@ -3544,19 +3441,9 @@ onMounted(() => {
 onBeforeUnmount(() => {
   clearAutoAdvanceTimer()
   clearActionAnnouncementTimer()
-  if (runtimeMetricsTimer !== null) {
-    window.clearInterval(runtimeMetricsTimer)
-    runtimeMetricsTimer = null
-  }
-  window.removeEventListener('resize', handleWindowResize)
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('wheel', onUiScaleWheel, true)
-  if (tableZoomRaf) {
-    cancelAnimationFrame(tableZoomRaf)
-    tableZoomRaf = 0
-  }
   document.documentElement.classList.remove('reduce-motion')
-  tableZoomPassesPending = 0
   if (unsubscribePythonEvents) {
     unsubscribePythonEvents()
     unsubscribePythonEvents = null
