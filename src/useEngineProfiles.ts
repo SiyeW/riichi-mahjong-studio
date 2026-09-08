@@ -2,8 +2,8 @@ import { computed, onBeforeUnmount, reactive, ref, watch, type Ref } from 'vue'
 import { createRevisionSaveQueue } from './revisionSaveQueue'
 import { mergeSettingsReply } from './settingsChanges'
 import type { TranslationParams } from './i18n'
+import { buildEngineStatusItems, type EngineRuntimeKind } from './engineStatusItems'
 
-export type EngineRuntimeKind = 'decision' | 'opponent'
 export type SupportedEngineOutputId =
   | 'action-recommendation'
   | 'opponent-shanten'
@@ -51,11 +51,6 @@ const ENGINE_AUTOSAVE_DELAY_MS = 250
 
 function cloneEngineSettings(engines: TrainerEngineSettings): TrainerEngineSettings {
   return JSON.parse(JSON.stringify(engines)) as TrainerEngineSettings
-}
-
-function normalizeModelActivityState(value: unknown): TrainerModelActivityState {
-  if (value === 'loading' || value === 'running' || value === 'error') return value
-  return value === true ? 'running' : 'idle'
 }
 
 export function useEngineProfiles(options: UseEngineProfilesOptions) {
@@ -815,73 +810,15 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     }
   }
 
-  const engineStatusItems = computed(() => {
-    const controlledSeat = status.controlledSeat
-    const decision = (status.modelActivity?.decision || []).map(normalizeModelActivityState)
-    const errors = status.modelActivity?.errors
-    const performance = status.modelPerformance || { decision: [0, 0, 0, 0], opponentAnalysis: 0 }
-    const statePriority: TrainerModelActivityState[] = ['error', 'loading', 'running', 'idle']
-    const decisionState = statePriority.find((state) => decision.includes(state)) || 'idle'
-    const relativeNames = [t('seat.self'), t('seat.shimocha'), t('seat.toimen'), t('seat.kamicha')]
-    const activeRoles = relativeNames.filter((_, offset) => (
-      decision[(controlledSeat + offset) % 4] === 'running'
-      || decision[(controlledSeat + offset) % 4] === 'loading'
-    ))
-    const decisionErrors = [...new Set((errors?.decision || []).filter(Boolean))] as string[]
-    const decisionTimings = (performance.decision || []).filter((value) => Number.isFinite(value) && value > 0)
-    const decisionAverage = decisionTimings.length
-      ? decisionTimings.reduce((sum, value) => sum + value, 0) / decisionTimings.length
-      : 0
-    return settings.engines.profiles.flatMap((profile) => {
-      const decisionRuntime = profileRuntimeState(profile, 'decision')
-      const opponentRuntime = profileRuntimeState(profile, 'opponent')
-      const kinds = new Set<EngineRuntimeKind>()
-      if (decisionRuntime && !decisionRuntime.unloaded) kinds.add('decision')
-      if (opponentRuntime && !opponentRuntime.unloaded) kinds.add('opponent')
-      if (loadingEngineProfileId.value === profile.id) {
-        for (const kind of profileRuntimeKinds(profile)) kinds.add(kind)
-      }
-      const localError = engineLoadErrors[profile.id] || ''
-      if (!kinds.size && !localError) return []
-
-      const states: TrainerModelActivityState[] = []
-      const timingValues: number[] = []
-      const errorValues: string[] = localError ? [localError] : []
-      if (kinds.has('decision')) {
-        states.push(decisionState)
-        if (decisionAverage > 0) timingValues.push(decisionAverage)
-        errorValues.push(...decisionErrors)
-      }
-      if (kinds.has('opponent')) {
-        states.push(normalizeModelActivityState(status.modelActivity?.opponentAnalysis))
-        if (Number.isFinite(performance.opponentAnalysis) && performance.opponentAnalysis > 0) {
-          timingValues.push(performance.opponentAnalysis)
-        }
-        if (errors?.opponentAnalysis) errorValues.push(String(errors.opponentAnalysis))
-      }
-      if (loadingEngineProfileId.value === profile.id) states.push('loading')
-      if (errorValues.some(Boolean)) states.push('error')
-      const state = statePriority.find((candidate) => states.includes(candidate)) || 'idle'
-      const averageMs = timingValues.length
-        ? timingValues.reduce((sum, value) => sum + value, 0) / timingValues.length
-        : 0
-      const roleLabel = kinds.has('decision') && activeRoles.length
-        ? ` · ${activeRoles.join(t('common.listSeparator'))}`
-        : ''
-      const baseLabel = `${profile.name || t('common.unnamedEngine')}${roleLabel}`
-      const uniqueErrors = [...new Set(errorValues.filter(Boolean))]
-      return [{
-        id: profile.id,
-        label: state === 'error' && uniqueErrors.length
-          ? `${baseLabel}：${uniqueErrors.join('；')}`
-          : averageMs > 0
-            ? t('status.recentAverage', { engine: baseLabel, value: averageMs.toFixed(1) })
-            : baseLabel,
-        state,
-      }]
-    })
-  })
-
+  const engineStatusItems = computed(() => buildEngineStatusItems({
+    profiles: settings.engines.profiles,
+    status,
+    loadingProfileId: loadingEngineProfileId.value,
+    loadErrors: engineLoadErrors,
+    runtimeState: profileRuntimeState,
+    runtimeKinds: profileRuntimeKinds,
+    t,
+  }))
   onBeforeUnmount(() => {
     cancelEngineAutosaveTimer()
     if (deleteEngineConfirmationTimer !== null) {
