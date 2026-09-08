@@ -1,14 +1,10 @@
 import {
   computed,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  reactive,
   ref,
-  watch,
   type Ref,
 } from 'vue'
 import { useNextMoveHints } from './useNextMoveHints'
+import { useVirtualizedTreeViewport } from './useVirtualizedTreeViewport'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -75,7 +71,6 @@ export function useBranchTreePresentation(options: {
   localizedResultTitle: (value: unknown) => string
   relativeSeatLabel: (seat: number) => string
   roundWindLabel: (wind: string) => string
-  onCurrentNodeChanged?: () => void
   focusRoundMap: () => void
 }) {
   const {
@@ -89,7 +84,6 @@ export function useBranchTreePresentation(options: {
     localizedResultTitle,
     relativeSeatLabel,
     roundWindLabel,
-    onCurrentNodeChanged,
     focusRoundMap,
   } = options
 
@@ -656,89 +650,31 @@ const treeHitRegions = computed(() => buildGraphHitRegions(
   treeDotHorizontalRadius,
 ))
 
-const treeScrollEl = ref<HTMLElement | null>(null)
-const treeViewport = reactive({
-  top: 0,
-  height: 0,
-})
-const TREE_RENDER_BUFFER_PX = 160
-let treeViewportRaf = 0
-let treeAutoFollowSuspended = false
-
-function updateTreeViewport() {
-  const el = treeScrollEl.value
-  if (!el) {
-    treeViewport.top = 0
-    treeViewport.height = 0
-    return
-  }
-  treeViewport.top = el.scrollTop
-  treeViewport.height = el.clientHeight
-}
-
-function onTreeScroll() {
-  treeHoveredNodeId.value = null
-  if (treeViewportRaf) return
-  treeViewportRaf = window.requestAnimationFrame(() => {
-    treeViewportRaf = 0
-    updateTreeViewport()
-  })
-}
-
-function keepCurrentTreeDotVisible() {
-  const container = treeScrollEl.value
-  const currentDot = gameView.currentNodeId ? treeDotById.value.get(gameView.currentNodeId) : null
-  if (!container || !currentDot) return
-  const padding = 18
-  const viewTop = container.scrollTop
-  const viewBottom = viewTop + container.clientHeight
-  const dotTop = currentDot.y - padding
-  const dotBottom = currentDot.y + padding
-  if (dotTop < viewTop) {
-    container.scrollTop = Math.max(0, dotTop)
-  } else if (dotBottom > viewBottom) {
-    container.scrollTop = Math.max(0, dotBottom - container.clientHeight)
-  }
-}
-
-function suspendTreeAutoFollow() {
-  treeAutoFollowSuspended = true
-}
-
-async function resumeTreeAutoFollow() {
-  treeAutoFollowSuspended = false
-  await nextTick()
-  if (treeAutoFollowSuspended) return
-  updateTreeViewport()
-  keepCurrentTreeDotVisible()
-}
-
-const visibleTreeRange = computed(() => {
-  const top = Math.max(0, treeViewport.top - TREE_RENDER_BUFFER_PX)
-  const bottom = treeViewport.top + Math.max(treeViewport.height, 0) + TREE_RENDER_BUFFER_PX
-  return { top, bottom }
-})
-
-const visibleTreeDots = computed(() => {
-  const { top, bottom } = visibleTreeRange.value
-  return treeDots.value.filter((dot) => dot.y >= top && dot.y <= bottom)
-})
-
-const visibleTreeHitRegions = computed(() => {
-  const { top, bottom } = visibleTreeRange.value
-  return treeHitRegions.value.filter((region) => (
-    region.y + region.height >= top && region.y <= bottom
-  ))
-})
-
-const visibleTreeEdges = computed(() => {
-  const { top, bottom } = visibleTreeRange.value
-  return treeEdges.value.filter((edge) => edge.maxY >= top && edge.minY <= bottom)
-})
-
-const visibleTreeRows = computed(() => {
-  const { top, bottom } = visibleTreeRange.value
-  return treeRows.value.filter((row) => row.y >= top && row.y <= bottom)
+const {
+  onTreeScroll,
+  resumeTreeAutoFollow,
+  suspendTreeAutoFollow,
+  treeScrollEl,
+  updateTreeViewport,
+  visibleTreeDots,
+  visibleTreeEdges,
+  visibleTreeHitRegions,
+  visibleTreeRows,
+} = useVirtualizedTreeViewport({
+  dots: treeDots,
+  edges: treeEdges,
+  hitRegions: treeHitRegions,
+  rows: treeRows,
+  contentHeight: treeSvgH,
+  currentNodeId: () => gameView.currentNodeId || null,
+  currentDot: () => (
+    gameView.currentNodeId
+      ? treeDotById.value.get(gameView.currentNodeId) || null
+      : null
+  ),
+  clearHover: () => {
+    treeHoveredNodeId.value = null
+  },
 })
 
 const roundMapOverlayOpen = ref(false)
@@ -1195,36 +1131,6 @@ function roundMapDotStrokeWidth(dot: { isCurrent: boolean; isMainline: boolean }
   const base = dot.isCurrent ? 1.5 : (dot.isMainline ? 0.8 : 0)
   return base * treeUiScale.value
 }
-
-  watch(
-    () => gameView.currentNodeId,
-    async () => {
-      onCurrentNodeChanged?.()
-      await nextTick()
-      updateTreeViewport()
-      if (!treeAutoFollowSuspended) keepCurrentTreeDotVisible()
-    },
-  )
-
-  watch(
-    () => [treeSvgH.value, treeDots.value.length],
-    async () => {
-      await nextTick()
-      updateTreeViewport()
-    },
-  )
-
-  onMounted(() => {
-    window.addEventListener('resize', updateTreeViewport)
-  })
-
-  onBeforeUnmount(() => {
-    window.removeEventListener('resize', updateTreeViewport)
-    if (treeViewportRaf) {
-      cancelAnimationFrame(treeViewportRaf)
-      treeViewportRaf = 0
-    }
-  })
 
   return {
     ROUND_BASE_X,

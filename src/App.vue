@@ -2431,9 +2431,13 @@ const {
   localizedResultTitle,
   relativeSeatLabel,
   roundWindLabel,
-  onCurrentNodeChanged: triggerActionAnnouncementForCurrentNode,
   focusRoundMap: () => focusFloatingPanel('roundMap'),
 })
+
+watch(
+  () => gameView.currentNodeId,
+  triggerActionAnnouncementForCurrentNode,
+)
 const {
   acceptsCurrentViewRequestContext,
   canDeleteCurrentNode,
