@@ -1090,69 +1090,31 @@
       @start-drag="startDragFloatingPanel"
     />
 
-    <section
+    <WallViewWindow
       v-if="showWallView"
-      class="analysis-float-panel wall-window"
-      :style="{ '--floating-panel-scale': uiScale, zIndex: floatingPanelZ.wall }"
-      @mousedown="focusFloatingPanel('wall')"
-      @focusin="focusFloatingPanel('wall')"
-    >
-      <div class="floating-panel-header" @mousedown="startDragFloatingPanel">
-        <span>{{ t('wall.title') }}</span>
-        <div class="floating-panel-header-actions">
-          <button v-if="wallViewComplete" class="floating-panel-action" @click="copyWallToClipboard" :disabled="!wallTiles.length">{{ t('common.copy') }}</button>
-          <button v-if="wallViewComplete && !isReadOnlyRecord" class="floating-panel-action" @click="importWallFromClipboard">{{ t('common.import') }}</button>
-          <button class="floating-panel-close" :aria-label="t('wall.close')" @click="closeWallView()">&times;</button>
-        </div>
-      </div>
-      <p v-if="wallClipboardMessage" class="wall-clipboard-message">{{ wallClipboardMessage }}</p>
-      <p v-if="wallLoading" class="wall-loading-state" role="status">{{ t('wall.loading') }}</p>
-      <template v-else>
-        <div v-if="wallOrigin !== 'generated' || wallSeed !== null || wallSourceUrl" class="wall-metadata">
-          <p v-if="wallOrigin !== 'generated'">
-            <span>{{ t('wall.source') }}</span><strong>{{ wallOrigin === 'reconstructed' ? t('wall.source.reconstructed') : t('wall.source.imported') }}</strong>
-          </p>
-          <p v-if="wallSeed !== null"><span>{{ t('wall.seed') }}</span><code>{{ wallSeed }}</code></p>
-          <p v-if="wallSourceUrl"><span>{{ t('wall.importUrl') }}</span><code>{{ wallSourceUrl }}</code></p>
-        </div>
-        <div v-if="wallCanReconstruct && !wallViewComplete" class="wall-reconstruction">
-          <button class="floating-panel-action" :disabled="wallReconstructing" @click="reconstructImportedWalls">
-            {{ wallReconstructing ? t('wall.reconstructing') : t('wall.reconstruct') }}
-          </button>
-          <p>{{ t('wall.reconstruct.description') }}</p>
-          <label>
-            <span>{{ t('wall.seedOptional') }}</span>
-            <input v-model.trim="wallReconstructionSeed" type="text" inputmode="numeric" :placeholder="t('wall.seedPlaceholder')" />
-          </label>
-        </div>
-      </template>
-      <div v-if="!wallLoading && wallViewComplete" class="wall-grid">
-        <div v-for="(row, ri) in wallTileRows" :key="'wr-'+ri" class="wall-row">
-          <div v-for="(group, gi) in row" :key="'wg-'+gi" class="wall-group">
-            <div
-              v-for="tile in group"
-              :key="tile.index"
-              class="wall-tile"
-              :class="'wall-' + tile.status"
-            >
-              <img
-                :src="tileImageSrc(tile.tile)"
-                :class="[
-                  'tileImg',
-                  'wall-tile-img',
-                  {
-                    tsumogiri: tile.status === 'drawn' || tile.status === 'rinshan_drawn',
-                    'river-claimed': ['dealt', 'kan_consumed', 'dora_unrevealed', 'ura_unrevealed'].includes(tile.status),
-                  },
-                ]"
-                :alt="tileFaceLabel(tile.tile)"
-              />
-              <span class="wall-tile-idx">{{ tile.index + 1 }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+      v-model:reconstruction-seed="wallReconstructionSeed"
+      :can-reconstruct="wallCanReconstruct"
+      :clipboard-message="wallClipboardMessage"
+      :complete="wallViewComplete"
+      :has-tiles="Boolean(wallTiles.length)"
+      :loading="wallLoading"
+      :origin="wallOrigin"
+      :read-only="isReadOnlyRecord"
+      :reconstructing="wallReconstructing"
+      :scale="uiScale"
+      :seed="wallSeed"
+      :source-url="wallSourceUrl"
+      :tile-face-label="tileFaceLabel"
+      :tile-image-src="tileImageSrc"
+      :tile-rows="wallTileRows"
+      :z-index="floatingPanelZ.wall"
+      @close="closeWallView()"
+      @copy="copyWallToClipboard"
+      @focus="focusFloatingPanel('wall')"
+      @import="importWallFromClipboard"
+      @reconstruct="reconstructImportedWalls"
+      @start-drag="startDragFloatingPanel"
+    />
 
     <CustomTenhouExportPanel
       v-if="showCustomTenhouExport"
@@ -1443,6 +1405,7 @@ import MjaiDebugDialog from './components/MjaiDebugDialog.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
+import WallViewWindow from './components/WallViewWindow.vue'
 import { useI18n } from './i18n'
 import { vPerceptualSurface } from './perceptualSurface'
 import {
