@@ -1,0 +1,133 @@
+<template>
+  <div class="settings-preview" :class="{ collapsed }">
+    <button class="panel-section-toggle" @click="collapsed = !collapsed">
+      <h3>{{ t('evaluation.title') }}</h3>
+      <span>{{ collapsed ? t('console.expand') : t('console.collapse') }}</span>
+    </button>
+    <template v-if="!collapsed">
+      <p v-if="!effectiveRecommendationsEnabled" class="empty-copy">{{ t('evaluation.hidden') }}</p>
+      <p v-else-if="!showRecommendations" class="empty-copy">—</p>
+      <p v-else-if="gameView.analysis?.error" class="empty-copy">{{ gameView.analysis.error }}</p>
+      <div v-else-if="mergedAnalysisEntries.length" class="analysis-table-scroll">
+        <table class="analysis-table">
+          <thead>
+            <tr>
+              <th scope="col" class="analysis-action-heading">{{ t('evaluation.action') }}</th>
+              <th
+                v-for="metric in decisionMetricDefinitions"
+                :key="metric.id"
+                scope="col"
+                class="analysis-metric-heading"
+                v-ui-tooltip="localizedEngineText(metric.description, '')"
+              >
+                {{ localizedEngineText(metric.title, metric.id) }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="entry in mergedAnalysisEntries" :key="entry._key" class="analysis-row" :class="{ best: analysisEntryIsBest(entry) }">
+              <td class="analysis-action-cell">
+                <span v-if="entry._kind === 'discard'" class="analysis-tile-cell">
+                  <img class="tileImg mini-tile-img" :src="tileImageSrc(entry.pai)" :alt="tileFaceLabel(entry.pai)" />
+                  <span v-if="discardVariantLabel(entry)" class="analysis-discard-kind">{{ discardVariantLabel(entry) }}</span>
+                </span>
+                <span v-else class="analysis-label-cell">
+                  <span>{{ resolveSpecialAnalysisLabel(entry) }}</span>
+                  <span v-if="analysisActionDisplayTiles(entry).length" class="analysis-action-tiles">
+                    <img
+                      v-for="(tile, index) in analysisActionDisplayTiles(entry)"
+                      :key="`special-analysis-${entry._key}-${index}`"
+                      class="tileImg mini-tile-img"
+                      :src="tileImageSrc(tile)"
+                      :alt="tileFaceLabel(tile)"
+                    />
+                  </span>
+                </span>
+              </td>
+              <td v-for="metric in decisionMetricDefinitions" :key="metric.id" class="analysis-metric-cell">
+                {{ formatDecisionMetric(entry.metrics?.[metric.id], metric) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div v-else-if="gameView.analysis?.reactionEntries?.length" class="analysis-table-scroll">
+        <table class="analysis-table">
+          <thead>
+            <tr>
+              <th scope="col" class="analysis-action-heading">{{ t('evaluation.action') }}</th>
+              <th
+                v-for="metric in decisionMetricDefinitions"
+                :key="metric.id"
+                scope="col"
+                class="analysis-metric-heading"
+                v-ui-tooltip="localizedEngineText(metric.description, '')"
+              >
+                {{ localizedEngineText(metric.title, metric.id) }}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="entry in gameView.analysis?.reactionEntries || []" :key="entry.candidateId || entry.variant" class="analysis-row" :class="{ best: analysisEntryIsBest(entry) }">
+              <td class="analysis-action-cell">
+                <span class="analysis-label-cell">
+                  <span>{{ resolveReactionAnalysisLabel(entry) }}</span>
+                  <span v-if="analysisActionDisplayTiles(entry).length" class="analysis-action-tiles">
+                    <img
+                      v-for="(tile, index) in analysisActionDisplayTiles(entry)"
+                      :key="`reaction-analysis-${entry.candidateId || entry.variant}-${index}`"
+                      class="tileImg mini-tile-img"
+                      :src="tileImageSrc(tile)"
+                      :alt="tileFaceLabel(tile)"
+                    />
+                  </span>
+                </span>
+              </td>
+              <td v-for="metric in decisionMetricDefinitions" :key="metric.id" class="analysis-metric-cell">
+                {{ formatDecisionMetric(entry.metrics?.[metric.id], metric) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p v-else class="empty-copy">—</p>
+    </template>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import { useI18n } from '../i18n'
+import { useDecisionEntryPresentation } from '../useDecisionPresentation'
+
+const props = defineProps<{
+  gameView: TrainerGameView
+  effectiveRecommendationsEnabled: boolean
+  showRecommendations: boolean
+  localizedEngineText: (value: string | Record<string, string> | undefined, fallback: string) => string
+  normalizeTileFamily: (tile: string) => string
+  reactionTypeLabel: (type: string) => string
+  redFive: (tile: string) => string
+  tileFaceLabel: (tile: string) => string
+  tileImageSrc: (tile: string) => string
+}>()
+
+const { t } = useI18n()
+const collapsed = ref(false)
+const {
+  analysisActionDisplayTiles,
+  analysisEntryIsBest,
+  decisionMetricDefinitions,
+  discardVariantLabel,
+  formatDecisionMetric,
+  mergedAnalysisEntries,
+  resolveReactionAnalysisLabel,
+  resolveSpecialAnalysisLabel,
+} = useDecisionEntryPresentation({
+  gameView: props.gameView,
+  t,
+  normalizeTileFamily: props.normalizeTileFamily,
+  redFive: props.redFive,
+  reactionTypeLabel: props.reactionTypeLabel,
+})
+</script>
