@@ -40,6 +40,16 @@ export interface RiverDisplaySlot {
   isRiichiDiscard: boolean
 }
 
+export interface TableSeatView {
+  seat: number
+  position: 'north' | 'west' | 'east' | 'south'
+  hand: string[]
+  river: string[]
+  melds: Array<Record<string, unknown>>
+  riichiDeclared: boolean
+  riichiAccepted: boolean
+}
+
 export function useTablePresentation(options: {
   gameView: TrainerGameView
   status: TrainerStatusSnapshot
@@ -79,13 +89,13 @@ export function useTablePresentation(options: {
   } = labels
 
 
-  const tableSeatViews = computed(() => {
+  const tableSeatViews = computed<TableSeatView[]>(() => {
     const hands = gameView.table?.hands || []
     const rivers = gameView.table?.rivers || []
     const melds = gameView.table?.melds || []
     const pendingKan = gameView.table?.pendingKan || null
     const controlled = status.controlledSeat
-    const order = [
+    const order: Array<Pick<TableSeatView, 'seat' | 'position'>> = [
       { seat: (controlled + 2) % 4, position: 'north' },
       { seat: (controlled + 3) % 4, position: 'west' },
       { seat: (controlled + 1) % 4, position: 'east' },

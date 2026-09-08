@@ -448,78 +448,16 @@
             </span>
 
             <!-- Rivers -->
-            <span class="grid-discard pov-p0 grid-discard-p0" v-if="southView">
-              <span v-for="(row, rowIndex) in riverDisplayRows(southView)" :key="`river-${southView.seat}-${rowIndex}`" class="river-row">
-                <div
-                  v-for="slot in row"
-                  :key="slot.key"
-                  :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
-                  :data-pending-discard-seat="slot.isPending ? southView.seat : undefined"
-                  v-ui-tooltip="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
-                  @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
-                >
-                  <img
-                    :src="tileImageSrc(slot.tile)"
-                    :class="['tileImg', slot.isClaimed ? 'river-claimed called' : (slot.isTsumogiri && showTsumogiriTone ? 'river-tsumogiri' : ''), slot.isPending ? 'last-discard' : '', slot.isRiichiDiscard ? 'river-riichi' : '']"
-                    :alt="tileFaceLabel(slot.tile)"
-                  />
-                </div>
-              </span>
-            </span>
-            <span class="grid-discard pov-p3 grid-discard-p3" v-if="westView">
-              <span v-for="(row, rowIndex) in riverDisplayRows(westView)" :key="`river-${westView.seat}-${rowIndex}`" class="river-row">
-                <div
-                  v-for="slot in row"
-                  :key="slot.key"
-                  :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
-                  :data-pending-discard-seat="slot.isPending ? westView.seat : undefined"
-                  v-ui-tooltip="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
-                  @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
-                >
-                  <img
-                    :src="tileImageSrc(slot.tile)"
-                    :class="['tileImg', slot.isClaimed ? 'river-claimed called' : (slot.isTsumogiri && showTsumogiriTone ? 'river-tsumogiri' : ''), slot.isPending ? 'last-discard' : '', slot.isRiichiDiscard ? 'river-riichi' : '']"
-                    :alt="tileFaceLabel(slot.tile)"
-                  />
-                </div>
-              </span>
-            </span>
-            <span class="grid-discard pov-p2 grid-discard-p2" v-if="northView">
-              <span v-for="(row, rowIndex) in riverDisplayRows(northView)" :key="`river-${northView.seat}-${rowIndex}`" class="river-row">
-                <div
-                  v-for="slot in row"
-                  :key="slot.key"
-                  :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
-                  :data-pending-discard-seat="slot.isPending ? northView.seat : undefined"
-                  v-ui-tooltip="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
-                  @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
-                >
-                  <img
-                    :src="tileImageSrc(slot.tile)"
-                    :class="['tileImg', slot.isClaimed ? 'river-claimed called' : (slot.isTsumogiri && showTsumogiriTone ? 'river-tsumogiri' : ''), slot.isPending ? 'last-discard' : '', slot.isRiichiDiscard ? 'river-riichi' : '']"
-                    :alt="tileFaceLabel(slot.tile)"
-                  />
-                </div>
-              </span>
-            </span>
-            <span class="grid-discard pov-p1 grid-discard-p1" v-if="eastView">
-              <span v-for="(row, rowIndex) in riverDisplayRows(eastView)" :key="`river-${eastView.seat}-${rowIndex}`" class="river-row">
-                <div
-                  v-for="slot in row"
-                  :key="slot.key"
-                  :class="['tileDiv', slot.isPending ? 'tileDivPending' : '', slot.isRiichiDiscard ? 'river-riichi' : '', { 'history-jump-target': canJumpToHistoricalNode(slot.sourceNodeId) }]"
-                  :data-pending-discard-seat="slot.isPending ? eastView.seat : undefined"
-                  v-ui-tooltip="historicalJumpTitle(slot.sourceNodeId, t('history.discard'))"
-                  @dblclick.stop="jumpToHistoricalNode(slot.sourceNodeId)"
-                >
-                  <img
-                    :src="tileImageSrc(slot.tile)"
-                    :class="['tileImg', slot.isClaimed ? 'river-claimed called' : (slot.isTsumogiri && showTsumogiriTone ? 'river-tsumogiri' : ''), slot.isPending ? 'last-discard' : '', slot.isRiichiDiscard ? 'river-riichi' : '']"
-                    :alt="tileFaceLabel(slot.tile)"
-                  />
-                </div>
-              </span>
-            </span>
+            <TableRivers
+              :views="tableSeatViews"
+              :show-tsumogiri-tone="showTsumogiriTone"
+              :river-display-rows="riverDisplayRows"
+              :can-jump-to-historical-node="canJumpToHistoricalNode"
+              :historical-jump-title="historicalJumpTitle"
+              :jump-to-historical-node="jumpToHistoricalNode"
+              :tile-face-label="tileFaceLabel"
+              :tile-image-src="tileImageSrc"
+            />
 
             <!-- Center info hub -->
             <div class="grid-info">
@@ -939,6 +877,7 @@ import RecordImportDialog from './components/RecordImportDialog.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
 import RoundResultOverlay from './components/RoundResultOverlay.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
+import TableRivers from './components/TableRivers.vue'
 import WallViewWindow from './components/WallViewWindow.vue'
 import { useI18n } from './i18n'
 import { vPerceptualSurface } from './perceptualSurface'
