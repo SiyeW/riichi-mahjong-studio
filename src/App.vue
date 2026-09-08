@@ -1578,7 +1578,7 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
 import { flushBeforeClose } from './flushBeforeClose'
-import { settingsChanges, mergeSettingsReply } from './settingsChanges'
+import { mergeSettingsReply } from './settingsChanges'
 import { backendStoppedState } from './backendStoppedState'
 import { useWorkspaceDock } from './useWorkspaceDock'
 import { useWallView } from './useWallView'
@@ -1590,6 +1590,7 @@ import { useDiscardFlight, type GameViewTransitionDirection } from './useDiscard
 import { useDecisionPresentation } from './useDecisionPresentation'
 import { useRecordSession } from './useRecordSession'
 import { useRoundResultPresentation } from './useRoundResultPresentation'
+import { useSettingsSession } from './useSettingsSession'
 import { useTablePresentation } from './useTablePresentation'
 import { useTileArtwork } from './useTileArtwork'
 import {
@@ -1601,7 +1602,6 @@ import {
   normalizeWorkspaceLayout,
 } from './workspaceSettings'
 import { vAdaptiveButtonGrid } from './adaptiveButtonGrid'
-import { DEFAULT_ANALYSIS_COUNT_LAYOUT, type AnalysisCountLayout } from './analysisCountSpacing'
 import {
   DEFAULT_PROBABILITY_SCALE,
   probabilityScalePercent,
@@ -1612,17 +1612,8 @@ import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
-import { normalizeLanguagePreference, setLanguagePreference, useI18n } from './i18n'
-import { mostDistinctOklabColor, parseCssColor, type RgbColor } from './perceptualColor'
-import {
-  DEFAULT_PERCEPTUAL_SURFACE_TUNING,
-  PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
-  perceptualSurfaceVariables,
-  vPerceptualSurface,
-  type PerceptualColorPalette,
-  type PerceptualSurfaceBinding,
-  type PerceptualSurfaceTuning,
-} from './perceptualSurface'
+import { useI18n } from './i18n'
+import { vPerceptualSurface } from './perceptualSurface'
 import {
   type AnalysisPanelId,
   type WorkspaceItemId,
@@ -1636,9 +1627,51 @@ const { locale, numberLocale, t } = useI18n()
 
 const seats = [0, 1, 2, 3]
 const CONFIRMATION_TIMEOUT_MS = 3000
-type ColorSchemeId = TrainerSettings['display']['colorScheme']
-type TablePosition = TrainerSettings['display']['tablePosition']
 type AnalysisPanelKey = keyof TrainerSettings['display']['workspaceLayout']['analysisPanels']
+
+const {
+  settings,
+  settingsDraft,
+  reduceMotionEnabled,
+  activePerceptualSurfaceBinding,
+  colorSchemeCssVariables,
+  perceptualSurfaceTuning,
+  perceptualSurfaceBypassed,
+  analysisCountLayout,
+  showPerceptualColorDebugger,
+  updatePerceptualSurfaceTuning,
+  resetPerceptualSurfaceTuning,
+  shantenColors,
+  uiScale,
+  tablePosition,
+  mistakeThresholdDisplay,
+  uiScaleOptions,
+  showSettingsPanel,
+  quickTrainingModes,
+  currentTrainingMode,
+  quickThinkingMaxValue,
+  quickAudioVolumeValue,
+  quickMaxThinkingPercent,
+  quickAudioVolumePercent,
+  quickMinThinkingPercent,
+  quickAutoAdvancePercent,
+  quickMaxThinkingLabel,
+  quickAudioVolumeLabel,
+  quickMinThinkingLabel,
+  quickAutoAdvanceLabel,
+  normalizeTrainingMode,
+  applySettings,
+  cloneSettingsDraftFromCurrent,
+  openSettingsPanel,
+  closeSettingsPanel,
+  saveSettingsPanel,
+  setQuickTrainingMode,
+  onQuickAudioVolumeInput,
+  commitQuickAudioVolume,
+  onQuickThinkingTimeInput,
+  commitQuickThinkingTime,
+  changeUiScale,
+} = useSettingsSession(t)
 
 const ANALYSIS_PANEL_DEFINITIONS: Array<{
   id: AnalysisPanelId
@@ -1652,192 +1685,6 @@ const ANALYSIS_PANEL_DEFINITIONS: Array<{
   { id: 'analysis-counts', key: 'counts', section: 'counts', labelKey: 'analysis.countPrediction' },
 ]
 
-const DEFAULT_SHANTEN_COLORS = [
-  '#4CAF50',
-  '#2B8CBE',
-  '#1476B0',
-  '#0868AC',
-  '#08589E',
-  '#084081',
-  '#062B5C',
-  '#4E6263',
-]
-const COLOR_SCHEMES: Record<ColorSchemeId, {
-  decisionRecommendation: string
-  ronWait: { kamicha: string; toimen: string; shimocha: string }
-  selfDealIn?: string
-  shanten: string[]
-}> = {
-  default: {
-    decisionRecommendation: '#1a931a',
-    ronWait: { kamicha: '#2c8fc5', toimen: '#d39a3a', shimocha: '#4caf50' },
-    selfDealIn: '#c9554d',
-    shanten: DEFAULT_SHANTEN_COLORS,
-  },
-  killerducky: {
-    decisionRecommendation: '#1a931a',
-    ronWait: { kamicha: '#b34d4d', toimen: '#4db3b3', shimocha: '#804db3' },
-    shanten: DEFAULT_SHANTEN_COLORS,
-  },
-  naga: {
-    decisionRecommendation: '#1a931a',
-    ronWait: { kamicha: '#2196f3', toimen: '#ffeb3b', shimocha: '#4caf50' },
-    shanten: DEFAULT_SHANTEN_COLORS,
-  },
-}
-
-function normalizeColorScheme(value: unknown): ColorSchemeId {
-  return value === 'killerducky' || value === 'naga' ? value : 'default'
-}
-
-function normalizeTablePosition(value: unknown): TablePosition {
-  return value === 'left' || value === 'right' ? value : 'center'
-}
-
-const settings = reactive<TrainerSettings>({
-  configPath: '',
-  runtime: {
-    releaseMode: false,
-    builtInRuntimeLabel: '',
-    builtInModelLabel: '',
-    opponentAnalysisInputModes: ['public'],
-    engineCatalog: {
-      schemaVersion: 2,
-      engines: [],
-      diagnostics: [],
-    },
-    soundPackCatalog: {
-      schemaVersion: 1,
-      packs: [],
-      diagnostics: [],
-    },
-  },
-  training: {
-    mode: 'threshold_review',
-    mistakeThreshold: 0.25,
-    thinkingTimeMinS: 0.25,
-    thinkingTimeMaxS: 1,
-  },
-  modeDefaults: {
-    autoAdvanceDelayMs: 250,
-  },
-  display: {
-    language: 'system',
-    colorScheme: 'default',
-    reduceMotion: false,
-    uiScale: 1,
-    showTsumogiriInPlay: true,
-    tablePosition: 'center',
-    workspaceLayout: normalizeWorkspaceLayout(null),
-  },
-  records: {
-    saveRecoveryOnExit: true,
-  },
-  audio: {
-    volume: 50,
-    soundPackId: '',
-  },
-  engines: {
-    schemaVersion: 2,
-    profiles: [],
-    loadedProfileIds: [],
-    outputAssignments: {
-      'action-recommendation': '',
-      'opponent-shanten': '',
-      'opponent-deal-in-probability': '',
-      'opponent-concealed-tile-count': '',
-      'wall-tile-count': '',
-      'opponent-dora-count': '',
-      'opponent-score': '',
-      'kyoku-outcome': '',
-      'kyoku-score-delta': '',
-      'match-placement': '',
-      'match-score': '',
-    },
-  },
-})
-const reduceMotionEnabled = computed(() => Boolean(settings.display.reduceMotion))
-const activeColorScheme = computed(() => COLOR_SCHEMES[normalizeColorScheme(settings.display.colorScheme)])
-const activePerceptualColorPalette = computed<PerceptualColorPalette>(() => {
-  const scheme = activeColorScheme.value
-  const fallback: RgbColor = [128, 128, 128]
-  const kamicha = parseCssColor(scheme.ronWait.kamicha, fallback)
-  const toimen = parseCssColor(scheme.ronWait.toimen, fallback)
-  const shimocha = parseCssColor(scheme.ronWait.shimocha, fallback)
-  const selfDealIn = scheme.selfDealIn
-    ? parseCssColor(scheme.selfDealIn, [201, 85, 77])
-    : mostDistinctOklabColor([kamicha, toimen, shimocha])
-  return {
-    decisionRecommendation: parseCssColor(scheme.decisionRecommendation, [26, 147, 26]),
-    kamicha,
-    toimen,
-    shimocha,
-    selfDealIn,
-  }
-})
-const perceptualSurfaceTuning = reactive({ ...DEFAULT_PERCEPTUAL_SURFACE_TUNING })
-const perceptualSurfaceBypassed = ref(false)
-const analysisCountLayout = ref<AnalysisCountLayout>(DEFAULT_ANALYSIS_COUNT_LAYOUT)
-const showPerceptualColorDebugger = ref(false)
-const effectivePerceptualSurfaceTuning = computed<PerceptualSurfaceTuning>(() => (
-  perceptualSurfaceBypassed.value
-    ? {
-        lightnessCompensation: 0,
-        chromaticCompensation: 0,
-        surfaceChromaGain: 0,
-      }
-    : perceptualSurfaceTuning
-))
-const activePerceptualSurfaceBinding = computed<PerceptualSurfaceBinding>(() => ({
-  palette: activePerceptualColorPalette.value,
-  tuning: effectivePerceptualSurfaceTuning.value,
-  debugLabel: 'table-panel',
-}))
-const colorSchemeCssVariables = computed(() => perceptualSurfaceVariables(
-  activePerceptualColorPalette.value,
-  PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
-  effectivePerceptualSurfaceTuning.value,
-))
-
-function updatePerceptualSurfaceTuning(value: PerceptualSurfaceTuning) {
-  Object.assign(perceptualSurfaceTuning, value)
-}
-
-function resetPerceptualSurfaceTuning() {
-  Object.assign(perceptualSurfaceTuning, DEFAULT_PERCEPTUAL_SURFACE_TUNING)
-  perceptualSurfaceBypassed.value = false
-}
-
-const shantenColors = computed(() => activeColorScheme.value.shanten)
-const UI_SCALE_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2]
-
-function normalizeUiScale(value: unknown): number {
-  const numeric = Number(value)
-  if (!Number.isFinite(numeric)) return 1
-  return Math.round(Math.max(0.5, Math.min(2, numeric)) * 100) / 100
-}
-
-const uiScale = computed(() => normalizeUiScale(settings.display.uiScale))
-const tablePosition = computed(() => normalizeTablePosition(settings.display.tablePosition))
-
-watchEffect(() => {
-  document.documentElement.classList.toggle('reduce-motion', reduceMotionEnabled.value)
-})
-
-const settingsDraft = reactive<TrainerSettings>(JSON.parse(JSON.stringify(settings)))
-const mistakeThresholdDisplay = computed({
-  get: () => Math.round(Math.max(0, Math.min(1, settingsDraft.training.mistakeThreshold)) * 100),
-  set: (value: number) => {
-    const percentage = Number(value)
-    if (!Number.isFinite(percentage)) return
-    settingsDraft.training.mistakeThreshold = Math.max(0, Math.min(100, percentage)) / 100
-  },
-})
-const uiScaleOptions = computed(() => {
-  const values = new Set([...UI_SCALE_STEPS, normalizeUiScale(settingsDraft.display.uiScale)])
-  return [...values].sort((a, b) => a - b)
-})
-const showSettingsPanel = ref(false)
 const showAboutPanel = ref(false)
 const showCustomTenhouExport = ref(false)
 const customTenhouExportRefreshKey = ref(0)
@@ -1846,12 +1693,6 @@ const mjaiDebugData = ref<Record<string, unknown>>({})
 const mjaiDebugJson = computed(() => JSON.stringify(mjaiDebugData.value, null, 2))
 const shantenMjaiData = ref<Record<string, unknown>>({})
 const shantenMjaiJson = computed(() => JSON.stringify(shantenMjaiData.value, null, 2))
-
-watchEffect(() => {
-  setLanguagePreference(showSettingsPanel.value
-    ? settingsDraft.display.language
-    : settings.display.language)
-})
 
 // --- 工作区与分析 ---
 const workspaceLayout = computed(() => normalizeWorkspaceLayout(settings.display.workspaceLayout))
@@ -2031,12 +1872,6 @@ function startDragFloatingPanel(e: MouseEvent) {
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
 }
-const quickTrainingModes = computed(() => [
-  { value: 'no_review', label: t('mode.noReview') },
-  { value: 'threshold_review', label: t('mode.difference') },
-  { value: 'always_review', label: t('mode.all') },
-  { value: 'preview_before_click', label: t('mode.preview') },
-] as const)
 const quickSettingsCollapsed = ref(false)
 const treePanelCollapsed = ref(false)
 const analysisPanelCollapsed = ref(false)
@@ -2083,6 +1918,12 @@ const status = reactive<TrainerStatusSnapshot>({
     timelineReady: 0,
   },
 })
+const relativeSeatOptions = computed(() => ([
+  { label: t('seat.kamicha'), seat: (status.controlledSeat + 3) % 4 },
+  { label: t('seat.self'), seat: status.controlledSeat },
+  { label: t('seat.shimocha'), seat: (status.controlledSeat + 1) % 4 },
+  { label: t('seat.toimen'), seat: (status.controlledSeat + 2) % 4 },
+]))
 const runtimeMetrics = ref<TrainerRuntimeMetrics | null>(null)
 let runtimeMetricsTimer: number | null = null
 let runtimeMetricsRequestInFlight = false
@@ -2308,25 +2149,6 @@ function normalizeModelActivityState(value: unknown): TrainerModelActivityState 
   return value === true ? 'running' : 'idle'
 }
 
-const quickThinkingDragValue = ref<number | null>(null)
-const quickVolumeDragValue = ref<number | null>(null)
-const currentTrainingMode = computed(() => normalizeTrainingMode(settings.training.mode))
-const relativeSeatOptions = computed(() => ([
-  { label: t('seat.kamicha'), seat: (status.controlledSeat + 3) % 4 },
-  { label: t('seat.self'), seat: status.controlledSeat },
-  { label: t('seat.shimocha'), seat: (status.controlledSeat + 1) % 4 },
-  { label: t('seat.toimen'), seat: (status.controlledSeat + 2) % 4 },
-]))
-const quickThinkingMaxValue = computed(() => quickThinkingDragValue.value ?? settings.training.thinkingTimeMaxS)
-const quickAudioVolumeValue = computed(() => quickVolumeDragValue.value ?? settings.audio.volume)
-const quickMaxThinkingPercent = computed(() => Math.max(0, Math.min(100, (quickThinkingMaxValue.value / 4) * 100)))
-const quickAudioVolumePercent = computed(() => Math.max(0, Math.min(100, quickAudioVolumeValue.value)))
-const quickMinThinkingPercent = computed(() => Math.max(0, Math.min(100, (settings.training.thinkingTimeMinS / 4) * 100)))
-const quickAutoAdvancePercent = computed(() => Math.max(0, Math.min(100, ((settings.modeDefaults.autoAdvanceDelayMs / 1000) / 4) * 100)))
-const quickMaxThinkingLabel = computed(() => `${quickThinkingMaxValue.value.toFixed(2)}s`)
-const quickAudioVolumeLabel = computed(() => `${Math.round(quickAudioVolumeValue.value)}`)
-const quickMinThinkingLabel = computed(() => `${settings.training.thinkingTimeMinS.toFixed(2)}s`)
-const quickAutoAdvanceLabel = computed(() => `${(settings.modeDefaults.autoAdvanceDelayMs / 1000).toFixed(2)}s`)
 const actionAnnouncementTimer = ref<number | null>(null)
 const actionAnnouncement = reactive({
   key: '',
@@ -2726,38 +2548,6 @@ const {
 } = useTileArtwork(t)
 
 
-function normalizeTrainingMode(mode: string): TrainerSettings['training']['mode'] {
-  const MAP: Record<string, TrainerSettings['training']['mode']> = {
-    no_review: 'no_review',
-    free_play: 'preview_before_click',
-    guided: 'threshold_review',
-    strict: 'always_review',
-    preview_before_click: 'preview_before_click',
-    threshold_review: 'threshold_review',
-    always_review: 'always_review',
-  }
-  return MAP[String(mode || '')] || 'threshold_review'
-}
-
-function applySettings(nextSettings: TrainerSettings) {
-  Object.assign(settings, nextSettings)
-  Object.assign(settings.training, nextSettings.training, {
-    mode: normalizeTrainingMode(nextSettings.training.mode),
-  })
-  Object.assign(settings.modeDefaults, nextSettings.modeDefaults)
-  Object.assign(settings.display, nextSettings.display || {}, {
-    language: normalizeLanguagePreference(nextSettings.display?.language),
-    colorScheme: normalizeColorScheme(nextSettings.display?.colorScheme),
-    uiScale: normalizeUiScale(nextSettings.display?.uiScale),
-    showTsumogiriInPlay: nextSettings.display?.showTsumogiriInPlay !== false,
-    tablePosition: normalizeTablePosition(nextSettings.display?.tablePosition),
-    workspaceLayout: normalizeWorkspaceLayout(nextSettings.display?.workspaceLayout),
-  })
-  Object.assign(settings.records, nextSettings.records || {})
-  Object.assign(settings.audio, nextSettings.audio)
-  Object.assign(settings.engines, nextSettings.engines)
-}
-
 function applyStatus(nextStatus: TrainerStatusSnapshot) {
   Object.assign(status, nextStatus)
 }
@@ -2911,10 +2701,6 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
   if (showCustomTenhouExport.value) customTenhouExportRefreshKey.value += 1
 }
 
-function cloneSettingsDraftFromCurrent() {
-  Object.assign(settingsDraft, JSON.parse(JSON.stringify(settings)), { engines: settingsDraft.engines })
-}
-
 function clearAutoAdvanceTimer() {
   if (autoAdvanceTimer.value !== null) {
     window.clearTimeout(autoAdvanceTimer.value)
@@ -3047,92 +2833,6 @@ function openCustomTenhouExport() {
   if (!gameView.currentNodeId) return
   showCustomTenhouExport.value = true
   focusFloatingPanel('customExport')
-}
-
-let settingsPanelBaseline: TrainerSettings | null = null
-
-function openSettingsPanel() {
-  cloneSettingsDraftFromCurrent()
-  settingsPanelBaseline = JSON.parse(JSON.stringify(settings)) as TrainerSettings
-  showSettingsPanel.value = true
-}
-
-function closeSettingsPanel() {
-  showSettingsPanel.value = false
-}
-
-async function saveSettingsPanel() {
-  if (!window.trainerAPI) return
-  settingsDraft.display.language = normalizeLanguagePreference(settingsDraft.display.language)
-  settingsDraft.display.colorScheme = normalizeColorScheme(settingsDraft.display.colorScheme)
-  settingsDraft.display.uiScale = normalizeUiScale(settingsDraft.display.uiScale)
-  settingsDraft.display.tablePosition = normalizeTablePosition(settingsDraft.display.tablePosition)
-  settingsDraft.display.workspaceLayout = normalizeWorkspaceLayout(settingsDraft.display.workspaceLayout)
-  settingsDraft.training.mistakeThreshold = Math.max(
-    0,
-    Math.min(1, Number(settingsDraft.training.mistakeThreshold) || 0),
-  )
-  const baseline = settingsPanelBaseline
-  const submitted = JSON.parse(JSON.stringify(settingsDraft)) as TrainerSettings
-  const patch = settingsChanges(baseline || settings, submitted)
-  const saved = await window.trainerAPI.saveSettings(patch)
-  applySettings(mergeSettingsReply(settings, saved, patch))
-  if (settingsPanelBaseline === baseline) {
-    settingsPanelBaseline = submitted
-    if (!Object.keys(settingsChanges(submitted, settingsDraft)).length) showSettingsPanel.value = false
-  }
-}
-
-async function saveQuickSettings(mutator: (draft: TrainerSettings) => void) {
-  if (!window.trainerAPI) return
-  const next = JSON.parse(JSON.stringify(settings)) as TrainerSettings
-  mutator(next)
-  next.training.mode = normalizeTrainingMode(next.training.mode)
-  const patch = settingsChanges(settings, next)
-  const saved = await window.trainerAPI.saveSettings(patch)
-  applySettings(mergeSettingsReply(settings, saved, patch))
-}
-
-async function setQuickTrainingMode(mode: TrainerSettings['training']['mode']) {
-  if (currentTrainingMode.value === mode) return
-  await saveQuickSettings((next) => {
-    next.training.mode = mode
-  })
-}
-
-async function onQuickAudioVolumeInput(event: Event) {
-  const target = event.target as HTMLInputElement | null
-  if (!target) return
-  quickVolumeDragValue.value = Math.max(0, Math.min(100, Number(target.value || 0)))
-}
-
-async function commitQuickAudioVolume(event: Event) {
-  const target = event.target as HTMLInputElement | null
-  if (!target) return
-  const volume = Math.max(0, Math.min(100, Number(target.value || 0)))
-  await saveQuickSettings((next) => {
-    next.audio.volume = volume
-  })
-  quickVolumeDragValue.value = null
-}
-
-async function onQuickThinkingTimeInput(event: Event) {
-  const target = event.target as HTMLInputElement | null
-  if (!target) return
-  quickThinkingDragValue.value = Math.max(0, Math.min(4, Number(target.value || 0)))
-}
-
-async function commitQuickThinkingTime(event: Event) {
-  const target = event.target as HTMLInputElement | null
-  if (!target) return
-  const maxS = Math.max(0, Math.min(4, Number(target.value || 0)))
-  const quarter = maxS / 4
-  await saveQuickSettings((next) => {
-    next.training.thinkingTimeMaxS = maxS
-    next.training.thinkingTimeMinS = quarter
-    next.modeDefaults.autoAdvanceDelayMs = Math.round(quarter * 1000)
-  })
-  quickThinkingDragValue.value = null
 }
 
 function getSoundSource(event: string): string | null {
@@ -3762,29 +3462,6 @@ async function fetchAndShowMjaiDebug() {
     } catch {
       shantenMjaiData.value = { error: 'Failed to fetch shanten mjai' }
     }
-  }
-}
-
-function nextUiScale(direction: 'in' | 'out' | 'reset'): number {
-  if (direction === 'reset') return 1
-  const current = uiScale.value
-  if (direction === 'in') {
-    return UI_SCALE_STEPS.find((step) => step > current + 0.001) ?? UI_SCALE_STEPS.at(-1) ?? 2
-  }
-  return [...UI_SCALE_STEPS].reverse().find((step) => step < current - 0.001) ?? UI_SCALE_STEPS[0]
-}
-
-async function changeUiScale(direction: 'in' | 'out' | 'reset') {
-  const next = nextUiScale(direction)
-  if (next === uiScale.value) return
-  settings.display.uiScale = next
-  if (showSettingsPanel.value) settingsDraft.display.uiScale = next
-  try {
-    await window.trainerAPI?.saveSettings({
-      display: { uiScale: next },
-    })
-  } catch (error) {
-    console.warn('Failed to save UI scale:', error)
   }
 }
 
