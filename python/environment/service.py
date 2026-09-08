@@ -16,6 +16,7 @@ import game_flow
 import game_setup
 import game_tree
 import gameplay_commands
+import legal_action_provider
 import legal_actions
 import opponent_analysis_session
 import play_prefetch_session
@@ -87,8 +88,6 @@ _ENGINE_INSPECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_RELOAD_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _EMIT_LOCK = threading.Lock()
 _STATE_LOCK = threading.RLock()
-_LEGAL_ACTIONS_CACHE = {}
-_LEGAL_ACTIONS_CACHE_MAX = 4096
 MJAI_STREAMS = MjaiStreamCache(snapshot_state.sync)
 DEBUG_FLOW = os.environ.get("MJAI_FLOW_DEBUG", "").lower() in ("1", "true", "yes", "on")
 def debug_flow(message):
@@ -496,7 +495,7 @@ def reset_runtime_for_game_change():
     ENGINE_MANAGEMENT.advance_cache_epochs()
     DECISION_ANALYSIS.reset()
     MJAI_STREAMS.clear()
-    _LEGAL_ACTIONS_CACHE.clear()
+    LEGAL_ACTIONS.clear_cache()
     OPPONENT_PREDICTIONS.cancel_all()
     ACTION_RECOMMENDATIONS.reset_session()
 
@@ -629,56 +628,8 @@ def build_legal_actions(snapshot, controlled_seat=None):
     )
 
 
-def _legal_actions_snapshot_signature(snapshot, controlled_seat):
-    hands = snapshot.get("hands") or [[], [], [], []]
-    action_history = snapshot.get("actionHistory") or []
-    last_action = action_history[-1] if action_history else {}
-    if not isinstance(last_action, dict):
-        last_action = {}
-    return (
-        snapshot.get("phase"),
-        snapshot.get("currentActor"),
-        tuple(hands[controlled_seat]),
-        tuple(snapshot.get("scores") or []),
-        tuple(snapshot.get("riichiAccepted") or []),
-        snapshot.get("riichiDiscardState"),
-        snapshot.get("pendingRiichiSeat"),
-        len(action_history),
-        last_action.get("type"),
-        last_action.get("actor"),
-        last_action.get("pai"),
-        tuple(len(river) for river in (snapshot.get("rivers") or [])),
-        tuple(len(melds) for melds in (snapshot.get("melds") or [])),
-        id(snapshot.get("reactionWindow")),
-        id(snapshot.get("kanReactionWindow")),
-    )
-
-
 def get_node_legal_actions(game, node_id, controlled_seat=None):
-    node = game["nodes"][node_id]
-    snapshot = node["snapshot"]
-    if controlled_seat is None:
-        controlled_seat = STATE["controlledSeat"]
-    controlled_seat = normalize_seat(controlled_seat)
-
-    if STATE.get("mode") != "research":
-        return build_legal_actions(snapshot, controlled_seat=controlled_seat)
-
-    cache_key = (
-        id(game),
-        node_id,
-        controlled_seat,
-        _legal_actions_snapshot_signature(snapshot, controlled_seat),
-    )
-    cached = _LEGAL_ACTIONS_CACHE.get(cache_key)
-    if cached is not None:
-        return copy.deepcopy(cached)
-
-    actions = build_legal_actions(snapshot, controlled_seat=controlled_seat)
-    if len(_LEGAL_ACTIONS_CACHE) >= _LEGAL_ACTIONS_CACHE_MAX:
-        _LEGAL_ACTIONS_CACHE.pop(next(iter(_LEGAL_ACTIONS_CACHE)))
-    _LEGAL_ACTIONS_CACHE[cache_key] = copy.deepcopy(actions)
-    return actions
+    return LEGAL_ACTIONS.for_node(game, node_id, controlled_seat)
 
 
 def action_is_meaningful_decision(parent_snapshot, action):
@@ -693,6 +644,14 @@ def action_is_meaningful_decision(parent_snapshot, action):
 
 def controlled_seat_has_pending_action(snapshot):
     return len(build_legal_actions(snapshot)) > 0
+
+
+LEGAL_ACTIONS = legal_action_provider.LegalActionProvider(
+    build_actions=lambda *args, **kwargs: build_legal_actions(*args, **kwargs),
+    controlled_seat=lambda: STATE["controlledSeat"],
+    research_mode=lambda: STATE.get("mode") == "research",
+    normalize_seat=normalize_seat,
+)
 
 
 REACTION_DECISIONS = reaction_decision_history.ReactionDecisionHistory(

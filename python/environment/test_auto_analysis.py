@@ -65,7 +65,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         service.STATE["mode"] = "research"
         service.STATE["opponentAnalysisEnabled"] = False
         service.MJAI_STREAMS.clear()
-        service._LEGAL_ACTIONS_CACHE.clear()
+        service.LEGAL_ACTIONS.clear_cache()
 
     @staticmethod
     def _round_snapshot(template, round_index, honba=0):
