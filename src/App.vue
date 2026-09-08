@@ -663,29 +663,11 @@
           >&times;</button>
         </div>
         <div class="console-dock-body">
-        <div v-if="status.mode === 'research'" class="settings-preview auto-analysis-panel">
-          <div class="auto-analysis-row">
-            <button
-              class="auto-analysis-button"
-              :class="{ running: autoAnalysisRunning }"
-              :disabled="!status.gameLoaded || autoAnalysisRequestInFlight"
-              @click="toggleAutoAnalysis"
-            >
-              {{ autoAnalysisRunning ? t('console.stop') : t('console.autoAnalysis') }}
-            </button>
-            <div
-              class="auto-analysis-progress"
-              role="progressbar"
-              :aria-valuemin="0"
-              :aria-valuemax="100"
-              :aria-valuenow="autoAnalysisPercent"
-              :aria-label="autoAnalysisLabel"
-            >
-              <canvas ref="autoAnalysisCanvasEl" class="auto-analysis-progress-canvas" aria-hidden="true"></canvas>
-              <small>{{ autoAnalysisLabel }}</small>
-            </div>
-          </div>
-        </div>
+        <AutomaticAnalysisPanel
+          v-if="status.mode === 'research'"
+          :status="status"
+          :apply-status="applyStatus"
+        />
         <QuickSettingsPanel
           :mode="status.mode"
           :game-loaded="status.gameLoaded"
@@ -985,7 +967,6 @@ import { useWallView } from './useWallView'
 import { useEngineProfiles } from './useEngineProfiles'
 import { useGameplayActions } from './useGameplayActions'
 import { useActionAnnouncement } from './useActionAnnouncement'
-import { useAutomaticAnalysis } from './useAutomaticAnalysis'
 import { useAutoAdvance } from './useAutoAdvance'
 import { useBranchNavigation } from './useBranchNavigation'
 import { useBranchTreePresentation } from './useBranchTreePresentation'
@@ -1019,6 +1000,7 @@ import {
 } from './analysisProbabilityScale'
 import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
+import AutomaticAnalysisPanel from './components/AutomaticAnalysisPanel.vue'
 import BranchTreePanel from './components/BranchTreePanel.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DecisionEvaluationPanel from './components/DecisionEvaluationPanel.vue'
@@ -1425,21 +1407,6 @@ const {
     treeNodeList.value.forEach((node) => { node.comparison = null })
     if (gameView.tree) gameView.tree.revision = treeRevision
   },
-})
-
-const {
-  autoAnalysisCanvasEl,
-  autoAnalysisLabel,
-  autoAnalysisPercent,
-  autoAnalysisRequestInFlight,
-  autoAnalysisRunning,
-  toggleAutoAnalysis,
-} = useAutomaticAnalysis({
-  status,
-  showConsoleDock,
-  t,
-  applyStatus,
-  scheduleTableZoomRecalc,
 })
 
 const {

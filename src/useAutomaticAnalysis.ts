@@ -1,14 +1,12 @@
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { TranslationParams } from './i18n'
 
 type Translate = (key: string, params?: TranslationParams) => string
 
 interface UseAutomaticAnalysisOptions {
   status: TrainerStatusSnapshot
-  showConsoleDock: Readonly<Ref<boolean>>
   t: Translate
   applyStatus: (status: TrainerStatusSnapshot) => void
-  scheduleTableZoomRecalc: () => void
 }
 
 export function autoAnalysisLineColor(state: string): string | null {
@@ -18,7 +16,7 @@ export function autoAnalysisLineColor(state: string): string | null {
 }
 
 export function useAutomaticAnalysis(options: UseAutomaticAnalysisOptions) {
-  const { status, showConsoleDock, t, applyStatus, scheduleTableZoomRecalc } = options
+  const { status, t, applyStatus } = options
   const autoAnalysisRequestInFlight = ref(false)
   const autoAnalysisCanvasEl = ref<HTMLCanvasElement | null>(null)
   let autoAnalysisCanvasRaf = 0
@@ -109,16 +107,6 @@ export function useAutomaticAnalysis(options: UseAutomaticAnalysisOptions) {
   }
 
   watch(autoAnalysisTimeline, scheduleAutoAnalysisCanvasDraw)
-  watch(showConsoleDock, async (open) => {
-    await nextTick()
-    scheduleTableZoomRecalc()
-    autoAnalysisResizeObserver?.disconnect()
-    if (open && autoAnalysisCanvasEl.value) {
-      autoAnalysisResizeObserver?.observe(autoAnalysisCanvasEl.value)
-      scheduleAutoAnalysisCanvasDraw()
-    }
-  })
-
   async function toggleAutoAnalysis() {
     if (!window.trainerAPI || !status.gameLoaded || autoAnalysisRequestInFlight.value) return
     autoAnalysisRequestInFlight.value = true
