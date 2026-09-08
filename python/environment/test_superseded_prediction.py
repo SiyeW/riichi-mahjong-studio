@@ -10,7 +10,7 @@ class SupersededPredictionTests(unittest.TestCase):
             gateway = OpponentPredictionGateway()
         context = {'nodeId': 'old'}
         callback = Mock()
-        gateway._unloaded = False
+        gateway._activity.reset(unloaded=False)
         gateway._model_ready = True
         gateway._latest_context = context
         gateway._pending = {'snapshot': None, 'controlled_seat': 0, 'context': context,
@@ -38,7 +38,7 @@ class SupersededPredictionTests(unittest.TestCase):
              ):
             gateway._run()
         self.assertFalse(gateway._model_ready)
-        self.assertTrue(gateway._unloaded)
+        self.assertTrue(gateway._activity.is_unloaded())
         callback.assert_not_called()
 
     def test_old_failure_does_not_replace_new_node_status_or_call_old_callback(self):

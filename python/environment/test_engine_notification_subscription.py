@@ -91,10 +91,19 @@ class EngineNotificationSubscriptionTests(unittest.TestCase):
                 runtime = self.runtime(kind, 'current')
                 self.configure(kind, gateway, runtime)
                 copied = runtime._listeners[0]
-                generation = gateway._lifecycle_generation
+                generation = (
+                    gateway._lifecycle_generation
+                    if kind == 'decision'
+                    else gateway._activity.generation
+                )
                 gateway.shutdown()
                 self.assertEqual(runtime._listeners, [])
-                self.assertGreater(gateway._lifecycle_generation, generation)
+                current_generation = (
+                    gateway._lifecycle_generation
+                    if kind == 'decision'
+                    else gateway._activity.generation
+                )
+                self.assertGreater(current_generation, generation)
                 if kind == 'decision':
                     gateway._unloaded = False
                 copied('engine.status', {'state': 'error', 'message': 'stale'})

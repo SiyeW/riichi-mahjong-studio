@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, Optional
 from engine_process_client import EngineProcessClient  # noqa: E402
 from engine_runtime import initialize_engine_client
 from engine_notification_subscription import EngineNotificationSubscription
+from opponent_prediction_activity import OpponentPredictionActivity
 from opponent_prediction_profile import (
     OpponentEngineIdentity,
     OpponentEngineProfile,
@@ -41,22 +42,14 @@ class OpponentPredictionGateway:
         self._model_ready = False
         self._protocol_adapter = OpponentPredictionProtocolAdapter()
         self._initialization_lock = threading.Lock()
-        self._lifecycle_generation = 0
         self._lock = threading.Lock()
+        self._activity = OpponentPredictionActivity()
         self._runtime_notifications = EngineNotificationSubscription(
             self._lock,
             lambda: self._process_client,
-            lambda: self._lifecycle_generation,
+            lambda: self._activity.generation,
             lambda *args, **kwargs: self._on_engine_notification(*args, **kwargs),
         )
-        self._activity_lock = threading.Lock()
-        self._activity_callback: Optional[Callable[[str, Optional[str]], None]] = None
-        self._activity_state = "idle"
-        self._activity_error: Optional[str] = None
-        self._error_latched = False
-        self._unloaded = True
-        self._response_times: list[float] = []
-        self._last_response_ms = 0.0
         self._latest: Dict[str, Any] = {"opponents": {}, "status": "loading"}
         self._running = True
         self._pending: Optional[Dict[str, Any]] = None
@@ -173,10 +166,7 @@ class OpponentPredictionGateway:
                 expected_engine_version=self._profile.engine_version,
             )
         self._model_ready = False
-        with self._activity_lock:
-            self._error_latched = False
-            self._unloaded = True
-        self._set_activity("idle")
+        self._activity.reset(unloaded=True)
 
     def _requested_output_contracts(self) -> list[Dict[str, Any]]:
         return self._profile.requested_output_contracts()
@@ -196,11 +186,7 @@ class OpponentPredictionGateway:
         self._profile.device_preference = configured_device
         self._identity.clear_runtime()
         self._model_ready = False
-        with self._activity_lock:
-            self._response_times.clear()
-            self._last_response_ms = 0.0
-            self._error_latched = False
-            self._unloaded = False
+        self._activity.reset(unloaded=False)
         with self._lock:
             self._latest["status"] = "loading"
         self._process_client.restart()
@@ -210,44 +196,33 @@ class OpponentPredictionGateway:
         return not self._model_ready
 
     def set_activity_callback(self, callback: Optional[Callable[[str, Optional[str]], None]]) -> None:
-        with self._activity_lock:
-            self._activity_callback = callback
+        self._activity.set_callback(callback)
 
     def activity_state(self) -> str:
-        with self._activity_lock:
-            return self._activity_state
+        return self._activity.state()
 
     def activity_error(self) -> Optional[str]:
-        with self._activity_lock:
-            return self._activity_error
+        return self._activity.error()
 
     def runtime_status(self) -> Dict[str, Any]:
         return {
             "profileId": self._profile.profile_id,
             "ready": bool(self._model_ready),
-            "unloaded": self._unloaded,
+            "unloaded": self._activity.is_unloaded(),
             "error": self.activity_error(),
         }
 
     def accepts_requests(self) -> bool:
-        with self._activity_lock:
-            return not self._error_latched and not self._unloaded
+        return self._activity.accepts_requests()
 
     def average_response_ms(self) -> float:
-        with self._activity_lock:
-            if not self._response_times:
-                return 0.0
-            return sum(self._response_times) / len(self._response_times)
+        return self._activity.average_response_ms()
 
     def last_response_ms(self) -> float:
-        with self._activity_lock:
-            return self._last_response_ms
+        return self._activity.last_response_ms()
 
     def _record_response_ms(self, elapsed_ms: float) -> None:
-        with self._activity_lock:
-            self._last_response_ms = float(elapsed_ms)
-            self._response_times.append(self._last_response_ms)
-            del self._response_times[:-10]
+        self._activity.record_response_ms(elapsed_ms)
 
     @staticmethod
     def _format_error(prefix: str, error: Exception) -> str:
@@ -262,40 +237,19 @@ class OpponentPredictionGateway:
         latch_error: bool = True,
         expected_generation: Optional[int] = None,
     ) -> None:
-        callback = None
-        with self._activity_lock:
-            if expected_generation is not None and expected_generation != self._lifecycle_generation:
-                return
-            if self._unloaded:
-                state = "idle"
-                error = None
-            if state == "error" and latch_error:
-                self._error_latched = True
-            elif self._error_latched:
-                return
-            next_error = error if state == "error" else None
-            if self._activity_state == state and self._activity_error == next_error:
-                return
-            self._activity_state = state
-            self._activity_error = next_error
-            callback = self._activity_callback
-        if callback is not None:
-            try:
-                callback(state, next_error)
-            except Exception:
-                # The background worker must survive a closed event consumer.
-                pass
+        self._activity.set(
+            state,
+            error,
+            latch_error=latch_error,
+            expected_generation=expected_generation,
+        )
 
     def prepare_reload(self) -> None:
         self._invalidate_initialization()
         self.cancel_all()
         self._model_ready = False
         self._identity.clear_runtime()
-        with self._activity_lock:
-            self._response_times.clear()
-            self._last_response_ms = 0.0
-            self._error_latched = False
-            self._unloaded = False
+        self._activity.reset(unloaded=False)
         self._process_client.restart()
         self._set_activity("idle")
 
@@ -305,11 +259,7 @@ class OpponentPredictionGateway:
         self._process_client.shutdown()
         self._model_ready = False
         self._identity.clear_runtime()
-        with self._activity_lock:
-            self._response_times.clear()
-            self._last_response_ms = 0.0
-            self._error_latched = False
-            self._unloaded = True
+        self._activity.reset(unloaded=True)
         self._set_activity("idle")
 
     def _has_live_context(self) -> bool:
@@ -317,24 +267,19 @@ class OpponentPredictionGateway:
             return self._latest_context is not None
 
     def _invalidate_initialization(self) -> None:
-        with self._lock:
-            with self._activity_lock:
-                self._lifecycle_generation += 1
+        self._activity.invalidate()
 
     def prewarm(self) -> bool:
         """Load weights and complete one device forward pass without game input."""
-        with self._activity_lock:
-            if self._error_latched or self._unloaded:
-                return False
+        if not self._activity.can_initialize():
+            return False
         with self._initialization_lock:
-            with self._activity_lock:
-                if self._error_latched or self._unloaded:
-                    return False
+            if not self._activity.can_initialize():
+                return False
             return self._prewarm_locked()
 
     def _prewarm_locked(self) -> bool:
-        with self._lock:
-            generation = self._lifecycle_generation
+        generation = self._activity.generation
         if self._model_ready:
             return True
         self._set_activity("loading", expected_generation=generation)
@@ -354,7 +299,7 @@ class OpponentPredictionGateway:
                 for output in requested_outputs
             )
             with self._lock:
-                if generation != self._lifecycle_generation:
+                if generation != self._activity.generation:
                     return False
             effective_options = dict(initialization.result.get("effectiveOptions") or {})
             fingerprint = self._identity.calculate_cache_identity(
@@ -363,7 +308,7 @@ class OpponentPredictionGateway:
                 effective_options,
             )
             with self._lock:
-                if generation != self._lifecycle_generation:
+                if generation != self._activity.generation:
                     return False
                 references = {
                     output_id: dict(initialization.references[output_id])
@@ -385,7 +330,7 @@ class OpponentPredictionGateway:
             return True
         except Exception as exc:
             with self._lock:
-                if generation != self._lifecycle_generation:
+                if generation != self._activity.generation:
                     return False
             print(f"[SHANTEN] Prewarm failed: {exc}", flush=True)
             self._set_activity("error", self._format_error("模型预热失败", exc), expected_generation=generation)
@@ -413,9 +358,8 @@ class OpponentPredictionGateway:
         include_ground_truth: bool = True,
     ) -> None:
         del visible_hands
-        with self._activity_lock:
-            if self._error_latched or self._unloaded:
-                return
+        if not self._activity.accepts_requests():
+            return
         if input_mode not in self.supported_input_modes():
             raise ValueError(f"Unsupported opponent-analysis input mode: {input_mode}")
         has_prebuilt_streams = mjai_events is not None and (
@@ -462,9 +406,8 @@ class OpponentPredictionGateway:
         target_mjai_events_hash: Optional[int] = None,
         include_ground_truth: bool = True,
     ) -> bool:
-        with self._activity_lock:
-            if self._error_latched or self._unloaded:
-                return False
+        if not self._activity.accepts_requests():
+            return False
         if input_mode not in self.supported_input_modes():
             raise ValueError(f"Unsupported opponent-analysis input mode: {input_mode}")
         request_context = copy.deepcopy(context or {})

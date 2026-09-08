@@ -9,7 +9,7 @@ class InitializationLifecycleTests(unittest.TestCase):
     def test_old_initialization_cleanup_preserves_new_loading_state(self):
         with patch('opponent_prediction_gateway.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
-        gateway._unloaded = False
+        gateway._activity.reset(unloaded=False)
 
         def initialize(*args, **kwargs):
             gateway.prepare_reload()
@@ -25,15 +25,18 @@ class InitializationLifecycleTests(unittest.TestCase):
     def test_stale_activity_update_does_not_latch_error_or_notify(self):
         with patch('opponent_prediction_gateway.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
-        gateway._unloaded = False
+        gateway._activity.reset(unloaded=False)
         notifications = []
         gateway.set_activity_callback(lambda *args: notifications.append(args))
-        generation = gateway._lifecycle_generation
+        generation = gateway._activity.generation
         gateway._invalidate_initialization()
         gateway._set_activity('error', 'stale', expected_generation=generation)
-        self.assertFalse(gateway._error_latched)
+        self.assertFalse(gateway._activity.error_latched())
         self.assertEqual(notifications, [])
-        gateway._set_activity('loading', expected_generation=gateway._lifecycle_generation)
+        gateway._set_activity(
+            'loading',
+            expected_generation=gateway._activity.generation,
+        )
         self.assertEqual(notifications, [('loading', None)])
 
     def test_late_initialization_cannot_publish_after_unload_or_reload(self):
@@ -42,7 +45,7 @@ class InitializationLifecycleTests(unittest.TestCase):
                 with self.subTest(transition=transition, fails=fails):
                     with patch('opponent_prediction_gateway.threading.Thread.start'):
                         gateway = OpponentPredictionGateway()
-                    gateway._unloaded = False
+                    gateway._activity.reset(unloaded=False)
                     outputs = gateway._requested_output_contracts()
                     initialization = SimpleNamespace(
                         references={item['id']: {'id': item['id']} for item in outputs},
@@ -63,12 +66,12 @@ class InitializationLifecycleTests(unittest.TestCase):
                     self.assertFalse(gateway._model_ready)
                     self.assertNotEqual(gateway._identity.actual_device, 'old-device')
                     self.assertNotEqual(gateway.get_latest()['status'], 'loaded')
-                    self.assertFalse(gateway._error_latched)
+                    self.assertFalse(gateway._activity.error_latched())
 
     def test_current_initialization_can_still_publish(self):
         with patch('opponent_prediction_gateway.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
-        gateway._unloaded = False
+        gateway._activity.reset(unloaded=False)
         outputs = gateway._requested_output_contracts()
         initialization = SimpleNamespace(
             references={item['id']: {'id': item['id']} for item in outputs},
@@ -83,7 +86,7 @@ class InitializationLifecycleTests(unittest.TestCase):
     def test_fingerprint_calculation_does_not_hold_request_lock(self):
         with patch('opponent_prediction_gateway.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
-        gateway._unloaded = False
+        gateway._activity.reset(unloaded=False)
         outputs = gateway._requested_output_contracts()
         initialization = SimpleNamespace(
             references={item['id']: {'id': item['id']} for item in outputs},
@@ -113,7 +116,7 @@ class InitializationLifecycleTests(unittest.TestCase):
     def test_reload_during_fingerprint_calculation_discards_initialization(self):
         with patch('opponent_prediction_gateway.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
-        gateway._unloaded = False
+        gateway._activity.reset(unloaded=False)
         outputs = gateway._requested_output_contracts()
         initialization = SimpleNamespace(
             contracts={item['id']: {} for item in outputs},
