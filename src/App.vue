@@ -1371,36 +1371,20 @@
       <p class="engine-save-message">{{ engineFooterMessage }}</p>
     </section>
 
-    <div v-if="showMjaiDebug" class="settings-modal-backdrop" @click.self="showMjaiDebug = false">
-      <section class="wall-view-panel mjai-debug-panel">
-        <div class="settings-modal-header">
-          <h2>{{ t('debug.title') }}</h2>
-          <div class="settings-modal-actions">
-            <button
-              class="settings-btn-secondary"
-              :disabled="!status.gameLoaded || clearingAnalysisCaches"
-              @click="clearLoadedAnalysisCaches"
-            >
-              {{ clearingAnalysisCaches ? t('debug.clearingCache') : t('debug.clearCache') }}
-            </button>
-            <button class="settings-btn-secondary" @click="showMjaiDebug = false">{{ t('debug.close') }}</button>
-          </div>
-        </div>
-        <p v-if="analysisCacheClearMessage" class="mjai-cache-clear-message">{{ analysisCacheClearMessage }}</p>
-        <div class="mjai-debug-info">
-          <span v-if="mjaiDebugData.caller">{{ t('debug.caller', { value: String(mjaiDebugData.caller) }) }}</span>
-          <span v-if="mjaiDebugData.seat != null">{{ t('debug.seat', { value: String(mjaiDebugData.seat) }) }}</span>
-          <span v-if="mjaiDebugData.phase">{{ t('debug.phase', { value: String(mjaiDebugData.phase) }) }}</span>
-          <span v-if="mjaiDebugData.eventCount != null">{{ t('debug.eventCount', { value: String(mjaiDebugData.eventCount) }) }}</span>
-          <span v-if="mjaiDebugData.responseType">{{ t('debug.response', { value: String(mjaiDebugData.responseType) }) }}</span>
-        </div>
-        <pre class="mjai-debug-pre">{{ mjaiDebugJson }}</pre>
-        <div class="mjai-debug-section-label">{{ t('debug.shantenModel') }}</div>
-        <pre class="mjai-debug-pre">{{ shantenMjaiJson }}</pre>
-        <div class="mjai-debug-status">{{ shantenStatus }}</div>
-        <pre class="mjai-debug-pre" v-if="shantenRawData.kamicha">{{ shantenRawJson }}</pre>
-      </section>
-    </div>
+    <MjaiDebugDialog
+      v-if="showMjaiDebug"
+      :cache-clear-message="analysisCacheClearMessage"
+      :clearing-analysis-caches="clearingAnalysisCaches"
+      :debug-data="mjaiDebugData"
+      :debug-json="mjaiDebugJson"
+      :game-loaded="status.gameLoaded"
+      :has-shanten-raw-data="Boolean(shantenRawData.kamicha)"
+      :shanten-json="shantenMjaiJson"
+      :shanten-raw-json="shantenRawJson"
+      :shanten-status="shantenStatus"
+      @clear-cache="clearLoadedAnalysisCaches"
+      @close="showMjaiDebug = false"
+    />
 
     <AboutDialog v-if="showAboutPanel" @close="showAboutPanel = false" />
     <PerceptualColorDebugger
@@ -1455,6 +1439,7 @@ import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
+import MjaiDebugDialog from './components/MjaiDebugDialog.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
