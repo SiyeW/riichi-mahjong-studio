@@ -14,6 +14,7 @@ except ModuleNotFoundError:
 import auto_analysis_session
 import decision_analysis_session
 import engine_management
+import environment_view
 import game_flow
 import game_setup
 import game_tree
@@ -24,12 +25,9 @@ import reaction_decision_history
 import record_commands
 import record_session
 import review_session
-import result_view
 import round_actions
 import round_progression
 import snapshot_state
-import table_view
-import tree_view
 from action_recommendation_adapter import (
     choose_ai_action,
     get_and_reset_ai_thinking_time_s,
@@ -142,7 +140,9 @@ ENGINE_MANAGEMENT = engine_management.EngineManagement(
     lifecycle=engine_management.EngineLifecycleCallbacks(
         invalidate_analysis=_invalidate_engine_analysis,
         prepare_for_unload=_prepare_for_engine_unload,
-        build_state=lambda: build_state_payload(consume_thinking_time=False),
+        build_state=lambda: VIEW_BUILDER.build_state_payload(
+            consume_thinking_time=False
+        ),
     ),
 )
 
@@ -187,7 +187,7 @@ DECISION_ANALYSIS = decision_analysis_session.DecisionAnalysisSession(
         set_timeline_cached=lambda kind, node_id, cached: AUTO_ANALYSIS.set_timeline_cached(
             kind, node_id, cached
         ),
-        build_state=lambda: build_state_payload(),
+        build_state=lambda: VIEW_BUILDER.build_state_payload(),
         emit=emit,
     ),
 )
@@ -215,7 +215,9 @@ AUTO_ANALYSIS = auto_analysis_session.AutoAnalysisSession(
         ),
         sync_snapshot=lambda snapshot: sync_snapshot_state(snapshot),
         ensure_game_loaded=lambda: ensure_game_loaded(),
-        build_state=lambda *args, **kwargs: build_state_payload(*args, **kwargs),
+        build_state=lambda *args, **kwargs: VIEW_BUILDER.build_state_payload(
+            *args, **kwargs
+        ),
         emit=emit,
     ),
 )
@@ -320,7 +322,9 @@ PLAY_PREFETCH = play_prefetch_session.PlayPrefetchSession(
         build_legal_actions=lambda *args, **kwargs: build_legal_actions(
             *args, **kwargs
         ),
-        build_state=lambda *args, **kwargs: build_state_payload(*args, **kwargs),
+        build_state=lambda *args, **kwargs: VIEW_BUILDER.build_state_payload(
+            *args, **kwargs
+        ),
         is_read_only_game=lambda game: is_read_only_game(game),
         find_existing_child=lambda *args, **kwargs: REVIEW_SESSION.find_existing_child(
             *args, **kwargs
@@ -812,6 +816,27 @@ REACTION_DECISIONS = reaction_decision_history.ReactionDecisionHistory(
     )
 )
 
+VIEW_BUILDER = environment_view.EnvironmentView(
+    STATE,
+    environment_view.EnvironmentViewDependencies(
+        sync_snapshot=sync_snapshot_state,
+        is_read_only_game=is_read_only_game,
+        actor_just_drew=actor_just_drew,
+        can_declare_tsumo=can_declare_tsumo,
+        can_ankan=can_ankan,
+        get_node_legal_actions=get_node_legal_actions,
+        resolve_round_root=resolve_round_root_id_for_node,
+        decision_analysis=DECISION_ANALYSIS,
+        opponent_analysis=OPPONENT_ANALYSIS,
+        action_recommendations=ACTION_RECOMMENDATIONS,
+        opponent_predictions=OPPONENT_PREDICTIONS,
+        engine_management=ENGINE_MANAGEMENT,
+        auto_analysis=AUTO_ANALYSIS,
+        consume_thinking_time=get_and_reset_ai_thinking_time_s,
+        now_iso=now_iso,
+    ),
+)
+
 
 def get_legal_kan_actions(snapshot, actor):
     return legal_actions.get_legal_kan_actions(snapshot, actor)
@@ -841,219 +866,6 @@ def apply_pending_seat_switch_if_ready(snapshot):
     STATE["controlledSeat"] = pending_seat
     STATE["pendingSeatSwitch"] = None
     return True
-
-
-def tree_node_is_visible_to_seat(node, seat):
-    return tree_view.node_is_visible_to_seat(node, seat)
-
-
-def resolve_visible_tree_cursor(game, node_id, seat):
-    return tree_view.resolve_visible_cursor(game, node_id, seat)
-
-
-def normalize_current_tree_cursor(game, seat):
-    return tree_view.normalize_current_cursor(game, seat)
-
-
-def build_tree_view(game, current_node_id):
-    return tree_view.build_tree_view(
-        game,
-        current_node_id,
-        controlled_seat=int(STATE["controlledSeat"]),
-        legal_actions_resolver=get_node_legal_actions,
-        result_info_builder=build_result_info,
-    )
-
-
-def build_tree_cursor_view(game, current_node_id):
-    return tree_view.build_cursor_view(
-        game,
-        current_node_id,
-        controlled_seat=int(STATE["controlledSeat"]),
-        round_root_resolver=resolve_round_root_id_for_node,
-    )
-
-
-def rank_scores(scores):
-    return result_view.rank_scores(scores)
-
-
-def build_result_info(snapshot):
-    sync_snapshot_state(snapshot)
-    return result_view.build_result_info(snapshot, int(STATE["controlledSeat"]))
-
-
-def resolve_last_drawn_tile(snapshot, seat):
-    sync_snapshot_state(snapshot)
-    return table_view.resolve_last_drawn_tile(snapshot, seat)
-
-
-def resolve_display_last_draw_state(snapshot):
-    sync_snapshot_state(snapshot)
-    return table_view.resolve_display_last_draw_state(snapshot)
-
-
-def resolve_auto_advance_mode(snapshot):
-    sync_snapshot_state(snapshot)
-    if is_read_only_game():
-        return None
-    actor = int(snapshot.get("currentActor", 0))
-    controlled_seat = int(STATE.get("controlledSeat", 0))
-    phase = snapshot.get("phase")
-
-    if actor == controlled_seat:
-        return None
-
-    if phase == "reach_declaration":
-        return "ai_think"
-
-    if phase == "discard" and snapshot.get("riichiAccepted", [False, False, False, False])[actor]:
-        if actor_just_drew(snapshot, actor) and can_declare_tsumo(snapshot, actor):
-            return "ai_think"
-        if can_ankan(snapshot, actor):
-            return "ai_think"
-        return "auto_progress"
-
-    return None
-
-
-def build_table_view(snapshot):
-    sync_snapshot_state(snapshot)
-    game = STATE.get("game")
-    return table_view.build_table_view(
-        snapshot,
-        controlled_seat=int(STATE["controlledSeat"]),
-        visible_hands=bool(STATE["visibleHands"]),
-        match_id=game.get("matchId") if isinstance(game, dict) else None,
-        auto_advance_mode=resolve_auto_advance_mode(snapshot),
-        result_info=build_result_info(snapshot),
-    )
-
-
-def build_match_summary(game, snapshot):
-    sync_snapshot_state(snapshot)
-    return table_view.build_match_summary(game, snapshot)
-
-
-def build_view_payload(compact_tree=False):
-    if not STATE["gameLoaded"] or not STATE["game"]:
-        return {
-            "gameId": None,
-            "matchId": None,
-            "readOnly": False,
-            "sourceUrl": None,
-            "readOnlyReason": None,
-            "currentNodeId": None,
-            "nodeComment": "",
-            "opponentAnalysis": None,
-            "matchSummary": None,
-            "table": None,
-            "legalActions": [],
-            "analysis": None,
-            "comparison": None,
-            "pendingReview": None,
-            "tree": None,
-        }
-
-    game = STATE["game"]
-    metadata = game.get("metadata") or {}
-    current_node_id = normalize_current_tree_cursor(game, STATE["controlledSeat"])
-    current_node = game["nodes"][current_node_id]
-    snapshot = current_node["snapshot"]
-    sync_snapshot_state(snapshot)
-    opponent_analysis = None
-    if STATE.get("opponentAnalysisEnabled"):
-        # Opponent analysis owns a separate worker and starts independently of the decision engine.
-        # Ship the current node's cache (or an explicit miss) with the view so the
-        # renderer can distinguish an instant cache swap from waiting for inference.
-        opponent_analysis = OPPONENT_ANALYSIS.current()
-    legal_actions = get_node_legal_actions(game, current_node_id)
-    if legal_actions and STATE.get("decisionRecommendationsEnabled", True):
-        # Rendering a position must never wait for decision-engine inference. Cached results
-        # are returned immediately; a miss is delivered later via analysis_ready.
-        analysis = DECISION_ANALYSIS.get_or_schedule(
-            current_node,
-            snapshot,
-            legal_actions,
-        )
-    else:
-        analysis = None
-    return {
-        "gameId": game["gameId"],
-        "matchId": game.get("matchId") or game["gameId"],
-        "readOnly": bool(metadata.get("readOnly")),
-        "sourceUrl": metadata.get("sourceUrl"),
-        "readOnlyReason": metadata.get("readOnlyReason"),
-        "currentNodeId": current_node_id,
-        "nodeComment": str(current_node.get("comment") or ""),
-        "opponentAnalysis": opponent_analysis,
-        "matchSummary": build_match_summary(game, snapshot),
-        "table": build_table_view(snapshot),
-        "legalActions": legal_actions,
-        "analysis": analysis,
-        "comparison": copy.deepcopy(current_node.get("comparison")),
-        "pendingReview": copy.deepcopy(game.get("pendingReview")),
-        "tree": build_tree_cursor_view(game, current_node_id) if compact_tree else build_tree_view(game, current_node_id),
-    }
-
-
-def build_state_payload(*, consume_thinking_time=True):
-    return {
-        "mode": STATE["mode"],
-        "controlledSeat": STATE["controlledSeat"],
-        "pendingSeatSwitch": STATE["pendingSeatSwitch"],
-        "visibleHands": STATE["visibleHands"],
-        "license": copy.deepcopy(STATE.get("license")),
-        "device": ACTION_RECOMMENDATIONS.device_str,
-        "gameLoaded": STATE["gameLoaded"],
-        "aiThinkingTimeS": get_and_reset_ai_thinking_time_s() if consume_thinking_time else 0.0,
-        "modelPerformance": {
-            "decision": ENGINE_MANAGEMENT.decision_response_ms(),
-            "opponentAnalysis": OPPONENT_PREDICTIONS.average_response_ms(),
-        },
-        "analysisVisibility": {
-            "decisionRecommendations": bool(STATE.get("decisionRecommendationsEnabled", True)),
-            "opponentAnalysis": bool(STATE.get("opponentAnalysisEnabled", False)),
-        },
-        "modelActivity": {
-            "decision": ACTION_RECOMMENDATIONS.get_activity(),
-            "opponentAnalysis": OPPONENT_PREDICTIONS.activity_state(),
-            "errors": {
-                "decision": ACTION_RECOMMENDATIONS.get_activity_errors(),
-                "opponentAnalysis": OPPONENT_PREDICTIONS.activity_error(),
-            },
-        },
-        "modelRuntime": {
-            "decision": ACTION_RECOMMENDATIONS.runtime_status(),
-            "opponentAnalysis": OPPONENT_PREDICTIONS.runtime_status(),
-        },
-        "autoAnalysis": AUTO_ANALYSIS.status(
-            include_timeline=STATE.get("mode") == "research"
-        ),
-    }
-
-
-def build_response(request_id, command, extra=None, compact_tree=False):
-    view = build_view_payload(compact_tree=compact_tree)
-    payload = {
-        "request_id": request_id,
-        "command": command,
-        "state": build_state_payload(),
-        "view": view,
-        "timestamp": now_iso(),
-    }
-    if extra:
-        payload.update(extra)
-    return payload
-
-
-def build_status_response(request_id):
-    return {
-        "request_id": request_id,
-        "command": "get_status",
-        "state": build_state_payload(consume_thinking_time=False),
-        "timestamp": now_iso(),
-    }
 
 
 def _private_memory_bytes(process):
@@ -1200,18 +1012,26 @@ def handle_command(request_id, command, payload):
             float(training.get("thinkingTimeMaxS", 1.0)),
         )
         if command == "get_status":
-            return build_status_response(request_id)
+            return VIEW_BUILDER.build_status_response(request_id)
 
         if command == "start_auto_analysis":
             auto_analysis = AUTO_ANALYSIS.start()
-            return build_response(request_id, command, {"autoAnalysis": auto_analysis})
+            return VIEW_BUILDER.build_response(
+                request_id,
+                command,
+                {"autoAnalysis": auto_analysis},
+            )
 
         if command == "cancel_auto_analysis":
             auto_analysis = AUTO_ANALYSIS.cancel()
-            return build_response(request_id, command, {"autoAnalysis": auto_analysis})
+            return VIEW_BUILDER.build_response(
+                request_id,
+                command,
+                {"autoAnalysis": auto_analysis},
+            )
 
         if command == "describe_engine":
-            return build_response(
+            return VIEW_BUILDER.build_response(
                 request_id,
                 command,
                 {"description": ENGINE_MANAGEMENT.describe(payload)},
@@ -1220,7 +1040,7 @@ def handle_command(request_id, command, payload):
         if command == "create_game":
             RECORD_SESSION.create()
             play_prefetch = PLAY_PREFETCH.start()
-            return build_response(
+            return VIEW_BUILDER.build_response(
                 request_id,
                 command,
                 {"playPrefetch": play_prefetch},
@@ -1228,7 +1048,7 @@ def handle_command(request_id, command, payload):
 
         if command == "close_game":
             RECORD_SESSION.close()
-            return build_response(request_id, command)
+            return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "import_mortal_report":
             reconstruction = RECORD_SESSION.import_mortal(
@@ -1238,7 +1058,11 @@ def handle_command(request_id, command, payload):
                 bool(payload.get("reconstructWalls")),
                 payload.get("seed"),
             )
-            return build_response(request_id, command, {"reconstruction": reconstruction})
+            return VIEW_BUILDER.build_response(
+                request_id,
+                command,
+                {"reconstruction": reconstruction},
+            )
 
         if command == "import_custom_tenhou":
             reconstruction = RECORD_SESSION.import_custom(
@@ -1246,17 +1070,21 @@ def handle_command(request_id, command, payload):
                 bool(payload.get("reconstructWalls")),
                 payload.get("seed"),
             )
-            return build_response(request_id, command, {"reconstruction": reconstruction})
+            return VIEW_BUILDER.build_response(
+                request_id,
+                command,
+                {"reconstruction": reconstruction},
+            )
 
         if command == "export_custom_tenhou":
-            return build_response(
+            return VIEW_BUILDER.build_response(
                 request_id,
                 command,
                 {"customTenhou": RECORD_SESSION.export_custom()},
             )
 
         if run_debug_scenario(command, sys.modules[__name__]):
-            return build_response(request_id, command)
+            return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "set_mode":
             ensure_game_loaded()
@@ -1269,7 +1097,7 @@ def handle_command(request_id, command, payload):
                 OPPONENT_ANALYSIS.request_current(get_current_snapshot())
             elif STATE["gameLoaded"] and STATE["mode"] == "play":
                 PLAY_PREFETCH.start()
-            return build_response(request_id, command)
+            return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "set_analysis_visibility":
             if "decisionRecommendations" in payload:
@@ -1291,7 +1119,7 @@ def handle_command(request_id, command, payload):
 
             if STATE.get("mode") == "play" and STATE.get("gameLoaded"):
                 PLAY_PREFETCH.start()
-            return build_response(request_id, command)
+            return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "request_seat_switch":
             seat = normalize_seat(payload.get("seat"))
@@ -1300,35 +1128,41 @@ def handle_command(request_id, command, payload):
             STATE["pendingSeatSwitch"] = seat
             if STATE["gameLoaded"] and STATE["mode"] == "play":
                 GAME_FLOW.advance(STATE["game"])
-                normalize_current_tree_cursor(STATE["game"], STATE["controlledSeat"])
+                VIEW_BUILDER.normalize_tree_cursor(
+                    STATE["game"],
+                    STATE["controlledSeat"],
+                )
             elif STATE["mode"] != "play":
                 apply_pending_seat_switch_if_ready(get_current_snapshot() if STATE["gameLoaded"] else {})
                 if STATE["gameLoaded"]:
-                    normalize_current_tree_cursor(STATE["game"], STATE["controlledSeat"])
+                    VIEW_BUILDER.normalize_tree_cursor(
+                        STATE["game"],
+                        STATE["controlledSeat"],
+                    )
                     OPPONENT_ANALYSIS.request_current(get_current_snapshot())
             elif STATE["gameLoaded"]:
                 PLAY_PREFETCH.start()
-            return build_response(request_id, command)
+            return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "toggle_visible_hands":
             STATE["visibleHands"] = not STATE["visibleHands"]
             if STATE["gameLoaded"] and STATE["mode"] == "research":
                 OPPONENT_ANALYSIS.request_current(get_current_snapshot())
-            return build_response(request_id, command)
+            return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "get_game_view":
-            return build_response(request_id, command)
+            return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "advance_game":
             ensure_play_mode()
             if STATE["game"].get("pendingReview"):
-                return build_response(request_id, command)
+                return VIEW_BUILDER.build_response(request_id, command)
             play_prefetch = PLAY_PREFETCH.advance_game(STATE["game"])
             # Trigger asynchronous opponent analysis in research mode.
             if STATE.get("gameLoaded") and STATE.get("mode") == "research":
                 snapshot = get_current_snapshot()
                 OPPONENT_ANALYSIS.request_current(snapshot)
-            response = build_response(
+            response = VIEW_BUILDER.build_response(
                 request_id,
                 command,
                 {"playPrefetch": play_prefetch},
@@ -1348,7 +1182,7 @@ def handle_command(request_id, command, payload):
                         },
                     },
                 }
-            return build_response(
+            return VIEW_BUILDER.build_response(
                 request_id,
                 command,
                 {
@@ -1358,7 +1192,7 @@ def handle_command(request_id, command, payload):
 
         if command == "import_game_record":
             RECORD_SESSION.load(payload.get("record"))
-            return build_response(request_id, command)
+            return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "jump_to_node":
             stayed_in_round = RECORD_COMMANDS.jump(str(payload.get("nodeId") or ""))
@@ -1367,11 +1201,15 @@ def handle_command(request_id, command, payload):
             except (TypeError, ValueError):
                 client_tree_revision = None
             tree_is_current = client_tree_revision == int(STATE["game"].get("treeRevision", 0))
-            return build_response(request_id, command, compact_tree=stayed_in_round and tree_is_current)
+            return VIEW_BUILDER.build_response(
+                request_id,
+                command,
+                compact_tree=stayed_in_round and tree_is_current,
+            )
 
         if command == "set_main_branch":
             RECORD_COMMANDS.set_main_branch(str(payload.get("nodeId") or ""))
-            return build_response(request_id, command)
+            return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "set_node_comment":
             node_id = str(payload.get("nodeId") or "")
@@ -1387,7 +1225,11 @@ def handle_command(request_id, command, payload):
 
         if command == "delete_node":
             deleted_count = RECORD_COMMANDS.delete(str(payload.get("nodeId") or ""))
-            return build_response(request_id, command, {"deletedCount": deleted_count})
+            return VIEW_BUILDER.build_response(
+                request_id,
+                command,
+                {"deletedCount": deleted_count},
+            )
 
         if command == "submit_user_action":
             ensure_play_mode()
@@ -1423,7 +1265,7 @@ def handle_command(request_id, command, payload):
                     raise ValueError(f"Unsupported reach-declaration-phase action type: {action_type}")
             elif current_snapshot["phase"] in ("reaction_window", "kan_reaction_window"):
                 if action_type == "dahai":
-                    return build_response(request_id, command)
+                    return VIEW_BUILDER.build_response(request_id, command)
                 REVIEW_SESSION.submit_reaction(
                     str(action_type or ""),
                     str(payload.get("variant") or "") or None,
@@ -1432,7 +1274,7 @@ def handle_command(request_id, command, payload):
             else:
                 raise ValueError(f"Unsupported action phase for submit_user_action: {current_snapshot['phase']}")
             play_prefetch = PLAY_PREFETCH.start()
-            return build_response(
+            return VIEW_BUILDER.build_response(
                 request_id,
                 command,
                 {"playPrefetch": play_prefetch},
@@ -1443,7 +1285,7 @@ def handle_command(request_id, command, payload):
             PLAY_PREFETCH.cancel()
             REVIEW_SESSION.finalize(confirm_proposed=True)
             play_prefetch = PLAY_PREFETCH.start()
-            return build_response(
+            return VIEW_BUILDER.build_response(
                 request_id,
                 command,
                 {"playPrefetch": play_prefetch},
@@ -1477,29 +1319,45 @@ def handle_command(request_id, command, payload):
 
         if command == "reconstruct_walls":
             reconstruction = RECORD_SESSION.reconstruct_walls(payload.get("seed"))
-            return build_response(request_id, command, {"reconstruction": reconstruction})
+            return VIEW_BUILDER.build_response(
+                request_id,
+                command,
+                {"reconstruction": reconstruction},
+            )
 
         if command == "import_wall":
             ensure_writable_game()
             tiles = payload.get("tiles")
             reset_current_round_with_full_wall(tiles)
-            return build_response(request_id, command)
+            return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "get_latest_mjai_debug":
-            return build_response(request_id, command, {"debug": get_latest_action_recommendation_debug()})
+            return VIEW_BUILDER.build_response(
+                request_id,
+                command,
+                {"debug": get_latest_action_recommendation_debug()},
+            )
 
         if command == "get_shanten":
-            return build_response(request_id, command, OPPONENT_ANALYSIS.current())
+            return VIEW_BUILDER.build_response(
+                request_id,
+                command,
+                OPPONENT_ANALYSIS.current(),
+            )
 
         if command == "get_shanten_mjai":
-            return build_response(request_id, command, {"debug": get_latest_opponent_prediction_mjai()})
+            return VIEW_BUILDER.build_response(
+                request_id,
+                command,
+                {"debug": get_latest_opponent_prediction_mjai()},
+            )
 
         if command == "clear_analysis_caches":
             cleared = clear_loaded_analysis_caches()
             return {
                 "request_id": request_id,
                 "command": command,
-                "state": build_state_payload(),
+                "state": VIEW_BUILDER.build_state_payload(),
                 "cleared": cleared,
                 "timestamp": now_iso(),
             }
@@ -1510,7 +1368,7 @@ def handle_command(request_id, command, payload):
 def process_command_request(request_id, command, payload, *, lightweight_status=False):
     try:
         if lightweight_status:
-            response = build_status_response(request_id)
+            response = VIEW_BUILDER.build_status_response(request_id)
         elif command == "get_runtime_metrics":
             response = {
                 "request_id": request_id,
@@ -1530,7 +1388,7 @@ def process_command_request(request_id, command, payload, *, lightweight_status=
                 str((payload or {}).get("profileId") or "")
             )
             with _STATE_LOCK:
-                response = build_response(
+                response = VIEW_BUILDER.build_response(
                     request_id,
                     command,
                     {"reload": result},

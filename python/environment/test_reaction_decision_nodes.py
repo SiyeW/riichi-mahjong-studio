@@ -143,7 +143,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         draw_id = game["nodes"][second_id]["mainChildId"]
 
         service.STATE["controlledSeat"] = 1
-        first_view = service.build_tree_view(game, draw_id)
+        first_view = service.VIEW_BUILDER.build_tree(game, draw_id)
         first_nodes = {node["id"]: node for node in first_view["nodes"]}
         self.assertIn(first_id, first_nodes)
         self.assertNotIn(second_id, first_nodes)
@@ -153,7 +153,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         self.assertEqual(first_nodes[draw_id]["roundDepth"], 3)
 
         service.STATE["controlledSeat"] = 2
-        second_view = service.build_tree_view(game, draw_id)
+        second_view = service.VIEW_BUILDER.build_tree(game, draw_id)
         second_nodes = {node["id"]: node for node in second_view["nodes"]}
         self.assertNotIn(first_id, second_nodes)
         self.assertIn(second_id, second_nodes)
@@ -163,7 +163,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         self.assertEqual(second_nodes[draw_id]["roundDepth"], 3)
 
         service.STATE["controlledSeat"] = 0
-        observer_view = service.build_tree_view(game, draw_id)
+        observer_view = service.VIEW_BUILDER.build_tree(game, draw_id)
         observer_nodes = {node["id"]: node for node in observer_view["nodes"]}
         self.assertNotIn(first_id, observer_nodes)
         self.assertNotIn(second_id, observer_nodes)
@@ -183,11 +183,17 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         draw_id = game["nodes"][second_id]["mainChildId"]
 
         game["currentNodeId"] = first_id
-        self.assertEqual(service.normalize_current_tree_cursor(game, 2), second_id)
+        self.assertEqual(
+            service.VIEW_BUILDER.normalize_tree_cursor(game, 2),
+            second_id,
+        )
         self.assertEqual(game["currentNodeId"], second_id)
 
         game["currentNodeId"] = first_id
-        self.assertEqual(service.normalize_current_tree_cursor(game, 0), draw_id)
+        self.assertEqual(
+            service.VIEW_BUILDER.normalize_tree_cursor(game, 0),
+            draw_id,
+        )
         self.assertEqual(game["currentNodeId"], draw_id)
 
     def test_reaction_analysis_attaches_to_the_pass_decision(self):
@@ -265,7 +271,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         self.assertEqual(game["nodes"][pon_id]["action"]["actor"], 2)
 
         service.STATE["controlledSeat"] = 0
-        observer_view = service.build_tree_view(game, pon_id)
+        observer_view = service.VIEW_BUILDER.build_tree(game, pon_id)
         observer_nodes = {node["id"]: node for node in observer_view["nodes"]}
         self.assertNotIn(pass_id, observer_nodes)
         self.assertIn(pon_id, observer_nodes)

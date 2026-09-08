@@ -3,13 +3,14 @@ from __future__ import annotations
 import copy
 import unittest
 
+import result_view
 import service
 
 
 class ResultRankTests(unittest.TestCase):
     def test_equal_scores_use_absolute_seat_order(self):
         self.assertEqual(
-            service.rank_scores([25000, 25000, 30000, 20000]),
+            result_view.rank_scores([25000, 25000, 30000, 20000]),
             [2, 3, 1, 4],
         )
 
@@ -31,7 +32,7 @@ class ResultRankTests(unittest.TestCase):
         }
         service.STATE["controlledSeat"] = 3
 
-        result_info = service.build_result_info(snapshot)
+        result_info = service.VIEW_BUILDER.build_result_info(snapshot)
 
         self.assertEqual(result_info["ranks"], [2, 1, 3, 4])
         self.assertEqual(result_info["title"], "荒牌流局")

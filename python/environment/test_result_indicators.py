@@ -44,7 +44,7 @@ class ResultIndicatorTests(unittest.TestCase):
             },
         }
 
-        result_info = service.build_result_info(snapshot)
+        result_info = service.VIEW_BUILDER.build_result_info(snapshot)
 
         self.assertEqual(result_info["uraMarkers"], ["C"])
 
@@ -72,7 +72,7 @@ class ResultIndicatorTests(unittest.TestCase):
             round_result,
             next_match_state,
         )
-        result_info = service.build_result_info(result_snapshot)
+        result_info = service.VIEW_BUILDER.build_result_info(result_snapshot)
 
         self.assertEqual(result_snapshot["scores"], [25000, 25000, 25000, 25000])
         self.assertEqual(result_info["scores"], [33000, 17000, 25000, 25000])
@@ -105,7 +105,10 @@ class ResultIndicatorTests(unittest.TestCase):
                     },
                 }
 
-                self.assertEqual(service.build_result_info(snapshot)["title"], expected)
+                self.assertEqual(
+                    service.VIEW_BUILDER.build_result_info(snapshot)["title"],
+                    expected,
+                )
 
 
 if __name__ == "__main__":

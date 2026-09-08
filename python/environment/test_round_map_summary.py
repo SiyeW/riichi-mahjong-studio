@@ -29,7 +29,7 @@ class RoundMapSummaryTests(unittest.TestCase):
         previous_seat = service.STATE.get("controlledSeat")
         service.STATE["controlledSeat"] = 0
         try:
-            tree = service.build_tree_view(game, node_id)
+            tree = service.VIEW_BUILDER.build_tree(game, node_id)
         finally:
             service.STATE["controlledSeat"] = previous_seat
 
@@ -85,7 +85,7 @@ class RoundMapSummaryTests(unittest.TestCase):
         )
         game["nodes"][result_id]["mainChildId"] = end_id
 
-        tree = service.build_tree_view(game, end_id)
+        tree = service.VIEW_BUILDER.build_tree(game, end_id)
 
         round_summary = tree["rounds"][0]
         self.assertEqual(round_summary["resultInfo"]["eventType"], "round_result")
@@ -124,7 +124,7 @@ class RoundMapSummaryTests(unittest.TestCase):
         )
         game["nodes"][result_id]["mainChildId"] = end_id
 
-        tree = service.build_tree_view(game, end_id)
+        tree = service.VIEW_BUILDER.build_tree(game, end_id)
 
         self.assertEqual(tree["rounds"][0]["resultInfo"]["title"], "结算")
         self.assertEqual(tree["rounds"][0]["matchEndInfo"]["title"], "终局")
@@ -159,7 +159,7 @@ class RoundMapSummaryTests(unittest.TestCase):
             side_snapshot,
         )
 
-        tree = service.build_tree_view(game, main_id)
+        tree = service.VIEW_BUILDER.build_tree(game, main_id)
         rounds = {round_info["id"]: round_info for round_info in tree["rounds"]}
         main_round = rounds[round_root_id]
 

@@ -41,8 +41,8 @@ class CheckpointExportTests(unittest.TestCase):
     def test_checkpoint_exports_record_without_building_or_consuming_ui_state(self):
         record = {'game': {'gameId': 'test'}}
         with patch.object(service.RECORD_SESSION, 'serialize', return_value=record), \
-             patch.object(service, 'build_view_payload', side_effect=AssertionError('unneeded view')), \
-             patch.object(service, 'build_state_payload', side_effect=AssertionError('unneeded runtime state')):
+             patch.object(service.VIEW_BUILDER, 'build_view_payload', side_effect=AssertionError('unneeded view')), \
+             patch.object(service.VIEW_BUILDER, 'build_state_payload', side_effect=AssertionError('unneeded runtime state')):
             result = service.handle_command('request', 'export_game_record', {'checkpoint': True})
         self.assertIs(result['record'], record)
         self.assertEqual(result['request_id'], 'request')
@@ -51,7 +51,7 @@ class CheckpointExportTests(unittest.TestCase):
 
     def test_normal_export_keeps_the_existing_response(self):
         with patch.object(service.RECORD_SESSION, 'serialize', return_value={'game': {}}), \
-             patch.object(service, 'build_response', return_value={'view': 'unchanged'}) as build:
+             patch.object(service.VIEW_BUILDER, 'build_response', return_value={'view': 'unchanged'}) as build:
             result = service.handle_command('request', 'export_game_record', {})
         self.assertEqual(result, {'view': 'unchanged'})
         build.assert_called_once()

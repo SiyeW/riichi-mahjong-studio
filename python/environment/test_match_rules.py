@@ -80,7 +80,7 @@ class MatchEndRuleTests(unittest.TestCase):
             self.assertEqual(game["currentNodeId"], end_node_id)
             self.assertEqual(len(game["nodes"]), node_count)
             self.assertEqual(
-                service.build_result_info(end_node["snapshot"])["title"],
+                service.VIEW_BUILDER.build_result_info(end_node["snapshot"])["title"],
                 "终局",
             )
         finally:

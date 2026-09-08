@@ -256,7 +256,9 @@ class MortalReportImportTests(unittest.TestCase):
             node for node in game["nodes"].values() if (node.get("action") or {}).get("type") == "match_end"
         )
         self.assertEqual(match_end_node["snapshot"]["lastAction"]["type"], "match_result")
-        terminal_info = service.build_result_info(match_end_node["snapshot"])
+        terminal_info = service.VIEW_BUILDER.build_result_info(
+            match_end_node["snapshot"]
+        )
         self.assertEqual(terminal_info["title"], "终局")
         self.assertEqual(terminal_info["scores"], [33800, 22400, 22400, 22400])
 

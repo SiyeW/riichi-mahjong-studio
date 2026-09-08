@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from collections import deque
 from concurrent.futures import Future
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -227,17 +228,17 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         order = []
         with (
             mock.patch.object(
-                service,
+                service.VIEW_BUILDER,
                 "build_view_payload",
                 side_effect=lambda **_kwargs: order.append("view") or {},
             ),
             mock.patch.object(
-                service,
+                service.VIEW_BUILDER,
                 "build_state_payload",
                 side_effect=lambda: order.append("state") or {},
             ),
         ):
-            service.build_response("request", "command")
+            service.VIEW_BUILDER.build_response("request", "command")
 
         self.assertEqual(order, ["view", "state"])
 
@@ -302,8 +303,17 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         }
         game["currentNodeId"] = child_id
 
-        with mock.patch.object(service, "get_node_legal_actions") as legal_actions:
-            tree = service.build_tree_view(game, child_id)
+        legal_actions = mock.Mock()
+        dependencies = replace(
+            service.VIEW_BUILDER.dependencies,
+            get_node_legal_actions=legal_actions,
+        )
+        with mock.patch.object(
+            service.VIEW_BUILDER,
+            "dependencies",
+            dependencies,
+        ):
+            tree = service.VIEW_BUILDER.build_tree(game, child_id)
 
         legal_actions.assert_not_called()
         self.assertFalse(tree["nodes"][0]["isDecision"])

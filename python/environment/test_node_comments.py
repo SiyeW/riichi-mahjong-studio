@@ -18,7 +18,7 @@ class NodeCommentTest(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual(comment, "先看牌效率\n再看打点")
         self.assertEqual(
-            service.build_view_payload()["nodeComment"],
+            service.VIEW_BUILDER.build_view_payload()["nodeComment"],
             "先看牌效率\n再看打点",
         )
         record = service.RECORD_SESSION.serialize()
