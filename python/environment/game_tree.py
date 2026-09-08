@@ -133,6 +133,39 @@ def find_path_to_root(game, node_id):
     return path
 
 
+def resolve_round_root_id(game, node_id):
+    cursor_id = node_id
+    node = game["nodes"][node_id]
+    if node.get("type") == "root":
+        return node_id
+    snapshot = node["snapshot"]
+    round_index = int(snapshot.get("roundIndex", 0))
+    honba = int(snapshot.get("honba", 0))
+    parent_id = node.get("parentId")
+    while parent_id:
+        parent_node = game["nodes"][parent_id]
+        if parent_node.get("type") == "root":
+            break
+        parent_snapshot = parent_node["snapshot"]
+        if int(parent_snapshot.get("roundIndex", -1)) != round_index:
+            break
+        if int(parent_snapshot.get("honba", -1)) != honba:
+            break
+        cursor_id = parent_id
+        parent_id = parent_node.get("parentId")
+    return cursor_id
+
+
+def collect_subtree_ids(game, root_id):
+    result = []
+    stack = [root_id]
+    while stack:
+        current = stack.pop()
+        result.append(current)
+        stack.extend(game["nodes"][current]["children"])
+    return result
+
+
 def promote_path_to_mainline(game, node_id):
     path = find_path_to_root(game, node_id)
     changed = game.get("mainLeafNodeId") != node_id

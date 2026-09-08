@@ -30,6 +30,7 @@ import runtime_metrics
 import snapshot_state
 import stateful_command_dispatcher
 import view_control_commands
+import wall_reconstruction
 from action_recommendation_adapter import (
     choose_ai_action,
     get_and_reset_ai_thinking_time_s,
@@ -46,13 +47,7 @@ from mjai_stream_cache import MjaiStreamCache
 from opponent_prediction_coordinator import OpponentPredictionCoordinator
 from opponent_prediction_gateway import get_latest_opponent_prediction_mjai
 from service_debug import run_debug_scenario
-from service_helpers import (
-    DORA_INDICATOR_POSITIONS,
-    RINSHAN_DRAW_POSITIONS,
-    URA_INDICATOR_POSITIONS,
-    actor_just_drew,
-    now_iso,
-)
+from service_helpers import actor_just_drew, now_iso
 from rule_kernel import (
     can_ankan,
     can_declare_riichi,
@@ -357,42 +352,7 @@ def persist_snapshot_state(snapshot):
 
 
 def get_wall_view(snapshot):
-    """Return tile status for the full 136-tile wall."""
-    sync_snapshot_state(snapshot)
-    full_wall = copy.deepcopy(snapshot.get("fullWall") or [])
-    if len(full_wall) != 136:
-        return []
-
-    draw_index = snapshot.get("drawIndex", 52)
-    wall_len = len(snapshot.get("wall", []))
-    dora_revealed = list(snapshot.get("doraIndicators", []))
-    rinshan_remaining = list(snapshot.get("rinshanWall", []))
-    dora_revealed_positions = set(DORA_INDICATOR_POSITIONS[:len(dora_revealed)])
-    ura_revealed_positions = set(URA_INDICATOR_POSITIONS[:len(dora_revealed)])
-    rinshan_drawn_count = 4 - len(rinshan_remaining)
-    rinshan_drawn_positions = set(RINSHAN_DRAW_POSITIONS[:rinshan_drawn_count])
-
-    result = []
-    for idx, tile in enumerate(full_wall):
-        if idx < 52:
-            status = "dealt"
-        elif 52 <= idx < draw_index:
-            status = "drawn"
-        elif draw_index <= idx < wall_len:
-            status = "available"
-        elif wall_len <= idx < 122:
-            status = "kan_consumed"
-        elif idx in DORA_INDICATOR_POSITIONS:
-            status = "dora" if idx in dora_revealed_positions else "dora_unrevealed"
-        elif idx in URA_INDICATOR_POSITIONS:
-            status = "ura" if idx in ura_revealed_positions else "ura_unrevealed"
-        elif 132 <= idx < 136:
-            status = "rinshan_drawn" if idx in rinshan_drawn_positions else "available"
-        else:
-            status = "available"
-
-        result.append({"index": idx, "tile": tile, "status": status})
-    return result
+    return wall_reconstruction.build_wall_view(snapshot)
 
 
 def create_initial_snapshot(match_state, full_wall=None):
@@ -400,67 +360,19 @@ def create_initial_snapshot(match_state, full_wall=None):
 
 
 def create_empty_game(seed):
-    game_id = f"game_{STATE['nextGameId']:04d}"
-    STATE["nextGameId"] += 1
-    match_state = create_match_state(seed)
-    match_state["matchId"] = f"match_{STATE['nextGameId'] - 1:04d}"
-    root_snapshot = create_initial_snapshot(match_state)
-
-    root_node_id = "n_root"
-    start_kyoku_id = "n_1"
-    nodes = {
-        root_node_id: {
-            "id": root_node_id,
-            "type": "root",
-            "parentId": None,
-            "children": [start_kyoku_id],
-            "mainChildId": start_kyoku_id,
-            "action": None,
-            "actor": None,
-            "snapshot": root_snapshot,
-            "analysisCache": {},
-            "depth": 0,
-        },
-        start_kyoku_id: {
-            "id": start_kyoku_id,
-            "type": "action",
-            "parentId": root_node_id,
-            "children": [],
-            "mainChildId": None,
-            "action": {"type": "start_kyoku", "source": "system"},
-            "actor": None,
-            "snapshot": copy.deepcopy(root_snapshot),
-            "analysisCache": {},
-            "depth": 1,
-        },
-    }
-
-    return {
-        "gameId": game_id,
-        "matchId": match_state["matchId"],
-        "seed": seed,
-        "createdAt": now_iso(),
-        "metadata": {
-            "label": match_state["matchId"],
-            "source": "local-environment",
-        },
-        "matchConfig": {
-            "matchType": match_state["matchType"],
-            "players": match_state["players"],
-            "westEntryEnabled": match_state["westEntryEnabled"],
-            "maxBakaze": match_state["maxBakaze"],
-            "maxKyoku": match_state["maxKyoku"],
-        },
-        "matchState": copy.deepcopy(match_state),
-        "rootNodeId": root_node_id,
-        "currentNodeId": start_kyoku_id,
-        "mainLeafNodeId": start_kyoku_id,
-        "nextNodeIndex": 2,
-        "treeRevision": 1,
-        "pendingReview": None,
-        ANALYSIS_SOURCES_FIELD: {},
-        "nodes": nodes,
-    }
+    game_index = int(STATE["nextGameId"])
+    STATE["nextGameId"] = game_index + 1
+    game_id = f"game_{game_index:04d}"
+    match_state = game_setup.create_match_state(
+        seed,
+        f"match_{game_index:04d}",
+    )
+    return game_setup.create_empty_game(
+        seed,
+        game_id,
+        match_state,
+        created_at=now_iso(),
+    )
 
 
 def validate_full_wall_tiles(tiles):
@@ -468,36 +380,11 @@ def validate_full_wall_tiles(tiles):
 
 
 def resolve_round_root_id_for_node(game, node_id):
-    cursor_id = node_id
-    node = game["nodes"][node_id]
-    if node.get("type") == "root":
-        return node_id
-    snapshot = node["snapshot"]
-    round_index = int(snapshot.get("roundIndex", 0))
-    honba = int(snapshot.get("honba", 0))
-    parent_id = node.get("parentId")
-    while parent_id:
-        parent_node = game["nodes"][parent_id]
-        if parent_node.get("type") == "root":
-            break
-        parent_snapshot = parent_node["snapshot"]
-        if int(parent_snapshot.get("roundIndex", -1)) != round_index:
-            break
-        if int(parent_snapshot.get("honba", -1)) != honba:
-            break
-        cursor_id = parent_id
-        parent_id = parent_node.get("parentId")
-    return cursor_id
+    return game_tree.resolve_round_root_id(game, node_id)
 
 
 def collect_subtree_ids(game, root_id):
-    result = []
-    stack = [root_id]
-    while stack:
-        current = stack.pop()
-        result.append(current)
-        stack.extend(game["nodes"][current]["children"])
-    return result
+    return game_tree.collect_subtree_ids(game, root_id)
 
 
 def reset_current_round_with_full_wall(full_wall):

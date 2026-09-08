@@ -5,6 +5,7 @@ import random
 from collections import Counter
 from typing import Any, Dict, List
 
+import snapshot_state
 from service_helpers import (
     DORA_INDICATOR_POSITIONS,
     RINSHAN_DRAW_POSITIONS,
@@ -17,6 +18,54 @@ from service_helpers import (
 DORA_POSITIONS = DORA_INDICATOR_POSITIONS
 URA_POSITIONS = URA_INDICATOR_POSITIONS
 KAN_ACTIONS = {"ankan", "daiminkan", "kakan"}
+
+
+def build_wall_view(snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Return the display status of every tile in a complete physical wall."""
+    snapshot_state.sync(snapshot)
+    full_wall = copy.deepcopy(snapshot.get("fullWall") or [])
+    if len(full_wall) != 136:
+        return []
+
+    draw_index = snapshot.get("drawIndex", 52)
+    wall_len = len(snapshot.get("wall", []))
+    dora_revealed = list(snapshot.get("doraIndicators", []))
+    rinshan_remaining = list(snapshot.get("rinshanWall", []))
+    dora_revealed_positions = set(DORA_POSITIONS[: len(dora_revealed)])
+    ura_revealed_positions = set(URA_POSITIONS[: len(dora_revealed)])
+    rinshan_drawn_count = 4 - len(rinshan_remaining)
+    rinshan_drawn_positions = set(
+        RINSHAN_DRAW_POSITIONS[:rinshan_drawn_count]
+    )
+
+    result = []
+    for index, tile in enumerate(full_wall):
+        if index < 52:
+            status = "dealt"
+        elif index < draw_index:
+            status = "drawn"
+        elif index < wall_len:
+            status = "available"
+        elif index < 122:
+            status = "kan_consumed"
+        elif index in DORA_POSITIONS:
+            status = (
+                "dora" if index in dora_revealed_positions else "dora_unrevealed"
+            )
+        elif index in URA_POSITIONS:
+            status = (
+                "ura" if index in ura_revealed_positions else "ura_unrevealed"
+            )
+        elif 132 <= index < 136:
+            status = (
+                "rinshan_drawn"
+                if index in rinshan_drawn_positions
+                else "available"
+            )
+        else:
+            status = "available"
+        result.append({"index": index, "tile": tile, "status": status})
+    return result
 
 
 def normalize_reconstruction_seed(value: Any) -> int:

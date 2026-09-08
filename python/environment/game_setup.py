@@ -2,6 +2,7 @@ import copy
 import random
 
 import snapshot_state
+from analysis_cache import ANALYSIS_SOURCES_FIELD
 from match_progression import get_round_seed
 from service_helpers import (
     DORA_INDICATOR_POSITIONS,
@@ -120,6 +121,64 @@ def create_initial_snapshot(match_state, full_wall=None):
     }
     snapshot_state.sync(snapshot)
     return snapshot
+
+
+def create_empty_game(seed, game_id, match_state, *, created_at):
+    root_snapshot = create_initial_snapshot(match_state)
+    root_node_id = "n_root"
+    start_kyoku_id = "n_1"
+    nodes = {
+        root_node_id: {
+            "id": root_node_id,
+            "type": "root",
+            "parentId": None,
+            "children": [start_kyoku_id],
+            "mainChildId": start_kyoku_id,
+            "action": None,
+            "actor": None,
+            "snapshot": root_snapshot,
+            "analysisCache": {},
+            "depth": 0,
+        },
+        start_kyoku_id: {
+            "id": start_kyoku_id,
+            "type": "action",
+            "parentId": root_node_id,
+            "children": [],
+            "mainChildId": None,
+            "action": {"type": "start_kyoku", "source": "system"},
+            "actor": None,
+            "snapshot": copy.deepcopy(root_snapshot),
+            "analysisCache": {},
+            "depth": 1,
+        },
+    }
+    return {
+        "gameId": game_id,
+        "matchId": match_state["matchId"],
+        "seed": seed,
+        "createdAt": created_at,
+        "metadata": {
+            "label": match_state["matchId"],
+            "source": "local-environment",
+        },
+        "matchConfig": {
+            "matchType": match_state["matchType"],
+            "players": match_state["players"],
+            "westEntryEnabled": match_state["westEntryEnabled"],
+            "maxBakaze": match_state["maxBakaze"],
+            "maxKyoku": match_state["maxKyoku"],
+        },
+        "matchState": copy.deepcopy(match_state),
+        "rootNodeId": root_node_id,
+        "currentNodeId": start_kyoku_id,
+        "mainLeafNodeId": start_kyoku_id,
+        "nextNodeIndex": 2,
+        "treeRevision": 1,
+        "pendingReview": None,
+        ANALYSIS_SOURCES_FIELD: {},
+        "nodes": nodes,
+    }
 
 
 def validate_full_wall_tiles(tiles):

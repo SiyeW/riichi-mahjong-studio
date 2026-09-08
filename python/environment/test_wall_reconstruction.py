@@ -5,12 +5,14 @@ import random
 import unittest
 from collections import Counter
 
+from game_setup import create_initial_snapshot, create_match_state
 from mortal_report_import import build_mortal_report_game
 from service_helpers import build_wall
 from wall_reconstruction import (
     DORA_POSITIONS,
     RINSHAN_DRAW_POSITIONS,
     URA_POSITIONS,
+    build_wall_view,
     reconstruct_imported_walls,
 )
 
@@ -79,6 +81,19 @@ class WallGenerationTests(unittest.TestCase):
         self.assertEqual(len([wall[index] for index in RINSHAN_DRAW_POSITIONS]), 4)
         self.assertEqual(len([wall[index] for index in DORA_POSITIONS]), 5)
         self.assertEqual(len([wall[index] for index in URA_POSITIONS]), 5)
+
+    def test_wall_view_reports_live_and_dead_wall_sections(self):
+        match_state = create_match_state(123456, "match_test")
+        snapshot = create_initial_snapshot(match_state)
+
+        view = build_wall_view(snapshot)
+
+        self.assertEqual(len(view), 136)
+        self.assertTrue(all(item["status"] == "dealt" for item in view[:52]))
+        self.assertEqual(view[52]["status"], "drawn")
+        self.assertEqual(view[53]["status"], "available")
+        self.assertEqual(view[DORA_POSITIONS[0]]["status"], "dora")
+        self.assertEqual(view[URA_POSITIONS[0]]["status"], "ura")
 
 
 class ImportedWallReconstructionTests(unittest.TestCase):
