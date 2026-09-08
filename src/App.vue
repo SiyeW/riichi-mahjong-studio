@@ -1577,15 +1577,14 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
-import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
 import { flushBeforeClose } from './flushBeforeClose'
 import { settingsChanges, mergeSettingsReply } from './settingsChanges'
-import { sameViewRequestContext } from './analysisPosition'
 import { backendStoppedState } from './backendStoppedState'
 import { useWorkspaceDock } from './useWorkspaceDock'
 import { useWallView } from './useWallView'
 import { useEngineProfiles } from './useEngineProfiles'
 import { useAutomaticAnalysis } from './useAutomaticAnalysis'
+import { useBranchNavigation } from './useBranchNavigation'
 import { useBranchTreePresentation } from './useBranchTreePresentation'
 import { useRecordSession } from './useRecordSession'
 import { useRoundResultPresentation } from './useRoundResultPresentation'
@@ -2385,47 +2384,6 @@ const {
   applyStatus,
   applyGameView,
 })
-const {
-  clearRecordMetadata,
-  closeGame,
-  closeRecordConfirmationPending,
-  closeRecordImportPanel,
-  createGame,
-  gameFileOperation,
-  handleRecordDirtyChanged,
-  handleRecordImported,
-  markRecordDirty,
-  openGame,
-  openRecordImportPanel,
-  recordDirty,
-  recordHeaderTitle,
-  recordPath,
-  restoreRecordMetadata,
-  saveGame,
-  saveGameAs,
-  setRecordDirtySnapshot,
-  showRecordImportPanel,
-  showRecordInFolder,
-} = useRecordSession({
-  status,
-  gameView,
-  flushNodeComment,
-  hasNodeCommentDrafts: () => nodeComments.hasDrafts(),
-  applyStatus,
-  applyGameView,
-  refreshGameView,
-  prepareClose: () => {
-    gameplayResponseGeneration += 1
-    cancelPendingWheelNavigation()
-    clearAutoAdvanceTimer()
-    closeWallView(true)
-    closeRoundMapOverlay()
-  },
-  handleReconstruction: async (roundCount) => {
-    await openWallView()
-    reportReconstructedRounds(roundCount)
-  },
-})
 const READ_ONLY_RECORD_HINT = computed(() => t('mode.readOnlyHint'))
 
 const modeButtonLabel = computed(() => {
@@ -2714,7 +2672,6 @@ const {
   activeRoundRootId,
   isCurrentTreeDot,
   closeRoundMapOverlay,
-  jumpToRoundRoot,
   nodeMapById,
   onTreeScroll,
   openRoundMapOverlay,
@@ -2770,172 +2727,87 @@ const {
   roundWindLabel,
   onCurrentNodeChanged: triggerActionAnnouncementForCurrentNode,
   focusRoundMap: () => focusFloatingPanel('roundMap'),
+})
+const {
+  acceptsCurrentViewRequestContext,
+  canDeleteCurrentNode,
+  canSetCurrentNodeAsMainBranch,
+  cancelPendingWheelNavigation,
+  currentViewRequestContext,
+  deleteCurrentNode,
+  deleteNodeConfirmationPending,
+  flushNodeComment,
+  flushNodeCommentInBackground,
+  hasNodeCommentDrafts,
+  invalidateNavigation,
   jumpToNode,
-})
-const branchReturnMap = ref<Record<string, string>>({})
-const deleteNodeConfirmationId = ref<string | null>(null)
-let deleteNodeConfirmationTimer: number | null = null
-const nodeMutationRequestInFlight = ref(false)
-const nodeCommentEl = ref<HTMLTextAreaElement | null>(null)
-const nodeCommentDraft = ref('')
-const nodeComments = createNodeCommentQueue(
-  async (update) => {
-    if (!window.trainerAPI?.setNodeComment) throw new Error('Node comment service unavailable')
-    return window.trainerAPI.setNodeComment(update.nodeId, update.comment)
-  },
-  (update, comment) => {
-    if (
-      nodeCommentKey(gameView.gameId, gameView.currentNodeId) === update.key
-      && nodeCommentDraft.value === update.comment
-    ) nodeCommentDraft.value = comment
-  },
-)
-const NODE_COMMENT_SAVE_DELAY_MS = 400
-let nodeCommentSaveTimer: number | null = null
-let wheelNavigationCursorNodeId: string | null = null
-let wheelNavigationQueuedNodeId: string | null = null
-let wheelNavigationQueuedDirection: GameViewTransitionDirection | null = null
-let wheelNavigationRequestInFlight = false
-let wheelNavigationGeneration = 0
-let latestNavigationIntentId = 0
-
-function cancelPendingWheelNavigation() {
-  wheelNavigationQueuedNodeId = null
-  wheelNavigationQueuedDirection = null
-  wheelNavigationGeneration = 0
-}
-
-function resizeNodeComment() {
-  void nextTick(() => {
-    const element = nodeCommentEl.value
-    if (!element) return
-    element.style.height = 'auto'
-    const style = getComputedStyle(element)
-    const maximum = Number.parseFloat(style.maxHeight)
-    const borderHeight = Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.borderBottomWidth)
-    const naturalHeight = element.scrollHeight + borderHeight
-    const height = Number.isFinite(maximum)
-      ? Math.min(naturalHeight, maximum)
-      : naturalHeight
-    element.style.height = `${height}px`
-    element.style.overflowY = Number.isFinite(maximum) && naturalHeight > maximum + 1
-      ? 'auto'
-      : 'hidden'
-  })
-}
-
-function syncNodeCommentFromView(view: TrainerGameView) {
-  const key = nodeCommentKey(view.gameId, view.currentNodeId)
-  nodeCommentDraft.value = nodeComments.get(key) ?? String(view.nodeComment || '')
-  resizeNodeComment()
-}
-
-function onNodeCommentInput() {
-  const nodeId = gameView.currentNodeId
-  const key = nodeCommentKey(gameView.gameId, nodeId)
-  if (!nodeId || !key) return
-  const comment = nodeCommentDraft.value
-  nodeComments.set(key, nodeId, comment)
-  markRecordDirty()
-  resizeNodeComment()
-  if (nodeCommentSaveTimer !== null) window.clearTimeout(nodeCommentSaveTimer)
-  nodeCommentSaveTimer = window.setTimeout(() => {
-    nodeCommentSaveTimer = null
-    flushNodeCommentInBackground()
-  }, NODE_COMMENT_SAVE_DELAY_MS)
-}
-
-function flushNodeComment(): Promise<void> {
-  if (nodeCommentSaveTimer !== null) {
-    window.clearTimeout(nodeCommentSaveTimer)
-    nodeCommentSaveTimer = null
-  }
-  return nodeComments.flush()
-}
-
-function flushNodeCommentInBackground() {
-  void flushNodeComment().catch((error) => {
-    console.error('Failed to save node comment:', error)
-  })
-}
-
-function discardNodeCommentDraft(nodeId: string) {
-  const key = nodeCommentKey(gameView.gameId, nodeId)
-  if (!key) return
-  nodeComments.discard(key)
-}
-
-const canSetCurrentNodeAsMainBranch = computed(() => {
-  if (isReadOnlyRecord.value) return false
-  const nodeId = gameView.currentNodeId
-  if (!nodeId) return false
-  const node = nodeMapById.value.get(nodeId)
-  return !!node && !!node.parentId
+  navigateTreeByOffset,
+  nodeCommentDraft,
+  nodeCommentEl,
+  nodeMutationRequestInFlight,
+  onNodeCommentInput,
+  resizeNodeComment,
+  resetForNewGame: resetBranchNavigationForNewGame,
+  setCurrentNodeAsMainBranch,
+  syncFromGameView: syncBranchNavigationFromGameView,
+} = useBranchNavigation({
+  gameView,
+  status,
+  isReadOnlyRecord,
+  nodeMapById,
+  activeRoundRootId,
+  roundRootById,
+  confirmationTimeoutMs: CONFIRMATION_TIMEOUT_MS,
+  getGameplayResponseGeneration: () => gameplayResponseGeneration,
+  markRecordDirty: () => markRecordDirty(),
+  applyStatus,
+  applyGameView,
 })
 
-const canDeleteCurrentNode = computed(() => {
-  if (isReadOnlyRecord.value) return false
-  const nodeId = gameView.currentNodeId
-  if (!nodeId) return false
-  const node = nodeMapById.value.get(nodeId)
-  return !!node?.parentId
-})
-
-const deleteNodeConfirmationPending = computed(() => {
-  const nodeId = gameView.currentNodeId
-  return Boolean(nodeId) && deleteNodeConfirmationId.value === nodeId
-})
-
-watch(() => gameView.currentNodeId, () => {
-  deleteNodeConfirmationId.value = null
-})
-
-watch(deleteNodeConfirmationId, (nodeId) => {
-  if (deleteNodeConfirmationTimer !== null) {
-    window.clearTimeout(deleteNodeConfirmationTimer)
-    deleteNodeConfirmationTimer = null
-  }
-  if (!nodeId) return
-  deleteNodeConfirmationTimer = window.setTimeout(() => {
-    if (deleteNodeConfirmationId.value === nodeId) {
-      deleteNodeConfirmationId.value = null
-    }
-  }, CONFIRMATION_TIMEOUT_MS)
-})
-
-async function setCurrentNodeAsMainBranch() {
-  if (!window.trainerAPI || !gameView.currentNodeId || !canSetCurrentNodeAsMainBranch.value || nodeMutationRequestInFlight.value) return
-  deleteNodeConfirmationId.value = null
-  nodeMutationRequestInFlight.value = true
-  try {
-    const response = await window.trainerAPI.setMainBranch(gameView.currentNodeId)
-    applyStatus(response.state)
-    applyGameView(response.view)
-  } finally {
-    nodeMutationRequestInFlight.value = false
-  }
-}
-
-async function deleteCurrentNode() {
-  const nodeId = gameView.currentNodeId
-  if (!window.trainerAPI || !nodeId || !canDeleteCurrentNode.value || nodeMutationRequestInFlight.value) return
-  if (deleteNodeConfirmationId.value !== nodeId) {
-    deleteNodeConfirmationId.value = nodeId
-    return
-  }
-
-  nodeMutationRequestInFlight.value = true
-  try {
-    discardNodeCommentDraft(nodeId)
-    const response = await window.trainerAPI.deleteNode(nodeId)
+const {
+  clearRecordMetadata,
+  closeGame,
+  closeRecordConfirmationPending,
+  closeRecordImportPanel,
+  createGame,
+  gameFileOperation,
+  handleRecordDirtyChanged,
+  handleRecordImported,
+  markRecordDirty,
+  openGame,
+  openRecordImportPanel,
+  recordDirty,
+  recordHeaderTitle,
+  recordPath,
+  restoreRecordMetadata,
+  saveGame,
+  saveGameAs,
+  setRecordDirtySnapshot,
+  showRecordImportPanel,
+  showRecordInFolder,
+} = useRecordSession({
+  status,
+  gameView,
+  flushNodeComment,
+  hasNodeCommentDrafts,
+  applyStatus,
+  applyGameView,
+  refreshGameView,
+  prepareClose: () => {
+    gameplayResponseGeneration += 1
     cancelPendingWheelNavigation()
-    branchReturnMap.value = {}
-    applyStatus(response.state)
-    applyGameView(response.view, 'backward')
-  } finally {
-    deleteNodeConfirmationId.value = null
-    nodeMutationRequestInFlight.value = false
-  }
+    clearAutoAdvanceTimer()
+    closeWallView(true)
+    closeRoundMapOverlay()
+  },
+  handleReconstruction: async (roundCount) => {
+    await openWallView()
+    reportReconstructedRounds(roundCount)
+  },
+})
+
+async function jumpToRoundRoot(roundRootId: string) {
+  await jumpToNode(roundRootId)
 }
 
 function seatLabel(seat: number): string {
@@ -4255,9 +4127,7 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
     : null
   if (isNewGame) {
     resetForNewGame()
-    cancelPendingWheelNavigation()
-    latestNavigationIntentId += 1
-    nodeComments.clear()
+    resetBranchNavigationForNewGame()
   }
   gameView.gameId = nextView.gameId
   gameView.matchId = nextView.matchId
@@ -4266,7 +4136,7 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
   gameView.readOnlyReason = nextView.readOnlyReason || null
   gameView.currentNodeId = nextView.currentNodeId
   gameView.nodeComment = nextView.nodeComment || ''
-  syncNodeCommentFromView(nextView)
+  syncBranchNavigationFromGameView(nextView)
   gameView.opponentAnalysis = nextView.opponentAnalysis || null
   const prefetchKey = playPrefetchPositionKey(nextView.gameId, nextView.currentNodeId)
   if (prefetchKey && earlyPlayPrefetchReady.has(prefetchKey)) {
@@ -4311,9 +4181,6 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
     currentTree.currentRoundRootId = nextTree.currentRoundRootId
   } else {
     gameView.tree = nextTree
-  }
-  if (wheelNavigationGeneration === 0) {
-    wheelNavigationCursorNodeId = nextView.currentNodeId
   }
   scheduleAutoAdvance()
   handleSoundTransitions(previousSoundView, nextView, isNewGame, transitionDirection)
@@ -4406,7 +4273,7 @@ async function refreshGameView() {
   const requestContext = currentViewRequestContext()
   const nodeId = gameView.currentNodeId
   const response = await window.trainerAPI.getGameView()
-  if (nodeId !== gameView.currentNodeId || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
+  if (nodeId !== gameView.currentNodeId || !acceptsCurrentViewRequestContext(requestContext)) return
   applyStatus(response.state)
   applyGameView(response.view)
 }
@@ -4745,15 +4612,14 @@ async function toggleVisibleHands() {
 async function switchSeat(seat: number, label: string) {
   if (!window.trainerAPI || seatSwitchInFlight.value || seat === status.controlledSeat) return
   gameplayResponseGeneration += 1
-  latestNavigationIntentId += 1
-  cancelPendingWheelNavigation()
+  invalidateNavigation()
   seatSwitchInFlight.value = true
   pendingSeatSwitchLabel.value = label
   try {
     const requestContext = currentViewRequestContext()
     gameView.analysis = null
     const response = await window.trainerAPI.requestSeatSwitch(seat)
-    if (!sameViewRequestContext(requestContext, currentViewRequestContext())) return
+    if (!acceptsCurrentViewRequestContext(requestContext)) return
     applyStatus(response)
     await refreshGameView()
   } finally {
@@ -4804,69 +4670,6 @@ async function submitAction(action: TrainerAction) {
     applyPlayPrefetchStatus(response.playPrefetch)
   } finally {
     actionRequestInFlight.value = false
-  }
-}
-
-function resolveNodeTransitionDirection(nodeId: string): GameViewTransitionDirection {
-  const targetNode = nodeMapById.value.get(nodeId)
-  const currentNode = gameView.currentNodeId ? nodeMapById.value.get(gameView.currentNodeId) : null
-  return targetNode && currentNode && targetNode.depth < currentNode.depth ? 'backward' : 'forward'
-}
-
-function currentViewRequestContext() {
-  return {
-    gameId: gameView.gameId, seat: status.controlledSeat, mode: status.mode,
-    generation: gameplayResponseGeneration, intent: latestNavigationIntentId,
-  }
-}
-
-async function jumpToNode(nodeId: string, navigationIntentId?: number) {
-  if (!window.trainerAPI) return
-  cancelPendingWheelNavigation()
-  const intentId = navigationIntentId ?? ++latestNavigationIntentId
-  latestNavigationIntentId = Math.max(latestNavigationIntentId, intentId)
-  const requestContext = currentViewRequestContext()
-  wheelNavigationCursorNodeId = nodeId
-  const targetNode = nodeMapById.value.get(nodeId)
-  const transitionDirection = resolveNodeTransitionDirection(nodeId)
-  if (targetNode?.parentId) {
-    branchReturnMap.value = {
-      ...branchReturnMap.value,
-      [targetNode.parentId]: nodeId,
-    }
-  }
-  const response = await window.trainerAPI.jumpToNode(nodeId, gameView.tree?.revision)
-  if (intentId !== latestNavigationIntentId || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
-  applyStatus(response.state)
-  applyGameView(response.view, transitionDirection)
-  wheelNavigationCursorNodeId = response.view.currentNodeId
-}
-
-async function dispatchQueuedWheelNavigation() {
-  if (!window.trainerAPI || wheelNavigationRequestInFlight || !wheelNavigationQueuedNodeId) return
-  const nodeId = wheelNavigationQueuedNodeId
-  const transitionDirection = wheelNavigationQueuedDirection ?? resolveNodeTransitionDirection(nodeId)
-  const generation = wheelNavigationGeneration
-  const requestContext = currentViewRequestContext()
-  wheelNavigationQueuedNodeId = null
-  wheelNavigationQueuedDirection = null
-  wheelNavigationRequestInFlight = true
-
-  try {
-    const response = await window.trainerAPI.jumpToNode(nodeId, gameView.tree?.revision)
-    if (generation !== wheelNavigationGeneration || generation !== latestNavigationIntentId
-      || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
-    applyStatus(response.state)
-    applyGameView(response.view, transitionDirection)
-  } finally {
-    wheelNavigationRequestInFlight = false
-    if (generation === wheelNavigationGeneration && !wheelNavigationQueuedNodeId) {
-      wheelNavigationGeneration = 0
-      wheelNavigationCursorNodeId = gameView.currentNodeId
-    }
-    if (wheelNavigationQueuedNodeId) {
-      void dispatchQueuedWheelNavigation()
-    }
   }
 }
 
@@ -4948,59 +4751,6 @@ function isBestAction(action?: TrainerAction): boolean {
   if (!action) return false
   if (action.type === 'dahai') return analysisEntryIsBest(resolveDiscardEntry(action))
   return analysisEntryIsBest(resolveReactionEntry(action) || resolveSpecialEntry(action))
-}
-
-function navigateTreeByOffset(offset: number) {
-  const cursorNodeId = wheelNavigationCursorNodeId || gameView.currentNodeId
-  if (!cursorNodeId) return
-  // Rendering filters links outside the active round, but wheel navigation must
-  // retain those links to reach the adjacent round on the same branch.
-  const node = nodeMapById.value.get(cursorNodeId)
-  if (!node) return
-  let targetNodeId: string | null = null
-  let transitionDirection: GameViewTransitionDirection
-  if (offset < 0) {
-    if (!node.parentId) return
-    if (!nodeMapById.value.has(node.parentId)) {
-      const activeRound = activeRoundRootId.value
-        ? roundRootById.value.get(activeRoundRootId.value)
-        : null
-      if (cursorNodeId !== activeRoundRootId.value || !activeRound?.parentRoundId) return
-    }
-    branchReturnMap.value = {
-      ...branchReturnMap.value,
-      [node.parentId]: node.id,
-    }
-    targetNodeId = node.parentId
-    transitionDirection = 'backward'
-  } else {
-    const children = (node.children || []).filter(
-      (childId) => nodeMapById.value.has(childId) || roundRootById.value.has(childId),
-    )
-    if (!children.length) return
-    const rememberedChild = branchReturnMap.value[node.id]
-    targetNodeId = children.includes(rememberedChild) ? rememberedChild : null
-    if (!targetNodeId) {
-      targetNodeId = node.mainChildId && children.includes(node.mainChildId)
-        ? node.mainChildId
-        : children[0]
-    }
-    if (!targetNodeId) return
-    if (rememberedChild && targetNodeId === rememberedChild) {
-      const nextMap = { ...branchReturnMap.value }
-      delete nextMap[node.id]
-      branchReturnMap.value = nextMap
-    }
-    transitionDirection = 'forward'
-  }
-
-  wheelNavigationCursorNodeId = targetNodeId
-  if (wheelNavigationGeneration === 0) {
-    wheelNavigationGeneration = ++latestNavigationIntentId
-  }
-  wheelNavigationQueuedNodeId = targetNodeId
-  wheelNavigationQueuedDirection = transitionDirection
-  void dispatchQueuedWheelNavigation()
 }
 
 const ANKAN_CHOICE_TIMEOUT_MS = 6000
@@ -5220,8 +4970,7 @@ function handlePythonEvent(event: TrainerPythonEvent) {
   if (event.type === 'service_ready' || event.type === 'service_stopped') {
     resetForBackendLifecycle()
     gameplayResponseGeneration += 1
-    latestNavigationIntentId += 1
-    cancelPendingWheelNavigation()
+    invalidateNavigation()
     if (event.type === 'service_stopped') {
       backendRecoveryNeeded.value = true
       backendHasCheckpoint.value = Boolean(event.hasCheckpoint)
@@ -5493,14 +5242,9 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  flushNodeCommentInBackground()
-  if (deleteNodeConfirmationTimer !== null) {
-    window.clearTimeout(deleteNodeConfirmationTimer)
-  }
   cancelPendingDiscardFlight()
   cancelPendingDiscardReturnFlight()
   clearAutoAdvanceTimer()
-  cancelPendingWheelNavigation()
   clearActionAnnouncementTimer()
   if (runtimeMetricsTimer !== null) {
     window.clearInterval(runtimeMetricsTimer)

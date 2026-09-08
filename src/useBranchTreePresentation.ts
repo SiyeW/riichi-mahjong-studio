@@ -76,7 +76,6 @@ export function useBranchTreePresentation(options: {
   roundWindLabel: (wind: string) => string
   onCurrentNodeChanged?: () => void
   focusRoundMap: () => void
-  jumpToNode: (nodeId: string) => Promise<void>
 }) {
   const {
     gameView,
@@ -91,7 +90,6 @@ export function useBranchTreePresentation(options: {
     roundWindLabel,
     onCurrentNodeChanged,
     focusRoundMap,
-    jumpToNode,
   } = options
 
 function buildGraphHitRegions<TDot extends { id: string; x: number; y: number }>(
@@ -753,10 +751,6 @@ function closeRoundMapOverlay() {
   roundMapHoveredRoundId.value = null
 }
 
-async function jumpToRoundRoot(roundRootId: string) {
-  await jumpToNode(roundRootId)
-}
-
 const roundRootNodeList = computed(() => (
   roundSummaryList.value
     .slice()
@@ -1366,6 +1360,5 @@ function specialNextMoveClass(action: TrainerAction): string {
     visibleTreeHitRegions,
     visibleTreeRows,
     onTreeScroll,
-    jumpToRoundRoot,
   }
 }
