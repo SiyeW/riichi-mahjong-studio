@@ -1212,6 +1212,7 @@ import { applyModelActivityEvent } from './modelActivityEvent'
 import { useWorkspaceDock } from './useWorkspaceDock'
 import { useWallView } from './useWallView'
 import { useEngineProfiles } from './useEngineProfiles'
+import { useGameplayActions } from './useGameplayActions'
 import { useActionAnnouncement } from './useActionAnnouncement'
 import { useAutomaticAnalysis } from './useAutomaticAnalysis'
 import { useAutoAdvance } from './useAutoAdvance'
@@ -1734,9 +1735,6 @@ watch(
   () => { void fetchShantenOnce() },
 )
 
-const actionRequestInFlight = ref(false)
-const advanceRequestInFlight = ref(false)
-let gameplayResponseGeneration = 0
 const {
   activatePlayPrefetchPosition,
   applyPlayPrefetchStatus,
@@ -1783,6 +1781,25 @@ const { clearAutoAdvanceTimer, scheduleAutoAdvance } = useAutoAdvance({
   motionDelayMs: () => autoAdvanceMotionDelayMs(),
   hasPendingMotion: () => hasPendingDiscardFlight(),
   advance: () => advanceGame(),
+})
+const {
+  advanceGame,
+  confirmPendingReview,
+  currentGameplayResponseGeneration,
+  discardTile,
+  invalidateGameplayResponses,
+  isUserDiscard,
+  submitAction,
+} = useGameplayActions({
+  gameView,
+  status,
+  readOnlyRecord: isReadOnlyRecord,
+  prefetchReady: playPrefetchReady,
+  applyStatus,
+  applyGameView,
+  applyPlayPrefetchStatus,
+  beginPlayPrefetchAdvance,
+  scheduleAutoAdvance,
 })
 const {
   showWallView,
@@ -2098,7 +2115,7 @@ const {
   activeRoundRootId,
   roundRootById,
   confirmationTimeoutMs: CONFIRMATION_TIMEOUT_MS,
-  getGameplayResponseGeneration: () => gameplayResponseGeneration,
+  getGameplayResponseGeneration: currentGameplayResponseGeneration,
   markRecordDirty: () => markRecordDirty(),
   applyStatus,
   applyGameView,
@@ -2134,7 +2151,7 @@ const {
   applyGameView,
   refreshGameView,
   prepareClose: () => {
-    gameplayResponseGeneration += 1
+    invalidateGameplayResponses()
     cancelPendingWheelNavigation()
     clearAutoAdvanceTimer()
     closeWallView(true)
@@ -2390,7 +2407,7 @@ async function prepareRendererForDisplay() {
 
 async function toggleMode() {
   if (!window.trainerAPI || !status.gameLoaded || isReadOnlyRecord.value) return
-  gameplayResponseGeneration += 1
+  invalidateGameplayResponses()
   cancelPendingWheelNavigation()
   clearAutoAdvanceTimer()
   const nextMode = status.mode === 'play' ? 'research' : 'play'
@@ -2401,7 +2418,7 @@ async function toggleMode() {
 async function showRoundMapInResearchMode() {
   if (!window.trainerAPI || !status.gameLoaded) return
   if (status.mode !== 'research') {
-    gameplayResponseGeneration += 1
+    invalidateGameplayResponses()
     cancelPendingWheelNavigation()
     clearAutoAdvanceTimer()
     applyStatus(await window.trainerAPI.setMode('research'))
@@ -2418,7 +2435,7 @@ async function toggleVisibleHands() {
 
 async function switchSeat(seat: number, label: string) {
   if (!window.trainerAPI || seatSwitchInFlight.value || seat === status.controlledSeat) return
-  gameplayResponseGeneration += 1
+  invalidateGameplayResponses()
   invalidateNavigation()
   seatSwitchInFlight.value = true
   pendingSeatSwitchLabel.value = label
@@ -2435,83 +2452,9 @@ async function switchSeat(seat: number, label: string) {
   }
 }
 
-function isUserDiscard(tile: string, seat: number): boolean {
-  return seat === status.controlledSeat
-    && gameView.table?.currentActor === seat
-    && gameView.legalActions.some((action) => action.type === 'dahai' && action.pai === tile)
-}
-
-async function discardTile(tile: string, fromDrawn = false) {
-  if (!window.trainerAPI || actionRequestInFlight.value || !isUserDiscard(tile, status.controlledSeat)) return
-  if (isReadOnlyRecord.value || status.mode !== 'play') return
-  const responseGeneration = gameplayResponseGeneration
-  actionRequestInFlight.value = true
-  try {
-    const response = await window.trainerAPI.submitUserAction({ type: 'dahai', pai: tile, fromDrawn })
-    if (responseGeneration !== gameplayResponseGeneration) return
-    applyStatus(response.state)
-    applyGameView(response.view)
-    applyPlayPrefetchStatus(response.playPrefetch)
-  } finally {
-    actionRequestInFlight.value = false
-  }
-}
-
-async function submitAction(action: TrainerAction) {
-  if (!window.trainerAPI || actionRequestInFlight.value || isReadOnlyRecord.value || status.mode !== 'play') return
-  if (action.type === 'dahai') {
-    await discardTile(action.pai || '', Boolean(action.tsumogiri))
-    return
-  }
-  const responseGeneration = gameplayResponseGeneration
-  actionRequestInFlight.value = true
-  try {
-    const response = await window.trainerAPI.submitUserAction({
-      type: action.type,
-      variant: action.variant,
-      candidateId: action.candidateId || action.id,
-    })
-    if (responseGeneration !== gameplayResponseGeneration) return
-    applyStatus(response.state)
-    applyGameView(response.view)
-    applyPlayPrefetchStatus(response.playPrefetch)
-  } finally {
-    actionRequestInFlight.value = false
-  }
-}
-
-async function advanceGame() {
-  if (!window.trainerAPI || isReadOnlyRecord.value || advanceRequestInFlight.value || status.mode !== 'play') return
-  const responseGeneration = gameplayResponseGeneration
-  advanceRequestInFlight.value = true
-  beginPlayPrefetchAdvance()
-  try {
-    const response = await window.trainerAPI.advanceGame()
-    if (responseGeneration !== gameplayResponseGeneration) return
-    applyStatus(response.state)
-    if (response.playPrefetch?.committed !== false) {
-      applyGameView(response.view)
-    }
-    applyPlayPrefetchStatus(response.playPrefetch)
-  } finally {
-    advanceRequestInFlight.value = false
-    if (playPrefetchReady.value) scheduleAutoAdvance()
-  }
-}
-
 function continueFromResult() {
   if (resultIsMatchEnd.value) return
   void advanceGame()
-}
-
-async function confirmPendingReview() {
-  if (!window.trainerAPI || isReadOnlyRecord.value || status.mode !== 'play') return
-  const responseGeneration = gameplayResponseGeneration
-  const response = await window.trainerAPI.confirmPendingReview()
-  if (responseGeneration !== gameplayResponseGeneration) return
-  applyStatus(response.state)
-  applyGameView(response.view)
-  applyPlayPrefetchStatus(response.playPrefetch)
 }
 
 watchEffect(() => {
@@ -2571,7 +2514,7 @@ function handlePythonEvent(event: TrainerPythonEvent) {
   }
   if (event.type === 'service_ready' || event.type === 'service_stopped') {
     resetForBackendLifecycle()
-    gameplayResponseGeneration += 1
+    invalidateGameplayResponses()
     invalidateNavigation()
     if (event.type === 'service_stopped') {
       backendRecoveryNeeded.value = true
