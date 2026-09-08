@@ -964,6 +964,7 @@ import { useDesktopBridgeSubscriptions } from './useDesktopBridgeSubscriptions'
 import { useRecordSession } from './useRecordSession'
 import { useRoundResultPresentation } from './useRoundResultPresentation'
 import { useRuntimeMetrics } from './useRuntimeMetrics'
+import { useMahjongPresentationLabels } from './useMahjongPresentationLabels'
 import { useSettingsSession } from './useSettingsSession'
 import { useSoundTransitions, type SoundTransitionView } from './useSoundTransitions'
 import { usePlayPrefetch } from './usePlayPrefetch'
@@ -1558,6 +1559,20 @@ const visibleHandsToggleLabel = computed(() => (
   status.visibleHands ? t('mode.hideHands') : t('mode.showHands')
 ))
 
+const tableLabels = useMahjongPresentationLabels({ gameView, status, t })
+const {
+  relativeSeatLabel,
+  seatWindLabel,
+  isCurrentActorSeat,
+  roundWindLabel,
+  tileFaceLabel,
+  reactionTypeLabel,
+  ryukyokuActionLabel,
+  specialActionLabel,
+  normalizeTileFamily,
+  redFive,
+} = tableLabels
+
 
 const roundLabel = computed(() => {
   const table = gameView.table
@@ -1691,21 +1706,11 @@ const {
   centerDoraSlots,
   southDiscardBarSlots,
   southLaneStyle,
-  relativeSeatLabel,
-  seatWindLabel,
-  isCurrentActorSeat,
-  roundWindLabel,
-  tileFaceLabel,
-  reactionTypeLabel,
-  ryukyokuActionLabel,
-  specialActionLabel,
-  normalizeTileFamily,
   canJumpToHistoricalNode,
   historicalJumpTitle,
   jumpToHistoricalNode,
   meldNodeId,
   meldDisplayTiles,
-  redFive,
   southDisplayHandParts,
   eastDisplayHandParts,
   northDisplayHandParts,
@@ -1721,6 +1726,7 @@ const {
   currentTrainingMode,
   ronWaitPredData,
   t,
+  labels: tableLabels,
   resolveDiscardEntry: (action) => resolveDiscardEntry(action),
   analysisEntryIsBest: (entry) => analysisEntryIsBest(entry),
   getNodeMapById: () => nodeMapById.value,
