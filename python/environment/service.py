@@ -27,6 +27,7 @@ import round_actions
 import round_progression
 import runtime_metrics
 import snapshot_state
+import view_control_commands
 from action_recommendation_adapter import (
     choose_ai_action,
     get_and_reset_ai_thinking_time_s,
@@ -979,6 +980,24 @@ GAMEPLAY_COMMANDS = gameplay_commands.GameplayCommands(
     view_builder=VIEW_BUILDER,
 )
 
+VIEW_CONTROL_COMMANDS = view_control_commands.ViewControlCommands(
+    STATE,
+    auto_analysis=AUTO_ANALYSIS,
+    play_prefetch=PLAY_PREFETCH,
+    opponent_analysis=OPPONENT_ANALYSIS,
+    opponent_predictions=OPPONENT_PREDICTIONS,
+    decision_analysis=DECISION_ANALYSIS,
+    review_session=REVIEW_SESSION,
+    game_flow=GAME_FLOW,
+    view_builder=VIEW_BUILDER,
+    ensure_loaded=ensure_game_loaded,
+    is_read_only=is_read_only_game,
+    normalize_mode=normalize_mode,
+    normalize_seat=normalize_seat,
+    get_current_snapshot=get_current_snapshot,
+    apply_pending_seat_switch=apply_pending_seat_switch_if_ready,
+)
+
 
 def handle_command(request_id, command, payload):
     with _STATE_LOCK:
@@ -1037,68 +1056,20 @@ def handle_command(request_id, command, payload):
             return VIEW_BUILDER.build_response(request_id, command)
 
         if command == "set_mode":
-            ensure_game_loaded()
-            next_mode = normalize_mode(payload.get("mode"))
-            if next_mode == "play" and is_read_only_game():
-                raise ValueError("This replay has no complete wall and cannot enter play mode.")
-            PLAY_PREFETCH.cancel()
-            STATE["mode"] = next_mode
-            if STATE["gameLoaded"] and STATE["mode"] == "research":
-                OPPONENT_ANALYSIS.request_current(get_current_snapshot())
-            elif STATE["gameLoaded"] and STATE["mode"] == "play":
-                PLAY_PREFETCH.start()
-            return VIEW_BUILDER.build_response(request_id, command)
+            return VIEW_CONTROL_COMMANDS.set_mode(request_id, command, payload)
 
         if command == "set_analysis_visibility":
-            if "decisionRecommendations" in payload:
-                enabled = bool(payload.get("decisionRecommendations"))
-                STATE["decisionRecommendationsEnabled"] = enabled
-                if not enabled:
-                    DECISION_ANALYSIS.cancel_pending()
-                    game = STATE.get("game")
-                    if isinstance(game, dict) and game.get("pendingReview"):
-                        REVIEW_SESSION.finalize(confirm_proposed=True)
-
-            if "opponentAnalysis" in payload:
-                enabled = bool(payload.get("opponentAnalysis"))
-                STATE["opponentAnalysisEnabled"] = enabled
-                if enabled and STATE.get("gameLoaded"):
-                    OPPONENT_ANALYSIS.request_current(get_current_snapshot())
-                elif not enabled:
-                    OPPONENT_PREDICTIONS.cancel_pending()
-
-            if STATE.get("mode") == "play" and STATE.get("gameLoaded"):
-                PLAY_PREFETCH.start()
-            return VIEW_BUILDER.build_response(request_id, command)
+            return VIEW_CONTROL_COMMANDS.set_analysis_visibility(
+                request_id, command, payload
+            )
 
         if command == "request_seat_switch":
-            seat = normalize_seat(payload.get("seat"))
-            AUTO_ANALYSIS.cancel("主视角已切换")
-            PLAY_PREFETCH.cancel()
-            STATE["pendingSeatSwitch"] = seat
-            if STATE["gameLoaded"] and STATE["mode"] == "play":
-                GAME_FLOW.advance(STATE["game"])
-                VIEW_BUILDER.normalize_tree_cursor(
-                    STATE["game"],
-                    STATE["controlledSeat"],
-                )
-            elif STATE["mode"] != "play":
-                apply_pending_seat_switch_if_ready(get_current_snapshot() if STATE["gameLoaded"] else {})
-                if STATE["gameLoaded"]:
-                    VIEW_BUILDER.normalize_tree_cursor(
-                        STATE["game"],
-                        STATE["controlledSeat"],
-                    )
-                    OPPONENT_ANALYSIS.request_current(get_current_snapshot())
-            elif STATE["gameLoaded"]:
-                PLAY_PREFETCH.start()
-            return VIEW_BUILDER.build_response(request_id, command)
+            return VIEW_CONTROL_COMMANDS.request_seat_switch(
+                request_id, command, payload
+            )
 
         if command == "toggle_visible_hands":
-            STATE["visibleHands"] = not STATE["visibleHands"]
-            if STATE["gameLoaded"] and STATE["mode"] == "research":
-                OPPONENT_ANALYSIS.request_current(get_current_snapshot())
-            return VIEW_BUILDER.build_response(request_id, command)
+            return VIEW_CONTROL_COMMANDS.toggle_visible_hands(request_id, command)
 
         if command == "get_game_view":
             return VIEW_BUILDER.build_response(request_id, command)
