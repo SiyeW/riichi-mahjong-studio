@@ -339,113 +339,20 @@
               <div class="south-bottom-buffer"></div>
             </div>
 
-            <!-- 屏幕右侧（east 方位），用户下家 -->
-            <span class="grid-hand pov-p1 grid-hand-p1" :class="{ 'hands-hidden': !status.visibleHands }" v-if="eastView">
-              <span
-                class="pov-p1 hand-closed-p1 opponent-hand-toggle"
-                role="button"
-                tabindex="0"
-                :aria-label="visibleHandsToggleLabel"
-                v-ui-tooltip="visibleHandsToggleLabel"
-                @click.stop="toggleVisibleHands"
-                @keydown.enter.prevent="toggleVisibleHands"
-                @keydown.space.prevent="toggleVisibleHands"
-              >
-                <div
-                  v-for="(tile, index) in eastDisplayHandParts.closed"
-                  :key="'p1h-'+index"
-                  :class="['tileDiv', { 'hand-discard-gap': tile === HAND_DISCARD_GAP }]"
-                  :data-hand-gap-seat="tile === HAND_DISCARD_GAP ? eastView.seat : undefined"
-                ><img v-if="tile !== HAND_DISCARD_GAP" :src="tileImageSrc(tile)" class="tileImg" :alt="tileFaceLabel(tile)" /></div>
-                <span v-if="eastDisplayHandParts.drawn" class="draw-gap draw-gap-p1"></span>
-                <div
-                  v-if="eastDisplayHandParts.drawn"
-                  :class="['tileDiv', 'is-drawn', { 'hand-discard-gap': eastDisplayHandParts.drawn === HAND_DISCARD_GAP }]"
-                  :data-hand-gap-seat="eastDisplayHandParts.drawn === HAND_DISCARD_GAP ? eastView.seat : undefined"
-                ><img v-if="eastDisplayHandParts.drawn !== HAND_DISCARD_GAP" :src="tileImageSrc(eastDisplayHandParts.drawn)" class="tileImg" :alt="tileFaceLabel(eastDisplayHandParts.drawn)" /></div>
-                <div class="tileDiv narrow" v-if="eastView.hand.length < 13" style="opacity:0"><img :src="tileImageSrc('?')" class="tileImg" /></div>
-              </span>
-              <span class="pov-p1 hand-calls-p1" v-if="eastView.melds.length">
-                <template v-for="(meld, mi) in eastView.melds.slice().reverse()" :key="'p1m-'+mi">
-                  <div v-for="(item, ti) in meldDisplayTiles(meld, eastView.seat)" :key="'p1mt-'+ti" class="tileDiv">
-                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi))" />
-                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(eastView.seat, eastView.melds.length - 1 - mi, 'kakan'))" />
-                  </div>
-                </template>
-              </span>
-            </span>
-
-            <!-- 屏幕上方（north 方位），用户对家 -->
-            <span class="grid-hand pov-p2 grid-hand-p2" :class="{ 'hands-hidden': !status.visibleHands }" v-if="northView">
-              <span
-                class="pov-p2 hand-closed-p2 opponent-hand-toggle"
-                role="button"
-                tabindex="0"
-                :aria-label="visibleHandsToggleLabel"
-                v-ui-tooltip="visibleHandsToggleLabel"
-                @click.stop="toggleVisibleHands"
-                @keydown.enter.prevent="toggleVisibleHands"
-                @keydown.space.prevent="toggleVisibleHands"
-              >
-                <div
-                  v-for="(tile, index) in northDisplayHandParts.closed"
-                  :key="'p2h-'+index"
-                  :class="['tileDiv', { 'hand-discard-gap': tile === HAND_DISCARD_GAP }]"
-                  :data-hand-gap-seat="tile === HAND_DISCARD_GAP ? northView.seat : undefined"
-                ><img v-if="tile !== HAND_DISCARD_GAP" :src="tileImageSrc(tile)" class="tileImg" :alt="tileFaceLabel(tile)" /></div>
-                <span v-if="northDisplayHandParts.drawn" class="draw-gap draw-gap-p2"></span>
-                <div
-                  v-if="northDisplayHandParts.drawn"
-                  :class="['tileDiv', 'is-drawn', { 'hand-discard-gap': northDisplayHandParts.drawn === HAND_DISCARD_GAP }]"
-                  :data-hand-gap-seat="northDisplayHandParts.drawn === HAND_DISCARD_GAP ? northView.seat : undefined"
-                ><img v-if="northDisplayHandParts.drawn !== HAND_DISCARD_GAP" :src="tileImageSrc(northDisplayHandParts.drawn)" class="tileImg" :alt="tileFaceLabel(northDisplayHandParts.drawn)" /></div>
-                <div class="tileDiv narrow" v-if="northView.hand.length < 13" style="opacity:0"><img :src="tileImageSrc('?')" class="tileImg" /></div>
-              </span>
-              <span class="pov-p2 hand-calls-p2" v-if="northView.melds.length">
-                <template v-for="(meld, mi) in northView.melds.slice().reverse()" :key="'p2m-'+mi">
-                  <div v-for="(item, ti) in meldDisplayTiles(meld, northView.seat)" :key="'p2mt-'+ti" class="tileDiv">
-                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(northView.seat, northView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi))" />
-                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(northView.seat, northView.melds.length - 1 - mi, 'kakan'))" />
-                  </div>
-                </template>
-              </span>
-            </span>
-
-            <!-- 屏幕左侧（west 方位），用户上家 -->
-            <span class="grid-hand pov-p3 grid-hand-p3" :class="{ 'hands-hidden': !status.visibleHands }" v-if="westView">
-              <span
-                class="pov-p3 hand-closed-p3 opponent-hand-toggle"
-                role="button"
-                tabindex="0"
-                :aria-label="visibleHandsToggleLabel"
-                v-ui-tooltip="visibleHandsToggleLabel"
-                @click.stop="toggleVisibleHands"
-                @keydown.enter.prevent="toggleVisibleHands"
-                @keydown.space.prevent="toggleVisibleHands"
-              >
-                <div
-                  v-for="(tile, index) in westDisplayHandParts.closed"
-                  :key="'p3h-'+index"
-                  :class="['tileDiv', { 'hand-discard-gap': tile === HAND_DISCARD_GAP }]"
-                  :data-hand-gap-seat="tile === HAND_DISCARD_GAP ? westView.seat : undefined"
-                ><img v-if="tile !== HAND_DISCARD_GAP" :src="tileImageSrc(tile)" class="tileImg" :alt="tileFaceLabel(tile)" /></div>
-                <span v-if="westDisplayHandParts.drawn" class="draw-gap draw-gap-p3"></span>
-                <div
-                  v-if="westDisplayHandParts.drawn"
-                  :class="['tileDiv', 'is-drawn', { 'hand-discard-gap': westDisplayHandParts.drawn === HAND_DISCARD_GAP }]"
-                  :data-hand-gap-seat="westDisplayHandParts.drawn === HAND_DISCARD_GAP ? westView.seat : undefined"
-                ><img v-if="westDisplayHandParts.drawn !== HAND_DISCARD_GAP" :src="tileImageSrc(westDisplayHandParts.drawn)" class="tileImg" :alt="tileFaceLabel(westDisplayHandParts.drawn)" /></div>
-                <div class="tileDiv narrow" v-if="westView.hand.length < 13" style="opacity:0"><img :src="tileImageSrc('?')" class="tileImg" /></div>
-              </span>
-              <span class="pov-p3 hand-calls-p3" v-if="westView.melds.length">
-                <template v-for="(meld, mi) in westView.melds.slice().reverse()" :key="'p3m-'+mi">
-                  <div v-for="(item, ti) in meldDisplayTiles(meld, westView.seat)" :key="'p3mt-'+ti" class="tileDiv">
-                    <img :class="['tileImg', item.tileClass, { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi)) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(westView.seat, westView.melds.length - 1 - mi), item.isKakan ? t('history.ponTile') : t('history.meld'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi))" />
-                    <img v-if="item.isKakan" :class="['tileImg', item.tileClass, 'kakan-stack', { 'history-jump-target': canJumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan')) }]" :src="item.isBack ? tileImageSrc('?') : tileImageSrc(item.tile)" :alt="tileFaceLabel(item.tile)" v-ui-tooltip="historicalJumpTitle(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan'), t('history.kakanTile'))" @dblclick.stop="jumpToHistoricalNode(meldNodeId(westView.seat, westView.melds.length - 1 - mi, 'kakan'))" />
-                  </div>
-                </template>
-              </span>
-            </span>
+            <TableOpponentHands
+              :seats="opponentHandPresentations"
+              :visible-hands="status.visibleHands"
+              :visible-hands-toggle-label="visibleHandsToggleLabel"
+              :hand-discard-gap="HAND_DISCARD_GAP"
+              :toggle-visible-hands="toggleVisibleHands"
+              :meld-display-tiles="meldDisplayTiles"
+              :meld-node-id="meldNodeId"
+              :can-jump-to-historical-node="canJumpToHistoricalNode"
+              :historical-jump-title="historicalJumpTitle"
+              :jump-to-historical-node="jumpToHistoricalNode"
+              :tile-face-label="tileFaceLabel"
+              :tile-image-src="tileImageSrc"
+            />
 
             <!-- Rivers -->
             <TableRivers
@@ -877,6 +784,7 @@ import RecordImportDialog from './components/RecordImportDialog.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
 import RoundResultOverlay from './components/RoundResultOverlay.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
+import TableOpponentHands, { type OpponentHandPresentation } from './components/TableOpponentHands.vue'
 import TableRivers from './components/TableRivers.vue'
 import WallViewWindow from './components/WallViewWindow.vue'
 import { useI18n } from './i18n'
@@ -1610,6 +1518,12 @@ const {
   getNodeMapById: () => nodeMapById.value,
   jumpToNode: (nodeId) => jumpToNode(nodeId),
 })
+
+const opponentHandPresentations = computed<OpponentHandPresentation[]>(() => [
+  { view: eastView.value, handParts: eastDisplayHandParts.value },
+  { view: northView.value, handParts: northDisplayHandParts.value },
+  { view: westView.value, handParts: westDisplayHandParts.value },
+].filter((seat): seat is OpponentHandPresentation => Boolean(seat.view)))
 
 const {
   ROUND_BASE_X,
