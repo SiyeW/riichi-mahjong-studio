@@ -24,7 +24,6 @@ class ViewControlCommands:
         normalize_mode: Callable[[Any], str],
         normalize_seat: Callable[[Any], int],
         get_current_snapshot: Callable[[], dict[str, Any]],
-        apply_pending_seat_switch: Callable[[dict[str, Any]], bool],
     ) -> None:
         self._state = state
         self._auto_analysis = auto_analysis
@@ -40,7 +39,6 @@ class ViewControlCommands:
         self._normalize_mode = normalize_mode
         self._normalize_seat = normalize_seat
         self._get_current_snapshot = get_current_snapshot
-        self._apply_pending_seat_switch = apply_pending_seat_switch
 
     def set_mode(self, request_id: Any, command: str, payload: dict[str, Any]) -> dict[str, Any]:
         self._ensure_loaded()
@@ -97,7 +95,7 @@ class ViewControlCommands:
             self._normalize_tree_cursor()
         elif self._state["mode"] != "play":
             snapshot = self._get_current_snapshot() if self._state["gameLoaded"] else {}
-            self._apply_pending_seat_switch(snapshot)
+            self.apply_pending_seat_switch(snapshot)
             if self._state["gameLoaded"]:
                 self._normalize_tree_cursor()
                 self._opponent_analysis.request_current(self._get_current_snapshot())
@@ -110,6 +108,14 @@ class ViewControlCommands:
         if self._state["gameLoaded"] and self._state["mode"] == "research":
             self._opponent_analysis.request_current(self._get_current_snapshot())
         return self._view_builder.build_response(request_id, command)
+
+    def apply_pending_seat_switch(self, _snapshot: dict[str, Any]) -> bool:
+        pending_seat = self._state.get("pendingSeatSwitch")
+        if pending_seat is None:
+            return False
+        self._state["controlledSeat"] = pending_seat
+        self._state["pendingSeatSwitch"] = None
+        return True
 
     def _normalize_tree_cursor(self) -> None:
         self._view_builder.normalize_tree_cursor(

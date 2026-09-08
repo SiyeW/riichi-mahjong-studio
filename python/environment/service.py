@@ -255,7 +255,7 @@ GAME_FLOW = game_flow.GameFlow(
         controlled_seat_has_pending_action=lambda snapshot: controlled_seat_has_pending_action(
             snapshot
         ),
-        apply_pending_seat_switch=lambda snapshot: apply_pending_seat_switch_if_ready(
+        apply_pending_seat_switch=lambda snapshot: VIEW_CONTROL_COMMANDS.apply_pending_seat_switch(
             snapshot
         ),
         materialize_automatic_reaction_decisions=lambda *args, **kwargs: REACTION_DECISIONS.materialize_automatic(
@@ -616,16 +616,6 @@ def _build_local_reaction_actions(snapshot, actor):
     )
 
 
-def apply_pending_seat_switch_if_ready(snapshot):
-    pending_seat = STATE.get("pendingSeatSwitch")
-    if pending_seat is None:
-        return False
-
-    STATE["controlledSeat"] = pending_seat
-    STATE["pendingSeatSwitch"] = None
-    return True
-
-
 def _prewarm_record_action_engine(seat):
     _BG_EXECUTOR.submit(
         ACTION_RECOMMENDATIONS.prewarm,
@@ -709,7 +699,6 @@ VIEW_CONTROL_COMMANDS = view_control_commands.ViewControlCommands(
     normalize_mode=normalize_mode,
     normalize_seat=normalize_seat,
     get_current_snapshot=get_current_snapshot,
-    apply_pending_seat_switch=apply_pending_seat_switch_if_ready,
 )
 
 ANALYSIS_COMMANDS = analysis_commands.AnalysisCommands(
