@@ -2,10 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { useRoundResultPresentation } from './useRoundResultPresentation.ts'
 
-function createPresentation(resultInfo: Record<string, unknown>) {
+function createPresentation(resultInfo: Record<string, unknown>, dealer = 0) {
   const gameView = {
     table: {
-      dealer: 0,
+      dealer,
       doraIndicators: ['1m'],
       riichiAccepted: [false, false, false, false],
       melds: [[], [], [], []],
@@ -21,10 +21,26 @@ function createPresentation(resultInfo: Record<string, unknown>) {
   })
 }
 
-test('round result presentation preserves the existing 4 han 30 fu fallback', () => {
-  const presentation = createPresentation({ actor: 1, target: 2, han: 4, fu: 30 })
-  assert.equal(presentation.resultPointsLabel.value, '8000')
-  assert.equal(presentation.resultHandLabel.value, 'result.limit.mangan')
+test('round result presentation scores 4 han 30 fu without kiriage mangan', () => {
+  const nonDealerRon = createPresentation({ actor: 1, target: 2, han: 4, fu: 30 })
+  const nonDealerTsumo = createPresentation({ actor: 1, target: 1, han: 4, fu: 30 })
+  const dealerRon = createPresentation({ actor: 0, target: 2, han: 4, fu: 30 })
+  const dealerTsumo = createPresentation({ actor: 0, target: 0, han: 4, fu: 30 })
+
+  assert.equal(nonDealerRon.resultPointsLabel.value, '7700')
+  assert.equal(nonDealerTsumo.resultPointsLabel.value, '7900')
+  assert.equal(dealerRon.resultPointsLabel.value, '11600')
+  assert.equal(dealerTsumo.resultPointsLabel.value, '11700')
+  assert.equal(nonDealerRon.resultHandLabel.value, '')
+})
+
+test('round result presentation also leaves 3 han 60 fu below mangan', () => {
+  const ron = createPresentation({ actor: 1, target: 2, han: 3, fu: 60 })
+  const tsumo = createPresentation({ actor: 1, target: 1, han: 3, fu: 60 })
+
+  assert.equal(ron.resultPointsLabel.value, '7700')
+  assert.equal(tsumo.resultPointsLabel.value, '7900')
+  assert.equal(ron.resultHandLabel.value, '')
 })
 
 test('round result presentation keeps multi-yakuman labels and riichi ura slots', () => {

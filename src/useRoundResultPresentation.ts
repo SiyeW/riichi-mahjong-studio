@@ -116,7 +116,7 @@ function resultBasePoints(han: number, fu: number): number {
   if (han >= 6) return 3000
   if (han >= 5) return 2000
   const calculated = fu * (2 ** (han + 2))
-  return Math.min(2000, (han === 4 && fu === 30) || (han === 3 && fu === 60) ? 2000 : calculated)
+  return Math.min(2000, calculated)
 }
 
 function ceilToHundred(value: number): number {

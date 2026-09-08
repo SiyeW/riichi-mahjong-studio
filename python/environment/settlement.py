@@ -48,6 +48,14 @@ TERMINAL_HONOR_TILES = {
     "F",
     "C",
 }
+
+
+def build_network_scoring_rules() -> OptionalRules:
+    return OptionalRules(
+        has_open_tanyao=True,
+        has_aka_dora=True,
+        kiriage=False,
+    )
 WIND_34_BY_LABEL = {
     "E": EAST,
     "S": SOUTH,
@@ -221,11 +229,7 @@ def compute_hora_result(snapshot: Dict[str, Any], actor: int, target: int, win_t
     live_wall_empty = int(snapshot.get("drawIndex", 0)) >= len(snapshot.get("wall", []))
     riichi_accepted = bool((snapshot.get("riichiAccepted") or [False, False, False, False])[actor])
     ippatsu_eligible = bool((snapshot.get("ippatsuEligible") or [False, False, False, False])[actor])
-    options = OptionalRules(
-        has_open_tanyao=True,
-        has_aka_dora=True,
-        kiriage=True,
-    )
+    options = build_network_scoring_rules()
     config = HandConfig(
         is_tsumo=is_tsumo,
         is_riichi=riichi_accepted,
