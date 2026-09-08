@@ -1,7 +1,8 @@
 import unittest
 
 from opponent_prediction_coordinator import OpponentPredictionCoordinator
-from opponent_prediction_gateway import OpponentPredictionGateway, TILE34_NAMES
+from opponent_prediction_gateway import OpponentPredictionGateway
+from opponent_prediction_protocol import TILE34_NAMES
 
 
 class OpponentOutputCompositionTest(unittest.TestCase):
@@ -114,7 +115,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
     def test_shanten_contract_can_be_consumed_without_deal_in_output(self):
         gateway = OpponentPredictionGateway(enabled_outputs=["opponent-shanten"])
         try:
-            players = gateway._validate_protocol_prediction(
+            players = gateway._protocol_adapter.validate_prediction(
                 {
                     "outputs": [{
                         "id": "opponent-shanten",
@@ -134,6 +135,8 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                     }],
                 },
                 controlled_seat=0,
+                enabled_outputs=gateway._enabled_outputs,
+                output_references=gateway._output_references,
             )
             self.assertEqual(len(players), 3)
             self.assertTrue(all("shanten" in player for player in players))
@@ -146,7 +149,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
             enabled_outputs=["opponent-deal-in-probability"],
         )
         try:
-            players = gateway._validate_protocol_prediction(
+            players = gateway._protocol_adapter.validate_prediction(
                 {
                     "outputs": [{
                         "id": "opponent-deal-in-probability",
@@ -162,6 +165,8 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                     }],
                 },
                 controlled_seat=0,
+                enabled_outputs=gateway._enabled_outputs,
+                output_references=gateway._output_references,
             )
             self.assertEqual(len(players), 3)
             self.assertTrue(all("ronWaits" in player for player in players))
@@ -209,7 +214,7 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                     {"type": "tsumo", "winner": 0, "probability": 0.75},
                 ],
             }
-            players = gateway._validate_protocol_prediction(
+            players = gateway._protocol_adapter.validate_prediction(
                 {
                     "outputs": [{
                         "id": "kyoku-outcome",
@@ -217,16 +222,16 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                     }],
                 },
                 controlled_seat=0,
+                enabled_outputs=gateway._enabled_outputs,
+                output_references=gateway._output_references,
             )
-            result = gateway._protocol_result_to_host(
+            result = gateway._protocol_adapter.to_host_result(
                 players,
                 protocol_outputs={"kyoku-outcome": output_data},
-                events=[],
-                target_events=None,
                 controlled_seat=0,
                 context={"nodeId": "n_1"},
-                target_prefix_hashes=None,
-                target_event_hash=None,
+                engine_fingerprint=gateway._engine_fingerprint,
+                target_events=None,
             )
             self.assertEqual(result["outputs"]["kyoku-outcome"], output_data)
             self.assertEqual(result["context"], {"nodeId": "n_1"})

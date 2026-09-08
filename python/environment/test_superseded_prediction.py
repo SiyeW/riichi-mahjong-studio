@@ -26,8 +26,16 @@ class SupersededPredictionTests(unittest.TestCase):
         with patch.object(gateway, '_is_initializing', return_value=False), \
              patch.object(gateway._process_client, 'shutdown'), \
              patch.object(gateway._process_client, 'request', side_effect=finish_after_unload), \
-             patch.object(gateway, '_validate_protocol_prediction', return_value=[]), \
-             patch.object(gateway, '_protocol_result_to_host', return_value={'status': 'ready'}):
+             patch.object(
+                 gateway._protocol_adapter,
+                 'validate_prediction',
+                 return_value=[],
+             ), \
+             patch.object(
+                 gateway._protocol_adapter,
+                 'to_host_result',
+                 return_value={'status': 'ready'},
+             ):
             gateway._run()
         self.assertFalse(gateway._model_ready)
         self.assertTrue(gateway._unloaded)

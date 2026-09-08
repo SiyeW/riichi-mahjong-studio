@@ -4,29 +4,19 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
-import math
 import threading
 import time
 from collections import deque
 from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-import numpy as np
-
 from engine_assignments import OUTPUT_CONTRACTS_BY_ID
 from engine_process_client import EngineProcessClient  # noqa: E402
 from engine_runtime import initialize_engine_client
 from engine_notification_subscription import EngineNotificationSubscription
-
-TILE34_NAMES = [
-    *(f"{number}m" for number in range(1, 10)),
-    *(f"{number}p" for number in range(1, 10)),
-    *(f"{number}s" for number in range(1, 10)),
-    "E", "S", "W", "N", "P", "F", "C",
-]
+from opponent_prediction_protocol import OpponentPredictionProtocolAdapter
 
 _LATEST_OPPONENT_PREDICTION_MJAI: Dict[str, Any] = {}
-_PROBABILITY_TOLERANCE = 1e-4
 _ENGINE_POSTPROCESSOR_VERSION = "opponent-analysis-host-v2"
 _SHANTEN_OUTPUT = dict(OUTPUT_CONTRACTS_BY_ID["opponent-shanten"])
 _DEAL_IN_OUTPUT = dict(OUTPUT_CONTRACTS_BY_ID["opponent-deal-in-probability"])
@@ -94,6 +84,7 @@ class OpponentPredictionGateway:
         self._actual_device = ""
         self._device_preference = "auto"
         self._model_ready = False
+        self._protocol_adapter = OpponentPredictionProtocolAdapter()
         self._initialization_lock = threading.Lock()
         self._lifecycle_generation = 0
         self._lock = threading.Lock()
@@ -607,191 +598,6 @@ class OpponentPredictionGateway:
             if not has_work and self.activity_state() != "error":
                 self._set_activity("idle", expected_generation=generation)
 
-    @staticmethod
-    def _validate_probability(value: Any, field: str) -> float:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            raise RuntimeError(f"{field} must be a number")
-        result = float(value)
-        if not math.isfinite(result):
-            raise RuntimeError(f"{field} must be a finite probability")
-        if result < -_PROBABILITY_TOLERANCE or result > 1.0 + _PROBABILITY_TOLERANCE:
-            raise RuntimeError(f"{field} must be between zero and one")
-        # Engines commonly reconstruct a probability from float32 components.
-        # Absorb harmless boundary drift while still rejecting genuine bad data.
-        return min(1.0, max(0.0, result))
-
-    def _validate_protocol_prediction(
-        self,
-        result: Dict[str, Any],
-        *,
-        controlled_seat: int,
-    ) -> list[Dict[str, Any]]:
-        outputs = result.get("outputs")
-        if not isinstance(outputs, list) or len(outputs) != len(self._enabled_outputs):
-            raise RuntimeError("opponent prediction response has an unexpected output count")
-        by_output = {
-            str(output.get("id") or ""): output.get("data")
-            for output in outputs
-            if isinstance(output, dict)
-            and isinstance(output.get("data"), dict)
-            and output.get("version") == self._output_references.get(
-                str(output.get("id") or ""), {}
-            ).get("version")
-            and ("version" in output) == (
-                "version" in self._output_references.get(str(output.get("id") or ""), {})
-            )
-        }
-        expected_outputs = set(self._enabled_outputs)
-        if set(by_output) != expected_outputs:
-            raise RuntimeError("opponent prediction response has missing or unexpected outputs")
-        shanten_data = by_output.get(_SHANTEN_OUTPUT["id"])
-        deal_in_data = by_output.get(_DEAL_IN_OUTPUT["id"])
-        requested = set(self._enabled_outputs)
-        if (_SHANTEN_OUTPUT["id"] in requested) != isinstance(shanten_data, dict):
-            raise RuntimeError("opponent-shanten response is missing or unexpected")
-        if (_DEAL_IN_OUTPUT["id"] in requested) != isinstance(deal_in_data, dict):
-            raise RuntimeError("opponent-deal-in-probability response is missing or unexpected")
-        expected_seats = {seat for seat in range(4) if seat != controlled_seat}
-        validated = {seat: {"seat": seat} for seat in expected_seats}
-
-        shanten_players = shanten_data.get("players") if isinstance(shanten_data, dict) else None
-        if shanten_players is not None:
-            if not isinstance(shanten_players, list) or len(shanten_players) != 3:
-                raise RuntimeError("opponent-shanten must contain exactly three players")
-            actual_seats: set[int] = set()
-            for player in shanten_players:
-                if not isinstance(player, dict):
-                    raise RuntimeError("opponent-shanten player must be an object")
-                seat = int(player.get("seat", -1))
-                if seat not in expected_seats or seat in actual_seats:
-                    raise RuntimeError("opponent-shanten player seats are invalid")
-                actual_seats.add(seat)
-                shanten = player.get("shanten")
-                if not isinstance(shanten, list) or len(shanten) != 7:
-                    raise RuntimeError("opponent-shanten must contain values 0 through 6")
-                by_value: Dict[int, float] = {}
-                for entry in shanten:
-                    if not isinstance(entry, dict):
-                        raise RuntimeError("opponent-shanten entry must be an object")
-                    value = int(entry.get("value", -1))
-                    if value not in range(7) or value in by_value:
-                        raise RuntimeError("opponent-shanten values are invalid")
-                    by_value[value] = self._validate_probability(
-                        entry.get("probability"),
-                        f"players[{seat}].shanten[{value}]",
-                    )
-                if set(by_value) != set(range(7)):
-                    raise RuntimeError("opponent-shanten values are incomplete")
-                if abs(sum(by_value.values()) - 1.0) > _PROBABILITY_TOLERANCE:
-                    raise RuntimeError("opponent-shanten probabilities do not sum to one")
-                validated[seat].update({
-                    "shanten": [by_value[value] for value in range(7)],
-                    "furiten": self._validate_probability(
-                        player.get("furitenOrNoYaku"),
-                        f"players[{seat}].furitenOrNoYaku",
-                    ),
-                })
-            if actual_seats != expected_seats:
-                raise RuntimeError("opponent-shanten response is missing a player")
-
-        deal_in_players = deal_in_data.get("players") if isinstance(deal_in_data, dict) else None
-        if deal_in_players is not None:
-            if not isinstance(deal_in_players, list) or len(deal_in_players) != 3:
-                raise RuntimeError("opponent-deal-in-probability must contain exactly three players")
-            actual_seats = set()
-            for player in deal_in_players:
-                if not isinstance(player, dict):
-                    raise RuntimeError("opponent-deal-in-probability player must be an object")
-                seat = int(player.get("seat", -1))
-                if seat not in expected_seats or seat in actual_seats:
-                    raise RuntimeError("opponent-deal-in-probability player seats are invalid")
-                actual_seats.add(seat)
-                waits = player.get("tiles")
-                if not isinstance(waits, dict) or set(waits) != set(TILE34_NAMES):
-                    raise RuntimeError("opponent-deal-in-probability must cover all 34 tiles")
-                validated[seat]["ronWaits"] = {
-                    tile: self._validate_probability(
-                        waits[tile],
-                        f"players[{seat}].tiles.{tile}",
-                    )
-                    for tile in TILE34_NAMES
-                }
-            if actual_seats != expected_seats:
-                raise RuntimeError("opponent-deal-in-probability response is missing a player")
-        return [validated[seat] for seat in sorted(validated)]
-
-    def _ground_truth(
-        self,
-        events: list[dict],
-        controlled_seat: int,
-        *,
-        event_prefix_hashes: Optional[list[int]],
-        event_hash: Optional[int],
-    ) -> tuple[Dict[str, list[float]], Dict[str, list[float]]]:
-        del events, controlled_seat, event_prefix_hashes, event_hash
-        # Ground truth is deliberately host-independent in the public build.
-        # A future rules-only implementation may populate this without model code.
-        return {}, {}
-
-    def _protocol_result_to_host(
-        self,
-        players: list[Dict[str, Any]],
-        *,
-        protocol_outputs: Dict[str, Any],
-        events: list[dict],
-        target_events: Optional[list[dict]],
-        controlled_seat: int,
-        context: Dict[str, Any],
-        target_prefix_hashes: Optional[list[int]],
-        target_event_hash: Optional[int],
-    ) -> Dict[str, Any]:
-        by_seat = {int(player["seat"]): player for player in players}
-        opponents: Dict[str, list[float]] = {}
-        waits: Dict[str, list[float]] = {}
-        raw: Dict[str, Any] = {}
-        for offset, label in enumerate(("shimocha", "toimen", "kamicha"), start=1):
-            seat = (controlled_seat + offset) % 4
-            player = by_seat[seat]
-            raw[label] = {"seat": seat}
-            if "shanten" in player:
-                shanten = list(player["shanten"])
-                furiten = float(player["furiten"])
-                display = np.zeros(8, dtype=np.float32)
-                display[0] = shanten[0] * (1.0 - furiten)
-                display[1:7] = shanten[1:7]
-                display[7] = shanten[0] * furiten
-                opponents[label] = [float(value) for value in display]
-                raw[label].update({
-                    "shanten_probs": shanten,
-                    "furiten_prob": furiten,
-                })
-            if "ronWaits" in player:
-                raw_waits = [float(player["ronWaits"][tile]) for tile in TILE34_NAMES]
-                waits[label] = raw_waits
-                raw[label]["ron_wait"] = raw_waits
-
-        ground_truth_opponents: Dict[str, list[float]] = {}
-        ground_truth_waits: Dict[str, list[float]] = {}
-        if target_events is not None:
-            ground_truth_opponents, ground_truth_waits = self._ground_truth(
-                target_events,
-                controlled_seat,
-                event_prefix_hashes=target_prefix_hashes,
-                event_hash=target_event_hash,
-            )
-        return {
-            "predictions": {"opponents": opponents, "ron_wait": waits},
-            "ground_truth": {
-                "opponents": ground_truth_opponents,
-                "ron_wait": ground_truth_waits,
-            },
-            "raw": raw,
-            "outputs": copy.deepcopy(protocol_outputs),
-            "context": copy.deepcopy(context),
-            "status": "ready",
-            "engineFingerprint": self._engine_fingerprint,
-        }
-
     def request_predict(
         self,
         snapshot: Dict[str, Any],
@@ -1030,24 +836,24 @@ class OpponentPredictionGateway:
                     },
                     timeout=180 if initializing else 30,
                 )
-                players = self._validate_protocol_prediction(
+                players = self._protocol_adapter.validate_prediction(
                     worker_result,
                     controlled_seat=c,
+                    enabled_outputs=self._enabled_outputs,
+                    output_references=self._output_references,
                 )
                 protocol_outputs = {
                     str(output.get("id") or ""): copy.deepcopy(output.get("data"))
                     for output in worker_result.get("outputs", [])
                     if isinstance(output, dict) and isinstance(output.get("data"), dict)
                 }
-                result = self._protocol_result_to_host(
+                result = self._protocol_adapter.to_host_result(
                     players,
                     protocol_outputs=protocol_outputs,
-                    events=events,
-                    target_events=target_events,
                     controlled_seat=c,
                     context=context,
-                    target_prefix_hashes=pending.get("target_mjai_prefix_hashes"),
-                    target_event_hash=pending.get("target_mjai_events_hash"),
+                    engine_fingerprint=self._engine_fingerprint,
+                    target_events=target_events,
                 )
                 if not is_background and self._is_superseded(context):
                     continue
