@@ -113,3 +113,16 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 </script>
+
+<style scoped>
+.settings-subsection {
+  display: grid;
+  gap: calc(0.5rem * var(--chrome-scale));
+  margin-top: calc(0.9rem * var(--chrome-scale));
+}
+
+.settings-subsection h3 {
+  margin-bottom: calc(0.2rem * var(--chrome-scale));
+  font-size: var(--ui-text-heading);
+}
+</style>
