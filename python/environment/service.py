@@ -40,10 +40,6 @@ from action_recommendation_adapter import (
     set_thinking_time_bounds,
 )
 from action_recommendation_gateway import ActionRecommendationGateway
-from analysis_cache import (
-    ANALYSIS_SOURCES_FIELD,
-    OPPONENT_ANALYSIS_CACHE_FIELD,
-)
 from engine_runtime import EngineRuntimeRegistry
 from mjai_stream_cache import MjaiStreamCache
 from opponent_prediction_coordinator import OpponentPredictionCoordinator
@@ -630,50 +626,6 @@ def apply_pending_seat_switch_if_ready(snapshot):
     return True
 
 
-def clear_loaded_analysis_caches():
-    ensure_game_loaded()
-    PLAY_PREFETCH.cancel()
-    game = STATE["game"]
-    game_id = game.get("gameId")
-
-    AUTO_ANALYSIS.cancel("缓存已清除")
-    decision_epoch, opponent_epoch = ENGINE_MANAGEMENT.advance_cache_epochs()
-    DECISION_ANALYSIS.purge(game_id)
-    OPPONENT_PREDICTIONS.cancel_all()
-
-    decision_entries = 0
-    opponent_entries = 0
-    comparisons = 0
-    for node in game.get("nodes", {}).values():
-        decision_cache = node.get("analysisCache")
-        if isinstance(decision_cache, dict):
-            decision_entries += len(decision_cache)
-        node["analysisCache"] = {}
-
-        opponent_cache = node.pop(OPPONENT_ANALYSIS_CACHE_FIELD, None)
-        if isinstance(opponent_cache, dict):
-            opponent_entries += len(opponent_cache)
-
-        if node.get("comparison") is not None:
-            comparisons += 1
-            node["comparison"] = None
-
-    had_pending_review = game.get("pendingReview") is not None
-    game["pendingReview"] = None
-    game[ANALYSIS_SOURCES_FIELD] = {}
-    AUTO_ANALYSIS.invalidate_timeline()
-    game_tree.mark_tree_changed(game)
-    return {
-        "decisionEntries": decision_entries,
-        "decisionCacheEpoch": decision_epoch,
-        "opponentCacheEpoch": opponent_epoch,
-        "opponentEntries": opponent_entries,
-        "comparisons": comparisons,
-        "pendingReview": had_pending_review,
-        "treeRevision": int(game.get("treeRevision", 0)),
-    }
-
-
 def _prewarm_record_action_engine(seat):
     _BG_EXECUTOR.submit(
         ACTION_RECOMMENDATIONS.prewarm,
@@ -761,11 +713,15 @@ VIEW_CONTROL_COMMANDS = view_control_commands.ViewControlCommands(
 )
 
 ANALYSIS_COMMANDS = analysis_commands.AnalysisCommands(
+    state=STATE,
     auto_analysis=AUTO_ANALYSIS,
+    play_prefetch=PLAY_PREFETCH,
+    decision_analysis=DECISION_ANALYSIS,
+    opponent_predictions=OPPONENT_PREDICTIONS,
     engine_management=ENGINE_MANAGEMENT,
     opponent_analysis=OPPONENT_ANALYSIS,
     view_builder=VIEW_BUILDER,
-    clear_caches=clear_loaded_analysis_caches,
+    ensure_game_loaded=ensure_game_loaded,
     get_action_debug=get_latest_action_recommendation_debug,
     get_opponent_debug=get_latest_opponent_prediction_mjai,
     now_iso=now_iso,
