@@ -11,7 +11,7 @@ class GameSessionResetTest(unittest.TestCase):
         service.STATE["gameLoaded"] = False
         service.STATE["nextGameId"] = 1
         service.DECISION_ANALYSIS.reset()
-        service._MJAI_STREAM_CACHE.clear()
+        service.MJAI_STREAMS.clear()
 
     @staticmethod
     def _record(game):
@@ -33,8 +33,8 @@ class GameSessionResetTest(unittest.TestCase):
 
         loaded_id = service.STATE["game"]["gameId"]
         loaded_node_id = service.STATE["game"]["currentNodeId"]
-        service.get_cached_mjai_stream_bundle(service.STATE["game"], loaded_node_id, 0)
-        self.assertTrue(service._MJAI_STREAM_CACHE)
+        service.MJAI_STREAMS.get_bundle(service.STATE["game"], loaded_node_id, 0)
+        self.assertGreater(len(service.MJAI_STREAMS), 0)
 
         with (
             mock.patch.object(service.RECORD_SESSION.dependencies, "advance_to_next_user_turn"),
@@ -44,13 +44,15 @@ class GameSessionResetTest(unittest.TestCase):
 
         self.assertNotEqual(service.STATE["game"]["gameId"], loaded_id)
         self.assertEqual(service.STATE["game"]["gameId"], "game_0002")
-        self.assertFalse(service._MJAI_STREAM_CACHE)
+        self.assertEqual(len(service.MJAI_STREAMS), 0)
 
     def test_loading_same_game_id_clears_cached_mjai_stream(self):
         first_game = service.create_empty_game(222222)
         service.RECORD_SESSION.load(self._record(first_game))
         node_id = service.STATE["game"]["currentNodeId"]
-        first_bundle = service.get_cached_mjai_stream_bundle(service.STATE["game"], node_id, 1)
+        first_bundle = service.MJAI_STREAMS.get_bundle(
+            service.STATE["game"], node_id, 1
+        )
         first_events = copy.deepcopy(first_bundle["events"])
 
         second_game = service.create_empty_game(333333)
@@ -59,8 +61,10 @@ class GameSessionResetTest(unittest.TestCase):
         second_snapshot["initialHands"][0][0] = "N"
         service.RECORD_SESSION.load(self._record(second_game))
 
-        self.assertFalse(service._MJAI_STREAM_CACHE)
-        second_bundle = service.get_cached_mjai_stream_bundle(service.STATE["game"], node_id, 1)
+        self.assertEqual(len(service.MJAI_STREAMS), 0)
+        second_bundle = service.MJAI_STREAMS.get_bundle(
+            service.STATE["game"], node_id, 1
+        )
         self.assertNotEqual(second_bundle["events"], first_events)
 
     def test_close_game_clears_loaded_session(self):

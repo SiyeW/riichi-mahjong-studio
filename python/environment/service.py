@@ -41,9 +41,9 @@ from analysis_cache import (
     OPPONENT_ANALYSIS_CACHE_FIELD,
 )
 from engine_runtime import EngineRuntimeRegistry
+from mjai_stream_cache import MjaiStreamCache
 from opponent_prediction_coordinator import OpponentPredictionCoordinator
 from opponent_prediction_gateway import get_latest_opponent_prediction_mjai
-from mjai_stream import build_mjai_events_from_actions, build_mjai_stream
 from service_debug import run_debug_scenario
 from service_helpers import (
     DORA_INDICATOR_POSITIONS,
@@ -91,12 +91,9 @@ _ENGINE_INSPECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_RELOAD_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _EMIT_LOCK = threading.Lock()
 _STATE_LOCK = threading.RLock()
-_MJAI_STREAM_CACHE = {}
-_MJAI_STREAM_CACHE_MAX = 64
 _LEGAL_ACTIONS_CACHE = {}
 _LEGAL_ACTIONS_CACHE_MAX = 4096
-_MJAI_HASH_MASK = (1 << 64) - 1
-_MJAI_HASH_MULTIPLIER = 1000003
+MJAI_STREAMS = MjaiStreamCache(snapshot_state.sync)
 DEBUG_FLOW = os.environ.get("MJAI_FLOW_DEBUG", "").lower() in ("1", "true", "yes", "on")
 def debug_flow(message):
     if DEBUG_FLOW:
@@ -155,9 +152,7 @@ OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
     OPPONENT_PREDICTIONS,
     ENGINE_MANAGEMENT,
     opponent_analysis_session.OpponentAnalysisDependencies(
-        build_mjai_stream_bundle=lambda *args, **kwargs: get_cached_mjai_stream_bundle(
-            *args, **kwargs
-        ),
+        build_mjai_stream_bundle=MJAI_STREAMS.get_bundle,
         play_prefetch_owns=lambda node_id: PLAY_PREFETCH.owns_opponent(node_id),
         auto_analysis_owns=lambda kind, node_id: AUTO_ANALYSIS.owns_item(kind, node_id),
         set_timeline_cached=lambda kind, node_id, cached: AUTO_ANALYSIS.set_timeline_cached(
@@ -180,9 +175,7 @@ DECISION_ANALYSIS = decision_analysis_session.DecisionAnalysisSession(
             node_id, analysis_key
         ),
         auto_analysis_owns=lambda kind, node_id: AUTO_ANALYSIS.owns_item(kind, node_id),
-        build_mjai_stream_bundle=lambda *args, **kwargs: get_cached_mjai_stream_bundle(
-            *args, **kwargs
-        ),
+        build_mjai_stream_bundle=MJAI_STREAMS.get_bundle,
         build_legal_actions=lambda *args, **kwargs: build_legal_actions(
             *args, **kwargs
         ),
@@ -212,9 +205,7 @@ AUTO_ANALYSIS = auto_analysis_session.AutoAnalysisSession(
         play_prefetch_active=lambda: (
             PLAY_PREFETCH.has_active_draft()
         ),
-        build_mjai_stream_bundle=lambda *args, **kwargs: get_cached_mjai_stream_bundle(
-            *args, **kwargs
-        ),
+        build_mjai_stream_bundle=MJAI_STREAMS.get_bundle,
         get_node_legal_actions=lambda *args, **kwargs: get_node_legal_actions(
             *args, **kwargs
         ),
@@ -326,9 +317,7 @@ PLAY_PREFETCH = play_prefetch_session.PlayPrefetchSession(
     AUTO_ANALYSIS,
     GAME_FLOW,
     play_prefetch_session.PlayPrefetchDependencies(
-        build_mjai_stream_bundle=lambda *args, **kwargs: get_cached_mjai_stream_bundle(
-            *args, **kwargs
-        ),
+        build_mjai_stream_bundle=MJAI_STREAMS.get_bundle,
         build_legal_actions=lambda *args, **kwargs: build_legal_actions(
             *args, **kwargs
         ),
@@ -560,7 +549,7 @@ def reset_current_round_with_full_wall(full_wall):
     promote_path_to_mainline(game, new_round_root_id)
     game["matchState"] = copy.deepcopy(next_snapshot["matchState"])
     game["matchState"]["matchId"] = game.get("matchId", game.get("gameId", "game"))
-    purge_stale_mjai_stream_cache(game["gameId"])
+    MJAI_STREAMS.purge_game(game["gameId"])
     return new_round_root_id
 
 def normalize_mode(value):
@@ -609,146 +598,15 @@ def get_current_node():
     return game["nodes"][game["currentNodeId"]]
 
 
-def _mjai_stream_cache_meta(snapshot):
-    action_history = snapshot.get("actionHistory", []) or []
-    last_action = action_history[-1] if action_history else {}
-    return {
-        "roundIndex": int(snapshot.get("roundIndex", 0)),
-        "honba": int(snapshot.get("honba", 0)),
-        "phase": snapshot.get("phase"),
-        "actionCount": len(action_history),
-        "lastActionType": last_action.get("type"),
-        "lastActionActor": last_action.get("actor"),
-        "lastActionPai": last_action.get("pai"),
-        "startKyotaku": int(snapshot.get("startKyotaku", snapshot.get("kyotaku", 0))),
-        "startScores": tuple(snapshot.get("startScores", snapshot.get("scores", [25000, 25000, 25000, 25000]))),
-    }
-
-
-def _get_mjai_stream_cache_key(game, node_id, seat, reveal_all=False):
-    return (game.get("gameId"), node_id, int(seat), bool(reveal_all))
-
-
 def reset_runtime_for_game_change():
     PLAY_PREFETCH.cancel()
     AUTO_ANALYSIS.reset_for_game_change()
     ENGINE_MANAGEMENT.advance_cache_epochs()
     DECISION_ANALYSIS.reset()
-    _MJAI_STREAM_CACHE.clear()
+    MJAI_STREAMS.clear()
     _LEGAL_ACTIONS_CACHE.clear()
     OPPONENT_PREDICTIONS.cancel_all()
     ACTION_RECOMMENDATIONS.reset_session()
-
-
-def _mjai_event_hash(event):
-    return hash(json.dumps(event, sort_keys=True, ensure_ascii=False)) & _MJAI_HASH_MASK
-
-
-def _mjai_next_hash(current_hash, event):
-    return ((current_hash * _MJAI_HASH_MULTIPLIER) ^ _mjai_event_hash(event)) & _MJAI_HASH_MASK
-
-
-def _build_mjai_prefix_hashes(events):
-    prefix_hashes = [0]
-    current_hash = 0
-    for event in events:
-        current_hash = _mjai_next_hash(current_hash, event)
-        prefix_hashes.append(current_hash)
-    return prefix_hashes
-
-
-def _extend_mjai_prefix_hashes(parent_prefix_hashes, suffix_events):
-    prefix_hashes = list(parent_prefix_hashes or [0])
-    current_hash = prefix_hashes[-1] if prefix_hashes else 0
-    if not prefix_hashes:
-        prefix_hashes.append(0)
-    for event in suffix_events:
-        current_hash = _mjai_next_hash(current_hash, event)
-        prefix_hashes.append(current_hash)
-    return prefix_hashes
-
-
-def _build_mjai_stream_cache_entry(events, meta, prefix_hashes=None):
-    if prefix_hashes is None:
-        prefix_hashes = _build_mjai_prefix_hashes(events)
-    event_hash = prefix_hashes[-1] if prefix_hashes else 0
-    return {
-        "meta": meta,
-        "events": events,
-        "eventHash": event_hash,
-        "prefixHashes": prefix_hashes,
-    }
-
-
-def _store_mjai_stream_cache_entry(cache_key, entry):
-    _MJAI_STREAM_CACHE[cache_key] = entry
-    while len(_MJAI_STREAM_CACHE) > _MJAI_STREAM_CACHE_MAX:
-        oldest_key = next(iter(_MJAI_STREAM_CACHE))
-        _MJAI_STREAM_CACHE.pop(oldest_key, None)
-
-
-def purge_stale_mjai_stream_cache(game_id):
-    stale_keys = [key for key in _MJAI_STREAM_CACHE.keys() if key and key[0] == game_id]
-    for key in stale_keys:
-        _MJAI_STREAM_CACHE.pop(key, None)
-
-
-def get_cached_mjai_stream_bundle(game, node_id, seat, *, reveal_all=False):
-    node = game["nodes"][node_id]
-    snapshot = node["snapshot"]
-    sync_snapshot_state(snapshot)
-    meta = _mjai_stream_cache_meta(snapshot)
-    cache_key = _get_mjai_stream_cache_key(game, node_id, seat, reveal_all)
-    cache_entry = _MJAI_STREAM_CACHE.get(cache_key)
-    if cache_entry and cache_entry.get("meta") == meta:
-        _MJAI_STREAM_CACHE.pop(cache_key, None)
-        _MJAI_STREAM_CACHE[cache_key] = cache_entry
-        return cache_entry
-
-    parent_id = node.get("parentId")
-    if parent_id:
-        parent_node = game["nodes"][parent_id]
-        parent_snapshot = parent_node["snapshot"]
-        sync_snapshot_state(parent_snapshot)
-        if (
-            int(parent_snapshot.get("roundIndex", -1)) == int(snapshot.get("roundIndex", -2))
-            and int(parent_snapshot.get("honba", -1)) == int(snapshot.get("honba", -2))
-        ):
-            parent_entry = get_cached_mjai_stream_bundle(
-                game,
-                parent_id,
-                seat,
-                reveal_all=reveal_all,
-            )
-            parent_events = parent_entry["events"]
-            parent_actions = parent_snapshot.get("actionHistory", []) or []
-            child_actions = snapshot.get("actionHistory", []) or []
-            parent_len = len(parent_actions)
-            if len(child_actions) >= parent_len and child_actions[:parent_len] == parent_actions:
-                suffix_events = build_mjai_events_from_actions(
-                    child_actions[parent_len:],
-                    seat,
-                    reveal_all=reveal_all,
-                )
-                events = parent_events + suffix_events
-                prefix_hashes = _extend_mjai_prefix_hashes(parent_entry.get("prefixHashes"), suffix_events)
-                cache_entry = _build_mjai_stream_cache_entry(events, meta, prefix_hashes)
-                _store_mjai_stream_cache_entry(cache_key, cache_entry)
-                return cache_entry
-
-    events = build_mjai_stream(snapshot, seat, reveal_all=reveal_all)
-    cache_entry = _build_mjai_stream_cache_entry(events, meta)
-    _store_mjai_stream_cache_entry(cache_key, cache_entry)
-    return cache_entry
-
-
-def get_cached_mjai_stream(game, node_id, seat, *, reveal_all=False):
-    return get_cached_mjai_stream_bundle(
-        game,
-        node_id,
-        seat,
-        reveal_all=reveal_all,
-    )["events"]
 
 
 def choose_ai_action_for_current_node(snapshot, seat, model_path):
@@ -772,7 +630,7 @@ def choose_ai_action_for_current_node(snapshot, seat, model_path):
             model_path,
             legal_actions=legal_actions,
         )
-    bundle = get_cached_mjai_stream_bundle(game, current_node_id, seat)
+    bundle = MJAI_STREAMS.get_bundle(game, current_node_id, seat)
     return choose_ai_action(
         ACTION_RECOMMENDATIONS,
         snapshot,
@@ -788,17 +646,15 @@ def choose_ai_action_for_current_node(snapshot, seat, model_path):
 
 
 def choose_ai_action_for_snapshot(snapshot, seat, model_path, *, accumulate_thinking=True):
-    mjai_events = build_mjai_stream(snapshot, seat)
-    mjai_prefix_hashes = _build_mjai_prefix_hashes(mjai_events)
-    mjai_events_hash = mjai_prefix_hashes[-1] if mjai_prefix_hashes else 0
+    bundle = MJAI_STREAMS.build_uncached_bundle(snapshot, seat)
     return choose_ai_action(
         ACTION_RECOMMENDATIONS,
         snapshot,
         seat,
         model_path,
-        mjai_events=mjai_events,
-        mjai_prefix_hashes=mjai_prefix_hashes,
-        mjai_events_hash=mjai_events_hash,
+        mjai_events=bundle["events"],
+        mjai_prefix_hashes=bundle["prefixHashes"],
+        mjai_events_hash=bundle["eventHash"],
         accumulate_thinking=accumulate_thinking,
         legal_actions=build_legal_actions(snapshot, controlled_seat=seat),
     )
@@ -1537,7 +1393,7 @@ RECORD_SESSION = record_session.RecordSession(
         update_child_comparisons=DECISION_ANALYSIS.update_child_comparisons,
         current_snapshot=get_current_snapshot,
         request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
-        purge_mjai_cache=purge_stale_mjai_stream_cache,
+        purge_mjai_cache=MJAI_STREAMS.purge_game,
         invalidate_auto_timeline=AUTO_ANALYSIS.invalidate_timeline,
     ),
 )
@@ -1554,7 +1410,7 @@ RECORD_COMMANDS = record_commands.RecordCommands(
         cancel_auto_analysis=AUTO_ANALYSIS.cancel,
         schedule_auto_reprioritization=AUTO_ANALYSIS.schedule_reprioritization,
         purge_background_analysis=DECISION_ANALYSIS.purge,
-        purge_mjai_cache=purge_stale_mjai_stream_cache,
+        purge_mjai_cache=MJAI_STREAMS.purge_game,
         sync_snapshot=sync_snapshot_state,
         request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
         promote_mainline=promote_path_to_mainline,

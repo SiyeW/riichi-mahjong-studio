@@ -63,7 +63,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         service.STATE["nextGameId"] = 1
         service.STATE["mode"] = "research"
         service.STATE["opponentAnalysisEnabled"] = False
-        service._MJAI_STREAM_CACHE.clear()
+        service.MJAI_STREAMS.clear()
         service._LEGAL_ACTIONS_CACHE.clear()
 
     @staticmethod
@@ -217,11 +217,6 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             mock.patch.object(service.OPPONENT_PREDICTIONS, "has_request", return_value=False),
             mock.patch.object(service.OPPONENT_PREDICTIONS, "request_predict") as request_predict,
             mock.patch.object(service.AUTO_ANALYSIS, "owns_item", return_value=False),
-            mock.patch.object(
-                service,
-                "get_cached_mjai_stream_bundle",
-                return_value={"events": [], "prefixHashes": [], "eventHash": 0},
-            ),
         ):
             requested = service.OPPONENT_ANALYSIS.request_current(snapshot)
 
@@ -461,8 +456,8 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         game = service.create_empty_game(232323)
         node_id = game["currentNodeId"]
 
-        hidden = service.get_cached_mjai_stream_bundle(game, node_id, 0)
-        revealed = service.get_cached_mjai_stream_bundle(
+        hidden = service.MJAI_STREAMS.get_bundle(game, node_id, 0)
+        revealed = service.MJAI_STREAMS.get_bundle(
             game,
             node_id,
             0,
@@ -472,9 +467,18 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         self.assertTrue(all(tile == "?" for tile in hidden["events"][0]["tehais"][1]))
         self.assertFalse(any(tile == "?" for tile in revealed["events"][0]["tehais"][1]))
         self.assertNotEqual(hidden["eventHash"], revealed["eventHash"])
-        self.assertEqual(
-            {cache_key[3] for cache_key in service._MJAI_STREAM_CACHE},
-            {False, True},
+        self.assertIs(
+            hidden,
+            service.MJAI_STREAMS.get_bundle(game, node_id, 0),
+        )
+        self.assertIs(
+            revealed,
+            service.MJAI_STREAMS.get_bundle(
+                game,
+                node_id,
+                0,
+                reveal_all=True,
+            ),
         )
 
     def test_scheduler_writes_both_model_caches_and_completes(self):
