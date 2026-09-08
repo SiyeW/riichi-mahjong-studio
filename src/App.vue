@@ -1589,6 +1589,7 @@ import { useBranchTreePresentation } from './useBranchTreePresentation'
 import { useDiscardFlight, type GameViewTransitionDirection } from './useDiscardFlight'
 import { useRecordSession } from './useRecordSession'
 import { useRoundResultPresentation } from './useRoundResultPresentation'
+import { useTileArtwork } from './useTileArtwork'
 import {
   RON_WAIT_OPPONENT_KEYS,
   SHANTEN_SHORT_LABELS,
@@ -2925,38 +2926,12 @@ function normalizeTileFamily(tile: string): string {
   return String(tile).replace('5mr', '5m').replace('5pr', '5p').replace('5sr', '5s').replace(/r$/, '')
 }
 
-function tileAssetName(tile: string): string {
-  if (!tile || tile === '?') return 'back'
-  const normalized = tile.replace('r', '')
-  const honorMap: Record<string, string> = {
-    E: '1z', S: '2z', W: '3z', N: '4z', P: '5z', F: '6z', C: '7z',
-  }
-  if (honorMap[normalized]) return honorMap[normalized]
-  const rank = normalized[0]
-  const suit = normalized[1]
-  if (rank === '5' && tile.endsWith('r')) return `0${suit}`
-  return `${rank}${suit}`
-}
-
-const tileAssetModules = import.meta.glob('./assets/tiles/Regular_shortnames/*.svg', {
-  eager: true,
-  import: 'default',
-}) as Record<string, string>
-
-const tileArtworkSources = Array.from(new Set(Object.values(tileAssetModules).filter(Boolean)))
-let staticAssetsWarmupPromise: Promise<void> | null = null
-const tileArtworkReady = ref(false)
-const tileArtworkLoadedCount = ref(0)
-const tileArtworkLoadingLabel = computed(() => (
-  t('common.loadingProgress', { completed: tileArtworkLoadedCount.value, total: tileArtworkSources.length })
-))
-const preloadedTileImages: HTMLImageElement[] = []
-
-function tileImageSrc(tile: string): string {
-  const assetName = tileAssetName(tile)
-  const assetPath = `./assets/tiles/Regular_shortnames/${assetName}.svg`
-  return tileAssetModules[assetPath] || tileAssetModules['./assets/tiles/Regular_shortnames/back.svg']
-}
+const {
+  tileArtworkReady,
+  tileArtworkLoadingLabel,
+  tileImageSrc,
+  prepareTileArtwork,
+} = useTileArtwork(t)
 
 const currentTableHistoryNodes = computed(() => {
   const nodes: TrainerTreeNode[] = []
@@ -4035,60 +4010,11 @@ function getSoundSource(event: string): string | null {
   return selectedPack?.sounds[event] || null
 }
 
-function preloadTileImage(src: string): Promise<void> {
-  const image = new Image()
-  image.decoding = 'async'
-  preloadedTileImages.push(image)
-
-  return new Promise((resolve) => {
-    let settled = false
-    const finish = () => {
-      if (settled) return
-      settled = true
-      tileArtworkLoadedCount.value += 1
-      resolve()
-    }
-    const loaded = () => {
-      // Resource load is enough to make the cached SVG available to every tile
-      // element. Decoding may continue off the startup critical path.
-      if (typeof image.decode === 'function') {
-        void image.decode().catch(() => undefined)
-      }
-      finish()
-    }
-
-    image.addEventListener('load', loaded, { once: true })
-    image.addEventListener('error', finish, { once: true })
-    image.src = src
-    if (image.complete) {
-      if (image.naturalWidth > 0) loaded()
-      else finish()
-    }
-  })
-}
-
-function warmStaticAssets(): Promise<void> {
-  if (staticAssetsWarmupPromise) return staticAssetsWarmupPromise
-
-  const tileWarmup = Promise.all(tileArtworkSources.map(preloadTileImage)).then(() => undefined)
-
-  staticAssetsWarmupPromise = tileWarmup
-  return staticAssetsWarmupPromise
-}
-
-function nextPaint(): Promise<void> {
-  return new Promise((resolve) => {
-    window.requestAnimationFrame(() => resolve())
-  })
-}
-
 async function prepareRendererForDisplay() {
   await nextTick()
   updateTreeViewport()
   const bootstrapRefresh = refreshBootstrapState()
-  await warmStaticAssets()
-  await nextPaint()
-  tileArtworkReady.value = true
+  await prepareTileArtwork()
   await bootstrapRefresh
 }
 
