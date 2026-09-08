@@ -19,6 +19,7 @@ export interface AnalysisTestApi {
   readonly showWallView: boolean
   readonly wallTiles: Array<{ index: number; tile: string; status: string }>
   readonly showEngineWindow: boolean
+  showMjaiDebug: boolean
   handlePythonEvent: (event: TrainerPythonEvent) => void
   fetchShantenOnce: () => Promise<void>
   jumpToNode: (nodeId: string) => Promise<void>

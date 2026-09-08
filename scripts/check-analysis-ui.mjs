@@ -130,6 +130,21 @@ try {
   await page.goto(server.resolvedUrls.local[0], { waitUntil: 'domcontentloaded', timeout: 30000 })
   await page.waitForFunction(() => window.analysisCheck?.vm.tileArtworkReady)
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
+  await page.evaluate(() => { window.analysisCheck.vm.showMjaiDebug = true })
+  assert.deepEqual(
+    await page.locator('.mjai-debug-panel').evaluate(panel => ({
+      maxHeight: getComputedStyle(panel).maxHeight,
+      headerPosition: getComputedStyle(panel.querySelector('.settings-modal-header')).position,
+    })),
+    { maxHeight: '900px', headerPosition: 'static' },
+    'MJAI debug dialog keeps its component-owned geometry and header treatment',
+  )
+  await page.locator('.mjai-debug-panel .settings-modal-actions button').last().click()
+  assert.equal(
+    await page.locator('.mjai-debug-panel').count(),
+    0,
+    'MJAI debug dialog closes through its component event',
+  )
   await page.evaluate(() => window.analysisCheck.vm.openWallView())
   assert.deepEqual(
     await page.evaluate(() => ({

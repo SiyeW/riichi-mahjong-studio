@@ -3283,8 +3283,7 @@ textarea {
   background: linear-gradient(180deg, rgba(8, 71, 82, 0.98) 0%, rgba(8, 71, 82, 0.94) 72%, rgba(8, 71, 82, 0) 100%);
 }
 
-.wall-view-panel .settings-modal-header,
-.mjai-debug-panel .settings-modal-header {
+.wall-view-panel .settings-modal-header {
   position: static;
   top: auto;
   z-index: auto;
@@ -3631,48 +3630,6 @@ textarea {
 .wall-dora .wall-tile-idx,
 .wall-ura .wall-tile-idx { color: rgba(255, 255, 255, 0.7); }
 .wall-available .wall-tile-idx { color: rgba(0, 0, 0, 0.7); }
-
-.mjai-debug-panel {
-  width: min(95vw, calc(56.25rem * var(--ui-scale)));
-  max-height: 90vh;
-}
-.mjai-debug-info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: calc(0.4rem * var(--chrome-scale)) calc(1.2rem * var(--chrome-scale));
-  padding: calc(0.4rem * var(--chrome-scale)) calc(0.6rem * var(--chrome-scale));
-  font-size: var(--ui-text-control);
-  color: var(--text-dim);
-  border-bottom: 1px solid rgba(255,255,255,0.08);
-  margin-bottom: calc(0.5rem * var(--chrome-scale));
-}
-.mjai-debug-pre {
-  flex: 1;
-  overflow: auto;
-  background: rgba(0,0,0,0.3);
-  color: var(--text-main);
-  font-size: var(--ui-text-body);
-  line-height: 1.45;
-  padding: calc(0.6rem * var(--chrome-scale));
-  border-radius: calc(4px * var(--chrome-scale));
-  white-space: pre-wrap;
-  word-break: break-all;
-  max-height: 18vh;
-}
-.mjai-debug-status {
-  font-size: var(--ui-text-caption);
-  color: var(--text-dim);
-  padding: 0.2rem 0.4rem;
-}
-
-.mjai-cache-clear-message {
-  margin: 0 0 calc(0.5rem * var(--chrome-scale));
-  padding: calc(0.35rem * var(--chrome-scale)) calc(0.5rem * var(--chrome-scale));
-  border-left: calc(2px * var(--chrome-scale)) solid rgba(88, 185, 126, 0.72);
-  background: rgba(20, 88, 61, 0.2);
-  color: rgba(226, 241, 237, 0.84);
-  font-size: var(--ui-text-body);
-}
 
 /* 牌山、局图等工具使用同一套浮动面板和牌尺寸。 */
 .analysis-float-panel {

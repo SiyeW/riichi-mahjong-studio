@@ -3273,6 +3273,7 @@ if (import.meta.env.MODE === 'ui-test') {
     showWallView,
     wallTiles,
     showEngineWindow,
+    showMjaiDebug,
     handlePythonEvent,
     fetchShantenOnce,
     jumpToNode,
