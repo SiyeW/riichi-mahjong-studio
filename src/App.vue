@@ -643,26 +643,12 @@
         @close="closeAnalysisPanel(workspaceItemId)"
       />
 
-      <aside
+      <ConsoleDock
         v-else-if="workspaceItemId === 'console'"
-        class="panel dock-module side-panel console-dock"
-        :class="{ 'is-dragging': draggingDockPanel === 'console' }"
+        :dragging="draggingDockPanel === 'console'"
+        @drag-start="startDockPanelPointerDrag('console', $event)"
+        @close="closeConsoleDock"
       >
-        <div class="dock-module-header panel-header">
-          <div
-            class="dock-module-drag-handle"
-            v-ui-tooltip="t('workspace.dragPanel', { panel: t('console.title') })"
-            @pointerdown="startDockPanelPointerDrag('console', $event)"
-          >
-            <h2>{{ t('console.title') }}</h2>
-          </div>
-          <button
-            class="floating-panel-close dock-module-close"
-            :aria-label="t('common.close')"
-            @click="closeConsoleDock"
-          >&times;</button>
-        </div>
-        <div class="console-dock-body">
         <AutomaticAnalysisPanel
           v-if="status.mode === 'research'"
           :status="status"
@@ -745,8 +731,7 @@
           :tile-face-label="tileFaceLabel"
           :tile-image-src="tileImageSrc"
         />
-        </div>
-      </aside>
+      </ConsoleDock>
         </template>
       </DockLayoutNode>
 
@@ -1002,6 +987,7 @@ import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import AutomaticAnalysisPanel from './components/AutomaticAnalysisPanel.vue'
 import BranchTreePanel from './components/BranchTreePanel.vue'
+import ConsoleDock from './components/ConsoleDock.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DecisionEvaluationPanel from './components/DecisionEvaluationPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
