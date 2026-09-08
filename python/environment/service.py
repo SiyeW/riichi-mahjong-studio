@@ -20,6 +20,7 @@ import opponent_analysis_session
 import play_prefetch_session
 import reaction_decision_history
 import record_commands
+import record_workspace_commands
 import record_session
 import review_session
 import round_actions
@@ -955,6 +956,19 @@ RECORD_COMMANDS = record_commands.RecordCommands(
     ),
 )
 
+RECORD_WORKSPACE_COMMANDS = record_workspace_commands.RecordWorkspaceCommands(
+    STATE,
+    record_session=RECORD_SESSION,
+    record_commands=RECORD_COMMANDS,
+    play_prefetch=PLAY_PREFETCH,
+    view_builder=VIEW_BUILDER,
+    ensure_loaded=ensure_game_loaded,
+    ensure_writable=ensure_writable_game,
+    get_wall_view=get_wall_view,
+    reset_round_wall=reset_current_round_with_full_wall,
+    now_iso=now_iso,
+)
+
 GAMEPLAY_COMMANDS = gameplay_commands.GameplayCommands(
     STATE,
     ensure_play_mode=ensure_play_mode,
@@ -1001,50 +1015,23 @@ def handle_command(request_id, command, payload):
             )
 
         if command == "create_game":
-            RECORD_SESSION.create()
-            play_prefetch = PLAY_PREFETCH.start()
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"playPrefetch": play_prefetch},
-            )
+            return RECORD_WORKSPACE_COMMANDS.create(request_id, command)
 
         if command == "close_game":
-            RECORD_SESSION.close()
-            return VIEW_BUILDER.build_response(request_id, command)
+            return RECORD_WORKSPACE_COMMANDS.close(request_id, command)
 
         if command == "import_mortal_report":
-            reconstruction = RECORD_SESSION.import_mortal(
-                payload.get("report"),
-                payload.get("sourceUrl"),
-                payload.get("sourceImportUrl"),
-                bool(payload.get("reconstructWalls")),
-                payload.get("seed"),
-            )
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"reconstruction": reconstruction},
+            return RECORD_WORKSPACE_COMMANDS.import_mortal(
+                request_id, command, payload
             )
 
         if command == "import_custom_tenhou":
-            reconstruction = RECORD_SESSION.import_custom(
-                payload.get("input"),
-                bool(payload.get("reconstructWalls")),
-                payload.get("seed"),
-            )
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"reconstruction": reconstruction},
+            return RECORD_WORKSPACE_COMMANDS.import_custom(
+                request_id, command, payload
             )
 
         if command == "export_custom_tenhou":
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"customTenhou": RECORD_SESSION.export_custom()},
-            )
+            return RECORD_WORKSPACE_COMMANDS.export_custom(request_id, command)
 
         if run_debug_scenario(command, sys.modules[__name__]):
             return VIEW_BUILDER.build_response(request_id, command)
@@ -1120,66 +1107,30 @@ def handle_command(request_id, command, payload):
             return GAMEPLAY_COMMANDS.advance(request_id, command)
 
         if command == "export_game_record":
-            if payload.get("checkpoint") is True:
-                return {
-                    "request_id": request_id,
-                    "command": command,
-                    "record": RECORD_SESSION.serialize(),
-                    "state": {
-                        "analysisVisibility": {
-                            "decisionRecommendations": bool(STATE.get("decisionRecommendationsEnabled", True)),
-                            "opponentAnalysis": bool(STATE.get("opponentAnalysisEnabled", False)),
-                        },
-                    },
-                }
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {
-                    "record": RECORD_SESSION.serialize(),
-                },
+            return RECORD_WORKSPACE_COMMANDS.export_record(
+                request_id, command, payload
             )
 
         if command == "import_game_record":
-            RECORD_SESSION.load(payload.get("record"))
-            return VIEW_BUILDER.build_response(request_id, command)
+            return RECORD_WORKSPACE_COMMANDS.import_record(
+                request_id, command, payload
+            )
 
         if command == "jump_to_node":
-            stayed_in_round = RECORD_COMMANDS.jump(str(payload.get("nodeId") or ""))
-            try:
-                client_tree_revision = int(payload.get("treeRevision"))
-            except (TypeError, ValueError):
-                client_tree_revision = None
-            tree_is_current = client_tree_revision == int(STATE["game"].get("treeRevision", 0))
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                compact_tree=stayed_in_round and tree_is_current,
-            )
+            return RECORD_WORKSPACE_COMMANDS.jump(request_id, command, payload)
 
         if command == "set_main_branch":
-            RECORD_COMMANDS.set_main_branch(str(payload.get("nodeId") or ""))
-            return VIEW_BUILDER.build_response(request_id, command)
+            return RECORD_WORKSPACE_COMMANDS.set_main_branch(
+                request_id, command, payload
+            )
 
         if command == "set_node_comment":
-            node_id = str(payload.get("nodeId") or "")
-            changed, comment = RECORD_COMMANDS.set_comment(node_id, payload.get("comment"))
-            return {
-                "request_id": request_id,
-                "command": command,
-                "nodeId": node_id,
-                "comment": comment,
-                "changed": changed,
-                "timestamp": now_iso(),
-            }
+            return RECORD_WORKSPACE_COMMANDS.set_comment(
+                request_id, command, payload
+            )
 
         if command == "delete_node":
-            deleted_count = RECORD_COMMANDS.delete(str(payload.get("nodeId") or ""))
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"deletedCount": deleted_count},
-            )
+            return RECORD_WORKSPACE_COMMANDS.delete(request_id, command, payload)
 
         if command == "submit_user_action":
             return GAMEPLAY_COMMANDS.submit(request_id, command, payload)
@@ -1188,44 +1139,17 @@ def handle_command(request_id, command, payload):
             return GAMEPLAY_COMMANDS.confirm_pending_review(request_id, command)
 
         if command == "get_wall_view":
-            ensure_game_loaded()
-            game = STATE["game"]
-            snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-            metadata = game.get("metadata") or {}
-            tiles = get_wall_view(snapshot)
-            reconstruction = metadata.get("wallReconstruction") or {}
-            return {
-                "request_id": request_id,
-                "command": command,
-                "tiles": tiles,
-                "complete": len(tiles) == 136,
-                "canReconstruct": bool(
-                    metadata.get("source") in ("mortal-report", "tenhou-custom")
-                    and metadata.get("readOnly")
-                ),
-                "seed": reconstruction.get("seed") if reconstruction else (
-                    game.get("seed") if len(tiles) == 136 else None
-                ),
-                "origin": str(snapshot.get("wallOrigin") or (
-                    "reconstructed" if reconstruction else "generated"
-                )),
-                "sourceUrl": metadata.get("sourceImportUrl") or metadata.get("sourceUrl"),
-                "timestamp": now_iso(),
-            }
+            return RECORD_WORKSPACE_COMMANDS.get_wall(request_id, command)
 
         if command == "reconstruct_walls":
-            reconstruction = RECORD_SESSION.reconstruct_walls(payload.get("seed"))
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"reconstruction": reconstruction},
+            return RECORD_WORKSPACE_COMMANDS.reconstruct_walls(
+                request_id, command, payload
             )
 
         if command == "import_wall":
-            ensure_writable_game()
-            tiles = payload.get("tiles")
-            reset_current_round_with_full_wall(tiles)
-            return VIEW_BUILDER.build_response(request_id, command)
+            return RECORD_WORKSPACE_COMMANDS.import_wall(
+                request_id, command, payload
+            )
 
         if command == "get_latest_mjai_debug":
             return VIEW_BUILDER.build_response(
