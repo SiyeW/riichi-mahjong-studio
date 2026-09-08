@@ -686,97 +686,30 @@
             </div>
           </div>
         </div>
-        <div class="settings-preview quick-training-panel" :class="{ collapsed: quickSettingsCollapsed }">
-          <button class="panel-section-toggle" @click="quickSettingsCollapsed = !quickSettingsCollapsed">
-            <h3>{{ t('console.options') }}</h3>
-            <span>{{ quickSettingsCollapsed ? t('console.expand') : t('console.collapse') }}</span>
-          </button>
-          <div v-if="!quickSettingsCollapsed" class="quick-training-content">
-            <div class="quick-audio-block quick-time-block">
-              <div class="quick-time-header">
-                <span>{{ t('console.volume') }}</span>
-                <strong>{{ quickAudioVolumeLabel }}</strong>
-              </div>
-              <div class="quick-time-slider-wrap">
-                <div class="quick-time-track">
-                  <span class="quick-time-track-bg"></span>
-                  <span class="quick-time-track-fill" :style="{ width: `${quickAudioVolumePercent}%` }"></span>
-                  <span class="quick-time-thumb" :style="{ left: `${quickAudioVolumePercent}%` }"></span>
-                </div>
-                <input
-                  class="quick-time-range"
-                  type="range"
-                  min="0"
-                  max="100"
-                  step="1"
-                  :value="quickAudioVolumeValue"
-                  @input="onQuickAudioVolumeInput"
-                  @change="commitQuickAudioVolume"
-                />
-              </div>
-            </div>
-            <div v-if="status.mode === 'research'" class="quick-seat-block">
-              <span class="seat-switch-label">{{ t('console.switchSeat') }}</span>
-              <div v-adaptive-button-grid="{ columns: [4, 2, 1] }" class="seat-buttons seat-buttons-compact">
-                <button
-                  v-for="option in relativeSeatOptions"
-                  :key="option.label"
-                  :disabled="!status.gameLoaded || seatSwitchInFlight || status.controlledSeat === option.seat"
-                  :class="{
-                    active: status.controlledSeat === option.seat,
-                    'is-pending': seatSwitchInFlight && pendingSeatSwitchLabel === option.label,
-                  }"
-                  @click="switchSeat(option.seat, option.label)"
-                >
-                  {{ option.label }}
-                </button>
-              </div>
-            </div>
-            <div v-if="status.mode === 'play'" class="quick-subsection">
-              <span class="quick-subsection-label">{{ t('console.reviewMode') }}</span>
-            <div v-adaptive-button-grid="{ columns: [4, 2, 1] }" class="quick-training-mode-row">
-              <button
-                v-for="option in quickTrainingModes"
-                :key="option.value"
-                class="quick-mode-btn"
-                :class="{ active: currentTrainingMode === option.value }"
-                @click="setQuickTrainingMode(option.value)"
-              >
-                {{ option.label }}
-              </button>
-            </div>
-            </div>
-            <div v-if="status.mode === 'play'" class="quick-time-block">
-              <div class="quick-time-header">
-                <span>{{ t('console.thinkingDelay') }}</span>
-                <strong>{{ quickMaxThinkingLabel }}</strong>
-              </div>
-              <div class="quick-time-slider-wrap">
-                <div class="quick-time-track">
-                  <span class="quick-time-track-bg"></span>
-                  <span class="quick-time-track-fill" :style="{ width: `${quickMaxThinkingPercent}%` }"></span>
-                  <span class="quick-time-marker quick-time-marker-min" :style="{ left: `${quickMinThinkingPercent}%` }" v-ui-tooltip="t('console.minimumThinkingTime')"></span>
-                  <span class="quick-time-marker quick-time-marker-auto" :style="{ left: `${quickAutoAdvancePercent}%` }" v-ui-tooltip="t('console.autoAdvanceUnit')"></span>
-                  <span class="quick-time-thumb" :style="{ left: `${quickMaxThinkingPercent}%` }"></span>
-                </div>
-                <input
-                  class="quick-time-range"
-                  type="range"
-                  min="0"
-                  max="4"
-                  step="0.05"
-                  :value="quickThinkingMaxValue"
-                  @input="onQuickThinkingTimeInput"
-                  @change="commitQuickThinkingTime"
-                />
-              </div>
-              <div class="quick-time-legend">
-                <span>{{ t('console.minimumShort', { value: quickMinThinkingLabel }) }}</span>
-                <span>{{ t('console.advanceShort', { value: quickAutoAdvanceLabel }) }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
+        <QuickSettingsPanel
+          :mode="status.mode"
+          :game-loaded="status.gameLoaded"
+          :controlled-seat="status.controlledSeat"
+          :seat-switch-in-flight="seatSwitchInFlight"
+          :pending-seat-switch-label="pendingSeatSwitchLabel"
+          :current-training-mode="currentTrainingMode"
+          :audio-volume-label="quickAudioVolumeLabel"
+          :audio-volume-percent="quickAudioVolumePercent"
+          :audio-volume-value="quickAudioVolumeValue"
+          :thinking-max-value="quickThinkingMaxValue"
+          :max-thinking-percent="quickMaxThinkingPercent"
+          :min-thinking-percent="quickMinThinkingPercent"
+          :auto-advance-percent="quickAutoAdvancePercent"
+          :max-thinking-label="quickMaxThinkingLabel"
+          :min-thinking-label="quickMinThinkingLabel"
+          :auto-advance-label="quickAutoAdvanceLabel"
+          @audio-input="onQuickAudioVolumeInput"
+          @audio-change="commitQuickAudioVolume"
+          @seat-switch="switchSeat"
+          @training-mode-change="setQuickTrainingMode"
+          @thinking-input="onQuickThinkingTimeInput"
+          @thinking-change="commitQuickThinkingTime"
+        />
 
         <div class="settings-preview settings-preview-tree" :class="{ collapsed: treePanelCollapsed }">
           <button class="panel-section-toggle" @click="treePanelCollapsed = !treePanelCollapsed">
@@ -1172,6 +1105,7 @@ import DockLayoutNode from './components/DockLayoutNode.vue'
 import EngineProfileList from './components/EngineProfileList.vue'
 import EngineProfileDetail from './components/EngineProfileDetail.vue'
 import MjaiDebugDialog from './components/MjaiDebugDialog.vue'
+import QuickSettingsPanel from './components/QuickSettingsPanel.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
@@ -1211,7 +1145,6 @@ const {
   mistakeThresholdDisplay,
   uiScaleOptions,
   showSettingsPanel,
-  quickTrainingModes,
   currentTrainingMode,
   quickThinkingMaxValue,
   quickAudioVolumeValue,
@@ -1436,7 +1369,6 @@ function startDragFloatingPanel(e: MouseEvent) {
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
 }
-const quickSettingsCollapsed = ref(false)
 const treePanelCollapsed = ref(false)
 const {
   tableStageEl,
@@ -1493,12 +1425,6 @@ const status = reactive<TrainerStatusSnapshot>({
     timelineReady: 0,
   },
 })
-const relativeSeatOptions = computed(() => ([
-  { label: t('seat.kamicha'), seat: (status.controlledSeat + 3) % 4 },
-  { label: t('seat.self'), seat: status.controlledSeat },
-  { label: t('seat.shimocha'), seat: (status.controlledSeat + 1) % 4 },
-  { label: t('seat.toimen'), seat: (status.controlledSeat + 2) % 4 },
-]))
 const {
   runtimeMetrics,
   runtimeMemoryRows,

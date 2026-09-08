@@ -212,13 +212,6 @@ export function useSettingsSession(t: Translate) {
   })
 
 
-  const quickTrainingModes = computed(() => [
-    { value: 'no_review', label: t('mode.noReview') },
-    { value: 'threshold_review', label: t('mode.difference') },
-    { value: 'always_review', label: t('mode.all') },
-    { value: 'preview_before_click', label: t('mode.preview') },
-  ] as const)
-
   const quickThinkingDragValue = ref<number | null>(null)
   const quickVolumeDragValue = ref<number | null>(null)
   const currentTrainingMode = computed(() => normalizeTrainingMode(settings.training.mode))
@@ -400,7 +393,6 @@ export function useSettingsSession(t: Translate) {
     mistakeThresholdDisplay,
     uiScaleOptions,
     showSettingsPanel,
-    quickTrainingModes,
     currentTrainingMode,
     quickThinkingMaxValue,
     quickAudioVolumeValue,
