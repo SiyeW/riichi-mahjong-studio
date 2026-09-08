@@ -55,10 +55,16 @@ class AnalysisCacheSourceTest(unittest.TestCase):
         service.STATE["gameLoaded"] = False
         try:
             with (
-                mock.patch.object(service.ENGINE_MANAGEMENT, "_configure_action_gateway") as decision_configure,
-                mock.patch.object(service.ENGINE_MANAGEMENT, "_configure_opponent_predictions") as opponent_configure,
+                mock.patch.object(
+                    service.ENGINE_MANAGEMENT,
+                    "_configure_action_gateway",
+                ) as decision_configure,
+                mock.patch.object(
+                    service.ENGINE_MANAGEMENT,
+                    "_configure_opponent_predictions",
+                ) as opponent_configure,
             ):
-                service.handle_command("test", "get_game_view", {})
+                service.STATEFUL_COMMANDS.dispatch("test", "get_game_view", {})
             decision_configure.assert_not_called()
             opponent_configure.assert_not_called()
         finally:

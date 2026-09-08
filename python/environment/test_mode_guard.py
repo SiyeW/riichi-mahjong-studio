@@ -14,7 +14,9 @@ class ModeGuardTest(unittest.TestCase):
             service.STATE["mode"] = "play"
 
             with self.assertRaisesRegex(ValueError, "No active game is loaded"):
-                service.handle_command("test", "set_mode", {"mode": "research"})
+                service.STATEFUL_COMMANDS.dispatch(
+                    "test", "set_mode", {"mode": "research"}
+                )
 
             self.assertEqual(service.STATE["mode"], "play")
         finally:

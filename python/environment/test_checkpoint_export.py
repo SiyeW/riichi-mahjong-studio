@@ -17,7 +17,9 @@ class CheckpointExportTests(unittest.TestCase):
             'game': game, 'gameLoaded': True, 'mode': 'research',
             'controlledSeat': 0, 'pendingSeatSwitch': None, 'visibleHands': True,
         }):
-            result = service.handle_command('request', 'export_game_record', {'checkpoint': True})
+            result = service.STATEFUL_COMMANDS.dispatch(
+                'request', 'export_game_record', {'checkpoint': True}
+            )
             record = result['record']
             self.assertEqual(game, before, 'compaction must not mutate the live record')
             frozen = copy.deepcopy(record)
@@ -43,7 +45,9 @@ class CheckpointExportTests(unittest.TestCase):
         with patch.object(service.RECORD_SESSION, 'serialize', return_value=record), \
              patch.object(service.VIEW_BUILDER, 'build_view_payload', side_effect=AssertionError('unneeded view')), \
              patch.object(service.VIEW_BUILDER, 'build_state_payload', side_effect=AssertionError('unneeded runtime state')):
-            result = service.handle_command('request', 'export_game_record', {'checkpoint': True})
+            result = service.STATEFUL_COMMANDS.dispatch(
+                'request', 'export_game_record', {'checkpoint': True}
+            )
         self.assertIs(result['record'], record)
         self.assertEqual(result['request_id'], 'request')
         self.assertNotIn('view', result)
@@ -52,7 +56,9 @@ class CheckpointExportTests(unittest.TestCase):
     def test_normal_export_keeps_the_existing_response(self):
         with patch.object(service.RECORD_SESSION, 'serialize', return_value={'game': {}}), \
              patch.object(service.VIEW_BUILDER, 'build_response', return_value={'view': 'unchanged'}) as build:
-            result = service.handle_command('request', 'export_game_record', {})
+            result = service.STATEFUL_COMMANDS.dispatch(
+                'request', 'export_game_record', {}
+            )
         self.assertEqual(result, {'view': 'unchanged'})
         build.assert_called_once()
 

@@ -38,7 +38,7 @@ class ResearchModeActionBoundaryTest(unittest.TestCase):
                 before = copy.deepcopy(service.STATE["game"])
                 with self.subTest(command=command):
                     with self.assertRaisesRegex(ValueError, "only available in play mode"):
-                        service.handle_command("test", command, payload)
+                        service.STATEFUL_COMMANDS.dispatch("test", command, payload)
                     self.assertEqual(service.STATE["game"], before)
 
 

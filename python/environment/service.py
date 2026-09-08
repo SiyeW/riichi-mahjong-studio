@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import auto_analysis_session
+import analysis_commands
 import command_transport
 import decision_analysis_session
 import engine_management
@@ -27,6 +28,7 @@ import round_actions
 import round_progression
 import runtime_metrics
 import snapshot_state
+import stateful_command_dispatcher
 import view_control_commands
 from action_recommendation_adapter import (
     choose_ai_action,
@@ -998,162 +1000,39 @@ VIEW_CONTROL_COMMANDS = view_control_commands.ViewControlCommands(
     apply_pending_seat_switch=apply_pending_seat_switch_if_ready,
 )
 
+ANALYSIS_COMMANDS = analysis_commands.AnalysisCommands(
+    auto_analysis=AUTO_ANALYSIS,
+    engine_management=ENGINE_MANAGEMENT,
+    opponent_analysis=OPPONENT_ANALYSIS,
+    view_builder=VIEW_BUILDER,
+    clear_caches=clear_loaded_analysis_caches,
+    get_action_debug=get_latest_action_recommendation_debug,
+    get_opponent_debug=get_latest_opponent_prediction_mjai,
+    now_iso=now_iso,
+)
 
-def handle_command(request_id, command, payload):
-    with _STATE_LOCK:
-        payload = payload or {}
-        training = ENGINE_MANAGEMENT.training_config()
-        set_thinking_time_bounds(
-            float(training.get("thinkingTimeMinS", 0.25)),
-            float(training.get("thinkingTimeMaxS", 1.0)),
-        )
-        if command == "get_status":
-            return VIEW_BUILDER.build_status_response(request_id)
 
-        if command == "start_auto_analysis":
-            auto_analysis = AUTO_ANALYSIS.start()
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"autoAnalysis": auto_analysis},
-            )
+def _configure_command_thinking_time():
+    training = ENGINE_MANAGEMENT.training_config()
+    set_thinking_time_bounds(
+        float(training.get("thinkingTimeMinS", 0.25)),
+        float(training.get("thinkingTimeMaxS", 1.0)),
+    )
 
-        if command == "cancel_auto_analysis":
-            auto_analysis = AUTO_ANALYSIS.cancel()
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"autoAnalysis": auto_analysis},
-            )
 
-        if command == "describe_engine":
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"description": ENGINE_MANAGEMENT.describe(payload)},
-            )
-
-        if command == "create_game":
-            return RECORD_WORKSPACE_COMMANDS.create(request_id, command)
-
-        if command == "close_game":
-            return RECORD_WORKSPACE_COMMANDS.close(request_id, command)
-
-        if command == "import_mortal_report":
-            return RECORD_WORKSPACE_COMMANDS.import_mortal(
-                request_id, command, payload
-            )
-
-        if command == "import_custom_tenhou":
-            return RECORD_WORKSPACE_COMMANDS.import_custom(
-                request_id, command, payload
-            )
-
-        if command == "export_custom_tenhou":
-            return RECORD_WORKSPACE_COMMANDS.export_custom(request_id, command)
-
-        if run_debug_scenario(command, sys.modules[__name__]):
-            return VIEW_BUILDER.build_response(request_id, command)
-
-        if command == "set_mode":
-            return VIEW_CONTROL_COMMANDS.set_mode(request_id, command, payload)
-
-        if command == "set_analysis_visibility":
-            return VIEW_CONTROL_COMMANDS.set_analysis_visibility(
-                request_id, command, payload
-            )
-
-        if command == "request_seat_switch":
-            return VIEW_CONTROL_COMMANDS.request_seat_switch(
-                request_id, command, payload
-            )
-
-        if command == "toggle_visible_hands":
-            return VIEW_CONTROL_COMMANDS.toggle_visible_hands(request_id, command)
-
-        if command == "get_game_view":
-            return VIEW_BUILDER.build_response(request_id, command)
-
-        if command == "advance_game":
-            return GAMEPLAY_COMMANDS.advance(request_id, command)
-
-        if command == "export_game_record":
-            return RECORD_WORKSPACE_COMMANDS.export_record(
-                request_id, command, payload
-            )
-
-        if command == "import_game_record":
-            return RECORD_WORKSPACE_COMMANDS.import_record(
-                request_id, command, payload
-            )
-
-        if command == "jump_to_node":
-            return RECORD_WORKSPACE_COMMANDS.jump(request_id, command, payload)
-
-        if command == "set_main_branch":
-            return RECORD_WORKSPACE_COMMANDS.set_main_branch(
-                request_id, command, payload
-            )
-
-        if command == "set_node_comment":
-            return RECORD_WORKSPACE_COMMANDS.set_comment(
-                request_id, command, payload
-            )
-
-        if command == "delete_node":
-            return RECORD_WORKSPACE_COMMANDS.delete(request_id, command, payload)
-
-        if command == "submit_user_action":
-            return GAMEPLAY_COMMANDS.submit(request_id, command, payload)
-
-        if command == "confirm_pending_review":
-            return GAMEPLAY_COMMANDS.confirm_pending_review(request_id, command)
-
-        if command == "get_wall_view":
-            return RECORD_WORKSPACE_COMMANDS.get_wall(request_id, command)
-
-        if command == "reconstruct_walls":
-            return RECORD_WORKSPACE_COMMANDS.reconstruct_walls(
-                request_id, command, payload
-            )
-
-        if command == "import_wall":
-            return RECORD_WORKSPACE_COMMANDS.import_wall(
-                request_id, command, payload
-            )
-
-        if command == "get_latest_mjai_debug":
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"debug": get_latest_action_recommendation_debug()},
-            )
-
-        if command == "get_shanten":
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                OPPONENT_ANALYSIS.current(),
-            )
-
-        if command == "get_shanten_mjai":
-            return VIEW_BUILDER.build_response(
-                request_id,
-                command,
-                {"debug": get_latest_opponent_prediction_mjai()},
-            )
-
-        if command == "clear_analysis_caches":
-            cleared = clear_loaded_analysis_caches()
-            return {
-                "request_id": request_id,
-                "command": command,
-                "state": VIEW_BUILDER.build_state_payload(),
-                "cleared": cleared,
-                "timestamp": now_iso(),
-            }
-
-        raise ValueError(f"Unsupported command: {command}")
+STATEFUL_COMMANDS = stateful_command_dispatcher.StatefulCommandDispatcher(
+    state_lock=_STATE_LOCK,
+    configure_thinking_time=_configure_command_thinking_time,
+    run_debug_scenario=lambda command: run_debug_scenario(
+        command,
+        sys.modules[__name__],
+    ),
+    view_builder=VIEW_BUILDER,
+    analysis_commands=ANALYSIS_COMMANDS,
+    record_commands=RECORD_WORKSPACE_COMMANDS,
+    view_control_commands=VIEW_CONTROL_COMMANDS,
+    gameplay_commands=GAMEPLAY_COMMANDS,
+)
 
 
 COMMAND_TRANSPORT = command_transport.CommandTransport(
@@ -1161,7 +1040,7 @@ COMMAND_TRANSPORT = command_transport.CommandTransport(
     view_builder=VIEW_BUILDER,
     engine_management=ENGINE_MANAGEMENT,
     collect_runtime_metrics=runtime_metrics.collect_runtime_memory_metrics,
-    dispatch_stateful=handle_command,
+    dispatch_stateful=STATEFUL_COMMANDS.dispatch,
     emit=emit,
     now_iso=now_iso,
 )

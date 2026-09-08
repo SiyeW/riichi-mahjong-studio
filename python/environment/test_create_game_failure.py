@@ -47,9 +47,13 @@ class CreateGameFailureTests(unittest.TestCase):
     def test_real_advance_with_unavailable_engine_keeps_exportable_record(self):
         before = service.RECORD_SESSION.serialize()
         with patch.object(record_session.random, 'randint', side_effect=[123456, 1]), \
-             patch.object(service.ACTION_RECOMMENDATIONS, 'analyze_candidates', side_effect=RuntimeError('engine unavailable')):
+             patch.object(
+                 service.ACTION_RECOMMENDATIONS,
+                 'analyze_candidates',
+                 side_effect=RuntimeError('engine unavailable'),
+             ):
             with self.assertRaisesRegex(Exception, 'engine unavailable|引擎未加载'):
-                service.handle_command('test', 'create_game', {})
+                service.STATEFUL_COMMANDS.dispatch('test', 'create_game', {})
         after = service.RECORD_SESSION.serialize()
         self.assertEqual(before['game'], after['game'])
         self.assertEqual(before['state'], after['state'])
