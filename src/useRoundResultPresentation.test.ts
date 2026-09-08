@@ -24,7 +24,7 @@ function createPresentation(resultInfo: Record<string, unknown>) {
 test('round result presentation preserves the existing 4 han 30 fu fallback', () => {
   const presentation = createPresentation({ actor: 1, target: 2, han: 4, fu: 30 })
   assert.equal(presentation.resultPointsLabel.value, '8000')
-  assert.equal(presentation.resultHandLabel.value, '')
+  assert.equal(presentation.resultHandLabel.value, 'result.limit.mangan')
 })
 
 test('round result presentation keeps multi-yakuman labels and riichi ura slots', () => {
