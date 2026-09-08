@@ -1223,6 +1223,7 @@ import { useRoundResultPresentation } from './useRoundResultPresentation'
 import { useRuntimeMetrics } from './useRuntimeMetrics'
 import { useSettingsSession } from './useSettingsSession'
 import { useSoundTransitions, type SoundTransitionView } from './useSoundTransitions'
+import { usePlayPrefetch } from './usePlayPrefetch'
 import { useTablePresentation } from './useTablePresentation'
 import { useTableViewport } from './useTableViewport'
 import { useTileArtwork } from './useTileArtwork'
@@ -1736,9 +1737,18 @@ const autoAdvanceTimer = ref<number | null>(null)
 const actionRequestInFlight = ref(false)
 const advanceRequestInFlight = ref(false)
 let gameplayResponseGeneration = 0
-const playPrefetchReady = ref(false)
-const playPrefetchWaiting = ref(false)
-const earlyPlayPrefetchReady = new Set<string>()
+const {
+  activatePlayPrefetchPosition,
+  applyPlayPrefetchStatus,
+  beginPlayPrefetchAdvance,
+  markPlayPrefetchReady,
+  playPrefetchReady,
+  playPrefetchWaiting,
+  resetPlayPrefetch,
+} = usePlayPrefetch({
+  currentPosition: () => ({ gameId: gameView.gameId, nodeId: gameView.currentNodeId }),
+  onCurrentStatusChanged: () => scheduleAutoAdvance(),
+})
 const bootstrapError = ref('')
 const backendRecoveryNeeded = ref(false)
 const backendHasCheckpoint = ref(false)
@@ -2159,19 +2169,6 @@ const {
   tileImageSrc,
   scheduleAutoAdvance,
 })
-function playPrefetchPositionKey(gameId: string | null | undefined, nodeId: string | null | undefined) {
-  if (!gameId || !nodeId) return null
-  return `${gameId}\u0000${nodeId}`
-}
-
-function applyPlayPrefetchStatus(prefetch?: TrainerEnvironmentResponse['playPrefetch']) {
-  const currentKey = playPrefetchPositionKey(gameView.gameId, gameView.currentNodeId)
-  const eventReady = currentKey ? earlyPlayPrefetchReady.delete(currentKey) : false
-  playPrefetchReady.value = Boolean(prefetch?.ready || eventReady)
-  playPrefetchWaiting.value = Boolean(prefetch?.waiting && !playPrefetchReady.value)
-  scheduleAutoAdvance()
-}
-
 function opponentAnalysisRoundKey(view: TrainerGameView): string | null {
   if (!view.gameId || !view.table) return null
   const roundRootId = view.tree?.currentRoundRootId
@@ -2236,11 +2233,7 @@ function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewT
   gameView.nodeComment = nextView.nodeComment || ''
   syncBranchNavigationFromGameView(nextView)
   gameView.opponentAnalysis = nextView.opponentAnalysis || null
-  const prefetchKey = playPrefetchPositionKey(nextView.gameId, nextView.currentNodeId)
-  if (prefetchKey && earlyPlayPrefetchReady.has(prefetchKey)) {
-    playPrefetchReady.value = true
-    playPrefetchWaiting.value = false
-  }
+  activatePlayPrefetchPosition(nextView.gameId, nextView.currentNodeId)
   gameView.matchSummary = nextView.matchSummary
   gameView.table = nextView.table
   gameView.legalActions = nextView.legalActions
@@ -2487,9 +2480,7 @@ async function advanceGame() {
   if (!window.trainerAPI || isReadOnlyRecord.value || advanceRequestInFlight.value || status.mode !== 'play') return
   const responseGeneration = gameplayResponseGeneration
   advanceRequestInFlight.value = true
-  playPrefetchReady.value = false
-  const currentPrefetchKey = playPrefetchPositionKey(gameView.gameId, gameView.currentNodeId)
-  if (currentPrefetchKey) earlyPlayPrefetchReady.delete(currentPrefetchKey)
+  beginPlayPrefetchAdvance()
   try {
     const response = await window.trainerAPI.advanceGame()
     if (responseGeneration !== gameplayResponseGeneration) return
@@ -2665,9 +2656,7 @@ function handlePythonEvent(event: TrainerPythonEvent) {
       backendHasCheckpoint.value = Boolean(event.hasCheckpoint)
       applyStatus(backendStoppedState(status))
       clearAutoAdvanceTimer()
-      earlyPlayPrefetchReady.clear()
-      playPrefetchReady.value = false
-      playPrefetchWaiting.value = false
+      resetPlayPrefetch()
       bootstrapError.value = t('recovery.stopped')
     }
     return
@@ -2685,13 +2674,7 @@ function handlePythonEvent(event: TrainerPythonEvent) {
     return
   }
   if (event.type === 'play_prefetch_ready' && event.gameId && event.nodeId) {
-    const key = playPrefetchPositionKey(event.gameId, event.nodeId)
-    if (key) earlyPlayPrefetchReady.add(key)
-    if (event.gameId === gameView.gameId && event.nodeId === gameView.currentNodeId) {
-      playPrefetchReady.value = true
-      playPrefetchWaiting.value = false
-      scheduleAutoAdvance()
-    }
+    markPlayPrefetchReady(event.gameId, event.nodeId)
     return
   }
   if (event.gameId && event.gameId !== gameView.gameId) return
