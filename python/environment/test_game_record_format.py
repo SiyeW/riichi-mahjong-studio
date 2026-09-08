@@ -407,7 +407,7 @@ class GameRecordFormatTests(unittest.TestCase):
             service.STATE["gameLoaded"] = True
             imported_wall = build_wall(random.Random(987))
 
-            node_id = service.reset_current_round_with_full_wall(imported_wall)
+            node_id = service.ROUND_WALL_REPLACEMENT.replace(imported_wall)
             snapshot = service.STATE["game"]["nodes"][node_id]["snapshot"]
             self.assertEqual(snapshot["wallOrigin"], "imported")
 

@@ -1,4 +1,3 @@
-import copy
 import json
 import os
 import sys
@@ -28,6 +27,7 @@ import record_session
 import review_session
 import round_actions
 import round_progression
+import round_wall_replacement
 import runtime_metrics
 import snapshot_state
 import stateful_command_dispatcher
@@ -387,63 +387,6 @@ def collect_subtree_ids(game, root_id):
     return game_tree.collect_subtree_ids(game, root_id)
 
 
-def reset_current_round_with_full_wall(full_wall):
-    ensure_game_loaded()
-    game = STATE["game"]
-    current_node_id = game["currentNodeId"]
-    old_round_root_id = resolve_round_root_id_for_node(game, current_node_id)
-    round_root_node = game["nodes"][old_round_root_id]
-    base_match_state = copy.deepcopy((round_root_node.get("snapshot") or {}).get("matchState") or game.get("matchState") or {})
-    if not base_match_state:
-        raise ValueError("无法确定当前局的对局元数据。")
-
-    validated_wall = validate_full_wall_tiles(full_wall)
-    next_snapshot = create_initial_snapshot(base_match_state, full_wall=validated_wall)
-    next_snapshot["wallOrigin"] = "imported"
-
-    subtree_ids = collect_subtree_ids(game, old_round_root_id)
-    parent_id = round_root_node.get("parentId")
-    new_round_root_id = f"n_{game['nextNodeIndex']}"
-    game["nextNodeIndex"] += 1
-    new_round_root_node = {
-        "id": new_round_root_id,
-        "type": round_root_node.get("type", "action"),
-        "parentId": parent_id,
-        "children": [],
-        "mainChildId": None,
-        "action": copy.deepcopy(round_root_node.get("action")),
-        "actor": None if round_root_node.get("action") is None else round_root_node["action"].get("actor"),
-        "snapshot": next_snapshot,
-        "analysisCache": {},
-        "depth": round_root_node.get("depth", 0),
-    }
-
-    if parent_id:
-        parent_node = game["nodes"][parent_id]
-        parent_node["children"] = [
-            new_round_root_id if child_id == old_round_root_id else child_id
-            for child_id in parent_node.get("children", [])
-        ]
-        if parent_node.get("mainChildId") == old_round_root_id:
-            parent_node["mainChildId"] = new_round_root_id
-    else:
-        game["rootNodeId"] = new_round_root_id
-
-    DECISION_ANALYSIS.purge(game["gameId"], subtree_ids)
-
-    for node_id in subtree_ids:
-        game["nodes"].pop(node_id, None)
-
-    game["nodes"][new_round_root_id] = new_round_root_node
-    game_tree.mark_tree_changed(game)
-    AUTO_ANALYSIS.invalidate_timeline()
-    game["currentNodeId"] = new_round_root_id
-    TREE_EDITS.promote_path_to_mainline(game, new_round_root_id)
-    game["matchState"] = copy.deepcopy(next_snapshot["matchState"])
-    game["matchState"]["matchId"] = game.get("matchId", game.get("gameId", "game"))
-    MJAI_STREAMS.purge_game(game["gameId"])
-    return new_round_root_id
-
 def normalize_mode(value):
     return "research" if value == "research" else "play"
 
@@ -602,6 +545,25 @@ TREE_EDITS = game_tree_coordinator.GameTreeCoordinator(
         is_meaningful_decision=action_is_meaningful_decision,
         active_draft=lambda: PLAY_PREFETCH.active_draft(),
         invalidate_analysis_timeline=lambda: AUTO_ANALYSIS.invalidate_timeline(),
+    ),
+)
+
+
+ROUND_WALL_REPLACEMENT = round_wall_replacement.RoundWallReplacement(
+    STATE,
+    round_wall_replacement.RoundWallReplacementDependencies(
+        ensure_game_loaded=ensure_game_loaded,
+        validate_full_wall=validate_full_wall_tiles,
+        create_initial_snapshot=lambda match_state, full_wall: create_initial_snapshot(
+            match_state,
+            full_wall=full_wall,
+        ),
+        resolve_round_root=resolve_round_root_id_for_node,
+        collect_subtree_ids=collect_subtree_ids,
+        purge_decision_analysis=DECISION_ANALYSIS.purge,
+        invalidate_analysis_timeline=AUTO_ANALYSIS.invalidate_timeline,
+        promote_mainline=TREE_EDITS.promote_path_to_mainline,
+        purge_mjai_cache=MJAI_STREAMS.purge_game,
     ),
 )
 
@@ -766,7 +728,7 @@ RECORD_WORKSPACE_COMMANDS = record_workspace_commands.RecordWorkspaceCommands(
     ensure_loaded=ensure_game_loaded,
     ensure_writable=ensure_writable_game,
     get_wall_view=get_wall_view,
-    reset_round_wall=reset_current_round_with_full_wall,
+    reset_round_wall=ROUND_WALL_REPLACEMENT.replace,
     now_iso=now_iso,
 )
 
