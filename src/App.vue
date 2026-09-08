@@ -366,20 +366,18 @@
               :tile-image-src="tileImageSrc"
             />
 
-            <!-- Center info hub -->
-            <div class="grid-info">
-              <button class="info-round" @click.stop="toggleRoundMapOverlay">{{ roundLabel }}</button>
-              <span class="info-tiles-left" v-if="gameView.table">x{{ gameView.table.wallRemaining }}</span>
-              <span class="info-doras" v-if="gameView.table">
-                <div v-for="(tile, index) in centerDoraSlots" :key="'dora-'+index" class="tileDiv">
-                  <img :src="tileImageSrc(tile)" class="tileImg" :alt="tileFaceLabel(tile)" />
-                </div>
-              </span>
-              <span v-if="gameView.table && southView" class="gi-player-anchor gi-p0-anchor"><span class="gi-p0-outer" :class="{ 'is-actor': isCurrentActorSeat(southView.seat), 'is-east': southView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(southView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[southView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: southView.riichiAccepted }">-1000</span></span></span>
-              <span v-if="gameView.table && eastView" class="gi-player-anchor gi-p1-anchor"><span class="gi-p1-outer" :class="{ 'is-actor': isCurrentActorSeat(eastView.seat), 'is-east': eastView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(eastView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[eastView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: eastView.riichiAccepted }">-1000</span></span></span>
-              <span v-if="gameView.table && northView" class="gi-player-anchor gi-p2-anchor"><span class="gi-p2-outer" :class="{ 'is-actor': isCurrentActorSeat(northView.seat), 'is-east': northView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(northView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[northView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: northView.riichiAccepted }">-1000</span></span></span>
-              <span v-if="gameView.table && westView" class="gi-player-anchor gi-p3-anchor"><span class="gi-p3-outer" :class="{ 'is-actor': isCurrentActorSeat(westView.seat), 'is-east': westView.seat === gameView.table.dealer }"><span class="gi-seat">{{ seatWindLabel(westView.seat) }}</span><span class="gi-score">{{ gameView.table?.scores?.[westView.seat] ?? 0 }}</span><span class="gi-riichi-bet" :class="{ on: westView.riichiAccepted }">-1000</span></span></span>
-            </div>
+            <TableCenterInfo
+              v-if="gameView.table"
+              :table="gameView.table"
+              :views="tableSeatViews"
+              :round-label="roundLabel"
+              :dora-slots="centerDoraSlots"
+              :is-current-actor-seat="isCurrentActorSeat"
+              :seat-wind-label="seatWindLabel"
+              :tile-face-label="tileFaceLabel"
+              :tile-image-src="tileImageSrc"
+              @toggle-round-map="toggleRoundMapOverlay"
+            />
             <div v-if="actionAnnouncement.visible" :key="actionAnnouncement.key" :class="['table-callout', `is-${actionAnnouncement.position}`]">
               {{ actionAnnouncement.text }}
             </div>
@@ -784,6 +782,7 @@ import RecordImportDialog from './components/RecordImportDialog.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
 import RoundResultOverlay from './components/RoundResultOverlay.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
+import TableCenterInfo from './components/TableCenterInfo.vue'
 import TableOpponentHands, { type OpponentHandPresentation } from './components/TableOpponentHands.vue'
 import TableRivers from './components/TableRivers.vue'
 import WallViewWindow from './components/WallViewWindow.vue'
