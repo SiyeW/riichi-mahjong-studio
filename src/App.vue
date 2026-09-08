@@ -1058,91 +1058,15 @@
       @open-external="openExternalLink"
     />
 
-    <div v-if="showSettingsPanel" class="settings-modal-backdrop">
-      <section class="settings-modal">
-        <div class="settings-modal-header">
-          <h2>{{ t('settings.title') }}</h2>
-          <div class="settings-modal-actions">
-            <button class="settings-btn-secondary" @click="closeSettingsPanel">{{ t('common.close') }}</button>
-            <button class="settings-btn-primary" @click="saveSettingsPanel">{{ t('settings.save') }}</button>
-          </div>
-        </div>
-        <div class="settings-subsection">
-          <h3>{{ t('settings.interface') }}</h3>
-          <label>
-            <span>{{ t('settings.language') }}</span>
-            <select v-model="settingsDraft.display.language">
-              <option value="system">{{ t('settings.language.system') }}</option>
-              <option value="zh-CN">{{ t('settings.language.zh-CN') }}</option>
-              <option value="ja-JP">{{ t('settings.language.ja-JP') }}</option>
-              <option value="en-US">{{ t('settings.language.en-US') }}</option>
-            </select>
-          </label>
-          <label>
-            <span>{{ t('settings.textSize') }}</span>
-            <select v-model.number="settingsDraft.display.uiScale">
-              <option v-for="scale in uiScaleOptions" :key="scale" :value="scale">{{ Math.round(scale * 100) }}%</option>
-            </select>
-          </label>
-          <label>
-            <span>{{ t('settings.colorScheme') }}</span>
-            <select v-model="settingsDraft.display.colorScheme">
-              <option value="default">{{ t('common.default') }}</option>
-              <option value="killerducky">killerducky</option>
-              <option value="naga">NAGA</option>
-            </select>
-          </label>
-          <label>
-            <span>{{ t('settings.tablePosition') }}</span>
-            <select v-model="settingsDraft.display.tablePosition">
-              <option value="center">{{ t('settings.tablePosition.center') }}</option>
-              <option value="left">{{ t('settings.tablePosition.left') }}</option>
-              <option value="right">{{ t('settings.tablePosition.right') }}</option>
-            </select>
-          </label>
-          <label class="settings-checkbox">
-            <input v-model="settingsDraft.display.reduceMotion" type="checkbox" />
-            <span class="settings-checkbox-control" aria-hidden="true"></span>
-            <span class="settings-checkbox-label">{{ t('settings.reduceMotion') }}</span>
-          </label>
-          <label class="settings-checkbox">
-            <input v-model="settingsDraft.display.showTsumogiriInPlay" type="checkbox" />
-            <span class="settings-checkbox-control" aria-hidden="true"></span>
-            <span class="settings-checkbox-label">{{ t('settings.showTsumogiri') }}</span>
-          </label>
-        </div>
-        <div class="settings-subsection">
-          <h3>{{ t('settings.sound') }}</h3>
-          <label>
-            <span>{{ t('settings.soundPack') }}</span>
-            <select v-model="settingsDraft.audio.soundPackId">
-              <option value="">{{ t('common.none') }}</option>
-              <option v-for="pack in settings.runtime?.soundPackCatalog.packs || []" :key="pack.id" :value="pack.id">
-                {{ pack.name }}
-              </option>
-            </select>
-          </label>
-        </div>
-        <div class="settings-subsection">
-          <h3>{{ t('settings.game') }}</h3>
-          <label>
-            <span>{{ t('settings.mistakeThreshold') }}</span>
-            <input v-model.number="mistakeThresholdDisplay" type="number" min="0" max="100" step="1" />
-          </label>
-        </div>
-        <div class="settings-subsection">
-          <h3>{{ t('settings.records') }}</h3>
-          <label class="settings-checkbox settings-checkbox-with-description">
-            <input v-model="settingsDraft.records.saveRecoveryOnExit" type="checkbox" />
-            <span class="settings-checkbox-control" aria-hidden="true"></span>
-            <span class="settings-checkbox-copy">
-              <span class="settings-checkbox-label">{{ t('settings.keepRecovery') }}</span>
-              <span class="settings-checkbox-description">{{ t('settings.keepRecovery.description') }}</span>
-            </span>
-          </label>
-        </div>
-      </section>
-    </div>
+    <SettingsDialog
+      v-if="showSettingsPanel"
+      v-model:mistake-threshold="mistakeThresholdDisplay"
+      :draft="settingsDraft"
+      :sound-packs="settings.runtime?.soundPackCatalog.packs || []"
+      :ui-scale-options="uiScaleOptions"
+      @close="closeSettingsPanel"
+      @save="saveSettingsPanel"
+    />
 
     <section
       v-if="roundMapOverlayOpen"
@@ -1614,6 +1538,7 @@ import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
+import SettingsDialog from './components/SettingsDialog.vue'
 import { useI18n } from './i18n'
 import { vPerceptualSurface } from './perceptualSurface'
 import {
