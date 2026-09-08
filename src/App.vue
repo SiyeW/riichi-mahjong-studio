@@ -1220,6 +1220,7 @@ import { useBranchNavigation } from './useBranchNavigation'
 import { useBranchTreePresentation } from './useBranchTreePresentation'
 import { useDiscardFlight, type GameViewTransitionDirection } from './useDiscardFlight'
 import { useDecisionPresentation } from './useDecisionPresentation'
+import { useDesktopBridgeSubscriptions } from './useDesktopBridgeSubscriptions'
 import { useRecordSession } from './useRecordSession'
 import { useRoundResultPresentation } from './useRoundResultPresentation'
 import { useRuntimeMetrics } from './useRuntimeMetrics'
@@ -2601,11 +2602,6 @@ function handlePythonEvent(event: TrainerPythonEvent) {
   }
 }
 
-let unsubscribePythonEvents: (() => void) | null = null
-let unsubscribeUiZoomShortcut: (() => void) | null = null
-let unsubscribeRecordDirtyChanged: (() => void) | null = null
-let unsubscribeBeforeClose: (() => void) | null = null
-
 async function fetchAndShowMjaiDebug() {
   showMjaiDebug.value = true
   analysisCacheClearMessage.value = ''
@@ -2671,53 +2667,28 @@ function onKeyDown(e: KeyboardEvent) {
   }
 }
 
+useDesktopBridgeSubscriptions({
+  pythonEvent: handlePythonEvent,
+  recordDirtyChanged: handleRecordDirtyChanged,
+  uiZoomShortcut: (direction) => { void changeUiScale(direction) },
+  beforeClose: () => flushBeforeClose(
+    flushNodeComment,
+    flushEngineAutosave,
+    () => engineSaveMessage.value || t('native.closeSaveFailed.message'),
+  ),
+})
+
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('wheel', onUiScaleWheel, { capture: true, passive: false })
   startRuntimeMetrics()
   void prepareRendererForDisplay()
-  if (window.trainerAPI?.onPythonEvent) {
-    unsubscribePythonEvents = window.trainerAPI.onPythonEvent(handlePythonEvent)
-  }
-  if (window.trainerAPI?.onRecordDirtyChanged) {
-    unsubscribeRecordDirtyChanged = window.trainerAPI.onRecordDirtyChanged((dirty) => {
-      handleRecordDirtyChanged(dirty)
-    })
-  }
-  if (window.trainerAPI?.onUiZoomShortcut) {
-    unsubscribeUiZoomShortcut = window.trainerAPI.onUiZoomShortcut((direction) => {
-      void changeUiScale(direction)
-    })
-  }
-  if (window.trainerAPI?.onBeforeClose) {
-    unsubscribeBeforeClose = window.trainerAPI.onBeforeClose(() => flushBeforeClose(
-      flushNodeComment,
-      flushEngineAutosave,
-      () => engineSaveMessage.value || t('native.closeSaveFailed.message'),
-    ))
-  }
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('wheel', onUiScaleWheel, true)
   document.documentElement.classList.remove('reduce-motion')
-  if (unsubscribePythonEvents) {
-    unsubscribePythonEvents()
-    unsubscribePythonEvents = null
-  }
-  if (unsubscribeUiZoomShortcut) {
-    unsubscribeUiZoomShortcut()
-    unsubscribeUiZoomShortcut = null
-  }
-  if (unsubscribeRecordDirtyChanged) {
-    unsubscribeRecordDirtyChanged()
-    unsubscribeRecordDirtyChanged = null
-  }
-  if (unsubscribeBeforeClose) {
-    unsubscribeBeforeClose()
-    unsubscribeBeforeClose = null
-  }
 })
 if (import.meta.env.MODE === 'ui-test') {
   installAnalysisTestHarness(proxyRefs({
