@@ -1068,109 +1068,27 @@
       @save="saveSettingsPanel"
     />
 
-    <section
+    <RoundMapWindow
       v-if="roundMapOverlayOpen"
-      class="analysis-float-panel round-map-window"
-      :style="{ '--floating-panel-scale': uiScale, zIndex: floatingPanelZ.roundMap }"
-      @mousedown="focusFloatingPanel('roundMap')"
-      @focusin="focusFloatingPanel('roundMap')"
-    >
-      <div class="floating-panel-header" @mousedown="startDragFloatingPanel">
-        <span>{{ t('roundMap.title') }}</span>
-        <div class="floating-panel-header-actions">
-          <button class="floating-panel-close" :aria-label="t('roundMap.close')" @click="closeRoundMapOverlay">&times;</button>
-        </div>
-      </div>
-      <div class="round-map-panel-body">
-        <div class="round-map-body">
-          <div v-if="roundMapDots.length" class="round-map-scroll" @wheel.stop>
-            <div class="round-map-canvas">
-              <div v-if="roundMapRows.length" class="round-map-axis" :style="{ height: `${roundMapSvgH}px` }">
-                <div
-                  v-for="row in roundMapRows"
-                  :key="row.key"
-                  class="round-map-axis-label"
-                  :style="{ top: `${row.y}px` }"
-                >
-                  {{ row.label }}
-                </div>
-              </div>
-              <svg class="round-map-svg" :width="roundMapSvgW" :height="roundMapSvgH">
-                <line
-                  :x1="ROUND_BASE_X"
-                  y1="0"
-                  :x2="ROUND_BASE_X"
-                  :y2="roundMapSvgH"
-                  stroke="rgba(159,213,200,0.18)"
-                  stroke-width="1"
-                />
-                <path
-                  v-for="edge in roundMapEdges"
-                  :key="`${edge.from}-${edge.to}`"
-                  :d="edge.d"
-                  fill="none"
-                  :stroke="edge.stroke"
-                  :stroke-width="edge.width"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-                <rect
-                  v-for="region in roundMapHitRegions"
-                  :key="`round-map-hit-${region.dot.id}`"
-                  :x="region.x"
-                  :y="region.y"
-                  :width="region.width"
-                  :height="region.height"
-                  class="round-map-hit-region"
-                  @mouseenter="roundMapHoveredRoundId = region.dot.id"
-                  @mouseleave="roundMapHoveredRoundId = null"
-                  @click="jumpToRoundRoot(region.dot.id)"
-                />
-                <circle
-                  v-for="dot in roundMapDots"
-                  :key="dot.id"
-                  :cx="dot.x"
-                  :cy="dot.y"
-                  :r="roundMapDotRadius(dot)"
-                  :class="['round-map-dot', dot.isCurrent ? 'is-current' : '', dot.isMainline ? 'is-mainline' : '', roundMapHoveredRoundId === dot.id ? 'is-hovered' : '']"
-                  :fill="dot.fill"
-                  :stroke="dot.isCurrent ? 'white' : (dot.isMainline ? 'rgba(220,244,240,0.4)' : 'none')"
-                  :stroke-width="roundMapDotStrokeWidth(dot)"
-                />
-              </svg>
-            </div>
-          </div>
-          <p v-else class="empty-copy">—</p>
-        </div>
-        <div class="round-map-settlement">
-          <div class="round-map-settlement-heading">
-            <span>{{ roundMapSettlementRoundLabel }}</span>
-            <strong>{{ roundMapSettlementTitle }}</strong>
-          </div>
-          <div class="result-score-map round-map-score-map">
-            <div
-              v-for="entry in roundMapSettlementLayout"
-              :key="`round-map-score-${entry.seat}`"
-              :class="['result-score-card', `is-${entry.position}`, { 'is-empty': !entry.hasScores }]"
-              role="group"
-              :aria-label="entry.showDelta ? t('result.scoreAria', { player: entry.label, rank: entry.rank ?? t('analysis.noData'), before: entry.before, delta: formatDelta(entry.delta), after: entry.after }) : (entry.hasScores ? t('result.scoreOnlyAria', { player: entry.label, score: entry.after }) : entry.label)"
-            >
-              <span class="result-score-heading">
-                <strong class="result-score-seat">{{ entry.label }}</strong>
-                <span v-if="entry.rank !== null" class="result-score-rank">{{ entry.rank }}</span>
-              </span>
-              <span v-if="entry.showDelta" class="result-score-values">
-                <span>{{ entry.before }}</span>
-                <span :class="{ positive: entry.delta > 0, negative: entry.delta < 0 }">{{ entry.delta === 0 ? '' : formatDelta(entry.delta) }}</span>
-                <strong>{{ entry.after }}</strong>
-              </span>
-              <strong v-else-if="entry.hasScores" class="round-map-score-current">{{ entry.after }}</strong>
-              <span v-else class="round-map-score-empty">—</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
+      v-model:hovered-round-id="roundMapHoveredRoundId"
+      :base-x="ROUND_BASE_X"
+      :dots="roundMapDots"
+      :edges="roundMapEdges"
+      :format-delta="formatDelta"
+      :hit-regions="roundMapHitRegions"
+      :rows="roundMapRows"
+      :scale="uiScale"
+      :settlement-layout="roundMapSettlementLayout"
+      :settlement-round-label="roundMapSettlementRoundLabel"
+      :settlement-title="roundMapSettlementTitle"
+      :svg-height="roundMapSvgH"
+      :svg-width="roundMapSvgW"
+      :z-index="floatingPanelZ.roundMap"
+      @close="closeRoundMapOverlay"
+      @focus="focusFloatingPanel('roundMap')"
+      @jump="jumpToRoundRoot"
+      @start-drag="startDragFloatingPanel"
+    />
 
     <section
       v-if="showWallView"
@@ -1538,6 +1456,7 @@ import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
+import RoundMapWindow from './components/RoundMapWindow.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import { useI18n } from './i18n'
 import { vPerceptualSurface } from './perceptualSurface'
@@ -2307,8 +2226,6 @@ const {
   onTreeScroll,
   openRoundMapOverlay,
   resumeTreeAutoFollow,
-  roundMapDotRadius,
-  roundMapDotStrokeWidth,
   roundMapDots,
   roundMapEdges,
   roundMapHitRegions,

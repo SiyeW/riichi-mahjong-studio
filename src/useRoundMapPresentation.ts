@@ -20,6 +20,26 @@ export interface RoundMapEdgeLayout {
   width: number
 }
 
+export interface RoundMapRowLayout {
+  key: string
+  label: string
+  roundIndex: number
+  honba: number
+  y: number
+}
+
+export interface RoundMapSettlementEntry {
+  position: 'toimen' | 'kamicha' | 'shimocha' | 'self'
+  seat: number
+  label: string
+  hasScores: boolean
+  showDelta: boolean
+  rank: number | null
+  before: number
+  delta: number
+  after: number
+}
+
 export function useRoundMapPresentation(options: {
   roundSummaryList: Readonly<Ref<TrainerRoundSummary[]>>
   activeRoundRootId: Readonly<Ref<string | null>>
@@ -167,7 +187,7 @@ export function useRoundMapPresentation(options: {
     )
   })
 
-  const roundMapSettlementLayout = computed(() => {
+  const roundMapSettlementLayout = computed<RoundMapSettlementEntry[]>(() => {
     const round = roundMapSettlementRound.value
     const hoveringRound = Boolean(roundMapHoveredRound.value)
     const info = hoveringRound ? round?.resultInfo : round?.matchEndInfo
@@ -232,7 +252,7 @@ export function useRoundMapPresentation(options: {
       return {
         dots: [] as RoundMapDotLayout[],
         edges: [] as RoundMapEdgeLayout[],
-        rows: [] as Array<{ key: string; label: string; y: number }>,
+        rows: [] as RoundMapRowLayout[],
       }
     }
     const roundNodes = roundRootNodeList.value
@@ -242,7 +262,7 @@ export function useRoundMapPresentation(options: {
       return {
         dots: [] as RoundMapDotLayout[],
         edges: [] as RoundMapEdgeLayout[],
-        rows: [] as Array<{ key: string; label: string; y: number }>,
+        rows: [] as RoundMapRowLayout[],
       }
     }
 
@@ -503,7 +523,7 @@ export function useRoundMapPresentation(options: {
       .flat()
       .filter(Boolean) as RoundMapEdgeLayout[]
 
-    const rows = ordered.map((row, index) => ({
+    const rows: RoundMapRowLayout[] = ordered.map((row, index) => ({
       ...row,
       y: ROUND_BASE_Y.value + index * ROUND_ROW_GAP.value,
     }))
@@ -525,24 +545,13 @@ export function useRoundMapPresentation(options: {
       16 * treeUiScale.value,
   )
   const roundMapHitRegions = computed(() =>
-    buildGraphHitRegions(roundMapDots.value, ROUND_ROW_GAP.value, roundMapDotRadius),
+    buildGraphHitRegions(roundMapDots.value, ROUND_ROW_GAP.value, () => 6 * treeUiScale.value),
   )
-
-  function roundMapDotRadius(_dot: { isCurrent: boolean; isMainline: boolean }) {
-    return 6 * treeUiScale.value
-  }
-
-  function roundMapDotStrokeWidth(dot: { isCurrent: boolean; isMainline: boolean }) {
-    const base = dot.isCurrent ? 1.5 : dot.isMainline ? 0.8 : 0
-    return base * treeUiScale.value
-  }
 
   return {
     ROUND_BASE_X,
     closeRoundMapOverlay,
     openRoundMapOverlay,
-    roundMapDotRadius,
-    roundMapDotStrokeWidth,
     roundMapDots,
     roundMapEdges,
     roundMapHitRegions,
