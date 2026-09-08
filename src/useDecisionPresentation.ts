@@ -19,29 +19,19 @@ export interface DecisionDiscardSlot {
   entry: DecisionAnalysisEntry | null
 }
 
-export function useDecisionPresentation(options: {
+export function useDecisionEntryPresentation(options: {
   gameView: TrainerGameView
-  showTrainingRecommendations: Readonly<Ref<boolean>>
   t: Translate
   normalizeTileFamily: (tile: string) => string
   redFive: (tile: string) => string
   reactionTypeLabel: (type: string) => string
-  getSpecialActions: () => TrainerAction[]
-  getDiscardActions: () => TrainerAction[]
-  getSouthHandDisplay: () => string[]
-  hasRecommendationAnalysis: () => boolean
 }) {
   const {
     gameView,
-    showTrainingRecommendations,
     t,
     normalizeTileFamily,
     redFive,
     reactionTypeLabel,
-    getSpecialActions,
-    getDiscardActions,
-    getSouthHandDisplay,
-    hasRecommendationAnalysis,
   } = options
 
   function formatDelta(delta: number): string {
@@ -118,38 +108,6 @@ export function useDecisionPresentation(options: {
         typeof best.tsumogiri !== 'boolean'
         || Boolean(best.tsumogiri) === Boolean(entry.tsumogiri)
       )
-  }
-
-  function actionDisplayTiles(action: TrainerAction): string[] {
-    const consumed = [...(action.consumed || [])]
-    if (action.type === 'ankan') {
-      const tile = consumed.find((candidate) => candidate.endsWith('r'))
-        || action.pai
-        || consumed[0]
-        || ''
-      const family = normalizeTileFamily(tile)
-      if (family === '5m' || family === '5p' || family === '5s') {
-        return [redFive(family)]
-      }
-      return [tile]
-    }
-    if (action.type === 'daiminkan' || action.type === 'kakan') {
-      return action.pai ? [action.pai] : consumed.slice(0, 1)
-    }
-    if (action.type === 'chi' || action.type === 'pon') {
-      return consumed
-    }
-    if (action.pai) consumed.push(action.pai)
-    return consumed
-  }
-
-  function resolveActionBar(action: TrainerAction): number {
-    if (action.type === 'dahai') {
-      const entry = resolveDiscardEntry(action)
-      return normalizeRecommendationBar(rawAnalysisEntryBar(entry))
-    }
-    const entry = resolveReactionEntry(action) || resolveSpecialEntry(action)
-    return normalizeRecommendationBar(rawAnalysisEntryBar(entry))
   }
 
   function rawAnalysisEntryBar(entry?: { bar?: number; probability?: number } | null): number {
@@ -284,6 +242,81 @@ export function useDecisionPresentation(options: {
     return normalizeRecommendationBar(rawAnalysisEntryBar(entry))
   }
 
+  return {
+    formatDelta,
+    resolveSpecialEntry,
+    resolveReactionEntry,
+    resolveDiscardEntry,
+    analysisEntryIsBest,
+    resolveReactionAnalysisLabel,
+    resolveSpecialAnalysisLabel,
+    analysisActionDisplayTiles,
+    decisionMetricDefinitions,
+    mergedAnalysisEntries,
+    discardVariantLabel,
+    formatDecisionMetric,
+    resolveAnalysisEntryBar,
+  }
+}
+
+export function useDecisionActionPresentation(options: {
+  gameView: TrainerGameView
+  showTrainingRecommendations: Readonly<Ref<boolean>>
+  t: Translate
+  normalizeTileFamily: (tile: string) => string
+  redFive: (tile: string) => string
+  getSpecialActions: () => TrainerAction[]
+  getDiscardActions: () => TrainerAction[]
+  getSouthHandDisplay: () => string[]
+  hasRecommendationAnalysis: () => boolean
+  resolveSpecialEntry: ReturnType<typeof useDecisionEntryPresentation>['resolveSpecialEntry']
+  resolveReactionEntry: ReturnType<typeof useDecisionEntryPresentation>['resolveReactionEntry']
+  resolveDiscardEntry: ReturnType<typeof useDecisionEntryPresentation>['resolveDiscardEntry']
+  analysisEntryIsBest: ReturnType<typeof useDecisionEntryPresentation>['analysisEntryIsBest']
+  resolveAnalysisEntryBar: ReturnType<typeof useDecisionEntryPresentation>['resolveAnalysisEntryBar']
+}) {
+  const {
+    gameView,
+    showTrainingRecommendations,
+    t,
+    normalizeTileFamily,
+    redFive,
+    getSpecialActions,
+    getDiscardActions,
+    getSouthHandDisplay,
+    hasRecommendationAnalysis,
+    resolveSpecialEntry,
+    resolveReactionEntry,
+    resolveDiscardEntry,
+    analysisEntryIsBest,
+    resolveAnalysisEntryBar,
+  } = options
+
+  function actionDisplayTiles(action: TrainerAction): string[] {
+    const consumed = [...(action.consumed || [])]
+    if (action.type === 'ankan') {
+      const tile = consumed.find((candidate) => candidate.endsWith('r'))
+        || action.pai
+        || consumed[0]
+        || ''
+      const family = normalizeTileFamily(tile)
+      return family === '5m' || family === '5p' || family === '5s'
+        ? [redFive(family)]
+        : [tile]
+    }
+    if (action.type === 'daiminkan' || action.type === 'kakan') {
+      return action.pai ? [action.pai] : consumed.slice(0, 1)
+    }
+    if (action.type === 'chi' || action.type === 'pon') return consumed
+    if (action.pai) consumed.push(action.pai)
+    return consumed
+  }
+
+  function resolveActionBar(action: TrainerAction): number {
+    if (action.type === 'dahai') return resolveAnalysisEntryBar(resolveDiscardEntry(action) || {})
+    return resolveAnalysisEntryBar(resolveReactionEntry(action) || resolveSpecialEntry(action) || {})
+  }
+
   function findQuickPassAction(): TrainerAction | null {
     return getSpecialActions().find((action) => action.type === 'none') || null
   }
@@ -315,8 +348,7 @@ export function useDecisionPresentation(options: {
   }
 
   function resolveDisplayedDiscardSlotBar(slot: DecisionDiscardSlot): number {
-    if (!showTrainingRecommendations.value || !hasRecommendationAnalysis()) return 0
-    if (!slot.entry) return 0
+    if (!showTrainingRecommendations.value || !hasRecommendationAnalysis() || !slot.entry) return 0
     return resolveAnalysisEntryBar(slot.entry)
   }
 
@@ -339,28 +371,15 @@ export function useDecisionPresentation(options: {
     return analysisEntryIsBest(resolveReactionEntry(action) || resolveSpecialEntry(action))
   }
 
-
   return {
-    formatDelta,
-    resolveSpecialEntry,
-    resolveReactionEntry,
-    resolveDiscardEntry,
-    analysisEntryIsBest,
     actionDisplayTiles,
-    resolveReactionAnalysisLabel,
-    resolveSpecialAnalysisLabel,
-    analysisActionDisplayTiles,
-    decisionMetricDefinitions,
-    mergedAnalysisEntries,
-    discardVariantLabel,
-    formatDecisionMetric,
+    barFillStyle,
+    barUpperStyle,
     findQuickPassAction,
     findQuickTsumogiriAction,
     formatActionValue,
+    isBestAction,
     resolveDisplayedActionBar,
     resolveDisplayedDiscardSlotBar,
-    barFillStyle,
-    barUpperStyle,
-    isBestAction,
   }
 }

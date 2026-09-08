@@ -1219,7 +1219,10 @@ import { useAutoAdvance } from './useAutoAdvance'
 import { useBranchNavigation } from './useBranchNavigation'
 import { useBranchTreePresentation } from './useBranchTreePresentation'
 import { useDiscardFlight, type GameViewTransitionDirection } from './useDiscardFlight'
-import { useDecisionPresentation } from './useDecisionPresentation'
+import {
+  useDecisionActionPresentation,
+  useDecisionEntryPresentation,
+} from './useDecisionPresentation'
 import { useDesktopBridgeSubscriptions } from './useDesktopBridgeSubscriptions'
 import { useRecordSession } from './useRecordSession'
 import { useRoundResultPresentation } from './useRoundResultPresentation'
@@ -1925,7 +1928,6 @@ const {
   resolveReactionEntry,
   resolveDiscardEntry,
   analysisEntryIsBest,
-  actionDisplayTiles,
   resolveReactionAnalysisLabel,
   resolveSpecialAnalysisLabel,
   analysisActionDisplayTiles,
@@ -1933,25 +1935,40 @@ const {
   mergedAnalysisEntries,
   discardVariantLabel,
   formatDecisionMetric,
+  resolveAnalysisEntryBar,
+} = useDecisionEntryPresentation({
+  gameView,
+  t,
+  normalizeTileFamily: (tile) => normalizeTileFamily(tile),
+  redFive: (tile) => redFive(tile),
+  reactionTypeLabel: (type) => reactionTypeLabel(type),
+})
+
+const {
+  actionDisplayTiles,
+  barFillStyle,
+  barUpperStyle,
   findQuickPassAction,
   findQuickTsumogiriAction,
   formatActionValue,
+  isBestAction,
   resolveDisplayedActionBar,
   resolveDisplayedDiscardSlotBar,
-  barFillStyle,
-  barUpperStyle,
-  isBestAction,
-} = useDecisionPresentation({
+} = useDecisionActionPresentation({
   gameView,
   showTrainingRecommendations,
   t,
   normalizeTileFamily: (tile) => normalizeTileFamily(tile),
   redFive: (tile) => redFive(tile),
-  reactionTypeLabel: (type) => reactionTypeLabel(type),
   getSpecialActions: () => specialActions.value,
   getDiscardActions: () => discardActions.value,
   getSouthHandDisplay: () => southHandDisplay.value,
   hasRecommendationAnalysis,
+  resolveSpecialEntry,
+  resolveReactionEntry,
+  resolveDiscardEntry,
+  analysisEntryIsBest,
+  resolveAnalysisEntryBar,
 })
 
 const {
