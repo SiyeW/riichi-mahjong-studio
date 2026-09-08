@@ -2,6 +2,20 @@ import { computed } from 'vue'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
+export function localizedResultTitle(value: unknown, t: Translate): string {
+  const title = String(value || '').trim()
+  const key = ({
+    '终局': 'action.matchEnd',
+    '終局': 'action.matchEnd',
+    '进行中': 'result.inProgress',
+    '進行中': 'result.inProgress',
+    '流局': 'action.drawResult',
+    '和牌': 'action.win',
+    '和了': 'action.win',
+  } as Record<string, string>)[title]
+  return key ? t(key) : title
+}
+
 interface YakuDisplayMeta {
   closedHan: number
   openHan: number
@@ -179,20 +193,6 @@ export function useRoundResultPresentation(options: {
     return Number.isInteger(actor) && actor >= 0 && actor <= 3
   })
 
-  function localizedResultTitle(value: unknown): string {
-    const title = String(value || '').trim()
-    const key = ({
-      '终局': 'action.matchEnd',
-      '終局': 'action.matchEnd',
-      '进行中': 'result.inProgress',
-      '進行中': 'result.inProgress',
-      '流局': 'action.drawResult',
-      '和牌': 'action.win',
-      '和了': 'action.win',
-    } as Record<string, string>)[title]
-    return key ? t(key) : title
-  }
-
   const resultIsMatchEnd = computed(() => gameView.table?.resultInfo?.eventType === 'match_end')
 
   const resultIsRiichiHora = computed(() => {
@@ -303,7 +303,6 @@ export function useRoundResultPresentation(options: {
 
   return {
     formatResultYakuValue,
-    localizedResultTitle,
     resultDoraSlots,
     resultHandLabel,
     resultHanFuLabel,

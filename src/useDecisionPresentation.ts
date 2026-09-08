@@ -19,6 +19,10 @@ export interface DecisionDiscardSlot {
   entry: DecisionAnalysisEntry | null
 }
 
+export function formatDelta(delta: number): string {
+  return delta > 0 ? `+${delta}` : `${delta}`
+}
+
 export function useDecisionEntryPresentation(options: {
   gameView: TrainerGameView
   t: Translate
@@ -33,10 +37,6 @@ export function useDecisionEntryPresentation(options: {
     redFive,
     reactionTypeLabel,
   } = options
-
-  function formatDelta(delta: number): string {
-    return delta > 0 ? `+${delta}` : `${delta}`
-  }
 
   function resolveSpecialEntry(action: TrainerAction) {
     if (!gameView.analysis?.specialEntries?.length) return null
@@ -243,7 +243,6 @@ export function useDecisionEntryPresentation(options: {
   }
 
   return {
-    formatDelta,
     resolveSpecialEntry,
     resolveReactionEntry,
     resolveDiscardEntry,
