@@ -7,6 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import auto_analysis_session
+import command_transport
 import decision_analysis_session
 import engine_management
 import environment_view
@@ -1316,56 +1317,15 @@ def handle_command(request_id, command, payload):
         raise ValueError(f"Unsupported command: {command}")
 
 
-def process_command_request(request_id, command, payload, *, lightweight_status=False):
-    try:
-        if lightweight_status:
-            response = VIEW_BUILDER.build_status_response(request_id)
-        elif command == "get_runtime_metrics":
-            response = {
-                "request_id": request_id,
-                "command": command,
-                "metrics": runtime_metrics.collect_runtime_memory_metrics(),
-                "timestamp": now_iso(),
-            }
-        elif command == "describe_engine":
-            response = {
-                "request_id": request_id,
-                "command": command,
-                "description": ENGINE_MANAGEMENT.describe(payload or {}),
-                "timestamp": now_iso(),
-            }
-        elif command == "reload_engines":
-            result = ENGINE_MANAGEMENT.reload(
-                str((payload or {}).get("profileId") or "")
-            )
-            with _STATE_LOCK:
-                response = VIEW_BUILDER.build_response(
-                    request_id,
-                    command,
-                    {"reload": result},
-                )
-        elif command == "unload_engine":
-            response = {
-                "request_id": request_id,
-                "command": command,
-                "state": ENGINE_MANAGEMENT.unload(
-                    (payload or {}).get("kind"),
-                    (payload or {}).get("profileId"),
-                ),
-                "timestamp": now_iso(),
-            }
-        else:
-            response = handle_command(request_id, command, payload)
-        emit(response)
-    except Exception as error:  # pylint: disable=broad-except
-        emit(
-            {
-                "request_id": request_id,
-                "command": command,
-                "error": str(error),
-                "timestamp": now_iso(),
-            }
-        )
+COMMAND_TRANSPORT = command_transport.CommandTransport(
+    state_lock=_STATE_LOCK,
+    view_builder=VIEW_BUILDER,
+    engine_management=ENGINE_MANAGEMENT,
+    collect_runtime_metrics=runtime_metrics.collect_runtime_memory_metrics,
+    dispatch_stateful=handle_command,
+    emit=emit,
+    now_iso=now_iso,
+)
 
 
 def main():
@@ -1402,7 +1362,7 @@ def main():
             else:
                 executor = _COMMAND_EXECUTOR
             executor.submit(
-                process_command_request,
+                COMMAND_TRANSPORT.process,
                 request_id,
                 command,
                 payload,
