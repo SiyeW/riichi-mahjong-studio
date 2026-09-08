@@ -3357,26 +3357,6 @@ textarea {
   font-family: ui-monospace, monospace;
 }
 
-.engine-legal-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: calc(0.35rem * var(--chrome-scale));
-}
-
-.engine-legal-actions button {
-  padding: calc(0.35rem * var(--chrome-scale)) calc(0.6rem * var(--chrome-scale));
-  border: 1px solid rgba(140, 195, 188, 0.3);
-  border-radius: calc(2px * var(--chrome-scale));
-  color: rgba(220, 250, 243, 0.96);
-  background: rgba(23, 83, 78, 0.58);
-  cursor: pointer;
-}
-
-.engine-legal-actions button:hover:not(:disabled) {
-  border-color: rgba(159, 226, 213, 0.62);
-  background: rgba(28, 105, 94, 0.72);
-}
-
 .settings-checkbox {
   position: relative;
   display: flex !important;
@@ -3816,18 +3796,11 @@ textarea {
   overflow: hidden;
 }
 
-.engine-profile-column,
-.engine-profile-detail {
+.engine-profile-column {
   display: flex;
   flex-direction: column;
   gap: calc(0.38rem * var(--floating-panel-scale));
   min-width: 0;
-}
-
-.engine-profile-detail {
-  min-height: 0;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
 }
 
 .engine-output-filters {
@@ -3908,25 +3881,6 @@ textarea {
 .engine-output-filter:hover {
   color: var(--text-main);
   filter: brightness(1.08);
-}
-
-.engine-legal-field {
-  display: grid;
-  gap: calc(0.26rem * var(--floating-panel-scale));
-}
-
-.engine-legal-field > span {
-  color: var(--text-dim);
-  font-size: var(--ui-text-caption);
-}
-
-.engine-legal-actions {
-  gap: calc(0.3rem * var(--floating-panel-scale));
-}
-
-.engine-legal-actions button {
-  padding: calc(0.3rem * var(--floating-panel-scale)) calc(0.48rem * var(--floating-panel-scale));
-  font-size: var(--ui-text-caption);
 }
 
 .engine-profile-item {
@@ -4081,10 +4035,7 @@ textarea {
   align-self: stretch;
 }
 
-.engine-add-button,
-.engine-weight-field button,
-.engine-profile-detail input:not([type="checkbox"]),
-.engine-profile-detail select {
+.engine-add-button {
   min-width: 0;
   width: 100%;
   height: var(--engine-control-height);
@@ -4096,8 +4047,7 @@ textarea {
   font-size: var(--ui-text-body);
 }
 
-.engine-add-button,
-.engine-weight-field button {
+.engine-add-button {
   border: 1px solid rgba(140, 195, 188, 0.2);
   border-radius: calc(2px * var(--floating-panel-scale));
   color: var(--text-dim);
@@ -4105,83 +4055,6 @@ textarea {
   cursor: pointer;
 }
 
-.engine-weight-field {
-  display: grid;
-  gap: calc(0.14rem * var(--floating-panel-scale));
-  color: var(--text-dim);
-  font-size: var(--ui-text-caption);
-}
-
-.engine-weight-field > div {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: calc(0.3rem * var(--floating-panel-scale));
-}
-
-.engine-weight-field > .engine-output-options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: calc(0.2rem * var(--floating-panel-scale)) calc(0.45rem * var(--floating-panel-scale));
-}
-
-.engine-output-assignment.settings-checkbox {
-  min-height: auto;
-  padding: calc(0.18rem * var(--floating-panel-scale)) calc(0.24rem * var(--floating-panel-scale));
-  border: none;
-  background: transparent;
-  gap: calc(0.34rem * var(--floating-panel-scale)) !important;
-}
-
-.engine-output-assignment:has(input:disabled) {
-  cursor: default;
-}
-
-.engine-output-assignment .settings-checkbox-control {
-  width: calc(0.95rem * var(--floating-panel-scale));
-  height: calc(0.95rem * var(--floating-panel-scale));
-}
-
-.engine-output-assignment .settings-checkbox-label {
-  color: var(--text-dim);
-  font-size: var(--ui-text-caption);
-}
-
-.engine-weight-field button {
-  padding-inline: calc(0.7rem * var(--floating-panel-scale));
-}
-
-.engine-weight-field button:disabled,
-.engine-profile-detail input:not([type="checkbox"]):disabled,
-.engine-profile-detail select:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-
-.engine-inline-status {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--ui-text-caption);
-}
-
-.engine-profile-detail .engine-option-checkbox {
-  width: auto;
-  justify-self: start;
-}
-
-.engine-profile-detail {
-  padding: calc(0.62rem * var(--floating-panel-scale));
-  border: 1px solid rgba(140, 195, 188, 0.12);
-  background: rgba(0, 27, 32, 0.24);
-}
-
-.engine-profile-detail label {
-  display: grid;
-  gap: calc(0.14rem * var(--floating-panel-scale));
-  color: var(--text-dim);
-  font-size: var(--ui-text-caption);
-}
-
-.engine-diagnostic,
 .engine-save-message {
   margin: calc(0.45rem * var(--floating-panel-scale)) 0 0;
   color: #e5c780;

@@ -1157,143 +1157,18 @@
           @select="selectEngineProfile"
           @toggle-output="toggleEngineOutputFilter"
         />
-        <div v-if="activeEngineProfile" class="engine-profile-detail">
-          <label>
-            <span>{{ t('engine.displayName') }}</span>
-            <input
-              :value="activeEngineProfile.name"
-              :placeholder="suggestedEngineProfileName(activeEngineProfile)"
-              :disabled="profileConfigurationLocked(activeEngineProfile)"
-              type="text"
-              @input="setEngineProfileName"
-            />
-          </label>
-          <div class="engine-weight-field">
-            <span>{{ t('engine.executable') }}</span>
-            <div>
-              <input :value="activeEngineProfile.enginePath" :disabled="profileConfigurationLocked(activeEngineProfile)" readonly type="text" :placeholder="t('engine.selectExecutable')" />
-              <button :disabled="profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineFile">{{ t('common.select') }}</button>
-            </div>
-          </div>
-          <div class="engine-weight-field">
-            <span>{{ t('engine.output') }}</span>
-            <div class="engine-output-options">
-              <label
-                v-for="output in activeSupportedOutputs"
-                :key="output.id"
-                class="settings-checkbox engine-output-assignment"
-              >
-                <input
-                  type="checkbox"
-                  :checked="settingsDraft.engines.outputAssignments[output.id] === activeEngineProfile.id"
-                  :disabled="profileConfigurationLocked(activeEngineProfile)"
-                  @change="setEngineOutputAssignment(output.id, $event)"
-                />
-                <span class="settings-checkbox-control" aria-hidden="true"></span>
-                <span class="settings-checkbox-label">{{ output.label }}</span>
-              </label>
-              <small v-if="activeEngineProfile.enginePath && !activeSupportedOutputs.length && !describingEngineIds.has(engineDescriptionKey(activeEngineProfile))">{{ t('engine.unsupportedOutputs') }}</small>
-            </div>
-          </div>
-          <div
-            v-for="slot in activeEngineWeightSlots"
-            :key="slot.id"
-            class="engine-weight-field"
-          >
-            <span>{{ localizedEngineText(slot.title, slot.id) }}</span>
-            <div>
-              <input :value="engineWeight(activeEngineProfile, slot.id)?.path || ''" :disabled="profileConfigurationLocked(activeEngineProfile)" readonly type="text" :placeholder="t('engine.selectWeight')" />
-              <button :disabled="!activeEngineProfile.enginePath || profileConfigurationLocked(activeEngineProfile)" @click="chooseEngineWeight(slot.id)">{{ t('common.select') }}</button>
-            </div>
-          </div>
-          <label v-if="activeEngineDevices.length">
-            <span>{{ t('engine.runtimeDevice') }}</span>
-            <select
-              :value="activeEngineProfile.device"
-              :disabled="profileConfigurationLocked(activeEngineProfile)"
-              @change="setEngineDevice"
-            >
-              <option v-for="device in activeEngineDevices" :key="device.type" :value="device.type">
-                {{ localizedEngineText(device.title, device.type) }}
-              </option>
-            </select>
-          </label>
-          <div
-            v-if="activeCatalogEngine && (activeCatalogEngine.licenses.length || activeCatalogEngine.notices.length)"
-            class="engine-legal-field"
-          >
-            <span>{{ t('engine.licenses') }}</span>
-            <div class="engine-legal-actions">
-              <button
-                v-for="(license, index) in activeCatalogEngine.licenses"
-                :key="`license:${index}`"
-                :disabled="!license.available"
-                @click="openEngineLegalDocument('license', index)"
-              >
-                {{ license.name }}
-              </button>
-              <button
-                v-for="(notice, index) in activeCatalogEngine.notices"
-                :key="`notice:${index}`"
-                :disabled="!notice.available"
-                @click="openEngineLegalDocument('notice', index)"
-              >
-                {{ notice.name }}
-              </button>
-              <button
-                v-if="activeCatalogEngine.sourceUrl"
-                @click="openExternalLink(activeCatalogEngine.sourceUrl)"
-              >
-                {{ t('engine.viewSource') }}
-              </button>
-            </div>
-          </div>
-          <p
-            v-if="activeEngineProfile.enginePath && describingEngineIds.has(engineDescriptionKey(activeEngineProfile))"
-            class="engine-inline-status"
-          >
-            {{ t('engine.readingOptions') }}
-          </p>
-          <label v-for="option in activeEngineOptionEntries" :key="option.key">
-            <span>{{ option.label }}</span>
-            <select
-              v-if="option.enumValues"
-              :value="activeEngineProfile.options[option.key] ?? ''"
-              :disabled="profileConfigurationLocked(activeEngineProfile)"
-              @change="setEngineOptionFromEvent(option, $event)"
-            >
-              <option value="">{{ t('engine.defaultOption', { value: formatEngineOptionDefault(option.defaultValue) }) }}</option>
-              <option v-for="value in option.enumValues" :key="String(value)" :value="value">
-                {{ value }}
-              </option>
-            </select>
-            <select
-              v-else-if="option.type === 'boolean'"
-              :value="activeEngineProfile.options[option.key] === undefined ? '' : String(activeEngineProfile.options[option.key])"
-              :disabled="profileConfigurationLocked(activeEngineProfile)"
-              @change="setEngineOptionFromEvent(option, $event)"
-            >
-              <option value="">{{ t('engine.defaultOption', { value: formatEngineOptionDefault(option.defaultValue) }) }}</option>
-              <option value="true">{{ t('common.yes') }}</option>
-              <option value="false">{{ t('common.no') }}</option>
-            </select>
-            <input
-              v-else
-              :value="activeEngineProfile.options[option.key] ?? ''"
-              :placeholder="String(option.defaultValue ?? '')"
-              :inputmode="engineOptionInputMode(option)"
-              :disabled="profileConfigurationLocked(activeEngineProfile)"
-              type="text"
-              @change="setEngineOptionFromEvent(option, $event)"
-            />
-          </label>
-          <p v-if="engineDescribeErrors[engineDescriptionKey(activeEngineProfile)]" class="engine-diagnostic">
-            {{ t('engine.optionsFailed', { message: engineDescribeErrors[engineDescriptionKey(activeEngineProfile)] }) }}
-          </p>
-          <p v-if="engineCatalogDiagnostics.length" class="engine-diagnostic">
-            {{ t('engine.packageDiagnostic', { message: engineCatalogDiagnostics[0].message }) }}
-          </p>
-        </div>
+        <EngineProfileDetail
+          v-if="activeEngineProfileDetail"
+          :detail="activeEngineProfileDetail"
+          @choose-engine="chooseEngineFile"
+          @choose-weight="chooseEngineWeight"
+          @device="setEngineDeviceValue"
+          @legal="openEngineLegalDocument"
+          @name="setEngineProfileNameValue"
+          @option="setEngineOptionValue"
+          @output="setEngineOutputAssignmentValue"
+          @source="openExternalLink"
+        />
       </div>
       <p class="engine-save-message">{{ engineFooterMessage }}</p>
     </section>
@@ -1367,6 +1242,7 @@ import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
 import EngineProfileList from './components/EngineProfileList.vue'
+import EngineProfileDetail from './components/EngineProfileDetail.vue'
 import MjaiDebugDialog from './components/MjaiDebugDialog.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
@@ -1797,24 +1673,15 @@ const {
 
 const {
   activeCatalogEngine,
-  activeEngineDevices,
-  activeEngineOptionEntries,
-  activeEngineProfile,
-  activeEngineWeightSlots,
-  activeSupportedOutputs,
+  activeEngineProfileDetail,
   addEngineProfile,
   captureRuntimeEngineProfile,
   chooseEngineFile,
   chooseEngineWeight,
   closeEngineWindow,
   deleteEngineProfile,
-  describingEngineIds,
   duplicateEngineProfile,
-  engineCatalogDiagnostics,
-  engineDescribeErrors,
-  engineDescriptionKey,
   engineFooterMessage,
-  engineOptionInputMode,
   engineOutputFilterItems,
   engineProfileListItems,
   engineSaveMessage,
@@ -1824,24 +1691,19 @@ const {
   engineListCanMoveDown,
   engineListCanMoveUp,
   engineListDeleteConfirmation,
-  engineWeight,
   flushEngineAutosave,
-  formatEngineOptionDefault,
   handleEngineProfileAction,
   loadingEngineProfileId,
   localizedEngineText,
   markConfiguredEngineStarting,
   moveEngineProfile,
   openEngineWindow,
-  profileAssignedOutputs,
-  profileConfigurationLocked,
   selectEngineProfile,
-  setEngineDevice,
-  setEngineOptionFromEvent,
-  setEngineOutputAssignment,
-  setEngineProfileName,
+  setEngineDeviceValue,
+  setEngineOptionValue,
+  setEngineOutputAssignmentValue,
+  setEngineProfileNameValue,
   showEngineWindow,
-  suggestedEngineProfileName,
   toggleEngineOutputFilter,
   unloadingEngineProfileId,
 } = useEngineProfiles({

@@ -93,7 +93,12 @@ try {
           outputContracts: [{ id: 'opponent-shanten', methods: ['analysis.get'] }],
           weightSlots: [],
           devices: [{ type: 'cpu', title: 'CPU' }],
-          optionsSchema: { type: 'object', properties: {} },
+          optionsSchema: {
+            type: 'object',
+            properties: {
+              sampleCount: { type: 'integer', minimum: 0, maximum: 4, default: 2 },
+            },
+          },
         }),
         toggleVisibleHands: async () => ({ ...JSON.parse(JSON.stringify(vm.status)), visibleHands: !vm.status.visibleHands }),
         getGameView: async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: JSON.parse(JSON.stringify(vm.gameView)) }),
@@ -166,7 +171,7 @@ try {
     vm.settings.engines.profiles = [{
       id: 'profile.ui-test', name: 'UI Test Engine', engineId: 'ui-test-engine', engineVersion: '1.0.0',
       enginePath: 'C:\\ui-test\\engine.exe', engineCommand: ['C:\\ui-test\\engine.exe'], engineCwd: '',
-      builtIn: false, available: true, autoName: false, weights: [], device: 'cpu', options: {},
+      builtIn: false, available: true, autoName: false, weights: [], device: 'cpu', options: { sampleCount: 2 },
     }]
     vm.settings.engines.outputAssignments['opponent-shanten'] = 'profile.ui-test'
     vm.openEngineWindow()
@@ -174,6 +179,11 @@ try {
   await page.locator('.engine-window').waitFor()
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.showEngineWindow), true)
   await page.locator('.engine-profile-detail input[type="text"]').first().fill('Renamed UI Test Engine')
+  const numericOption = page.locator('.engine-profile-detail input[inputmode="numeric"]')
+  await numericOption.fill('9')
+  await numericOption.press('Tab')
+  await page.waitForFunction(() => window.analysisCheck.vm.engineSaveMessage !== '')
+  assert.equal(await numericOption.inputValue(), '2', 'invalid engine option restores the persisted value')
   await page.evaluate(() => window.analysisCheck.vm.closeEngineWindow())
   await page.waitForFunction(() => window.analysisCheck.settingsSaves.some(save => (
     save.engines?.profiles?.[0]?.name === 'Renamed UI Test Engine'

@@ -37,6 +37,35 @@ export interface EngineProfileListItem {
   loaded: boolean
 }
 
+export interface EngineProfileDetailView {
+  id: string
+  name: string
+  suggestedName: string
+  locked: boolean
+  enginePath: string
+  outputs: Array<{ id: SupportedEngineOutputId; label: string; assigned: boolean }>
+  unsupportedOutputs: boolean
+  weights: Array<{ id: string; label: string; path: string }>
+  devices: Array<{ type: string; label: string }>
+  device: string
+  licenses: Array<{ name: string; available: boolean }>
+  notices: Array<{ name: string; available: boolean }>
+  sourceUrl: string
+  readingOptions: boolean
+  options: Array<{
+    key: string
+    label: string
+    type: string
+    enumValues: Array<string | number | boolean> | null
+    value: string | number | boolean
+    defaultLabel: string
+    placeholder: string
+    inputMode?: 'numeric' | 'decimal'
+  }>
+  describeError: string
+  catalogDiagnostic: string
+}
+
 type Translate = (key: string, params?: TranslationParams) => string
 
 interface UseEngineProfilesOptions {
@@ -475,10 +504,9 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     if (profile.autoName !== false && !profile.builtIn) profile.name = suggestedEngineProfileName(profile)
   }
 
-  function setEngineProfileName(event: Event) {
+  function setEngineProfileNameValue(value: string) {
     const profile = activeEngineProfile.value
     if (!profile || profileConfigurationLocked(profile)) return
-    const value = (event.target as HTMLInputElement).value
     profile.name = value
     profile.autoName = !value.trim()
     if (profile.autoName) refreshAutomaticEngineName(profile)
@@ -557,10 +585,9 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     }
   }
 
-  function setEngineOutputAssignment(outputId: SupportedEngineOutputId, event: Event) {
+  function setEngineOutputAssignmentValue(outputId: SupportedEngineOutputId, checked: boolean) {
     const profile = activeEngineProfile.value
     if (!profile || profileConfigurationLocked(profile)) return
-    const checked = (event.target as HTMLInputElement).checked
     settingsDraft.engines.outputAssignments[outputId] = checked ? profile.id : ''
   }
 
@@ -588,10 +615,10 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
       })
   }
 
-  function setEngineDevice(event: Event) {
+  function setEngineDeviceValue(value: string) {
     const profile = activeEngineProfile.value
     if (!profile || profileConfigurationLocked(profile)) return
-    profile.device = (event.target as HTMLSelectElement).value
+    profile.device = value
   }
 
   function formatEngineOptionDefault(value: unknown): string {
@@ -606,11 +633,10 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     return undefined
   }
 
-  function setEngineOptionFromEvent(option: typeof activeEngineOptionEntries.value[number], event: Event) {
+  function setEngineOptionValue(optionKey: string, raw: string) {
+    const option = activeEngineOptionEntries.value.find((entry) => entry.key === optionKey)
     const profile = activeEngineProfile.value
-    if (!profile || profileConfigurationLocked(profile)) return
-    const target = event.target as HTMLInputElement | HTMLSelectElement
-    const raw = target.value
+    if (!option || !profile || profileConfigurationLocked(profile)) return
     if (raw === '') {
       delete profile.options[option.key]
       engineSaveMessage.value = ''
@@ -624,7 +650,6 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
         || (option.minimum !== undefined && value < option.minimum)
         || (option.maximum !== undefined && value > option.maximum)
       if (invalid) {
-        target.value = String(profile.options[option.key] ?? '')
         engineSaveMessage.value = t('engine.optionInvalid', { label: option.label })
         return
       }
@@ -796,6 +821,59 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
   const engineListDeleteConfirmation = computed(() => (
     deleteEngineConfirmationId.value === activeEngineProfile.value?.id
   ))
+  const activeEngineProfileDetail = computed<EngineProfileDetailView | null>(() => {
+    const profile = activeEngineProfile.value
+    if (!profile) return null
+    const key = engineDescriptionKey(profile)
+    const locked = profileConfigurationLocked(profile)
+    const catalog = activeCatalogEngine.value
+    return {
+      id: profile.id,
+      name: profile.name,
+      suggestedName: suggestedEngineProfileName(profile),
+      locked,
+      enginePath: profile.enginePath,
+      outputs: activeSupportedOutputs.value.map((output) => ({
+        ...output,
+        assigned: settingsDraft.engines.outputAssignments[output.id] === profile.id,
+      })),
+      unsupportedOutputs: Boolean(profile.enginePath && !activeSupportedOutputs.value.length && !describingEngineIds.has(key)),
+      weights: activeEngineWeightSlots.value.map((slot) => ({
+        id: slot.id,
+        label: localizedEngineText(slot.title, slot.id),
+        path: engineWeight(profile, slot.id)?.path || '',
+      })),
+      devices: activeEngineDevices.value.map((device) => ({
+        type: device.type,
+        label: localizedEngineText(device.title, device.type),
+      })),
+      device: profile.device,
+      licenses: catalog?.licenses || [],
+      notices: catalog?.notices || [],
+      sourceUrl: catalog?.sourceUrl || '',
+      readingOptions: Boolean(profile.enginePath && describingEngineIds.has(key)),
+      options: activeEngineOptionEntries.value.map((option) => ({
+        key: option.key,
+        label: option.label,
+        type: option.type,
+        enumValues: option.enumValues,
+        value: typeof profile.options[option.key] === 'string'
+          || typeof profile.options[option.key] === 'number'
+          || typeof profile.options[option.key] === 'boolean'
+          ? profile.options[option.key] as string | number | boolean
+          : '',
+        defaultLabel: t('engine.defaultOption', { value: formatEngineOptionDefault(option.defaultValue) }),
+        placeholder: String(option.defaultValue ?? ''),
+        inputMode: engineOptionInputMode(option),
+      })),
+      describeError: engineDescribeErrors[key]
+        ? t('engine.optionsFailed', { message: engineDescribeErrors[key] })
+        : '',
+      catalogDiagnostic: engineCatalogDiagnostics.value.length
+        ? t('engine.packageDiagnostic', { message: engineCatalogDiagnostics.value[0].message })
+        : '',
+    }
+  })
   onBeforeUnmount(() => {
     cancelEngineAutosaveTimer()
     if (deleteEngineConfirmationTimer !== null) {
@@ -809,6 +887,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     activeEngineDevices,
     activeEngineOptionEntries,
     activeEngineProfile,
+    activeEngineProfileDetail,
     activeEngineWeightSlots,
     activeSupportedOutputs,
     addEngineProfile,
@@ -846,10 +925,10 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     profileAssignedOutputs,
     profileConfigurationLocked,
     selectEngineProfile,
-    setEngineDevice,
-    setEngineOptionFromEvent,
-    setEngineOutputAssignment,
-    setEngineProfileName,
+    setEngineDeviceValue,
+    setEngineOptionValue,
+    setEngineProfileNameValue,
+    setEngineOutputAssignmentValue,
     showEngineWindow,
     suggestedEngineProfileName,
     toggleEngineOutputFilter,
