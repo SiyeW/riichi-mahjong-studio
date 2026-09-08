@@ -203,7 +203,7 @@ class MainBranchPolicyTest(unittest.TestCase):
             "bestLabel": "2m",
         }
 
-        service.register_pending_review(game, parent_id, proposed_id, comparison)
+        service.REVIEW_SESSION.register(game, parent_id, proposed_id, comparison)
 
         self.assertEqual(game["nodes"][parent_id]["mainChildId"], proposed_id)
         self.assertEqual(game["mainLeafNodeId"], proposed_id)

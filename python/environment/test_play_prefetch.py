@@ -53,7 +53,7 @@ class PlayPrefetchTest(unittest.TestCase):
         tile = snapshot["hands"][0][0]
 
         with mock.patch.object(service.ROUND_ACTIONS, "evaluate_reactions") as evaluate:
-            next_snapshot, _action = service.create_user_discard_child_snapshot(
+            next_snapshot, _action = service.REVIEW_SESSION.create_discard_snapshot(
                 snapshot,
                 tile,
             )
@@ -226,7 +226,7 @@ class PlayPrefetchTest(unittest.TestCase):
         parent_id = game["currentNodeId"]
         snapshot = game["nodes"][parent_id]["snapshot"]
         tile = snapshot["hands"][0][0]
-        replay_snapshot, replay_action = service.create_user_discard_child_snapshot(
+        replay_snapshot, replay_action = service.REVIEW_SESSION.create_discard_snapshot(
             snapshot,
             tile,
             source="mortal-report",
@@ -244,7 +244,7 @@ class PlayPrefetchTest(unittest.TestCase):
         )
 
         with mock.patch.object(service.DECISION_ANALYSIS, "ensure_cached"):
-            service.submit_discard(tile, from_drawn=False)
+            service.REVIEW_SESSION.submit_discard(tile, from_drawn=False)
 
         live_child_id = game["currentNodeId"]
         self.assertEqual(live_child_id, replay_child_id)
@@ -257,7 +257,7 @@ class PlayPrefetchTest(unittest.TestCase):
         service.GAME_FLOW.advance(game)
         snapshot = service.get_current_snapshot()
         tile = snapshot["hands"][0][0]
-        next_snapshot, action = service.create_user_discard_child_snapshot(
+        next_snapshot, action = service.REVIEW_SESSION.create_discard_snapshot(
             snapshot,
             tile,
             source="mortal-report",
@@ -414,7 +414,7 @@ class PlayPrefetchTest(unittest.TestCase):
         self.assertEqual(snapshot["currentActor"], 0)
 
         tile = snapshot["hands"][0][0]
-        service.submit_discard(tile)
+        service.REVIEW_SESSION.submit_discard(tile)
         committed_user_node_id = game["currentNodeId"]
         committed_node_count = len(game["nodes"])
 

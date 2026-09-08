@@ -320,7 +320,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
             mock.patch.object(service, "get_ankan_candidates", return_value=["9s"]),
             mock.patch.object(service.DECISION_ANALYSIS, "ensure_cached"),
         ):
-            service.submit_riichi_ankan_skip()
+            service.REVIEW_SESSION.submit_riichi_ankan_skip()
 
         pass_id = game["nodes"][root_id]["mainChildId"]
         discard_id = game["nodes"][pass_id]["mainChildId"]

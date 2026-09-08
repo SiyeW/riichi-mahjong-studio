@@ -71,7 +71,7 @@ class ExactActionCandidatesTest(unittest.TestCase):
             "training_config",
             return_value={"mode": "threshold_review", "mistakeThreshold": 1.0},
         ):
-            self.assertFalse(service.should_trigger_review(comparison))
+            self.assertFalse(service.REVIEW_SESSION.should_trigger(comparison))
 
 
 if __name__ == "__main__":
