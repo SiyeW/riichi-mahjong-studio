@@ -1212,6 +1212,7 @@ import { applyModelActivityEvent } from './modelActivityEvent'
 import { useWorkspaceDock } from './useWorkspaceDock'
 import { useWallView } from './useWallView'
 import { useEngineProfiles } from './useEngineProfiles'
+import { useActionAnnouncement } from './useActionAnnouncement'
 import { useAutomaticAnalysis } from './useAutomaticAnalysis'
 import { useBranchNavigation } from './useBranchNavigation'
 import { useBranchTreePresentation } from './useBranchTreePresentation'
@@ -1738,13 +1739,6 @@ let gameplayResponseGeneration = 0
 const playPrefetchReady = ref(false)
 const playPrefetchWaiting = ref(false)
 const earlyPlayPrefetchReady = new Set<string>()
-const actionAnnouncementTimer = ref<number | null>(null)
-const actionAnnouncement = reactive({
-  key: '',
-  text: '',
-  position: 'south',
-  visible: false,
-})
 const bootstrapError = ref('')
 const backendRecoveryNeeded = ref(false)
 const backendHasCheckpoint = ref(false)
@@ -2047,10 +2041,12 @@ const {
   focusRoundMap: () => focusFloatingPanel('roundMap'),
 })
 
-watch(
-  () => gameView.currentNodeId,
-  triggerActionAnnouncementForCurrentNode,
-)
+const { actionAnnouncement } = useActionAnnouncement({
+  gameView,
+  findNode: (nodeId) => nodeMapById.value.get(nodeId),
+  positionForActor: (actor) => tableSeatViews.value.find((entry) => entry.seat === actor)?.position || 'south',
+  t,
+})
 const {
   acceptsCurrentViewRequestContext,
   canDeleteCurrentNode,
@@ -2302,51 +2298,9 @@ function clearAutoAdvanceTimer() {
   }
 }
 
-function clearActionAnnouncementTimer() {
-  if (actionAnnouncementTimer.value !== null) {
-    window.clearTimeout(actionAnnouncementTimer.value)
-    actionAnnouncementTimer.value = null
-  }
-}
-
 function hasRecommendationAnalysis(): boolean {
   const analysis = gameView.analysis
   return Boolean(analysis?.discardEntries?.length || analysis?.reactionEntries?.length || analysis?.specialEntries?.length)
-}
-
-function resolveActionAnnouncementText(node?: TrainerTreeNode | null): string | null {
-  if (!node?.action) return null
-  const action = node.action as Record<string, unknown>
-  const type = String(action.type || '')
-  if (type === 'reach') return t('action.riichi')
-  if (type === 'chi') return t('action.chi')
-  if (type === 'pon') return t('action.pon')
-  if (type === 'daiminkan' || type === 'ankan' || type === 'kakan') return t('action.kan')
-  if (type === 'hora') {
-    const variant = String(action.variant || '')
-    const actor = Number(action.actor ?? -1)
-    const target = Number(action.target ?? -999)
-    return variant === 'tsumo' || actor === target ? t('action.tsumo') : t('action.ronShort')
-  }
-  return null
-}
-
-function triggerActionAnnouncementForCurrentNode() {
-  if (!gameView.currentNodeId) return
-  const node = nodeMapById.value.get(gameView.currentNodeId)
-  const text = resolveActionAnnouncementText(node)
-  if (!text) return
-  const actor = Number((node?.action as Record<string, unknown> | null)?.actor ?? -1)
-  const position = tableSeatViews.value.find((entry) => entry.seat === actor)?.position || 'south'
-  clearActionAnnouncementTimer()
-  actionAnnouncement.key = `${gameView.currentNodeId}:${text}:${Date.now()}`
-  actionAnnouncement.text = text
-  actionAnnouncement.position = position
-  actionAnnouncement.visible = true
-  actionAnnouncementTimer.value = window.setTimeout(() => {
-    actionAnnouncement.visible = false
-    actionAnnouncementTimer.value = null
-  }, 1500)
 }
 
 function openExternalLink(url: string) {
@@ -2898,7 +2852,6 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearAutoAdvanceTimer()
-  clearActionAnnouncementTimer()
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('wheel', onUiScaleWheel, true)
   document.documentElement.classList.remove('reduce-motion')
