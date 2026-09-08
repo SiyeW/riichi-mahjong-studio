@@ -61,7 +61,7 @@ class InitializationLifecycleTests(unittest.TestCase):
                          patch('opponent_prediction_gateway.initialize_engine_client', side_effect=initialize):
                         self.assertFalse(gateway.prewarm())
                     self.assertFalse(gateway._model_ready)
-                    self.assertNotEqual(gateway._actual_device, 'old-device')
+                    self.assertNotEqual(gateway._identity.actual_device, 'old-device')
                     self.assertNotEqual(gateway.get_latest()['status'], 'loaded')
                     self.assertFalse(gateway._error_latched)
 
@@ -78,7 +78,7 @@ class InitializationLifecycleTests(unittest.TestCase):
         with patch('opponent_prediction_gateway.initialize_engine_client', return_value=initialization):
             self.assertTrue(gateway.prewarm())
         self.assertTrue(gateway._model_ready)
-        self.assertEqual(gateway._actual_device, 'cpu')
+        self.assertEqual(gateway._identity.actual_device, 'cpu')
 
     def test_fingerprint_calculation_does_not_hold_request_lock(self):
         with patch('opponent_prediction_gateway.threading.Thread.start'):
@@ -90,7 +90,9 @@ class InitializationLifecycleTests(unittest.TestCase):
             contracts={item['id']: {} for item in outputs},
             outputs={item['id']: {} for item in outputs},
             protocol_minor=2, result={}, device='cpu')
-        gateway._configured_weights = [{'slotId': 'model', 'format': 'test', 'path': 'unused'}]
+        gateway._profile.configured_weights = [
+            {'slotId': 'model', 'format': 'test', 'path': 'unused'}
+        ]
         acquired = []
 
         def hash_weight(path):
@@ -101,7 +103,10 @@ class InitializationLifecycleTests(unittest.TestCase):
             return 'test-hash'
 
         with patch('opponent_prediction_gateway.initialize_engine_client', return_value=initialization), \
-             patch.object(gateway, '_weight_sha256', side_effect=hash_weight):
+             patch(
+                 'opponent_prediction_profile._weight_sha256',
+                 side_effect=hash_weight,
+             ):
             self.assertTrue(gateway.prewarm())
         self.assertEqual(acquired, [True])
 
@@ -121,10 +126,17 @@ class InitializationLifecycleTests(unittest.TestCase):
 
         with patch('opponent_prediction_gateway.initialize_engine_client', return_value=initialization), \
              patch.object(gateway._process_client, 'restart'), \
-             patch.object(gateway, '_calculate_cache_identity', side_effect=fingerprint):
+             patch.object(
+                 gateway._identity,
+                 'calculate_cache_identity',
+                 side_effect=fingerprint,
+             ):
             self.assertFalse(gateway.prewarm())
         self.assertFalse(gateway._model_ready)
-        self.assertNotEqual(gateway._engine_fingerprint, 'old-fingerprint')
+        self.assertNotEqual(
+            gateway._identity.engine_fingerprint,
+            'old-fingerprint',
+        )
 
 
 if __name__ == '__main__':

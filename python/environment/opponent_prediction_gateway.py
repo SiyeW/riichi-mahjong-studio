@@ -2,38 +2,21 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 import threading
 import time
 from collections import deque
-from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
-from engine_assignments import OUTPUT_CONTRACTS_BY_ID
 from engine_process_client import EngineProcessClient  # noqa: E402
 from engine_runtime import initialize_engine_client
 from engine_notification_subscription import EngineNotificationSubscription
+from opponent_prediction_profile import (
+    OpponentEngineIdentity,
+    OpponentEngineProfile,
+)
 from opponent_prediction_protocol import OpponentPredictionProtocolAdapter
 
 _LATEST_OPPONENT_PREDICTION_MJAI: Dict[str, Any] = {}
-_ENGINE_POSTPROCESSOR_VERSION = "opponent-analysis-host-v2"
-_SHANTEN_OUTPUT = dict(OUTPUT_CONTRACTS_BY_ID["opponent-shanten"])
-_DEAL_IN_OUTPUT = dict(OUTPUT_CONTRACTS_BY_ID["opponent-deal-in-probability"])
-_ANALYSIS_OUTPUTS = (
-    _SHANTEN_OUTPUT,
-    _DEAL_IN_OUTPUT,
-    *(dict(OUTPUT_CONTRACTS_BY_ID[output_id]) for output_id in (
-        "opponent-concealed-tile-count",
-        "wall-tile-count",
-        "opponent-dora-count",
-        "opponent-score",
-        "kyoku-outcome",
-        "kyoku-score-delta",
-        "match-placement",
-        "match-score",
-    )),
-)
 
 
 def get_latest_opponent_prediction_mjai() -> Dict[str, Any]:
@@ -48,41 +31,13 @@ class OpponentPredictionGateway:
         model_path: Optional[str] = None,
         enabled_outputs: Optional[list[str]] = None,
     ):
-        self._model_path = Path(model_path) if model_path else Path("__unconfigured__")
+        self._profile = OpponentEngineProfile.initial(model_path, enabled_outputs)
+        self._identity = OpponentEngineIdentity(self._profile)
         self._process_client = EngineProcessClient(
             "opponent-analysis",
             self._on_engine_notification,
             expected_engine_id="",
         )
-        self._profile_id = ""
-        self._engine_id = ""
-        self._engine_version = ""
-        self._model_id = ""
-        self._model_format = ""
-        self._engine_options: Dict[str, Any] = {}
-        self._configured_weights: list[Dict[str, str]] = []
-        requested_outputs = enabled_outputs or [
-            _SHANTEN_OUTPUT["id"],
-            _DEAL_IN_OUTPUT["id"],
-        ]
-        self._enabled_outputs = tuple(
-            output["id"]
-            for output in _ANALYSIS_OUTPUTS
-            if output["id"] in requested_outputs
-        )
-        self._output_references = {
-            output_id: {"id": output_id}
-            for output_id in self._enabled_outputs
-        }
-        self._protocol_minor = 2
-        self._supported_input_modes = ("public",)
-        self._model_hash_cache: Optional[tuple[str, int, int, str]] = None
-        self._model_signature = self._read_model_signature()
-        self._expected_sha256 = self._read_expected_sha256()
-        self._engine_fingerprint = ""
-        self._effective_options: Dict[str, Any] = {}
-        self._actual_device = ""
-        self._device_preference = "auto"
         self._model_ready = False
         self._protocol_adapter = OpponentPredictionProtocolAdapter()
         self._initialization_lock = threading.Lock()
@@ -145,82 +100,18 @@ class OpponentPredictionGateway:
         elif state in ("ready", "stopping", "stopped"):
             self._set_activity("idle", expected_generation=expected_generation)
 
-    def _read_model_signature(self) -> str:
-        try:
-            stat = self._model_path.stat()
-            return f"{self._model_path.name}:{stat.st_size}:{stat.st_mtime_ns}"
-        except OSError:
-            return f"{self._model_path.name}:missing"
-
-    def _read_expected_sha256(self) -> str:
-        metadata_path = self._model_path.with_name("model.json")
-        try:
-            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-            if metadata.get("file") == self._model_path.name:
-                return str(metadata.get("sha256") or "").lower()
-        except (OSError, ValueError):
-            pass
-        return ""
-
-    def _model_sha256(self) -> str:
-        try:
-            path = self._model_path.resolve()
-            stat = path.stat()
-            cached = self._model_hash_cache
-            if cached and cached[:3] == (str(path), stat.st_size, stat.st_mtime_ns):
-                return cached[3]
-            digest = hashlib.sha256()
-            with path.open("rb") as stream:
-                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                    digest.update(chunk)
-            value = digest.hexdigest()
-            self._model_hash_cache = (str(path), stat.st_size, stat.st_mtime_ns, value)
-            return value
-        except OSError:
-            return "missing"
-
     def cache_identity(self) -> str:
-        if self._engine_fingerprint:
-            return self._engine_fingerprint
-        return self._calculate_cache_identity(
-            self._protocol_minor, self._actual_device, self._effective_options,
-        )
-
-    def _calculate_cache_identity(self, protocol_minor, actual_device, effective_options) -> str:
-        source = {
-            "engineId": self._engine_id,
-            "version": self._engine_version,
-            "protocolMajor": 2,
-            "protocolMinor": protocol_minor,
-            "weights": [
-                {
-                    "slotId": weight["slotId"],
-                    "format": weight["format"],
-                    "sha256": self._weight_sha256(weight["path"]),
-                }
-                for weight in self._configured_weights
-            ],
-            "device": actual_device or self._device_preference,
-            "options": effective_options or self._engine_options,
-            "outputContracts": self._requested_output_contracts(),
-            "resultSemanticsVersion": _ENGINE_POSTPROCESSOR_VERSION,
-        }
-        encoded = json.dumps(
-            source,
-            sort_keys=True,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        return "sha256:" + hashlib.sha256(encoded).hexdigest()
+        return self._identity.cache_identity()
 
     def model_signature(self) -> str:
-        return self._model_signature
+        return self._identity.model_signature
 
     @property
     def device_str(self) -> str:
         return "engine"
 
     def supported_input_modes(self) -> tuple[str, ...]:
-        return self._supported_input_modes
+        return self._identity.supported_input_modes
 
     def configure_profile(
         self,
@@ -240,106 +131,35 @@ class OpponentPredictionGateway:
         weights: Optional[list[Dict[str, Any]]] = None,
         engine_client: Optional[Any] = None,
     ) -> None:
-        next_model_path = Path(model_path) if model_path else Path("__unconfigured__")
-        if not next_model_path.is_absolute():
-            next_model_path = Path.cwd() / next_model_path
-        next_command = [str(part) for part in (engine_command or [])]
-        normalized_engine_options = dict(engine_options or {})
-        configured_device = str(normalized_engine_options.pop("device", "auto") or "auto")
-        if configured_device not in ("auto", "cpu", "cuda"):
-            configured_device = "auto"
-        normalized_weights = [
-            {
-                "slotId": str(weight.get("slotId") or ""),
-                "format": str(weight.get("format") or ""),
-                "path": str(weight.get("path") or ""),
-            }
-            for weight in (weights or [])
-            if isinstance(weight, dict)
-        ]
-        if not normalized_weights and model_path:
-            normalized_weights = [{
-                "slotId": "model",
-                "format": str(model_format),
-                "path": str(next_model_path.resolve()),
-            }]
-        next_modes = tuple(
-            mode
-            for mode in (input_modes or ["public"])
-            if mode in ("public", "full-information")
-        ) or ("public",)
-        requested_outputs = enabled_outputs or [
-            _SHANTEN_OUTPUT["id"],
-            _DEAL_IN_OUTPUT["id"],
-        ]
-        next_outputs = tuple(
-            output["id"]
-            for output in _ANALYSIS_OUTPUTS
-            if output["id"] in requested_outputs
-        )
-        if not next_outputs:
-            raise ValueError("at least one supported opponent output is required")
-        next_identity = (
-            str(profile_id),
-            str(engine_id),
-            str(engine_version or "1.0.0"),
-            str(model_id),
-            str(model_format),
-            str(next_model_path.resolve()),
-            str(expected_sha256 or "").lower(),
-            tuple(next_command),
-            str(engine_cwd or ""),
-            json.dumps(normalized_engine_options, sort_keys=True, separators=(",", ":")),
-            next_modes,
-            next_outputs,
-            json.dumps(normalized_weights, sort_keys=True, separators=(",", ":")),
-        )
-        current_identity = (
-            self._profile_id,
-            self._engine_id,
-            self._engine_version,
-            self._model_id,
-            self._model_format,
-            str(self._model_path.resolve()),
-            self._expected_sha256,
-            tuple(getattr(self, "_engine_command", []) or []),
-            getattr(self, "_engine_cwd", "") or "",
-            json.dumps(self._engine_options, sort_keys=True, separators=(",", ":")),
-            self._supported_input_modes,
-            self._enabled_outputs,
-            json.dumps(self._configured_weights, sort_keys=True, separators=(",", ":")),
+        next_profile = OpponentEngineProfile.configured(
+            profile_id=profile_id,
+            engine_id=engine_id,
+            engine_version=engine_version,
+            model_id=model_id,
+            model_format=model_format,
+            model_path=model_path,
+            expected_sha256=expected_sha256,
+            input_modes=input_modes,
+            engine_command=engine_command,
+            engine_cwd=engine_cwd,
+            engine_options=engine_options,
+            enabled_outputs=enabled_outputs,
+            weights=weights,
         )
         client_changed = (
             engine_client is not None and self._process_client is not engine_client
         )
-        if next_identity == current_identity and not client_changed:
+        if (
+            next_profile.identity_key() == self._profile.identity_key()
+            and not client_changed
+        ):
             return
         self._invalidate_initialization()
         self.cancel_all()
         self._runtime_notifications.detach()
         self._process_client.shutdown()
-        (
-            self._profile_id,
-            self._engine_id,
-            self._engine_version,
-            self._model_id,
-            self._model_format,
-            model_path_value,
-            self._expected_sha256,
-            command_parts,
-            engine_cwd_value,
-            options_json,
-            self._supported_input_modes,
-            self._enabled_outputs,
-            weights_json,
-        ) = next_identity
-        self._model_path = Path(model_path_value)
-        self._model_hash_cache = None
-        self._engine_command = list(command_parts)
-        self._engine_cwd = engine_cwd_value
-        self._engine_options = json.loads(options_json)
-        self._configured_weights = json.loads(weights_json)
-        self._device_preference = configured_device
+        self._profile = next_profile
+        self._identity.reset(next_profile)
         if engine_client is not None:
             self._process_client = engine_client
             self._runtime_notifications.attach(engine_client)
@@ -347,60 +167,34 @@ class OpponentPredictionGateway:
             self._process_client = EngineProcessClient(
                 "opponent-analysis",
                 self._on_engine_notification,
-                command=self._engine_command or None,
-                cwd=self._engine_cwd or None,
-                expected_engine_id=self._engine_id,
-                expected_engine_version=self._engine_version,
+                command=self._profile.engine_command or None,
+                cwd=self._profile.engine_cwd or None,
+                expected_engine_id=self._profile.engine_id,
+                expected_engine_version=self._profile.engine_version,
             )
-        self._model_signature = self._read_model_signature()
-        self._engine_fingerprint = ""
-        self._effective_options = {}
-        self._actual_device = ""
         self._model_ready = False
-        self._output_references = {
-            output_id: {"id": output_id}
-            for output_id in self._enabled_outputs
-        }
-        self._protocol_minor = 2
         with self._activity_lock:
             self._error_latched = False
             self._unloaded = True
         self._set_activity("idle")
 
     def _requested_output_contracts(self) -> list[Dict[str, Any]]:
-        return [
-            dict(output)
-            for output in _ANALYSIS_OUTPUTS
-            if output["id"] in self._enabled_outputs
-        ]
+        return self._profile.requested_output_contracts()
 
     def _analysis_output_references(self) -> list[Dict[str, Any]]:
-        return [
-            dict(self._output_references[output_id])
-            for output_id in self._enabled_outputs
-        ]
-
-    @staticmethod
-    def _weight_sha256(path_value: str) -> str:
-        try:
-            digest = hashlib.sha256()
-            with Path(path_value).resolve().open("rb") as stream:
-                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                    digest.update(chunk)
-            return digest.hexdigest()
-        except OSError:
-            return "missing"
+        return self._identity.output_requests()
 
     def set_force_device(self, force_device: Optional[str]) -> None:
         """Forward a legacy device preference to engines that still support it."""
         configured_device = str(force_device or "auto")
         if configured_device not in ("auto", "cpu", "cuda"):
             configured_device = "auto"
-        if configured_device == self._device_preference:
+        if configured_device == self._profile.device_preference:
             return
         self._invalidate_initialization()
         self.cancel_all()
-        self._device_preference = configured_device
+        self._profile.device_preference = configured_device
+        self._identity.clear_runtime()
         self._model_ready = False
         with self._activity_lock:
             self._response_times.clear()
@@ -429,7 +223,7 @@ class OpponentPredictionGateway:
 
     def runtime_status(self) -> Dict[str, Any]:
         return {
-            "profileId": self._profile_id,
+            "profileId": self._profile.profile_id,
             "ready": bool(self._model_ready),
             "unloaded": self._unloaded,
             "error": self.activity_error(),
@@ -496,8 +290,7 @@ class OpponentPredictionGateway:
         self._invalidate_initialization()
         self.cancel_all()
         self._model_ready = False
-        self._engine_fingerprint = ""
-        self._model_hash_cache = None
+        self._identity.clear_runtime()
         with self._activity_lock:
             self._response_times.clear()
             self._last_response_ms = 0.0
@@ -511,8 +304,7 @@ class OpponentPredictionGateway:
         self.cancel_all()
         self._process_client.shutdown()
         self._model_ready = False
-        self._engine_fingerprint = ""
-        self._model_hash_cache = None
+        self._identity.clear_runtime()
         with self._activity_lock:
             self._response_times.clear()
             self._last_response_ms = 0.0
@@ -551,9 +343,9 @@ class OpponentPredictionGateway:
             initialization = initialize_engine_client(
                 self._process_client,
                 enabled_outputs=requested_outputs,
-                weights=self._configured_weights,
-                device_preference=self._device_preference,
-                options=self._engine_options,
+                weights=self._profile.configured_weights,
+                device_preference=self._profile.device_preference,
+                options=self._profile.engine_options,
                 timeout=180,
             )
             revealed_supported = all(
@@ -565,23 +357,29 @@ class OpponentPredictionGateway:
                 if generation != self._lifecycle_generation:
                     return False
             effective_options = dict(initialization.result.get("effectiveOptions") or {})
-            fingerprint = self._calculate_cache_identity(
-                initialization.protocol_minor, initialization.device, effective_options,
+            fingerprint = self._identity.calculate_cache_identity(
+                initialization.protocol_minor,
+                initialization.device,
+                effective_options,
             )
             with self._lock:
                 if generation != self._lifecycle_generation:
                     return False
-                self._output_references = {
+                references = {
                     output_id: dict(initialization.references[output_id])
-                    for output_id in self._enabled_outputs
+                    for output_id in self._profile.enabled_outputs
                 }
-                self._protocol_minor = initialization.protocol_minor
-                self._supported_input_modes = (
+                input_modes = (
                     ("public", "full-information") if revealed_supported else ("public",)
                 )
-                self._effective_options = effective_options
-                self._actual_device = initialization.device
-                self._engine_fingerprint = fingerprint
+                self._identity.accept_initialization(
+                    references=references,
+                    protocol_minor=initialization.protocol_minor,
+                    input_modes=input_modes,
+                    effective_options=effective_options,
+                    actual_device=initialization.device,
+                    fingerprint=fingerprint,
+                )
                 self._model_ready = True
                 self._latest["status"] = "loaded"
             return True
@@ -839,8 +637,8 @@ class OpponentPredictionGateway:
                 players = self._protocol_adapter.validate_prediction(
                     worker_result,
                     controlled_seat=c,
-                    enabled_outputs=self._enabled_outputs,
-                    output_references=self._output_references,
+                    enabled_outputs=self._profile.enabled_outputs,
+                    output_references=self._identity.output_references,
                 )
                 protocol_outputs = {
                     str(output.get("id") or ""): copy.deepcopy(output.get("data"))
@@ -852,7 +650,7 @@ class OpponentPredictionGateway:
                     protocol_outputs=protocol_outputs,
                     controlled_seat=c,
                     context=context,
-                    engine_fingerprint=self._engine_fingerprint,
+                    engine_fingerprint=self._identity.engine_fingerprint,
                     target_events=target_events,
                 )
                 if not is_background and self._is_superseded(context):

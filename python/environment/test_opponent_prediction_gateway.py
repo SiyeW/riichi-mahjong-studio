@@ -135,8 +135,8 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                     }],
                 },
                 controlled_seat=0,
-                enabled_outputs=gateway._enabled_outputs,
-                output_references=gateway._output_references,
+                enabled_outputs=gateway._profile.enabled_outputs,
+                output_references=gateway._identity.output_references,
             )
             self.assertEqual(len(players), 3)
             self.assertTrue(all("shanten" in player for player in players))
@@ -165,8 +165,8 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                     }],
                 },
                 controlled_seat=0,
-                enabled_outputs=gateway._enabled_outputs,
-                output_references=gateway._output_references,
+                enabled_outputs=gateway._profile.enabled_outputs,
+                output_references=gateway._identity.output_references,
             )
             self.assertEqual(len(players), 3)
             self.assertTrue(all("ronWaits" in player for player in players))
@@ -222,15 +222,15 @@ class OpponentOutputCompositionTest(unittest.TestCase):
                     }],
                 },
                 controlled_seat=0,
-                enabled_outputs=gateway._enabled_outputs,
-                output_references=gateway._output_references,
+                enabled_outputs=gateway._profile.enabled_outputs,
+                output_references=gateway._identity.output_references,
             )
             result = gateway._protocol_adapter.to_host_result(
                 players,
                 protocol_outputs={"kyoku-outcome": output_data},
                 controlled_seat=0,
                 context={"nodeId": "n_1"},
-                engine_fingerprint=gateway._engine_fingerprint,
+                engine_fingerprint=gateway._identity.engine_fingerprint,
                 target_events=None,
             )
             self.assertEqual(result["outputs"]["kyoku-outcome"], output_data)
