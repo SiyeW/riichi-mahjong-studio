@@ -6,6 +6,7 @@ export const ANALYSIS_TILE_ROWS = [
 ] as const
 
 export const RED_FIVE_TILES = ['5mr', '5pr', '5sr'] as const
+export const RON_WAIT_OPPONENT_KEYS = ['kamicha', 'toimen', 'shimocha'] as const
 
 const TILE_INDEXES = new Map<string, number>(
   ANALYSIS_TILE_ROWS.flat().map((tile, index) => [tile, index]),

@@ -20,7 +20,6 @@ interface UseAnalysisSessionOptions {
 }
 
 export const SHANTEN_SHORT_LABELS = ['0', '1', '2', '3', '4', '5', '6', 'X']
-export const RON_WAIT_OPPONENT_KEYS = ['kamicha', 'toimen', 'shimocha'] as const
 
 function hasShantenRows(group: Record<string, number[]> | undefined): group is Record<string, number[]> {
   return Boolean(group && Object.values(group).some((values) => Array.isArray(values) && values.length > 0))

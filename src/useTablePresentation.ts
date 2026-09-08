@@ -4,8 +4,7 @@ import {
   clampProbability,
   DEFAULT_PROBABILITY_SCALE,
 } from './analysisProbabilityScale'
-import { tile34Index } from './analysisTiles'
-import { RON_WAIT_OPPONENT_KEYS } from './useAnalysisSession'
+import { RON_WAIT_OPPONENT_KEYS, tile34Index } from './analysisTiles'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
