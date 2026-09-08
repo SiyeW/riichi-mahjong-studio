@@ -4,7 +4,6 @@ from __future__ import annotations
 import copy
 import threading
 import time
-from collections import deque
 from typing import Any, Callable, Dict, Optional
 
 from engine_process_client import EngineProcessClient  # noqa: E402
@@ -16,6 +15,7 @@ from opponent_prediction_profile import (
     OpponentEngineProfile,
 )
 from opponent_prediction_protocol import OpponentPredictionProtocolAdapter
+from opponent_prediction_requests import OpponentPredictionRequests
 
 _LATEST_OPPONENT_PREDICTION_MJAI: Dict[str, Any] = {}
 
@@ -42,25 +42,24 @@ class OpponentPredictionGateway:
         self._model_ready = False
         self._protocol_adapter = OpponentPredictionProtocolAdapter()
         self._initialization_lock = threading.Lock()
-        self._lock = threading.Lock()
+        self._initialization_state_lock = threading.Lock()
+        self._notification_lock = threading.Lock()
         self._activity = OpponentPredictionActivity()
         self._runtime_notifications = EngineNotificationSubscription(
-            self._lock,
+            self._notification_lock,
             lambda: self._process_client,
             lambda: self._activity.generation,
             lambda *args, **kwargs: self._on_engine_notification(*args, **kwargs),
         )
-        self._latest: Dict[str, Any] = {"opponents": {}, "status": "loading"}
-        self._running = True
-        self._pending: Optional[Dict[str, Any]] = None
-        self._background_pending = deque()
-        self._latest_context: Optional[Dict[str, Any]] = None
-        self._pending_event = threading.Event()
-        self._active_context: Optional[Dict[str, Any]] = None
-        self._active_background = False
-        self._reset_preparers_pending = False
-        self._worker = threading.Thread(target=self._run, daemon=True)
-        self._worker.start()
+        self._requests = OpponentPredictionRequests(
+            activity=self._activity,
+            supported_input_modes=self.supported_input_modes,
+            is_initializing=self._is_initializing,
+            prewarm=self.prewarm,
+            execute=self._execute_prediction,
+            activity_error=self.activity_error,
+            format_error=self._format_error,
+        )
 
     def _on_engine_notification(
         self,
@@ -74,7 +73,11 @@ class OpponentPredictionGateway:
             if state in ("queued", "running"):
                 self._set_activity("running", expected_generation=expected_generation)
             elif state == "error":
-                self._set_activity("error", str(params.get("message") or "引擎推理失败"), expected_generation=expected_generation)
+                self._set_activity(
+                    "error",
+                    str(params.get("message") or "引擎推理失败"),
+                    expected_generation=expected_generation,
+                )
             elif state in ("completed", "canceled"):
                 self._set_activity("idle", expected_generation=expected_generation)
             return
@@ -187,15 +190,17 @@ class OpponentPredictionGateway:
         self._identity.clear_runtime()
         self._model_ready = False
         self._activity.reset(unloaded=False)
-        with self._lock:
-            self._latest["status"] = "loading"
+        self._requests.mark_loading()
         self._process_client.restart()
         self._set_activity("idle")
 
     def _is_initializing(self) -> bool:
         return not self._model_ready
 
-    def set_activity_callback(self, callback: Optional[Callable[[str, Optional[str]], None]]) -> None:
+    def set_activity_callback(
+        self,
+        callback: Optional[Callable[[str, Optional[str]], None]],
+    ) -> None:
         self._activity.set_callback(callback)
 
     def activity_state(self) -> str:
@@ -262,10 +267,6 @@ class OpponentPredictionGateway:
         self._activity.reset(unloaded=True)
         self._set_activity("idle")
 
-    def _has_live_context(self) -> bool:
-        with self._lock:
-            return self._latest_context is not None
-
     def _invalidate_initialization(self) -> None:
         self._activity.invalidate()
 
@@ -298,7 +299,7 @@ class OpponentPredictionGateway:
                 and bool(initialization.outputs[output["id"]].get("supportsRevealedHands"))
                 for output in requested_outputs
             )
-            with self._lock:
+            with self._initialization_state_lock:
                 if generation != self._activity.generation:
                     return False
             effective_options = dict(initialization.result.get("effectiveOptions") or {})
@@ -307,7 +308,7 @@ class OpponentPredictionGateway:
                 initialization.device,
                 effective_options,
             )
-            with self._lock:
+            with self._initialization_state_lock:
                 if generation != self._activity.generation:
                     return False
                 references = {
@@ -326,18 +327,21 @@ class OpponentPredictionGateway:
                     fingerprint=fingerprint,
                 )
                 self._model_ready = True
-                self._latest["status"] = "loaded"
+                self._requests.mark_loaded()
             return True
         except Exception as exc:
-            with self._lock:
+            with self._initialization_state_lock:
                 if generation != self._activity.generation:
                     return False
             print(f"[SHANTEN] Prewarm failed: {exc}", flush=True)
-            self._set_activity("error", self._format_error("模型预热失败", exc), expected_generation=generation)
+            self._set_activity(
+                "error",
+                self._format_error("模型预热失败", exc),
+                expected_generation=generation,
+            )
             return False
         finally:
-            with self._lock:
-                has_work = self._pending is not None or self._active_context is not None
+            has_work = self._requests.has_work()
             if not has_work and self.activity_state() != "error":
                 self._set_activity("idle", expected_generation=generation)
 
@@ -358,38 +362,20 @@ class OpponentPredictionGateway:
         include_ground_truth: bool = True,
     ) -> None:
         del visible_hands
-        if not self._activity.accepts_requests():
-            return
-        if input_mode not in self.supported_input_modes():
-            raise ValueError(f"Unsupported opponent-analysis input mode: {input_mode}")
-        has_prebuilt_streams = mjai_events is not None and (
-            target_mjai_events is not None or not include_ground_truth
+        self._requests.request_foreground(
+            snapshot,
+            controlled_seat,
+            input_mode=input_mode,
+            context=context,
+            on_complete=on_complete,
+            mjai_events=mjai_events,
+            mjai_prefix_hashes=mjai_prefix_hashes,
+            mjai_events_hash=mjai_events_hash,
+            target_mjai_events=target_mjai_events,
+            target_mjai_prefix_hashes=target_mjai_prefix_hashes,
+            target_mjai_events_hash=target_mjai_events_hash,
+            include_ground_truth=include_ground_truth,
         )
-        with self._lock:
-            self._latest_context = copy.deepcopy(context or {})
-            self._pending = {
-                "snapshot": None if has_prebuilt_streams else copy.deepcopy(snapshot),
-                "controlled_seat": int(controlled_seat),
-                "input_mode": input_mode,
-                "context": copy.deepcopy(context or {}),
-                "on_complete": on_complete,
-                "mjai_events": mjai_events,
-                "mjai_prefix_hashes": mjai_prefix_hashes,
-                "mjai_events_hash": mjai_events_hash,
-                "target_mjai_events": target_mjai_events,
-                "target_mjai_prefix_hashes": target_mjai_prefix_hashes,
-                "target_mjai_events_hash": target_mjai_events_hash,
-                "include_ground_truth": bool(include_ground_truth),
-            }
-            self._latest = {
-                "predictions": {"opponents": {}, "ron_wait": {}},
-                "ground_truth": {"opponents": {}, "ron_wait": {}},
-                "context": copy.deepcopy(context or {}),
-                "status": "loading",
-            }
-        initializing = self._is_initializing()
-        self._set_activity("loading" if initializing else "running")
-        self._pending_event.set()
 
     def request_background_predict(
         self,
@@ -406,261 +392,134 @@ class OpponentPredictionGateway:
         target_mjai_events_hash: Optional[int] = None,
         include_ground_truth: bool = True,
     ) -> bool:
-        if not self._activity.accepts_requests():
-            return False
-        if input_mode not in self.supported_input_modes():
-            raise ValueError(f"Unsupported opponent-analysis input mode: {input_mode}")
-        request_context = copy.deepcopy(context or {})
-        has_prebuilt_streams = mjai_events is not None and (
-            target_mjai_events is not None or not include_ground_truth
+        return self._requests.request_background(
+            snapshot,
+            controlled_seat,
+            input_mode=input_mode,
+            context=context,
+            on_complete=on_complete,
+            mjai_events=mjai_events,
+            mjai_prefix_hashes=mjai_prefix_hashes,
+            mjai_events_hash=mjai_events_hash,
+            target_mjai_events=target_mjai_events,
+            target_mjai_prefix_hashes=target_mjai_prefix_hashes,
+            target_mjai_events_hash=target_mjai_events_hash,
+            include_ground_truth=include_ground_truth,
         )
-        with self._lock:
-            if (
-                (self._active_background and self._active_context == request_context)
-                or any(item.get("context") == request_context for item in self._background_pending)
-            ):
-                return False
-            self._background_pending.append(
-                {
-                    "snapshot": None if has_prebuilt_streams else copy.deepcopy(snapshot),
-                    "controlled_seat": int(controlled_seat),
-                    "input_mode": input_mode,
-                    "context": request_context,
-                    "on_complete": on_complete,
-                    "background": True,
-                    "mjai_events": mjai_events,
-                    "mjai_prefix_hashes": mjai_prefix_hashes,
-                    "mjai_events_hash": mjai_events_hash,
-                    "target_mjai_events": target_mjai_events,
-                    "target_mjai_prefix_hashes": target_mjai_prefix_hashes,
-                    "target_mjai_events_hash": target_mjai_events_hash,
-                    "include_ground_truth": bool(include_ground_truth),
-                }
-            )
-        self._pending_event.set()
-        return True
 
     def get_latest(self) -> Dict[str, Any]:
-        with self._lock:
-            return copy.deepcopy(self._latest)
+        return self._requests.get_latest()
 
     def has_request(self, context: Dict[str, Any]) -> bool:
-        with self._lock:
-            pending_context = self._pending.get("context") if self._pending else None
-            active_context = None if self._active_background else self._active_context
-            return pending_context == context or active_context == context
+        return self._requests.has_request(context)
 
     def set_latest_context(self, context: Optional[Dict[str, Any]]) -> None:
-        with self._lock:
-            self._latest_context = copy.deepcopy(context) if context is not None else None
-            if self._pending is not None and self._pending.get("context") != self._latest_context:
-                self._pending = None
-                if self._background_pending:
-                    self._pending_event.set()
-                else:
-                    self._pending_event.clear()
+        self._requests.set_latest_context(context)
 
     def cancel_pending(self) -> None:
-        with self._lock:
-            self._latest_context = None
-            self._pending = None
-            has_queued_work = bool(self._background_pending)
-            has_active_request = self._active_context is not None
-            if not has_queued_work:
-                self._pending_event.clear()
-        if not has_active_request and self.activity_state() != "error":
-            self._set_activity("idle")
+        self._requests.cancel_pending()
 
     def cancel_background(self) -> None:
-        with self._lock:
-            self._background_pending.clear()
-            has_foreground_work = self._pending is not None
-            has_active_request = self._active_context is not None
-            if not has_foreground_work:
-                self._pending_event.clear()
-        if not has_active_request and not has_foreground_work and self.activity_state() != "error":
-            self._set_activity("idle")
+        self._requests.cancel_background()
 
     def cancel_all(self) -> None:
-        with self._lock:
-            self._latest_context = None
-            self._pending = None
-            self._background_pending.clear()
-            self._pending_event.clear()
-            self._reset_preparers_pending = True
-            has_active_request = self._active_context is not None
-        if not has_active_request and self.activity_state() != "error":
-            self._set_activity("idle")
+        self._requests.cancel_all()
 
-    def _is_superseded(self, context: Dict[str, Any]) -> bool:
-        with self._lock:
-            return self._latest_context != context
+    def _execute_prediction(
+        self,
+        pending: Dict[str, Any],
+        initializing: bool,
+    ) -> tuple[Dict[str, Any], float]:
+        prediction_started_at = time.perf_counter()
+        snapshot = pending["snapshot"]
+        controlled_seat = pending["controlled_seat"]
+        context = pending.get("context") or {}
+        input_mode = str(pending.get("input_mode") or "public")
+        visibility_mode = "hidden" if input_mode == "public" else "full"
 
-    def _run(self):
-        while self._running:
-            self._pending_event.wait()
-            if not self._running:
-                break
-            pending = None
-            reset_preparers = False
-            with self._lock:
-                if self._pending is not None:
-                    pending = self._pending
-                    self._pending = None
-                elif self._background_pending:
-                    pending = self._background_pending.popleft()
-                if pending is not None:
-                    self._active_context = copy.deepcopy(pending.get("context") or {})
-                    self._active_background = bool(pending.get("background"))
-                    reset_preparers = self._reset_preparers_pending
-                    self._reset_preparers_pending = False
-                self._pending_event.clear()
+        # The current model only accepts hidden-hand observations.
+        from mjai_stream import build_mjai_stream
 
-            if pending is None:
-                continue
-            if reset_preparers:
-                pass
+        events = pending.get("mjai_events")
+        if events is None:
+            events = build_mjai_stream(
+                snapshot,
+                controlled_seat,
+                reveal_all=False,
+            )
+        global _LATEST_OPPONENT_PREDICTION_MJAI
+        _LATEST_OPPONENT_PREDICTION_MJAI = {
+            "events": events,
+            "seat": controlled_seat,
+            "visibilityMode": visibility_mode,
+        }
 
-            initializing = self._is_initializing()
-            self._set_activity("loading" if initializing else "running")
-            try:
-                if initializing:
-                    if not self.prewarm():
-                        raise RuntimeError(
-                            self.activity_error() or "对手分析引擎初始化失败"
-                        )
-                prediction_started_at = time.perf_counter()
+        include_ground_truth = bool(
+            pending.get("include_ground_truth", True)
+        )
+        target_events = pending.get("target_mjai_events")
+        if include_ground_truth and target_events is None:
+            target_events = build_mjai_stream(
+                snapshot,
+                controlled_seat,
+                reveal_all=True,
+            )
 
-                snapshot = pending["snapshot"]
-                c = pending["controlled_seat"]
-                context = pending.get("context") or {}
-                is_background = bool(pending.get("background"))
-                input_mode = str(pending.get("input_mode") or "public")
-                visibility_mode = "hidden" if input_mode == "public" else "full"
-                if not is_background and self._is_superseded(context):
-                    continue
-
-                # The current model only accepts hidden-hand observations.
-                from mjai_stream import build_mjai_stream
-                events = pending.get("mjai_events")
-                if events is None:
-                    events = build_mjai_stream(snapshot, c, reveal_all=False)
-                global _LATEST_OPPONENT_PREDICTION_MJAI
-                _LATEST_OPPONENT_PREDICTION_MJAI = {
-                    "events": events,
-                    "seat": c,
-                    "visibilityMode": visibility_mode,
-                }
-
-                include_ground_truth = bool(pending.get("include_ground_truth", True))
-                target_events = pending.get("target_mjai_events")
-                if include_ground_truth and target_events is None:
-                    target_events = build_mjai_stream(snapshot, c, reveal_all=True)
-
-                session_id = (
-                    f"{context.get('gameId') or 'game'}:seat-{c}:"
-                    f"opponent-analysis:{input_mode}"
-                )
-                worker_result = self._process_client.request(
-                    "analysis.run",
-                    {
-                        "sessionId": session_id,
-                        "controlledSeat": c,
-                        "inputMode": (
-                            "revealed" if input_mode == "full-information" else "standard"
-                        ),
-                        "events": events,
-                        "outputs": [
-                            {**output, "parameters": {}}
-                            for output in self._analysis_output_references()
-                        ],
-                    },
-                    timeout=180 if initializing else 30,
-                )
-                players = self._protocol_adapter.validate_prediction(
-                    worker_result,
-                    controlled_seat=c,
-                    enabled_outputs=self._profile.enabled_outputs,
-                    output_references=self._identity.output_references,
-                )
-                protocol_outputs = {
-                    str(output.get("id") or ""): copy.deepcopy(output.get("data"))
-                    for output in worker_result.get("outputs", [])
-                    if isinstance(output, dict) and isinstance(output.get("data"), dict)
-                }
-                result = self._protocol_adapter.to_host_result(
-                    players,
-                    protocol_outputs=protocol_outputs,
-                    controlled_seat=c,
-                    context=context,
-                    engine_fingerprint=self._identity.engine_fingerprint,
-                    target_events=target_events,
-                )
-                if not is_background and self._is_superseded(context):
-                    continue
-                if not is_background:
-                    with self._lock:
-                        if self._latest_context != context:
-                            continue
-                        self._latest = result
-                timing = worker_result.get("timing")
-                worker_response_ms = timing.get("totalMs") if isinstance(timing, dict) else None
-                self._record_response_ms(
-                    float(worker_response_ms)
-                    if isinstance(worker_response_ms, (int, float))
-                    else (time.perf_counter() - prediction_started_at) * 1000
-                )
-                on_complete = pending.get("on_complete")
-                if callable(on_complete):
-                    try:
-                        on_complete(copy.deepcopy(result))
-                    except Exception as callback_error:  # pylint: disable=broad-except
-                        print(
-                            f"[SHANTEN] Cache callback failed: {callback_error}",
-                            flush=True,
-                        )
-                continue
-            except Exception as exc:
-                if not pending.get("background") and self._is_superseded(pending.get("context") or {}):
-                    continue
-                import traceback
-                print(f"[SHANTEN] Prediction error: {exc}", flush=True)
-                traceback.print_exc()
-                self._set_activity(
-                    "error",
-                    self._format_error("模型推理失败", exc),
-                    latch_error=False,
-                )
-                error_result = {
-                    "predictions": {"opponents": {}, "ron_wait": {}},
-                    "ground_truth": {"opponents": {}, "ron_wait": {}},
-                    "context": copy.deepcopy(pending.get("context") or {}),
-                    "status": f"prediction_error: {exc}",
-                }
-                if not pending.get("background"):
-                    with self._lock:
-                        if self._latest_context != (pending.get("context") or {}):
-                            continue
-                        self._latest = error_result
-                on_complete = pending.get("on_complete")
-                if callable(on_complete):
-                    try:
-                        on_complete(copy.deepcopy(error_result))
-                    except Exception as callback_error:  # pylint: disable=broad-except
-                        print(f"[SHANTEN] Cache callback failed: {callback_error}", flush=True)
-            finally:
-                with self._lock:
-                    self._active_context = None
-                    self._active_background = False
-                    has_pending = self._pending is not None or bool(self._background_pending)
-                    if has_pending:
-                        self._pending_event.set()
-                if not has_pending and self.activity_state() != "error":
-                    self._set_activity("idle")
+        session_id = (
+            f"{context.get('gameId') or 'game'}:seat-{controlled_seat}:"
+            f"opponent-analysis:{input_mode}"
+        )
+        worker_result = self._process_client.request(
+            "analysis.run",
+            {
+                "sessionId": session_id,
+                "controlledSeat": controlled_seat,
+                "inputMode": (
+                    "revealed"
+                    if input_mode == "full-information"
+                    else "standard"
+                ),
+                "events": events,
+                "outputs": [
+                    {**output, "parameters": {}}
+                    for output in self._analysis_output_references()
+                ],
+            },
+            timeout=180 if initializing else 30,
+        )
+        players = self._protocol_adapter.validate_prediction(
+            worker_result,
+            controlled_seat=controlled_seat,
+            enabled_outputs=self._profile.enabled_outputs,
+            output_references=self._identity.output_references,
+        )
+        protocol_outputs = {
+            str(output.get("id") or ""): copy.deepcopy(output.get("data"))
+            for output in worker_result.get("outputs", [])
+            if isinstance(output, dict)
+            and isinstance(output.get("data"), dict)
+        }
+        result = self._protocol_adapter.to_host_result(
+            players,
+            protocol_outputs=protocol_outputs,
+            controlled_seat=controlled_seat,
+            context=context,
+            engine_fingerprint=self._identity.engine_fingerprint,
+            target_events=target_events,
+        )
+        timing = worker_result.get("timing")
+        worker_response_ms = (
+            timing.get("totalMs") if isinstance(timing, dict) else None
+        )
+        elapsed_ms = (
+            float(worker_response_ms)
+            if isinstance(worker_response_ms, (int, float))
+            else (time.perf_counter() - prediction_started_at) * 1000
+        )
+        return result, elapsed_ms
 
     def shutdown(self):
         self._invalidate_initialization()
         self._runtime_notifications.detach()
-        self._running = False
-        self._pending_event.set()
+        self._requests.shutdown()
         self._process_client.shutdown()

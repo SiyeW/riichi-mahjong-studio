@@ -12,7 +12,7 @@ class EngineNotificationSubscriptionTests(unittest.TestCase):
     def gateway(self, kind):
         if kind == 'decision':
             return ActionRecommendationGateway()
-        with patch('opponent_prediction_gateway.threading.Thread.start'):
+        with patch('opponent_prediction_requests.threading.Thread.start'):
             return OpponentPredictionGateway()
 
     def runtime(self, kind, name):
@@ -109,7 +109,7 @@ class EngineNotificationSubscriptionTests(unittest.TestCase):
                 copied('engine.status', {'state': 'error', 'message': 'stale'})
                 self.assertIsNone(gateway.activity_error())
                 if kind == 'prediction':
-                    self.assertFalse(gateway._running)
+                    self.assertFalse(gateway._requests._running)
 
 
 if __name__ == '__main__':

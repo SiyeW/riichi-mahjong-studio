@@ -7,7 +7,7 @@ from opponent_prediction_gateway import OpponentPredictionGateway
 
 class InitializationLifecycleTests(unittest.TestCase):
     def test_old_initialization_cleanup_preserves_new_loading_state(self):
-        with patch('opponent_prediction_gateway.threading.Thread.start'):
+        with patch('opponent_prediction_requests.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
         gateway._activity.reset(unloaded=False)
 
@@ -23,7 +23,7 @@ class InitializationLifecycleTests(unittest.TestCase):
         self.assertIsNone(gateway.activity_error())
 
     def test_stale_activity_update_does_not_latch_error_or_notify(self):
-        with patch('opponent_prediction_gateway.threading.Thread.start'):
+        with patch('opponent_prediction_requests.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
         gateway._activity.reset(unloaded=False)
         notifications = []
@@ -43,7 +43,7 @@ class InitializationLifecycleTests(unittest.TestCase):
         for transition in ('unload', 'prepare_reload'):
             for fails in (False, True):
                 with self.subTest(transition=transition, fails=fails):
-                    with patch('opponent_prediction_gateway.threading.Thread.start'):
+                    with patch('opponent_prediction_requests.threading.Thread.start'):
                         gateway = OpponentPredictionGateway()
                     gateway._activity.reset(unloaded=False)
                     outputs = gateway._requested_output_contracts()
@@ -69,7 +69,7 @@ class InitializationLifecycleTests(unittest.TestCase):
                     self.assertFalse(gateway._activity.error_latched())
 
     def test_current_initialization_can_still_publish(self):
-        with patch('opponent_prediction_gateway.threading.Thread.start'):
+        with patch('opponent_prediction_requests.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
         gateway._activity.reset(unloaded=False)
         outputs = gateway._requested_output_contracts()
@@ -84,7 +84,7 @@ class InitializationLifecycleTests(unittest.TestCase):
         self.assertEqual(gateway._identity.actual_device, 'cpu')
 
     def test_fingerprint_calculation_does_not_hold_request_lock(self):
-        with patch('opponent_prediction_gateway.threading.Thread.start'):
+        with patch('opponent_prediction_requests.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
         gateway._activity.reset(unloaded=False)
         outputs = gateway._requested_output_contracts()
@@ -99,10 +99,10 @@ class InitializationLifecycleTests(unittest.TestCase):
         acquired = []
 
         def hash_weight(path):
-            available = gateway._lock.acquire(blocking=False)
+            available = gateway._requests._lock.acquire(blocking=False)
             acquired.append(available)
             if available:
-                gateway._lock.release()
+                gateway._requests._lock.release()
             return 'test-hash'
 
         with patch('opponent_prediction_gateway.initialize_engine_client', return_value=initialization), \
@@ -114,7 +114,7 @@ class InitializationLifecycleTests(unittest.TestCase):
         self.assertEqual(acquired, [True])
 
     def test_reload_during_fingerprint_calculation_discards_initialization(self):
-        with patch('opponent_prediction_gateway.threading.Thread.start'):
+        with patch('opponent_prediction_requests.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
         gateway._activity.reset(unloaded=False)
         outputs = gateway._requested_output_contracts()
