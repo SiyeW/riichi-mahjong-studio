@@ -1140,58 +1140,23 @@
         </div>
       </div>
       <div class="engine-manager-body">
-        <div class="engine-profile-column">
-          <div class="engine-output-filters" :aria-label="t('engine.filterByOutput')">
-            <button
-              v-for="output in SUPPORTED_ENGINE_OUTPUTS"
-              :key="output.id"
-              class="engine-output-filter"
-              :class="{
-                assigned: Boolean(settingsDraft.engines.outputAssignments[output.id]),
-                loaded: engineOutputAssignmentIsLoaded(output.id),
-                loading: engineOutputAssignmentIsLoading(output.id),
-                error: engineOutputAssignmentHasError(output.id),
-                selected: engineOutputFilter === output.id,
-              }"
-              :aria-pressed="engineOutputFilter === output.id"
-              @click="toggleEngineOutputFilter(output.id)"
-            >
-              {{ output.label }}
-            </button>
-          </div>
-          <div
-            v-for="profile in filteredEngineProfiles"
-            :key="profile.id"
-            class="engine-profile-item"
-            :class="engineProfileClasses(profile)"
-            @click="selectEngineProfile(profile.id)"
-          >
-            <span>{{ profile.name || t('common.unnamedEngine') }}</span>
-            <small>{{ engineProfileSubtitle(profile) }}</small>
-            <button
-              v-if="shouldShowEngineActionButton(profile)"
-              class="engine-load-button"
-              :class="{ unload: profileIsLoaded(profile) }"
-              :disabled="Boolean(loadingEngineProfileId || unloadingEngineProfileId)"
-              @click.stop="handleEngineProfileAction(profile)"
-            >
-              {{ profileIsLoaded(profile) ? t('engine.unload') : t('engine.load') }}
-            </button>
-          </div>
-          <div class="engine-list-actions">
-            <button @click="moveEngineProfile(-1)" :disabled="activeEngineProfileIndex <= 0">{{ t('engine.moveUp') }}</button>
-            <button @click="moveEngineProfile(1)" :disabled="activeEngineProfileIndex < 0 || activeEngineProfileIndex >= activeEngineProfiles.length - 1">{{ t('engine.moveDown') }}</button>
-            <button @click="duplicateEngineProfile" :disabled="!activeEngineProfile">{{ t('engine.duplicate') }}</button>
-            <button
-              :class="{ danger: deleteEngineConfirmationId === activeEngineProfile?.id }"
-              @click="deleteEngineProfile"
-              :disabled="!activeEngineProfile || activeEngineProfile.builtIn || profileAssignedOutputs(activeEngineProfile).length > 0"
-            >
-              {{ deleteEngineConfirmationId === activeEngineProfile?.id ? t('common.confirmDelete') : t('common.delete') }}
-            </button>
-          </div>
-          <button class="engine-add-button" @click="addEngineProfile">{{ t('engine.add') }}</button>
-        </div>
+        <EngineProfileList
+          :busy="Boolean(loadingEngineProfileId || unloadingEngineProfileId)"
+          :can-delete="engineListCanDelete"
+          :can-duplicate="engineListCanDuplicate"
+          :can-move-down="engineListCanMoveDown"
+          :can-move-up="engineListCanMoveUp"
+          :delete-confirmation="engineListDeleteConfirmation"
+          :outputs="engineOutputFilterItems"
+          :profiles="engineProfileListItems"
+          @action="handleEngineProfileAction"
+          @add="addEngineProfile"
+          @delete="deleteEngineProfile"
+          @duplicate="duplicateEngineProfile"
+          @move="moveEngineProfile"
+          @select="selectEngineProfile"
+          @toggle-output="toggleEngineOutputFilter"
+        />
         <div v-if="activeEngineProfile" class="engine-profile-detail">
           <label>
             <span>{{ t('engine.displayName') }}</span>
@@ -1401,6 +1366,7 @@ import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
+import EngineProfileList from './components/EngineProfileList.vue'
 import MjaiDebugDialog from './components/MjaiDebugDialog.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
@@ -1830,13 +1796,10 @@ const {
 })
 
 const {
-  SUPPORTED_ENGINE_OUTPUTS,
   activeCatalogEngine,
   activeEngineDevices,
   activeEngineOptionEntries,
   activeEngineProfile,
-  activeEngineProfileIndex,
-  activeEngineProfiles,
   activeEngineWeightSlots,
   activeSupportedOutputs,
   addEngineProfile,
@@ -1844,7 +1807,6 @@ const {
   chooseEngineFile,
   chooseEngineWeight,
   closeEngineWindow,
-  deleteEngineConfirmationId,
   deleteEngineProfile,
   describingEngineIds,
   duplicateEngineProfile,
@@ -1853,16 +1815,16 @@ const {
   engineDescriptionKey,
   engineFooterMessage,
   engineOptionInputMode,
-  engineOutputAssignmentHasError,
-  engineOutputAssignmentIsLoaded,
-  engineOutputAssignmentIsLoading,
-  engineOutputFilter,
-  engineProfileClasses,
-  engineProfileSubtitle,
+  engineOutputFilterItems,
+  engineProfileListItems,
   engineSaveMessage,
   engineStatusItems,
+  engineListCanDelete,
+  engineListCanDuplicate,
+  engineListCanMoveDown,
+  engineListCanMoveUp,
+  engineListDeleteConfirmation,
   engineWeight,
-  filteredEngineProfiles,
   flushEngineAutosave,
   formatEngineOptionDefault,
   handleEngineProfileAction,
@@ -1873,13 +1835,11 @@ const {
   openEngineWindow,
   profileAssignedOutputs,
   profileConfigurationLocked,
-  profileIsLoaded,
   selectEngineProfile,
   setEngineDevice,
   setEngineOptionFromEvent,
   setEngineOutputAssignment,
   setEngineProfileName,
-  shouldShowEngineActionButton,
   showEngineWindow,
   suggestedEngineProfileName,
   toggleEngineOutputFilter,

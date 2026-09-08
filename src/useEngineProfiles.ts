@@ -18,6 +18,25 @@ export type SupportedEngineOutputId =
   | 'match-placement'
   | 'match-score'
 
+export interface EngineOutputFilterItem {
+  id: SupportedEngineOutputId
+  label: string
+  assigned: boolean
+  loaded: boolean
+  loading: boolean
+  error: boolean
+  selected: boolean
+}
+
+export interface EngineProfileListItem {
+  id: string
+  name: string
+  subtitle: string
+  classes: Record<string, boolean>
+  showAction: boolean
+  loaded: boolean
+}
+
 type Translate = (key: string, params?: TranslationParams) => string
 
 interface UseEngineProfilesOptions {
@@ -378,7 +397,9 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
         && !profileIsLoaded(profile))
   }
 
-  function handleEngineProfileAction(profile: TrainerEngineProfile) {
+  function handleEngineProfileAction(profileId: string) {
+    const profile = activeEngineProfiles.value.find((item) => item.id === profileId)
+    if (!profile) return
     if (profileIsLoaded(profile)) void unloadEngineProfile(profile.id)
     else void loadEngineProfile(profile.id)
   }
@@ -740,6 +761,41 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     runtimeKinds: profileRuntimeKinds,
     t,
   }))
+
+  const engineOutputFilterItems = computed<EngineOutputFilterItem[]>(() => (
+    SUPPORTED_ENGINE_OUTPUTS.value.map((output) => ({
+      ...output,
+      assigned: Boolean(settingsDraft.engines.outputAssignments[output.id]),
+      loaded: engineOutputAssignmentIsLoaded(output.id),
+      loading: engineOutputAssignmentIsLoading(output.id),
+      error: engineOutputAssignmentHasError(output.id),
+      selected: engineOutputFilter.value === output.id,
+    }))
+  ))
+  const engineProfileListItems = computed<EngineProfileListItem[]>(() => (
+    filteredEngineProfiles.value.map((profile) => ({
+      id: profile.id,
+      name: profile.name,
+      subtitle: engineProfileSubtitle(profile),
+      classes: engineProfileClasses(profile),
+      showAction: shouldShowEngineActionButton(profile),
+      loaded: profileIsLoaded(profile),
+    }))
+  ))
+  const engineListCanMoveUp = computed(() => activeEngineProfileIndex.value > 0)
+  const engineListCanMoveDown = computed(() => (
+    activeEngineProfileIndex.value >= 0
+    && activeEngineProfileIndex.value < activeEngineProfiles.value.length - 1
+  ))
+  const engineListCanDuplicate = computed(() => Boolean(activeEngineProfile.value))
+  const engineListCanDelete = computed(() => Boolean(
+    activeEngineProfile.value
+    && !activeEngineProfile.value.builtIn
+    && profileAssignedOutputs(activeEngineProfile.value).length === 0
+  ))
+  const engineListDeleteConfirmation = computed(() => (
+    deleteEngineConfirmationId.value === activeEngineProfile.value?.id
+  ))
   onBeforeUnmount(() => {
     cancelEngineAutosaveTimer()
     if (deleteEngineConfirmationTimer !== null) {
@@ -749,13 +805,10 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
   })
 
   return {
-    SUPPORTED_ENGINE_OUTPUTS,
     activeCatalogEngine,
     activeEngineDevices,
     activeEngineOptionEntries,
     activeEngineProfile,
-    activeEngineProfileIndex,
-    activeEngineProfiles,
     activeEngineWeightSlots,
     activeSupportedOutputs,
     addEngineProfile,
@@ -763,7 +816,6 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     chooseEngineFile,
     chooseEngineWeight,
     closeEngineWindow,
-    deleteEngineConfirmationId,
     deleteEngineProfile,
     describingEngineIds,
     duplicateEngineProfile,
@@ -773,16 +825,16 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     engineFooterMessage,
     engineLoadErrors,
     engineOptionInputMode,
-    engineOutputAssignmentHasError,
-    engineOutputAssignmentIsLoaded,
-    engineOutputAssignmentIsLoading,
-    engineOutputFilter,
-    engineProfileClasses,
-    engineProfileSubtitle,
+    engineOutputFilterItems,
+    engineProfileListItems,
     engineSaveMessage,
     engineStatusItems,
+    engineListCanDelete,
+    engineListCanDuplicate,
+    engineListCanMoveDown,
+    engineListCanMoveUp,
+    engineListDeleteConfirmation,
     engineWeight,
-    filteredEngineProfiles,
     flushEngineAutosave,
     formatEngineOptionDefault,
     handleEngineProfileAction,
@@ -793,13 +845,11 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     openEngineWindow,
     profileAssignedOutputs,
     profileConfigurationLocked,
-    profileIsLoaded,
     selectEngineProfile,
     setEngineDevice,
     setEngineOptionFromEvent,
     setEngineOutputAssignment,
     setEngineProfileName,
-    shouldShowEngineActionButton,
     showEngineWindow,
     suggestedEngineProfileName,
     toggleEngineOutputFilter,
