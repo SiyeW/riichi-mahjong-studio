@@ -1,5 +1,4 @@
 const path = require('node:path')
-const { requestRendererFlush, persistBeforeClose } = require('./close-persistence')
 const { pathToFileURL } = require('node:url')
 
 const {
@@ -21,13 +20,14 @@ const { registerSettingsIpc } = require('./ipc/settings-ipc')
 const { createEnvironmentService } = require('./services/environment-service')
 const { createRecordWorkflow } = require('./services/record-workflow')
 const { buildRuntimeMetrics } = require('./runtime-metrics')
-const { loadSettings, saveSettings } = require('./state/settings')
+const { loadSettings } = require('./state/settings')
 const { discoverSoundPacks, resolveSoundPackFile } = require('./state/sound-pack-registry')
 const { createSessionStore } = require('./state/session-store')
 const {
   createGameFileStore,
 } = require('./state/game-file-store')
 const { createTranslator } = require('./i18n')
+const { createMainWindow } = require('./window/main-window')
 
 const projectRoot = path.resolve(__dirname, '..', '..')
 const isDev = !app.isPackaged
@@ -139,104 +139,6 @@ async function collectRuntimeMetrics() {
   })
 }
 
-function saveWindowSettings(window) {
-  const latest = loadSettings(appOptions)
-  const [width, height] = window.getSize()
-  latest.window = {
-    ...latest.window,
-    width,
-    height,
-  }
-  saveSettings(latest, appOptions)
-}
-
-function createMainWindow() {
-  const settings = loadSettings(appOptions)
-
-  const window = new BrowserWindow({
-    show: false,
-    width: settings.window.width,
-    height: settings.window.height,
-    minWidth: 1120,
-    minHeight: 760,
-    backgroundColor: '#00272f',
-    autoHideMenuBar: true,
-    webPreferences: {
-      contextIsolation: true,
-      preload: path.join(projectRoot, 'electron', 'preload', 'index.cjs'),
-    },
-  })
-
-  window.webContents.setZoomFactor(1)
-  window.webContents.on('before-input-event', (event, input) => {
-    if (input.type !== 'keyDown' || (!input.control && !input.meta) || input.alt) return
-    let direction = null
-    if (input.code === 'Equal' || input.code === 'NumpadAdd') direction = 'in'
-    if (input.code === 'Minus' || input.code === 'NumpadSubtract') direction = 'out'
-    if (input.code === 'Digit0' || input.code === 'Numpad0') direction = 'reset'
-    if (!direction) return
-    event.preventDefault()
-    window.webContents.send('ui:zoom-shortcut', direction)
-  })
-
-  const showWindow = () => {
-    if (window.isDestroyed() || window.isVisible()) return
-    window.maximize()
-    window.show()
-  }
-  window.once('ready-to-show', showWindow)
-  window.webContents.once('did-finish-load', showWindow)
-
-  if (isDev) {
-    void window.loadURL(rendererUrl)
-  } else {
-    void window.loadFile(path.join(projectRoot, 'dist', 'index.html'))
-  }
-
-  let closeAllowed = false
-  let closeInProgress = false
-  window.on('close', (event) => {
-    if (closeAllowed) return
-    event.preventDefault()
-    if (closeInProgress) return
-    closeInProgress = true
-    void (async () => {
-      try {
-        saveWindowSettings(window)
-      } catch (error) {
-        console.warn('[settings] failed to save window state during close:', error)
-      }
-      try {
-        await persistBeforeClose(
-          () => requestRendererFlush(window, ipcMain, t('native.closeSaveTimeout')),
-          () => loadSettings(appOptions).records?.saveRecoveryOnExit && gameFileStore.isDirty(),
-          writeRecoveryGameRecord,
-        )
-        closeAllowed = true
-        window.close()
-      } catch (error) {
-        console.error('[close] failed to save pending changes:', error)
-        const result = await dialog.showMessageBox(window, {
-          type: 'error',
-          title: t('native.closeSaveFailed.title'),
-          message: t('native.closeSaveFailed.message'),
-          detail: error instanceof Error ? error.message : String(error),
-          buttons: [t('native.cancelExit'), t('native.exitAnyway')],
-          defaultId: 0,
-          cancelId: 0,
-        })
-        if (result.response === 1) {
-          closeAllowed = true
-          window.close()
-          return
-        }
-        closeInProgress = false
-      }
-    })()
-  })
-  return window
-}
-
 function startStartupServices() {
   if (startupServicesStarted) {
     return
@@ -247,7 +149,18 @@ function startStartupServices() {
 }
 
 function openMainWindow() {
-  mainWindow = createMainWindow()
+  mainWindow = createMainWindow({
+    BrowserWindow,
+    dialog,
+    ipcMain,
+    appOptions,
+    projectRoot,
+    isDev,
+    rendererUrl,
+    gameFileStore,
+    writeRecoveryGameRecord,
+    t,
+  })
   startStartupServices()
   return mainWindow
 }
