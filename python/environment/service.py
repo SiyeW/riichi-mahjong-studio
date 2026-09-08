@@ -3,7 +3,6 @@ import json
 import os
 import sys
 import threading
-from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -20,7 +19,7 @@ import game_setup
 import game_tree
 import legal_actions
 import opponent_analysis_session
-import play_prefetch_runtime
+import play_prefetch_session
 import record_commands
 import record_session
 import result_view
@@ -49,7 +48,6 @@ from analysis_cache import (
 from engine_runtime import EngineRuntimeRegistry
 from opponent_prediction_coordinator import OpponentPredictionCoordinator
 from opponent_prediction_gateway import get_latest_opponent_prediction_mjai
-from play_prefetch_runtime import PlayPrefetchRuntime
 from mjai_stream import build_mjai_events_from_actions, build_mjai_stream
 from service_debug import run_debug_scenario
 from service_helpers import (
@@ -95,7 +93,6 @@ ACTION_RECOMMENDATIONS = ActionRecommendationGateway()
 OPPONENT_PREDICTIONS = OpponentPredictionCoordinator()
 ENGINE_RUNTIME_REGISTRY = EngineRuntimeRegistry()
 _BG_EXECUTOR = ThreadPoolExecutor(max_workers=1)
-_PLAY_PREFETCH_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_PREWARM_EXECUTOR = ThreadPoolExecutor(max_workers=2)
 _COMMAND_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _STATUS_EXECUTOR = ThreadPoolExecutor(max_workers=1)
@@ -104,7 +101,6 @@ _ENGINE_INSPECTION_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _ENGINE_RELOAD_EXECUTOR = ThreadPoolExecutor(max_workers=1)
 _EMIT_LOCK = threading.Lock()
 _STATE_LOCK = threading.RLock()
-PLAY_PREFETCH_RUNTIME = PlayPrefetchRuntime()
 _MJAI_STREAM_CACHE = {}
 _MJAI_STREAM_CACHE_MAX = 64
 _LEGAL_ACTIONS_CACHE = {}
@@ -126,7 +122,7 @@ def emit(payload):
 def _invalidate_engine_analysis(reason):
     with _STATE_LOCK:
         AUTO_ANALYSIS.cancel(reason)
-        cancel_play_prefetch()
+        PLAY_PREFETCH.cancel()
         active_game = STATE.get("game")
         DECISION_ANALYSIS.purge(
             active_game.get("gameId") if isinstance(active_game, dict) else None
@@ -138,7 +134,7 @@ def _invalidate_engine_analysis(reason):
 def _prepare_for_engine_unload():
     with _STATE_LOCK:
         AUTO_ANALYSIS.cancel("分析引擎已卸载")
-        cancel_play_prefetch()
+        PLAY_PREFETCH.cancel()
         active_game = STATE.get("game")
         DECISION_ANALYSIS.purge(
             active_game.get("gameId") if isinstance(active_game, dict) else None
@@ -172,7 +168,7 @@ OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
         build_mjai_stream_bundle=lambda *args, **kwargs: get_cached_mjai_stream_bundle(
             *args, **kwargs
         ),
-        play_prefetch_owns=lambda node_id: play_prefetch_owns_opponent(node_id),
+        play_prefetch_owns=lambda node_id: PLAY_PREFETCH.owns_opponent(node_id),
         auto_analysis_owns=lambda kind, node_id: AUTO_ANALYSIS.owns_item(kind, node_id),
         set_timeline_cached=lambda kind, node_id, cached: AUTO_ANALYSIS.set_timeline_cached(
             kind, node_id, cached
@@ -190,7 +186,7 @@ DECISION_ANALYSIS = decision_analysis_session.DecisionAnalysisSession(
     ENGINE_MANAGEMENT,
     _BG_EXECUTOR,
     decision_analysis_session.DecisionAnalysisDependencies(
-        play_prefetch_owns=lambda node_id, analysis_key: play_prefetch_owns_decision(
+        play_prefetch_owns=lambda node_id, analysis_key: PLAY_PREFETCH.owns_decision(
             node_id, analysis_key
         ),
         auto_analysis_owns=lambda kind, node_id: AUTO_ANALYSIS.owns_item(kind, node_id),
@@ -224,7 +220,7 @@ AUTO_ANALYSIS = auto_analysis_session.AutoAnalysisSession(
     _BG_EXECUTOR,
     auto_analysis_session.AutoAnalysisDependencies(
         play_prefetch_active=lambda: (
-            getattr(PLAY_PREFETCH_RUNTIME.local, "game", None) is not None
+            PLAY_PREFETCH.has_active_draft()
         ),
         build_mjai_stream_bundle=lambda *args, **kwargs: get_cached_mjai_stream_bundle(
             *args, **kwargs
@@ -294,6 +290,37 @@ GAME_FLOW = game_flow.GameFlow(
             *args, **kwargs
         ),
         debug=debug_flow,
+    ),
+)
+
+
+PLAY_PREFETCH = play_prefetch_session.PlayPrefetchSession(
+    STATE,
+    _STATE_LOCK,
+    OPPONENT_PREDICTIONS,
+    ENGINE_MANAGEMENT,
+    OPPONENT_ANALYSIS,
+    DECISION_ANALYSIS,
+    AUTO_ANALYSIS,
+    GAME_FLOW,
+    play_prefetch_session.PlayPrefetchDependencies(
+        build_mjai_stream_bundle=lambda *args, **kwargs: get_cached_mjai_stream_bundle(
+            *args, **kwargs
+        ),
+        build_legal_actions=lambda *args, **kwargs: build_legal_actions(
+            *args, **kwargs
+        ),
+        build_state=lambda *args, **kwargs: build_state_payload(*args, **kwargs),
+        is_read_only_game=lambda game: is_read_only_game(game),
+        find_existing_child=lambda *args, **kwargs: _find_existing_child(
+            *args, **kwargs
+        ),
+        create_node=lambda *args, **kwargs: create_node(*args, **kwargs),
+        attach_mainline=lambda *args, **kwargs: attach_mainline(*args, **kwargs),
+        promote_mainline=lambda *args, **kwargs: promote_path_to_mainline(
+            *args, **kwargs
+        ),
+        emit=emit,
     ),
 )
 
@@ -581,7 +608,7 @@ def _get_mjai_stream_cache_key(game, node_id, seat, reveal_all=False):
 
 
 def reset_runtime_for_game_change():
-    cancel_play_prefetch()
+    PLAY_PREFETCH.cancel()
     AUTO_ANALYSIS.reset_for_game_change()
     ENGINE_MANAGEMENT.advance_cache_epochs()
     DECISION_ANALYSIS.reset()
@@ -703,7 +730,7 @@ def get_cached_mjai_stream(game, node_id, seat, *, reveal_all=False):
 
 
 def choose_ai_action_for_current_node(snapshot, seat, model_path):
-    prefetch_game = getattr(PLAY_PREFETCH_RUNTIME.local, "game", None)
+    prefetch_game = PLAY_PREFETCH.active_draft()
     game = prefetch_game or STATE.get("game")
     legal_actions = build_legal_actions(snapshot, controlled_seat=seat)
     if not game or not STATE.get("gameLoaded"):
@@ -781,12 +808,12 @@ def _may_promote_mainline(game, force=False):
     return (
         force
         or STATE.get("mode") != "play"
-        or getattr(PLAY_PREFETCH_RUNTIME.local, "game", None) is game
+        or PLAY_PREFETCH.active_draft() is game
     )
 
 
 def attach_mainline(parent_id, child_id, *, force=False):
-    game = getattr(PLAY_PREFETCH_RUNTIME.local, "game", None) or STATE["game"]
+    game = PLAY_PREFETCH.active_draft() or STATE["game"]
     if game_tree.attach_main_child(
         game,
         parent_id,
@@ -1723,528 +1750,38 @@ def create_reaction_child_snapshot(parent_snapshot, action_type, variant=None, c
 
 
 
-def _play_prefetch_is_user_barrier(snapshot):
-    if snapshot.get("phase") in ("game_end", "round_result", "match_end"):
-        return True
-    return bool(build_legal_actions(snapshot, controlled_seat=STATE["controlledSeat"]))
 
 
-def play_prefetch_owns_opponent(actual_node_id):
-    return PLAY_PREFETCH_RUNTIME.owns_opponent(actual_node_id)
 
 
-def play_prefetch_owns_decision(actual_node_id, analysis_key):
-    def expected_key(context, node):
-        return DECISION_ANALYSIS.cache_key_for(
-            context["seat"],
-            node["snapshot"],
-            context["modelPath"],
-        )
-
-    return PLAY_PREFETCH_RUNTIME.owns_decision(
-        actual_node_id,
-        analysis_key,
-        expected_key,
-    )
 
 
-def _play_prefetch_current_status():
-    return PLAY_PREFETCH_RUNTIME.current_status(STATE.get("game"))
 
 
-def cancel_play_prefetch():
-    PLAY_PREFETCH_RUNTIME.cancel()
 
 
-def _emit_play_prefetch_ready(context, draft_node_id):
-    with PLAY_PREFETCH_RUNTIME.lock:
-        if PLAY_PREFETCH_RUNTIME.context is not context:
-            return
-        actual_node_id = play_prefetch_runtime.actual_node_id(context, draft_node_id)
-        if actual_node_id is None:
-            return
-        payload = {
-            "type": "play_prefetch_ready",
-            "gameId": context["gameId"],
-            "nodeId": actual_node_id,
-            "generation": context["generation"],
-            "timestamp": now_iso(),
-        }
-    emit(payload)
 
 
-def _fail_play_prefetch(context, error):
-    game = STATE.get("game")
-    actual_node_id = game.get("currentNodeId") if isinstance(game, dict) else None
-    notification_node_id = PLAY_PREFETCH_RUNTIME.fail(
-        context,
-        error,
-        actual_node_id,
-    )
-    if notification_node_id is not None:
-        _emit_play_prefetch_ready(context, notification_node_id)
 
 
-def _commit_prefetched_opponent_result(context, draft_node_id):
-    result = context.get("opponentResults", {}).get(draft_node_id)
-    actual_node_id = play_prefetch_runtime.actual_node_id(context, draft_node_id)
-    if not isinstance(result, dict) or actual_node_id is None:
-        return False
-    if draft_node_id not in context.get("committedNodeIds", set()):
-        return False
-
-    game = STATE.get("game")
-    if (
-        not isinstance(game, dict)
-        or game.get("gameId") != context.get("gameId")
-        or PLAY_PREFETCH_RUNTIME.context is not context
-    ):
-        return False
-    node = game.get("nodes", {}).get(actual_node_id)
-    if not isinstance(node, dict):
-        return False
-
-    input_mode = str(context.get("opponentInputMode") or "public")
-    cache_key = OPPONENT_ANALYSIS.build_cache_key(context["seat"], input_mode)
-    cache = node.setdefault(OPPONENT_ANALYSIS_CACHE_FIELD, {})
-    compact = compact_opponent_analysis(result)
-    if cache.get(cache_key) == compact:
-        return True
-    source = ENGINE_MANAGEMENT.opponent_source(include_display_name=True)
-    expected_source_id = (cache_key_context(cache_key) or {}).get("sourceId")
-    if expected_source_id != source["id"]:
-        return False
-    register_analysis_source(game, source, result)
-    prune_stale_cache_entries(cache, cache_key)
-    cache[cache_key] = compact
-    AUTO_ANALYSIS.set_timeline_cached("opponent", actual_node_id, True)
-    emit({
-        "type": "record_changed",
-        "gameId": context["gameId"],
-        "change": "opponent_analysis_cache",
-        "timestamp": now_iso(),
-    })
-    if (
-        game.get("currentNodeId") == actual_node_id
-        and STATE.get("opponentAnalysisEnabled")
-    ):
-        analysis_context = {
-            "gameId": context["gameId"],
-            "nodeId": actual_node_id,
-            "seat": context["seat"],
-            "inputMode": input_mode,
-            "cacheKey": cache_key,
-            "cacheEpoch": ENGINE_MANAGEMENT.opponent_cache_epoch,
-        }
-        emit({
-            "type": "opponent_analysis_ready",
-            "gameId": context["gameId"],
-            "nodeId": actual_node_id,
-            "seat": context["seat"],
-            "opponentAnalysis": attach_analysis_context(result, analysis_context),
-            "timestamp": now_iso(),
-        })
-    return True
 
 
-def _complete_play_prefetch_opponent(generation, draft_node_id, result):
-    if not isinstance(result, dict) or result.get("status") != "ready":
-        return
-    with _STATE_LOCK:
-        with PLAY_PREFETCH_RUNTIME.lock:
-            context = PLAY_PREFETCH_RUNTIME.context
-            if (
-                not isinstance(context, dict)
-                or context.get("generation") != generation
-            ):
-                return
-            context["opponentPending"].discard(draft_node_id)
-            context["opponentResults"][draft_node_id] = compact_opponent_analysis(result)
-        _commit_prefetched_opponent_result(context, draft_node_id)
 
 
-def _schedule_play_prefetch_opponent(context, draft_node_id):
-    if not STATE.get("opponentAnalysisEnabled"):
-        return
-    with PLAY_PREFETCH_RUNTIME.lock:
-        if (
-            PLAY_PREFETCH_RUNTIME.context is not context
-            or draft_node_id in context["opponentPending"]
-            or draft_node_id in context["opponentResults"]
-        ):
-            return
-        if draft_node_id in context["committedNodeIds"]:
-            return
-        context["opponentPending"].add(draft_node_id)
-
-    draft_game = context["draftGame"]
-    node = draft_game.get("nodes", {}).get(draft_node_id)
-    if not isinstance(node, dict):
-        return
-    snapshot = node["snapshot"]
-    seat = context["seat"]
-    input_mode = str(context.get("opponentInputMode") or "public")
-    prediction_bundle = get_cached_mjai_stream_bundle(
-        draft_game,
-        draft_node_id,
-        seat,
-        reveal_all=input_mode == "full-information",
-    )
-    target_bundle = get_cached_mjai_stream_bundle(
-        draft_game,
-        draft_node_id,
-        seat,
-        reveal_all=True,
-    )
-    request_context = {
-        "gameId": context["gameId"],
-        "nodeId": f"prefetch:{context['generation']}:{draft_node_id}",
-        "seat": seat,
-        "inputMode": input_mode,
-        "cacheKey": OPPONENT_ANALYSIS.cache_key(seat),
-        "cacheEpoch": ENGINE_MANAGEMENT.opponent_cache_epoch,
-    }
-    accepted = OPPONENT_PREDICTIONS.request_background_predict(
-        snapshot,
-        seat,
-        input_mode=input_mode,
-        context=request_context,
-        on_complete=lambda result: _complete_play_prefetch_opponent(
-            context["generation"],
-            draft_node_id,
-            result,
-        ),
-        mjai_events=prediction_bundle["events"],
-        mjai_prefix_hashes=prediction_bundle["prefixHashes"],
-        mjai_events_hash=prediction_bundle["eventHash"],
-        target_mjai_events=target_bundle["events"],
-        target_mjai_prefix_hashes=target_bundle["prefixHashes"],
-        target_mjai_events_hash=target_bundle["eventHash"],
-    )
-    if not accepted:
-        with PLAY_PREFETCH_RUNTIME.lock:
-            if PLAY_PREFETCH_RUNTIME.context is context:
-                context["opponentPending"].discard(draft_node_id)
 
 
-def _commit_prefetched_decision_result(context, draft_node_id):
-    result = context.get("decisionResults", {}).get(draft_node_id)
-    actual_node_id = play_prefetch_runtime.actual_node_id(context, draft_node_id)
-    if not isinstance(result, dict) or actual_node_id is None:
-        return False
-    if draft_node_id not in context.get("committedNodeIds", set()):
-        return False
-
-    game = STATE.get("game")
-    if (
-        not isinstance(game, dict)
-        or game.get("gameId") != context.get("gameId")
-        or PLAY_PREFETCH_RUNTIME.context is not context
-        or not STATE.get("decisionRecommendationsEnabled", True)
-    ):
-        return False
-    node = game.get("nodes", {}).get(actual_node_id)
-    if not isinstance(node, dict):
-        return False
-    cache_key = DECISION_ANALYSIS.cache_key_for(
-        context["seat"],
-        node["snapshot"],
-        context["modelPath"],
-    )
-    cache = node.setdefault("analysisCache", {})
-    if cache.get(cache_key) == result:
-        return True
-    stored = DECISION_ANALYSIS.store(
-        game,
-        node,
-        cache_key,
-        result,
-        source=ENGINE_MANAGEMENT.decision_source(context["modelPath"]),
-    )
-    if stored is None:
-        return False
-    tree_updates = DECISION_ANALYSIS.update_child_comparisons(
-        game,
-        node,
-        result,
-        context["seat"],
-    )
-    emit({
-        "type": "analysis_ready",
-        "cacheEpoch": ENGINE_MANAGEMENT.decision_cache_epoch,
-        "nodeId": actual_node_id,
-        "gameId": context["gameId"],
-        "analysisKey": cache_key,
-        "analysis": copy.deepcopy(result),
-        "treeComparisons": tree_updates,
-        "treeRevision": int(game.get("treeRevision", 0)),
-        "state": build_state_payload(consume_thinking_time=False),
-        "timestamp": now_iso(),
-    })
-    emit({
-        "type": "record_changed",
-        "gameId": context["gameId"],
-        "change": "decision_analysis_cache",
-        "timestamp": now_iso(),
-    })
-    return True
 
 
-def _run_play_prefetch_decision(context, draft_node_id):
-    if not STATE.get("decisionRecommendationsEnabled", True):
-        return
-    node = context["draftGame"].get("nodes", {}).get(draft_node_id)
-    if not isinstance(node, dict):
-        return
-    legal_actions = build_legal_actions(
-        node["snapshot"],
-        controlled_seat=context["seat"],
-    )
-    if not legal_actions:
-        return
-    cache_key = DECISION_ANALYSIS.cache_key_for(
-        context["seat"],
-        node["snapshot"],
-        context["modelPath"],
-    )
-    with PLAY_PREFETCH_RUNTIME.lock:
-        if PLAY_PREFETCH_RUNTIME.context is not context:
-            return
-        context["decisionPending"].add(draft_node_id)
-    try:
-        result = AUTO_ANALYSIS.run_decision_item(
-            context["draftGame"],
-            {
-                "nodeId": draft_node_id,
-                "cacheKey": cache_key,
-            },
-            context["seat"],
-            context["modelPath"],
-        )
-    except Exception:
-        return
-    finally:
-        with PLAY_PREFETCH_RUNTIME.lock:
-            if PLAY_PREFETCH_RUNTIME.context is context:
-                context["decisionPending"].discard(draft_node_id)
-    with _STATE_LOCK:
-        with PLAY_PREFETCH_RUNTIME.lock:
-            if PLAY_PREFETCH_RUNTIME.context is not context:
-                return
-            context["decisionResults"][draft_node_id] = copy.deepcopy(result)
-        _commit_prefetched_decision_result(context, draft_node_id)
 
 
-def _capture_play_prefetch_step(context):
-    return PLAY_PREFETCH_RUNTIME.capture_step(context, GAME_FLOW.advance)
 
 
-def _run_play_prefetch(generation):
-    with PLAY_PREFETCH_RUNTIME.lock:
-        context = PLAY_PREFETCH_RUNTIME.context
-        if (
-            not isinstance(context, dict)
-            or context.get("generation") != generation
-        ):
-            return
-
-    try:
-        for _ in range(256):
-            with PLAY_PREFETCH_RUNTIME.lock:
-                if PLAY_PREFETCH_RUNTIME.context is not context:
-                    return
-                draft_node_id = context["draftGame"]["currentNodeId"]
-            snapshot = context["draftGame"]["nodes"][draft_node_id]["snapshot"]
-            if _play_prefetch_is_user_barrier(snapshot):
-                if snapshot.get("phase") not in ("game_end", "round_result", "match_end"):
-                    _schedule_play_prefetch_opponent(context, draft_node_id)
-                    _run_play_prefetch_decision(context, draft_node_id)
-                PLAY_PREFETCH_RUNTIME.finish(context)
-                return
-
-            _schedule_play_prefetch_opponent(context, draft_node_id)
-            step = _capture_play_prefetch_step(context)
-            if step is None:
-                _fail_play_prefetch(
-                    context,
-                    "Play prefetch could not advance the deterministic game state.",
-                )
-                return
-
-            should_emit = PLAY_PREFETCH_RUNTIME.append_step(context, step)
-            if should_emit is None:
-                return
-            if should_emit:
-                _emit_play_prefetch_ready(context, step["beforeNodeId"])
-
-        raise RuntimeError("Play prefetch exceeded 256 automatic steps.")
-    except Exception as error:  # pylint: disable=broad-except
-        _fail_play_prefetch(context, error)
 
 
-def start_play_prefetch():
-    cancel_play_prefetch()
-    game = STATE.get("game")
-    if (
-        STATE.get("mode") != "play"
-        or not STATE.get("gameLoaded")
-        or not isinstance(game, dict)
-        or is_read_only_game(game)
-        or game.get("pendingReview")
-    ):
-        return _play_prefetch_current_status()
-    snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-    if snapshot.get("phase") in ("game_end", "round_result", "match_end"):
-        return _play_prefetch_current_status()
-    if _play_prefetch_is_user_barrier(snapshot):
-        return _play_prefetch_current_status()
-
-    draft_game = play_prefetch_runtime.create_draft(game)
-    generation, context = PLAY_PREFETCH_RUNTIME.start({
-        "gameId": game.get("gameId"),
-        "seat": int(STATE["controlledSeat"]),
-        "modelPath": ENGINE_MANAGEMENT.action_weight_path(),
-        "opponentInputMode": OPPONENT_ANALYSIS.input_mode(),
-        "draftGame": draft_game,
-        "steps": deque(),
-        "nodeIdMap": {game["currentNodeId"]: game["currentNodeId"]},
-        "committedNodeIds": {game["currentNodeId"]},
-        "opponentPending": set(),
-        "opponentResults": {},
-        "decisionPending": set(),
-        "decisionResults": {},
-        "running": True,
-        "finished": False,
-        "error": None,
-    })
-    _PLAY_PREFETCH_EXECUTOR.submit(_run_play_prefetch, generation)
-    return _play_prefetch_current_status()
 
 
-def _commit_play_prefetch_step():
-    if STATE.get("mode") != "play":
-        return None
-    with PLAY_PREFETCH_RUNTIME.lock:
-        context = PLAY_PREFETCH_RUNTIME.context
-        game = STATE.get("game")
-        if (
-            not isinstance(context, dict)
-            or not isinstance(game, dict)
-            or game.get("gameId") != context.get("gameId")
-            or not context["steps"]
-        ):
-            return None
-        step = context["steps"][0]
-        actual_before_id = play_prefetch_runtime.actual_node_id(
-            context,
-            step["beforeNodeId"],
-        )
-        if actual_before_id != game.get("currentNodeId"):
-            return None
-        current_node = game["nodes"].get(actual_before_id)
-        if (
-            not isinstance(current_node, dict)
-            or current_node.get("snapshot") != step["beforeSnapshot"]
-        ):
-            context["error"] = "The committed game state diverged from its prefetch base."
-            context["running"] = False
-            context["finished"] = True
-            context["steps"].clear()
-            return None
-        context["steps"].popleft()
-
-    current_node["snapshot"] = copy.deepcopy(step["afterBaseSnapshot"])
-    actual_cursor_id = actual_before_id
-    committed_draft_ids = []
-    for draft_node in step["transitionNodes"]:
-        draft_node_id = draft_node["id"]
-        action = copy.deepcopy(draft_node.get("action") or {})
-        existing_id = _find_existing_child(game, actual_cursor_id, action)
-        if existing_id is None:
-            actual_child_id = create_node(
-                game,
-                actual_cursor_id,
-                action,
-                copy.deepcopy(draft_node["snapshot"]),
-            )
-        else:
-            actual_child_id = existing_id
-            game["nodes"][actual_child_id]["snapshot"] = copy.deepcopy(
-                draft_node["snapshot"]
-            )
-        attach_mainline(actual_cursor_id, actual_child_id)
-        game["currentNodeId"] = actual_child_id
-        promote_path_to_mainline(game, actual_child_id)
-        with PLAY_PREFETCH_RUNTIME.lock:
-            if PLAY_PREFETCH_RUNTIME.context is not context:
-                return None
-            context["nodeIdMap"][draft_node_id] = actual_child_id
-            context["committedNodeIds"].add(draft_node_id)
-        committed_draft_ids.append(draft_node_id)
-        actual_cursor_id = actual_child_id
-
-    game["currentNodeId"] = actual_cursor_id
-    if isinstance(step.get("afterMatchState"), dict):
-        game["matchState"] = copy.deepcopy(step["afterMatchState"])
-    if not step["transitionNodes"]:
-        with PLAY_PREFETCH_RUNTIME.lock:
-            context["committedNodeIds"].add(step["afterNodeId"])
-
-    for draft_node_id in committed_draft_ids or [step["afterNodeId"]]:
-        _commit_prefetched_opponent_result(context, draft_node_id)
-        _commit_prefetched_decision_result(context, draft_node_id)
-
-    return {
-        "committed": True,
-        **_play_prefetch_current_status(),
-    }
 
 
-def advance_game_with_prefetch(game):
-    snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-    if STATE.get("mode") != "play":
-        raise ValueError("Game actions are only available in play mode.")
-
-    if snapshot.get("phase") in ("game_end", "round_result"):
-        cancel_play_prefetch()
-        GAME_FLOW.advance(game)
-        start_play_prefetch()
-        return {
-            "committed": True,
-            **_play_prefetch_current_status(),
-        }
-    if snapshot.get("phase") == "match_end":
-        return {
-            "committed": False,
-            **_play_prefetch_current_status(),
-        }
-
-    committed = _commit_play_prefetch_step()
-    if committed is not None:
-        return committed
-
-    status = _play_prefetch_current_status()
-    if not status["waiting"] and not status["ready"] and not status.get("error"):
-        start_play_prefetch()
-        committed = _commit_play_prefetch_step()
-        if committed is not None:
-            return committed
-        status = _play_prefetch_current_status()
-
-    if status.get("error"):
-        cancel_play_prefetch()
-        GAME_FLOW.advance(game)
-        start_play_prefetch()
-        return {
-            "committed": True,
-            "fallback": True,
-            **_play_prefetch_current_status(),
-        }
-
-    return {
-        "committed": False,
-        **status,
-    }
 
 
 def advance_to_next_user_turn(game):
@@ -2792,7 +2329,7 @@ def submit_reaction_action(action_type, variant=None, candidate_id=None):
 
 def clear_loaded_analysis_caches():
     ensure_game_loaded()
-    cancel_play_prefetch()
+    PLAY_PREFETCH.cancel()
     game = STATE["game"]
     game_id = game.get("gameId")
 
@@ -2867,7 +2404,7 @@ RECORD_COMMANDS = record_commands.RecordCommands(
         ensure_writable=ensure_writable_game,
         round_root_for_node=resolve_round_root_id_for_node,
         collect_subtree_ids=collect_subtree_ids,
-        cancel_play_prefetch=cancel_play_prefetch,
+        cancel_play_prefetch=PLAY_PREFETCH.cancel,
         cancel_auto_analysis=AUTO_ANALYSIS.cancel,
         schedule_auto_reprioritization=AUTO_ANALYSIS.schedule_reprioritization,
         purge_background_analysis=DECISION_ANALYSIS.purge,
@@ -2908,7 +2445,7 @@ def handle_command(request_id, command, payload):
 
         if command == "create_game":
             RECORD_SESSION.create()
-            play_prefetch = start_play_prefetch()
+            play_prefetch = PLAY_PREFETCH.start()
             return build_response(
                 request_id,
                 command,
@@ -2952,12 +2489,12 @@ def handle_command(request_id, command, payload):
             next_mode = normalize_mode(payload.get("mode"))
             if next_mode == "play" and is_read_only_game():
                 raise ValueError("This replay has no complete wall and cannot enter play mode.")
-            cancel_play_prefetch()
+            PLAY_PREFETCH.cancel()
             STATE["mode"] = next_mode
             if STATE["gameLoaded"] and STATE["mode"] == "research":
                 OPPONENT_ANALYSIS.request_current(get_current_snapshot())
             elif STATE["gameLoaded"] and STATE["mode"] == "play":
-                start_play_prefetch()
+                PLAY_PREFETCH.start()
             return build_response(request_id, command)
 
         if command == "set_analysis_visibility":
@@ -2979,13 +2516,13 @@ def handle_command(request_id, command, payload):
                     OPPONENT_PREDICTIONS.cancel_pending()
 
             if STATE.get("mode") == "play" and STATE.get("gameLoaded"):
-                start_play_prefetch()
+                PLAY_PREFETCH.start()
             return build_response(request_id, command)
 
         if command == "request_seat_switch":
             seat = normalize_seat(payload.get("seat"))
             AUTO_ANALYSIS.cancel("主视角已切换")
-            cancel_play_prefetch()
+            PLAY_PREFETCH.cancel()
             STATE["pendingSeatSwitch"] = seat
             if STATE["gameLoaded"] and STATE["mode"] == "play":
                 advance_to_next_user_turn(STATE["game"])
@@ -2996,7 +2533,7 @@ def handle_command(request_id, command, payload):
                     normalize_current_tree_cursor(STATE["game"], STATE["controlledSeat"])
                     OPPONENT_ANALYSIS.request_current(get_current_snapshot())
             elif STATE["gameLoaded"]:
-                start_play_prefetch()
+                PLAY_PREFETCH.start()
             return build_response(request_id, command)
 
         if command == "toggle_visible_hands":
@@ -3012,7 +2549,7 @@ def handle_command(request_id, command, payload):
             ensure_play_mode()
             if STATE["game"].get("pendingReview"):
                 return build_response(request_id, command)
-            play_prefetch = advance_game_with_prefetch(STATE["game"])
+            play_prefetch = PLAY_PREFETCH.advance_game(STATE["game"])
             # Trigger asynchronous opponent analysis in research mode.
             if STATE.get("gameLoaded") and STATE.get("mode") == "research":
                 snapshot = get_current_snapshot()
@@ -3080,7 +2617,7 @@ def handle_command(request_id, command, payload):
 
         if command == "submit_user_action":
             ensure_play_mode()
-            cancel_play_prefetch()
+            PLAY_PREFETCH.cancel()
             action_type = payload.get("type")
             game = STATE["game"]
             if not game:
@@ -3120,7 +2657,7 @@ def handle_command(request_id, command, payload):
                 )
             else:
                 raise ValueError(f"Unsupported action phase for submit_user_action: {current_snapshot['phase']}")
-            play_prefetch = start_play_prefetch()
+            play_prefetch = PLAY_PREFETCH.start()
             return build_response(
                 request_id,
                 command,
@@ -3129,9 +2666,9 @@ def handle_command(request_id, command, payload):
 
         if command == "confirm_pending_review":
             ensure_play_mode()
-            cancel_play_prefetch()
+            PLAY_PREFETCH.cancel()
             finalize_pending_review(confirm_proposed=True)
-            play_prefetch = start_play_prefetch()
+            play_prefetch = PLAY_PREFETCH.start()
             return build_response(
                 request_id,
                 command,

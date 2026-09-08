@@ -9,7 +9,7 @@ import service
 
 class PlayPrefetchTest(unittest.TestCase):
     def setUp(self):
-        service.cancel_play_prefetch()
+        service.PLAY_PREFETCH.cancel()
         service.STATE["mode"] = "play"
         service.STATE["controlledSeat"] = 0
         service.STATE["pendingSeatSwitch"] = None
@@ -19,8 +19,8 @@ class PlayPrefetchTest(unittest.TestCase):
         service.STATE["game"] = service.create_empty_game(818181)
 
     def tearDown(self):
-        service.cancel_play_prefetch()
-        service.PLAY_PREFETCH_RUNTIME.local.game = None
+        service.PLAY_PREFETCH.cancel()
+        service.PLAY_PREFETCH.runtime.local.game = None
 
     def _install_context(self, draft_game):
         game = service.STATE["game"]
@@ -42,8 +42,8 @@ class PlayPrefetchTest(unittest.TestCase):
             "finished": False,
             "error": None,
         }
-        service.PLAY_PREFETCH_RUNTIME.context = context
-        service.PLAY_PREFETCH_RUNTIME.generation = context["generation"]
+        service.PLAY_PREFETCH.runtime.context = context
+        service.PLAY_PREFETCH.runtime.generation = context["generation"]
         return context
 
     def test_play_discard_defers_reaction_models(self):
@@ -325,14 +325,14 @@ class PlayPrefetchTest(unittest.TestCase):
             service.promote_path_to_mainline(target_game, child_id)
 
         with mock.patch.object(service.GAME_FLOW, "advance", side_effect=fake_advance):
-            step = service._capture_play_prefetch_step(context)
+            step = service.PLAY_PREFETCH._capture_step(context)
 
         self.assertIsNotNone(step)
         self.assertEqual(set(game["nodes"]), original_node_ids)
         self.assertEqual(game["currentNodeId"], base_node_id)
 
         context["steps"].append(step)
-        result = service._commit_play_prefetch_step()
+        result = service.PLAY_PREFETCH._commit_step()
 
         self.assertTrue(result["committed"])
         self.assertEqual(len(game["nodes"]), len(original_node_ids) + 1)
@@ -355,7 +355,7 @@ class PlayPrefetchTest(unittest.TestCase):
         context["steps"].append(step)
         game["nodes"][base_node_id]["snapshot"]["turn"] += 1
 
-        result = service._commit_play_prefetch_step()
+        result = service.PLAY_PREFETCH._commit_step()
 
         self.assertIsNone(result)
         self.assertIn("diverged", context["error"])
@@ -367,7 +367,7 @@ class PlayPrefetchTest(unittest.TestCase):
         self._install_context(draft_game)
         before = copy.deepcopy(game)
 
-        result = service.advance_game_with_prefetch(game)
+        result = service.PLAY_PREFETCH.advance_game(game)
 
         self.assertFalse(result["committed"])
         self.assertTrue(result["waiting"])
@@ -394,8 +394,8 @@ class PlayPrefetchTest(unittest.TestCase):
         draft_game = play_prefetch_runtime.create_draft(game)
         context = self._install_context(draft_game)
 
-        with mock.patch.object(service, "emit") as emit:
-            service._fail_play_prefetch(context, RuntimeError("test failure"))
+        with mock.patch.object(service.PLAY_PREFETCH.dependencies, "emit") as emit:
+            service.PLAY_PREFETCH._fail(context, RuntimeError("test failure"))
 
         self.assertTrue(context["finished"])
         self.assertFalse(context["running"])
@@ -437,7 +437,7 @@ class PlayPrefetchTest(unittest.TestCase):
             }
 
         with (
-            mock.patch.object(service._PLAY_PREFETCH_EXECUTOR, "submit"),
+            mock.patch.object(service.PLAY_PREFETCH.executor, "submit"),
             mock.patch.object(
                 service,
                 "choose_ai_action_for_current_node",
@@ -449,10 +449,10 @@ class PlayPrefetchTest(unittest.TestCase):
                 side_effect=pass_or_discard,
             ),
         ):
-            service.start_play_prefetch()
-            context = service.PLAY_PREFETCH_RUNTIME.context
+            service.PLAY_PREFETCH.start()
+            context = service.PLAY_PREFETCH.runtime.context
             self.assertIsNotNone(context)
-            service._run_play_prefetch(context["generation"])
+            service.PLAY_PREFETCH._run(context["generation"])
 
         self.assertTrue(context["finished"])
         self.assertGreater(len(context["steps"]), 1)
@@ -461,7 +461,7 @@ class PlayPrefetchTest(unittest.TestCase):
 
         committed_steps = 0
         while context["steps"]:
-            result = service._commit_play_prefetch_step()
+            result = service.PLAY_PREFETCH._commit_step()
             self.assertIsNotNone(result)
             committed_steps += 1
 

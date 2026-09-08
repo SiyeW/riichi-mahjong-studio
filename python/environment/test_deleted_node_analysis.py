@@ -33,7 +33,7 @@ class DeletedNodeAnalysisTests(unittest.TestCase):
         with patch.object(service.DECISION_ANALYSIS, '_tasks', {}), \
              patch.object(service.DECISION_ANALYSIS, '_completed', set()), \
              patch.object(service.DECISION_ANALYSIS, 'cache_key', return_value='test-key'), \
-             patch.object(service, 'play_prefetch_owns_decision', return_value=False), \
+             patch.object(service.PLAY_PREFETCH, 'owns_decision', return_value=False), \
              patch.object(service.DECISION_ANALYSIS.dependencies, 'auto_analysis_owns', return_value=False), \
              patch.object(service.ENGINE_MANAGEMENT, 'action_weight_path', return_value=''), \
              patch.object(service.DECISION_ANALYSIS.dependencies, 'build_mjai_stream_bundle', return_value={}), \

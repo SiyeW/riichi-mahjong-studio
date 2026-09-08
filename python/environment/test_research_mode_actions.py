@@ -13,14 +13,14 @@ class ResearchModeActionBoundaryTest(unittest.TestCase):
             "gameLoaded": service.STATE.get("gameLoaded"),
             "game": service.STATE.get("game"),
         }
-        service.cancel_play_prefetch()
+        service.PLAY_PREFETCH.cancel()
         service.STATE["mode"] = "research"
         service.STATE["controlledSeat"] = 0
         service.STATE["gameLoaded"] = True
         service.STATE["game"] = service.create_empty_game(260731)
 
     def tearDown(self):
-        service.cancel_play_prefetch()
+        service.PLAY_PREFETCH.cancel()
         service.STATE.update(self.previous)
 
     def test_gameplay_commands_cannot_mutate_the_tree(self):
