@@ -23,7 +23,7 @@ class GameRecordFormatTests(unittest.TestCase):
             patch.object(service, "attach_mainline"),
             patch.object(service, "promote_path_to_mainline"),
         ):
-            service._create_tsumo_node(game, {"hands": [["C"], [], [], []]}, 0)
+            service.GAME_FLOW.create_tsumo_node(game, {"hands": [["C"], [], [], []]}, 0)
 
         self.assertEqual(create_node.call_args.args[2]["pai"], "3m")
 

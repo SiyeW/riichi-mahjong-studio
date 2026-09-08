@@ -15,6 +15,7 @@ except ModuleNotFoundError:
 import auto_analysis_session
 import decision_analysis_session
 import engine_management
+import game_flow
 import game_setup
 import game_tree
 import legal_actions
@@ -262,6 +263,37 @@ ROUND_ACTIONS = round_actions.RoundActions(
         choose_ai_action=lambda *args, **kwargs: choose_ai_action_for_snapshot(
             *args, **kwargs
         ),
+    ),
+)
+
+
+GAME_FLOW = game_flow.GameFlow(
+    ROUND_ACTIONS,
+    ROUND_PROGRESSION,
+    game_flow.GameFlowDependencies(
+        controlled_seat=lambda: int(STATE["controlledSeat"]),
+        action_weight_path=ENGINE_MANAGEMENT.action_weight_path,
+        choose_ai_action=lambda *args, **kwargs: choose_ai_action_for_current_node(
+            *args, **kwargs
+        ),
+        build_legal_actions=lambda *args, **kwargs: build_legal_actions(
+            *args, **kwargs
+        ),
+        controlled_seat_has_pending_action=lambda snapshot: controlled_seat_has_pending_action(
+            snapshot
+        ),
+        apply_pending_seat_switch=lambda snapshot: apply_pending_seat_switch_if_ready(
+            snapshot
+        ),
+        materialize_automatic_reaction_decisions=lambda *args, **kwargs: _materialize_automatic_reaction_decisions(
+            *args, **kwargs
+        ),
+        create_node=lambda *args, **kwargs: create_node(*args, **kwargs),
+        attach_mainline=lambda *args, **kwargs: attach_mainline(*args, **kwargs),
+        promote_mainline=lambda *args, **kwargs: promote_path_to_mainline(
+            *args, **kwargs
+        ),
+        debug=debug_flow,
     ),
 )
 
@@ -1392,127 +1424,6 @@ def build_runtime_memory_metrics():
     }
 
 
-def choose_ai_discard(snapshot, actor):
-    sync_snapshot_state(snapshot)
-    model_path = ENGINE_MANAGEMENT.action_weight_path()
-    can_use_drawn_tile_options = actor_just_drew(snapshot, actor)
-    response = choose_ai_action_for_current_node(snapshot, actor, model_path)
-    requested_tsumogiri = response.get("tsumogiri") if isinstance(response.get("tsumogiri"), bool) else None
-    used_fallback = False
-    debug_flow(f"[FLOW] choose_ai_discard actor={actor} can_use_drawn={can_use_drawn_tile_options} response_type={response.get('type')} pai={response.get('pai')}")
-    if (
-        can_use_drawn_tile_options
-        and response.get("type") == "reach"
-        and can_declare_riichi(snapshot, actor)
-    ):
-        return {"type": "reach", "actor": actor}
-
-    if can_use_drawn_tile_options and response.get("type") in ("ankan", "kakan"):
-        debug_flow("[FLOW] choose_ai_discard returning kan action")
-        return copy.deepcopy(response)
-
-    if response.get("type") in ("none", "pon", "chi", "daiminkan", "reach", "ankan", "kakan"):
-        debug_flow(f"[FLOW] choose_ai_discard FALLBACK from type={response.get('type')}")
-        fallback_tile = None
-        if snapshot.get("actionHistory"):
-            last_action = snapshot["actionHistory"][-1]
-            if last_action.get("type") == "tsumo" and last_action.get("actor") == actor:
-                candidate = str(last_action.get("pai") or "")
-                if candidate in snapshot["hands"][actor]:
-                    fallback_tile = candidate
-        if fallback_tile is None and snapshot["hands"][actor]:
-            fallback_tile = snapshot["hands"][actor][-1]
-        if fallback_tile is None:
-            raise ValueError(f"AI actor {actor} had no fallback discard after invalid discard-phase response: {response}")
-        response = {
-            "type": "dahai",
-            "actor": actor,
-            "pai": fallback_tile,
-            "meta": {
-                "fallback": True,
-                "original": copy.deepcopy(response),
-            },
-        }
-        used_fallback = True
-
-    if can_use_drawn_tile_options and response.get("type") == "hora":
-        winning_tile = None
-        if snapshot.get("actionHistory"):
-            last_action = snapshot["actionHistory"][-1]
-            if last_action.get("type") == "tsumo" and last_action.get("actor") == actor:
-                winning_tile = str(last_action.get("pai") or "")
-        if winning_tile and can_declare_tsumo(snapshot, actor):
-            try:
-                compute_hora_result(copy.deepcopy(snapshot), actor, actor, winning_tile, True)
-                return {
-                    "type": "hora",
-                    "actor": actor,
-                    "pai": winning_tile,
-                }
-            except Exception:  # pylint: disable=broad-except
-                pass
-        response = {
-            "type": "none",
-            "actor": actor,
-            "variant": "none",
-            "label": "Pass",
-            "meta": {
-                "skip_reason": "invalid_self_hora",
-            },
-        }
-
-    if response.get("type") != "dahai":
-        fallback_tile = None
-        if snapshot.get("actionHistory"):
-            last_action = snapshot["actionHistory"][-1]
-            if last_action.get("type") == "tsumo" and last_action.get("actor") == actor:
-                candidate = str(last_action.get("pai") or "")
-                if candidate in snapshot["hands"][actor]:
-                    fallback_tile = candidate
-        if fallback_tile is None and snapshot["hands"][actor]:
-            fallback_tile = snapshot["hands"][actor][-1]
-        if fallback_tile is None:
-            raise ValueError(f"Unsupported AI response for current discard flow: {response}")
-        response = {
-            "type": "dahai",
-            "actor": actor,
-            "pai": fallback_tile,
-            "meta": {
-                "fallback": True,
-                "original": copy.deepcopy(response),
-            },
-        }
-        used_fallback = True
-    tile = response.get("pai")
-    if tile not in snapshot["hands"][actor]:
-        normalized = str(tile).replace("5m", "5mr").replace("5p", "5pr").replace("5s", "5sr")
-        if normalized in snapshot["hands"][actor]:
-            tile = normalized
-    if tile not in snapshot["hands"][actor]:
-        fallback_tile = None
-        if snapshot.get("actionHistory"):
-            last_action = snapshot["actionHistory"][-1]
-            if last_action.get("type") == "tsumo" and last_action.get("actor") == actor:
-                candidate = str(last_action.get("pai") or "")
-                if candidate in snapshot["hands"][actor]:
-                    fallback_tile = candidate
-        if fallback_tile is None and snapshot["hands"][actor]:
-            fallback_tile = snapshot["hands"][actor][-1]
-        if fallback_tile is None:
-            raise ValueError(f"AI selected tile {tile} not present in hand for actor {actor}.")
-        tile = fallback_tile
-        used_fallback = True
-    return {
-        "type": "dahai",
-        "actor": actor,
-        "pai": tile,
-        "tsumogiri": ROUND_ACTIONS.resolve_discard_tsumogiri(
-            snapshot,
-            actor,
-            tile,
-            None if used_fallback else requested_tsumogiri,
-        ),
-    }
 
 
 def find_user_reaction_response(snapshot, action_type):
@@ -1800,566 +1711,16 @@ def create_reaction_child_snapshot(parent_snapshot, action_type, variant=None, c
     return next_snapshot, selected, action
 
 
-def _create_tsumo_node(game, parent_snapshot, actor, source="wall"):
-    """Create a TSUMO child node: draw a tile for the actor, transitioning to discard phase."""
-    next_snapshot = copy.deepcopy(parent_snapshot)
-    drawn_tile = ROUND_ACTIONS.draw_tile(next_snapshot, actor, source=source)
-    next_snapshot["pendingRinshanDraw"] = False
-    next_snapshot["phase"] = "discard"
-    persist_snapshot_state(next_snapshot)
-    action = {
-        "type": "tsumo",
-        "actor": actor,
-        "pai": drawn_tile,
-    }
-    if source != "wall":
-        action["source"] = source
-    parent_id = game["currentNodeId"]
-    child_id = create_node(game, parent_id, action, next_snapshot)
-    attach_mainline(parent_id, child_id)
-    game["currentNodeId"] = child_id
-    promote_path_to_mainline(game, child_id)
 
 
-def _advance_reaction_window(game, snapshot):
-    """Resolve reaction window by creating child nodes for the resolved action.
-
-    The parent (DAHAI) node's snapshot is NOT mutated. Child nodes capture
-    the post-reaction state.
-
-    Riichi acceptance (reach_accepted) is handled while applying the reaction.
-    Rule timing: before the next draw (none) or before the meld.
-    (pon/chi/daiminkan). Hora (ron) does NOT accept riichi.
-    """
-    apply_pending_seat_switch_if_ready(snapshot)
-    reaction_window = snapshot.get("reactionWindow")
-    if not isinstance(reaction_window, dict) or not isinstance(
-        reaction_window.get("selected"), dict
-    ):
-        snapshot["reactionWindow"] = ROUND_ACTIONS.evaluate_reactions(snapshot)
-    if controlled_seat_has_pending_action(snapshot):
-        return
-
-    selected = snapshot["reactionWindow"]["selected"]
-    resolution_snapshot = _materialize_automatic_reaction_decisions(game, snapshot, selected)
-    next_snapshot = copy.deepcopy(resolution_snapshot)
-    selected = next_snapshot["reactionWindow"]["selected"]
-    response = selected["response"]
-    action_type = response.get("type", "none")
-
-    # Applying the reaction already resolves any pending riichi acceptance.
-    ROUND_ACTIONS.apply_reaction_action(next_snapshot, selected)
-
-    if next_snapshot["phase"] == "game_end":
-        last = next_snapshot.get("lastAction") or {}
-        if last.get("type") == "ryukyoku":
-            action = {
-                "type": "ryukyoku",
-                "actor": last.get("actor", selected["seat"]),
-                "reason": last.get("reason"),
-                "reasonLabel": last.get("reasonLabel"),
-            }
-        else:
-            # Hora (ron) – riichi is NOT accepted when the declaration tile is
-            # ron'd, so no reach_accepted node is created and no bet is collected.
-            action = {
-                "type": "hora",
-                "actor": last.get("actor", selected["seat"]),
-                "target": last.get("target"),
-                "pai": last.get("pai"),
-            }
-        parent_id = game["currentNodeId"]
-        child_id = create_node(game, parent_id, action, next_snapshot)
-        attach_mainline(parent_id, child_id)
-        game["currentNodeId"] = child_id
-        promote_path_to_mainline(game, child_id)
-        return
-
-    if action_type == "none":
-        actor = next_snapshot["currentActor"]
-        if len(next_snapshot["hands"][actor]) % 3 != 2:
-            if not ROUND_PROGRESSION.has_wall_draw_available(next_snapshot):
-                ROUND_PROGRESSION.mark_exhaustive_ryukyoku(next_snapshot)
-                last = next_snapshot.get("lastAction") or {}
-                action = {
-                    "type": "ryukyoku",
-                    "actor": next_snapshot.get("dealer", 0),
-                    "reason": last.get("reason"),
-                    "reasonLabel": last.get("reasonLabel"),
-                }
-                parent_id = game["currentNodeId"]
-                child_id = create_node(game, parent_id, action, next_snapshot)
-                attach_mainline(parent_id, child_id)
-                game["currentNodeId"] = child_id
-                promote_path_to_mainline(game, child_id)
-                ROUND_PROGRESSION.advance_terminal_round(game)
-                return
-            ROUND_ACTIONS.draw_one(next_snapshot, actor)
-        action = {
-            "type": "tsumo",
-            "actor": actor,
-            "pai": next_snapshot["hands"][actor][-1] if next_snapshot["hands"][actor] else "",
-        }
-    else:
-        # pon, chi, daiminkan
-        action = copy.deepcopy(response)
-        parent_id = game["currentNodeId"]
-        child_id = create_node(game, parent_id, action, next_snapshot)
-        attach_mainline(parent_id, child_id)
-        game["currentNodeId"] = child_id
-        promote_path_to_mainline(game, child_id)
-        return
-
-    parent_id = game["currentNodeId"]
-    child_id = create_node(game, parent_id, action, next_snapshot)
-    attach_mainline(parent_id, child_id)
-    game["currentNodeId"] = child_id
-    promote_path_to_mainline(game, child_id)
 
 
-def _advance_kan_reaction_window(game, snapshot):
-    """Resolve kan reaction window by creating a child node."""
-    apply_pending_seat_switch_if_ready(snapshot)
-    reaction_window = snapshot.get("kanReactionWindow")
-    if not isinstance(reaction_window, dict) or not isinstance(
-        reaction_window.get("selected"), dict
-    ):
-        snapshot["kanReactionWindow"] = ROUND_ACTIONS.build_kan_reaction_window(
-            snapshot
-        )
-    if controlled_seat_has_pending_action(snapshot):
-        return
-
-    selected = snapshot["kanReactionWindow"]["selected"]
-    resolution_snapshot = _materialize_automatic_reaction_decisions(game, snapshot, selected)
-    next_snapshot = copy.deepcopy(resolution_snapshot)
-    selected = next_snapshot["kanReactionWindow"]["selected"]
-    response = selected["response"]
-    action_type = response.get("type", "none")
-
-    ROUND_ACTIONS.apply_reaction_action(next_snapshot, selected)
-
-    if next_snapshot["phase"] == "game_end":
-        last = next_snapshot.get("lastAction") or {}
-        if last.get("type") == "ryukyoku":
-            action = {
-                "type": "ryukyoku",
-                "actor": last.get("actor", selected["seat"]),
-                "reason": last.get("reason"),
-                "reasonLabel": last.get("reasonLabel"),
-            }
-        else:
-            action = {
-                "type": "hora",
-                "actor": last.get("actor", selected["seat"]),
-                "target": last.get("target"),
-                "pai": last.get("pai"),
-            }
-        parent_id = game["currentNodeId"]
-        child_id = create_node(game, parent_id, action, next_snapshot)
-        attach_mainline(parent_id, child_id)
-        game["currentNodeId"] = child_id
-        promote_path_to_mainline(game, child_id)
-        return
-
-    if action_type == "none":
-        actor = next_snapshot["currentActor"]
-        ROUND_ACTIONS.draw_tile(next_snapshot, actor, source="rinshan")
-        next_snapshot["pendingRinshanDraw"] = False
-        next_snapshot["phase"] = "discard"
-        persist_snapshot_state(next_snapshot)
-        action = {
-            "type": "tsumo",
-            "actor": actor,
-            "pai": next_snapshot["hands"][actor][-1],
-            "source": "rinshan",
-        }
-    else:
-        action = copy.deepcopy(response)
-
-    parent_id = game["currentNodeId"]
-    child_id = create_node(game, parent_id, action, next_snapshot)
-    attach_mainline(parent_id, child_id)
-    game["currentNodeId"] = child_id
-    promote_path_to_mainline(game, child_id)
 
 
-def _process_ai_discard(game, snapshot, actor):
-    """Compute AI discard action and create the appropriate child node."""
-    debug_flow(f"[FLOW] _process_ai_discard actor={actor} phase={snapshot.get('phase')} hand_len={len(snapshot['hands'][actor])}")
-    ai_action = choose_ai_discard(snapshot, actor)
-    debug_flow(f"[FLOW] _process_ai_discard ai_action type={ai_action.get('type')} pai={ai_action.get('pai')} riichi={ai_action.get('riichi')}")
-
-    if ai_action["type"] == "hora":
-        next_snapshot = copy.deepcopy(snapshot)
-        if ai_action.get("riichi"):
-            next_snapshot["pendingRiichiSeat"] = actor
-            if "kyokuState" in next_snapshot:
-                next_snapshot["kyokuState"]["pendingRiichiSeat"] = actor
-            next_snapshot["riichiDeclared"][actor] = True
-            next_snapshot["actionHistory"].append({"type": "reach", "actor": actor})
-            ROUND_PROGRESSION.accept_riichi_for_seat(
-                next_snapshot,
-                actor,
-                clear_pending=True,
-            )
-        ROUND_PROGRESSION.promote_delayed_dora_reveal(next_snapshot)
-        ROUND_PROGRESSION.reveal_all_pending_dora(next_snapshot)
-        result = compute_hora_result(next_snapshot, actor, actor, str(ai_action.get("pai") or ""), True)
-        next_snapshot["pendingDiscard"] = None
-        next_snapshot["reactionWindow"] = None
-        next_snapshot["phase"] = "game_end"
-        next_snapshot["currentActor"] = actor
-        next_snapshot["lastAction"] = {
-            "type": "hora",
-            "actor": actor,
-            "target": actor,
-            "pai": str(ai_action.get("pai") or ""),
-            "isTsumo": True,
-            "deltas": copy.deepcopy(result["deltas"]),
-            "uraMarkers": copy.deepcopy(result["uraMarkers"]),
-            "han": result.get("han"),
-            "fu": result.get("fu"),
-            "yaku": copy.deepcopy(result.get("yaku", [])),
-            "yakuDetails": copy.deepcopy(result.get("yakuDetails", [])),
-            "isOpenHand": result.get("isOpenHand"),
-            "cost": copy.deepcopy(result.get("cost", {})),
-        }
-        next_snapshot["actionHistory"].append({
-            "type": "hora",
-            "actor": actor,
-            "target": actor,
-            "pai": str(ai_action.get("pai") or ""),
-        })
-        persist_snapshot_state(next_snapshot)
-        action = {
-            "type": "hora",
-            "actor": actor,
-            "target": actor,
-            "pai": str(ai_action.get("pai") or ""),
-            "variant": "tsumo",
-            "source": "ai",
-        }
-        if ai_action.get("riichi"):
-            action["riichi"] = True
-        parent_id = game["currentNodeId"]
-        child_id = create_node(game, parent_id, action, next_snapshot)
-        attach_mainline(parent_id, child_id)
-        game["currentNodeId"] = child_id
-        promote_path_to_mainline(game, child_id)
-        return
-
-    if ai_action["type"] in ("ankan", "kakan"):
-        next_snapshot = copy.deepcopy(snapshot)
-        ROUND_ACTIONS.apply_self_kan_action(next_snapshot, ai_action)
-        action = copy.deepcopy(ai_action)
-        action["source"] = "ai"
-        parent_id = game["currentNodeId"]
-        child_id = create_node(game, parent_id, action, next_snapshot)
-        attach_mainline(parent_id, child_id)
-        game["currentNodeId"] = child_id
-        promote_path_to_mainline(game, child_id)
-        if next_snapshot["phase"] != "game_end":
-            return
-        ROUND_PROGRESSION.advance_terminal_round(game)
-        return
-
-    if ai_action["type"] == "reach":
-        next_snapshot = copy.deepcopy(snapshot)
-        sync_snapshot_state(next_snapshot)
-        next_snapshot["pendingRiichiSeat"] = actor
-        if "kyokuState" in next_snapshot:
-            next_snapshot["kyokuState"]["pendingRiichiSeat"] = actor
-        next_snapshot["riichiDeclared"][actor] = True
-        next_snapshot["actionHistory"].append({"type": "reach", "actor": actor})
-        next_snapshot["lastAction"] = {"type": "reach", "actor": actor}
-        next_snapshot["phase"] = "reach_declaration"
-        next_snapshot["pendingDiscard"] = None
-        next_snapshot["reactionWindow"] = None
-        persist_snapshot_state(next_snapshot)
-        action = {
-            "type": "reach",
-            "variant": "declare",
-            "actor": actor,
-            "source": "ai",
-        }
-        parent_id = game["currentNodeId"]
-        child_id = create_node(game, parent_id, action, next_snapshot)
-        attach_mainline(parent_id, child_id)
-        game["currentNodeId"] = child_id
-        promote_path_to_mainline(game, child_id)
-        return
-
-    if snapshot.get("riichiDiscardState") == "ankan_choice":
-        skip_action = next(
-            (
-                copy.deepcopy(candidate)
-                for candidate in build_legal_actions(snapshot, controlled_seat=actor)
-                if candidate.get("type") == "none"
-            ),
-            None,
-        )
-        if skip_action is not None:
-            skip_action.pop("id", None)
-            skip_action["decisionOnly"] = True
-            skip_action["source"] = "ai"
-            skip_snapshot = copy.deepcopy(snapshot)
-            skip_snapshot["riichiDiscardState"] = None
-            persist_snapshot_state(skip_snapshot)
-            parent_id = game["currentNodeId"]
-            skip_id = create_node(game, parent_id, skip_action, skip_snapshot)
-            attach_mainline(parent_id, skip_id)
-            game["currentNodeId"] = skip_id
-            promote_path_to_mainline(game, skip_id)
-            snapshot = skip_snapshot
-
-    discard_tile = ai_action["pai"]
-    tsumogiri = bool(ai_action.get("tsumogiri"))
-    next_snapshot = copy.deepcopy(snapshot)
-    ROUND_ACTIONS.apply_discard(
-        next_snapshot,
-        actor,
-        discard_tile,
-        from_drawn=tsumogiri,
-    )
-    next_snapshot["reactionWindow"] = None
-    action = {
-        "type": "dahai",
-        "actor": actor,
-        "pai": discard_tile,
-        "tsumogiri": tsumogiri,
-        "source": "ai",
-    }
-    parent_id = game["currentNodeId"]
-    child_id = create_node(game, parent_id, action, next_snapshot)
-    attach_mainline(parent_id, child_id)
-    game["currentNodeId"] = child_id
-    promote_path_to_mainline(game, child_id)
 
 
-def _process_riichi_auto_tsumogiri(game, snapshot, actor):
-    """Auto-discard the drawn tile as tsumogiri for a riichi'd player."""
-    hand = list(snapshot.get("hands", [])[actor])
-    action_history = snapshot.get("actionHistory") or []
-    last_action = action_history[-1] if action_history else {}
-    drawn_tile = last_action.get("pai", "") if last_action.get("type") == "tsumo" and last_action.get("actor") == actor else ""
-    if not drawn_tile and hand:
-        drawn_tile = hand[-1]
-    if not drawn_tile:
-        raise ValueError("Cannot determine drawn tile for riichi auto-tsumogiri.")
-
-    next_snapshot = copy.deepcopy(snapshot)
-    next_snapshot["riichiDiscardState"] = None
-    ROUND_ACTIONS.apply_discard(next_snapshot, actor, drawn_tile)
-    next_snapshot["reactionWindow"] = None
-
-    action = {
-        "type": "dahai",
-        "actor": actor,
-        "pai": drawn_tile,
-        "tsumogiri": True,
-        "source": "riichi_auto",
-    }
-
-    parent_id = game["currentNodeId"]
-    child_id = create_node(game, parent_id, action, next_snapshot)
-    attach_mainline(parent_id, child_id)
-    game["currentNodeId"] = child_id
-    promote_path_to_mainline(game, child_id)
 
 
-def advance_game_flow(game):
-    """Process exactly one mjai action per call, creating a tree node for each frame."""
-    current_snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-
-    if current_snapshot["phase"] == "match_end":
-        return
-
-    if current_snapshot["phase"] == "game_end":
-        ROUND_PROGRESSION.advance_terminal_round(game)
-        return
-
-    if current_snapshot["phase"] == "round_result":
-        match_state = game.get("matchState") or {}
-        last_result = (current_snapshot.get("lastAction") or {}).get("result") or {}
-        round_result_stub = {
-            "canRenchan": bool(last_result.get("canRenchan", False)),
-            "hasHora": bool(last_result.get("hasHora", False)),
-            "hasAbortiveRyukyoku": bool(last_result.get("hasAbortiveRyukyoku", False)),
-            "eventType": last_result.get("eventType"),
-            "eventData": copy.deepcopy(last_result.get("eventData") or {}),
-            "scores": copy.deepcopy(last_result.get(
-                "scores",
-                current_snapshot.get("scores", [25000, 25000, 25000, 25000]),
-            )),
-            "kyotakuLeft": int(last_result.get("kyotakuLeft", current_snapshot.get("kyotaku", 0))),
-        }
-        if match_state.get("ended"):
-            game["currentNodeId"] = ROUND_PROGRESSION.ensure_match_end_node(
-                game,
-                game["currentNodeId"],
-                current_snapshot,
-                round_result_stub,
-                match_state,
-            )
-        else:
-            next_kyoku_snapshot = ROUND_PROGRESSION.create_next_kyoku_snapshot(
-                current_snapshot,
-                match_state,
-            )
-            ROUND_PROGRESSION.commit_system_transition(
-                game,
-                game["currentNodeId"],
-                {
-                    "type": "start_kyoku",
-                    "source": "system",
-                    "bakaze": match_state.get("bakaze", "E"),
-                    "kyoku": match_state.get("kyoku", 1),
-                },
-                next_kyoku_snapshot,
-            )
-        return
-
-    if current_snapshot["phase"] == "reach_declaration":
-        if current_snapshot["currentActor"] == STATE["controlledSeat"]:
-            return
-        actor = current_snapshot["currentActor"]
-        model_path = ENGINE_MANAGEMENT.action_weight_path()
-        response = choose_ai_action_for_current_node(current_snapshot, actor, model_path)
-        debug_flow(f"[FLOW] advance reach_declaration AI actor={actor} response_type={response.get('type')} pai={response.get('pai')}")
-
-        tile = response.get("pai") if response.get("type") == "dahai" else None
-        used_fallback = response.get("type") != "dahai"
-        requested_tsumogiri = response.get("tsumogiri") if isinstance(response.get("tsumogiri"), bool) else None
-        if not tile or tile not in current_snapshot["hands"][actor]:
-            normalized = str(tile or "").replace("5m", "5mr").replace("5p", "5pr").replace("5s", "5sr")
-            if normalized in current_snapshot["hands"][actor]:
-                tile = normalized
-        if not tile or tile not in current_snapshot["hands"][actor]:
-            if current_snapshot.get("actionHistory"):
-                last_action = current_snapshot["actionHistory"][-1]
-                if last_action.get("type") == "tsumo" and last_action.get("actor") == actor:
-                    candidate = str(last_action.get("pai") or "")
-                    if candidate in current_snapshot["hands"][actor]:
-                        tile = candidate
-                        used_fallback = True
-        if not tile or tile not in current_snapshot["hands"][actor]:
-            tile = current_snapshot["hands"][actor][-1] if current_snapshot["hands"][actor] else None
-            used_fallback = True
-        if not tile:
-            raise ValueError(f"AI reach_declaration: no valid discard tile for actor {actor}")
-
-        tsumogiri = ROUND_ACTIONS.resolve_discard_tsumogiri(
-            current_snapshot,
-            actor,
-            tile,
-            None if used_fallback else requested_tsumogiri,
-        )
-
-        next_snapshot = copy.deepcopy(current_snapshot)
-        sync_snapshot_state(next_snapshot)
-        ROUND_ACTIONS.materialize_reach_declaration_discard(
-            next_snapshot,
-            actor,
-            tile,
-            tsumogiri,
-        )
-        persist_snapshot_state(next_snapshot)
-        next_snapshot["reactionWindow"] = None
-        action = {
-            "type": "dahai",
-            "actor": actor,
-            "pai": tile,
-            "tsumogiri": tsumogiri,
-            "riichi": True,
-            "source": "ai",
-        }
-        parent_id = game["currentNodeId"]
-        child_id = create_node(game, parent_id, action, next_snapshot)
-        attach_mainline(parent_id, child_id)
-        game["currentNodeId"] = child_id
-        promote_path_to_mainline(game, child_id)
-        return
-
-    if ROUND_PROGRESSION.has_immediate_dora_reveal(current_snapshot):
-        next_snapshot = copy.deepcopy(current_snapshot)
-        ROUND_PROGRESSION.consume_immediate_dora_reveal(next_snapshot)
-        ROUND_PROGRESSION.reveal_next_dora(next_snapshot)
-        ROUND_PROGRESSION.maybe_mark_abortive_ryukyoku(next_snapshot)
-        persist_snapshot_state(next_snapshot)
-        action = copy.deepcopy(next_snapshot.get("lastAction") or {"type": "dora", "actor": current_snapshot.get("currentActor", 0)})
-        parent_id = game["currentNodeId"]
-        child_id = create_node(game, parent_id, action, next_snapshot)
-        attach_mainline(parent_id, child_id)
-        game["currentNodeId"] = child_id
-        promote_path_to_mainline(game, child_id)
-        return
-
-    if current_snapshot.get("pendingRinshanDraw") and current_snapshot["phase"] == "draw_or_discard":
-        actor = current_snapshot["currentActor"]
-        _create_tsumo_node(game, current_snapshot, actor, source="rinshan")
-        return
-
-    if current_snapshot["phase"] == "reaction_window":
-        _advance_reaction_window(game, current_snapshot)
-        return
-
-    if current_snapshot["phase"] == "kan_reaction_window":
-        _advance_kan_reaction_window(game, current_snapshot)
-        return
-
-    apply_pending_seat_switch_if_ready(current_snapshot)
-    actor = current_snapshot["currentActor"]
-
-    if current_snapshot["phase"] == "draw_or_discard":
-        if len(current_snapshot["hands"][actor]) % 3 == 2:
-            current_snapshot["phase"] = "discard"
-        else:
-            if not ROUND_PROGRESSION.has_wall_draw_available(current_snapshot):
-                ROUND_PROGRESSION.mark_exhaustive_ryukyoku(current_snapshot)
-                ROUND_PROGRESSION.advance_terminal_round(game)
-                return
-            _create_tsumo_node(game, current_snapshot, actor)
-            return
-
-    if actor == STATE["controlledSeat"] and current_snapshot["phase"] == "discard":
-        if current_snapshot.get("riichiAccepted", [False, False, False, False])[actor]:
-            if actor_just_drew(current_snapshot, actor) and can_declare_tsumo(current_snapshot, actor):
-                debug_flow(f"[FLOW] advance_game_flow WAIT_USER riichi tsumo available actor={actor}")
-                return
-
-            riichi_state = current_snapshot.get("riichiDiscardState")
-            if riichi_state == "ankan_choice":
-                current_snapshot["riichiDiscardState"] = None
-                _process_riichi_auto_tsumogiri(game, current_snapshot, actor)
-                return
-            if riichi_state != "pending_pause":
-                current_snapshot["riichiDiscardState"] = "pending_pause"
-                return
-            if can_ankan(current_snapshot, actor):
-                current_snapshot["riichiDiscardState"] = "ankan_choice"
-                return
-            current_snapshot["riichiDiscardState"] = None
-            _process_riichi_auto_tsumogiri(game, current_snapshot, actor)
-            return
-
-        debug_flow(f"[FLOW] advance_game_flow WAIT_USER phase={current_snapshot['phase']} actor={actor}")
-        return
-
-    if current_snapshot["phase"] != "discard":
-        return
-
-    if current_snapshot.get("riichiAccepted", [False, False, False, False])[actor]:
-        if actor_just_drew(current_snapshot, actor) and can_declare_tsumo(current_snapshot, actor):
-            pass  # fall through to the decision engine — AI needs to decide tsumo
-        elif can_ankan(current_snapshot, actor):
-            pass  # fall through to the decision engine — AI needs to decide ankan
-        else:
-            _process_riichi_auto_tsumogiri(game, current_snapshot, actor)
-            return
-
-    debug_flow(f"[FLOW] advance_game_flow -> _process_ai_discard phase={current_snapshot['phase']} actor={actor}")
-    _process_ai_discard(game, current_snapshot, actor)
 
 
 def _play_prefetch_is_user_barrier(snapshot):
@@ -2675,7 +2036,7 @@ def _run_play_prefetch_decision(context, draft_node_id):
 
 
 def _capture_play_prefetch_step(context):
-    return PLAY_PREFETCH_RUNTIME.capture_step(context, advance_game_flow)
+    return PLAY_PREFETCH_RUNTIME.capture_step(context, GAME_FLOW.advance)
 
 
 def _run_play_prefetch(generation):
@@ -2846,7 +2207,7 @@ def advance_game_with_prefetch(game):
 
     if snapshot.get("phase") in ("game_end", "round_result"):
         cancel_play_prefetch()
-        advance_game_flow(game)
+        GAME_FLOW.advance(game)
         start_play_prefetch()
         return {
             "committed": True,
@@ -2872,7 +2233,7 @@ def advance_game_with_prefetch(game):
 
     if status.get("error"):
         cancel_play_prefetch()
-        advance_game_flow(game)
+        GAME_FLOW.advance(game)
         start_play_prefetch()
         return {
             "committed": True,
@@ -2887,7 +2248,7 @@ def advance_game_with_prefetch(game):
 
 
 def advance_to_next_user_turn(game):
-    advance_game_flow(game)
+    GAME_FLOW.advance(game)
 
 
 def _reuse_or_review_existing_child(
@@ -3368,7 +2729,7 @@ def submit_riichi_ankan_skip():
     attach_mainline(parent_id, child_id)
     game["currentNodeId"] = child_id
     promote_path_to_mainline(game, child_id)
-    _process_riichi_auto_tsumogiri(game, next_snapshot, actor)
+    GAME_FLOW.process_riichi_auto_tsumogiri(game, next_snapshot, actor)
 
 
 def submit_reaction_action(action_type, variant=None, candidate_id=None):

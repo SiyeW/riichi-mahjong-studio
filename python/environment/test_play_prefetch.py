@@ -173,7 +173,7 @@ class PlayPrefetchTest(unittest.TestCase):
             "choose_ai_action_for_current_node",
             return_value={"type": "dahai", "actor": actor, "pai": "F", "tsumogiri": True},
         ):
-            service._process_ai_discard(game, snapshot, actor)
+            service.GAME_FLOW.process_ai_discard(game, snapshot, actor)
 
         child = game["nodes"][game["currentNodeId"]]
         self.assertTrue(child["action"]["tsumogiri"])
@@ -187,11 +187,11 @@ class PlayPrefetchTest(unittest.TestCase):
         snapshot["currentActor"] = actor
 
         with mock.patch.object(
-            service,
+            service.GAME_FLOW,
             "choose_ai_discard",
             return_value={"type": "reach", "actor": actor},
         ):
-            service._process_ai_discard(game, snapshot, actor)
+            service.GAME_FLOW.process_ai_discard(game, snapshot, actor)
 
         child = game["nodes"][game["currentNodeId"]]
         self.assertEqual(child["action"]["type"], "reach")
@@ -222,7 +222,7 @@ class PlayPrefetchTest(unittest.TestCase):
 
     def test_live_discard_reuses_matching_imported_replay_child_with_live_snapshot(self):
         game = service.STATE["game"]
-        service.advance_game_flow(game)
+        service.GAME_FLOW.advance(game)
         parent_id = game["currentNodeId"]
         snapshot = game["nodes"][parent_id]["snapshot"]
         tile = snapshot["hands"][0][0]
@@ -254,7 +254,7 @@ class PlayPrefetchTest(unittest.TestCase):
 
     def test_display_only_reaction_window_is_recomputed_before_advance(self):
         game = service.STATE["game"]
-        service.advance_game_flow(game)
+        service.GAME_FLOW.advance(game)
         snapshot = service.get_current_snapshot()
         tile = snapshot["hands"][0][0]
         next_snapshot, action = service.create_user_discard_child_snapshot(
@@ -291,7 +291,7 @@ class PlayPrefetchTest(unittest.TestCase):
             "evaluate_reactions",
             return_value=resolved_window,
         ) as evaluate:
-            service._advance_reaction_window(game, next_snapshot)
+            service.GAME_FLOW.advance_reaction_window(game, next_snapshot)
 
         evaluate.assert_called_once_with(next_snapshot)
         self.assertNotEqual(game["currentNodeId"], child_id)
@@ -324,7 +324,7 @@ class PlayPrefetchTest(unittest.TestCase):
             target_game["currentNodeId"] = child_id
             service.promote_path_to_mainline(target_game, child_id)
 
-        with mock.patch.object(service, "advance_game_flow", side_effect=fake_advance):
+        with mock.patch.object(service.GAME_FLOW, "advance", side_effect=fake_advance):
             step = service._capture_play_prefetch_step(context)
 
         self.assertIsNotNone(step)
@@ -407,7 +407,7 @@ class PlayPrefetchTest(unittest.TestCase):
     def test_real_flow_prefetches_until_next_user_decision(self):
         game = service.STATE["game"]
         service.STATE["decisionRecommendationsEnabled"] = False
-        service.advance_game_flow(game)
+        service.GAME_FLOW.advance(game)
         draw_node_id = game["currentNodeId"]
         snapshot = game["nodes"][draw_node_id]["snapshot"]
         self.assertEqual(snapshot["phase"], "discard")

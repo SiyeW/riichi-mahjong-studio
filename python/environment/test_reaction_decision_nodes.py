@@ -93,7 +93,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         service.STATE["game"] = game
 
         with mock.patch.object(service.ROUND_ACTIONS, "can_resolve_hora_reaction", return_value=False):
-            service._advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
+            service.GAME_FLOW.advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
 
         pass_id = game["nodes"][discard_id]["mainChildId"]
         pass_node = game["nodes"][pass_id]
@@ -123,7 +123,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
                 controlled_seat=2,
             )
             self.assertIn("daiminkan", {action["type"] for action in second_actions})
-            service._advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
+            service.GAME_FLOW.advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
 
         first_id = game["nodes"][discard_id]["mainChildId"]
         second_id = game["nodes"][first_id]["mainChildId"]
@@ -136,7 +136,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         game, discard_id = reaction_game(second_responder=True)
         service.STATE["game"] = game
         with mock.patch.object(service.ROUND_ACTIONS, "can_resolve_hora_reaction", return_value=False):
-            service._advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
+            service.GAME_FLOW.advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
 
         first_id = game["nodes"][discard_id]["mainChildId"]
         second_id = game["nodes"][first_id]["mainChildId"]
@@ -176,7 +176,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         game, discard_id = reaction_game(second_responder=True)
         service.STATE["game"] = game
         with mock.patch.object(service.ROUND_ACTIONS, "can_resolve_hora_reaction", return_value=False):
-            service._advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
+            service.GAME_FLOW.advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
 
         first_id = game["nodes"][discard_id]["mainChildId"]
         second_id = game["nodes"][first_id]["mainChildId"]
@@ -194,7 +194,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         game, discard_id = reaction_game()
         service.STATE["game"] = game
         with mock.patch.object(service.ROUND_ACTIONS, "can_resolve_hora_reaction", return_value=False):
-            service._advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
+            service.GAME_FLOW.advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
         pass_id = game["nodes"][discard_id]["mainChildId"]
         analysis = {
             "reactionEntries": [
@@ -254,7 +254,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         service.persist_snapshot_state(snapshot)
 
         with mock.patch.object(service.ROUND_ACTIONS, "can_resolve_hora_reaction", return_value=False):
-            service._advance_reaction_window(game, snapshot)
+            service.GAME_FLOW.advance_reaction_window(game, snapshot)
 
         pass_id = game["nodes"][discard_id]["mainChildId"]
         pon_id = game["nodes"][pass_id]["mainChildId"]
@@ -300,7 +300,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
             mock.patch.object(service.ROUND_ACTIONS, "can_resolve_hora_reaction", return_value=True),
             mock.patch.object(service.ROUND_ACTIONS, "finalize_kakan_resolution", side_effect=finish_kakan),
         ):
-            service._advance_kan_reaction_window(game, snapshot)
+            service.GAME_FLOW.advance_kan_reaction_window(game, snapshot)
 
         pass_id = game["nodes"][root_id]["mainChildId"]
         draw_id = game["nodes"][pass_id]["mainChildId"]
@@ -343,9 +343,9 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         with (
             mock.patch.object(service, "get_legal_kan_actions", return_value=[kan]),
             mock.patch.object(service, "get_ankan_candidates", return_value=["9s"]),
-            mock.patch.object(service, "choose_ai_discard", return_value=ai_discard),
+            mock.patch.object(service.GAME_FLOW, "choose_ai_discard", return_value=ai_discard),
         ):
-            service._process_ai_discard(game, game["nodes"][root_id]["snapshot"], 0)
+            service.GAME_FLOW.process_ai_discard(game, game["nodes"][root_id]["snapshot"], 0)
 
         pass_id = game["nodes"][root_id]["mainChildId"]
         discard_id = game["nodes"][pass_id]["mainChildId"]
@@ -432,7 +432,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         game["metadata"]["source"] = "local-environment"
         service.STATE["game"] = game
         with mock.patch.object(service.ROUND_ACTIONS, "can_resolve_hora_reaction", return_value=False):
-            service._advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
+            service.GAME_FLOW.advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
         pass_id = game["nodes"][discard_id]["mainChildId"]
         record = game_record_storage.serialize_game_record_parts(
             copy.deepcopy(game),

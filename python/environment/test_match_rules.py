@@ -2,6 +2,7 @@ import unittest
 from unittest import mock
 
 import match_progression
+import game_flow
 import service
 import settlement
 
@@ -75,7 +76,7 @@ class MatchEndRuleTests(unittest.TestCase):
             self.assertEqual(game["mainLeafNodeId"], end_node_id)
 
             node_count = len(game["nodes"])
-            service.advance_game_flow(game)
+            service.GAME_FLOW.advance(game)
             self.assertEqual(game["currentNodeId"], end_node_id)
             self.assertEqual(len(game["nodes"]), node_count)
             self.assertEqual(
@@ -144,19 +145,19 @@ class RiichiPointRuleTests(unittest.TestCase):
         snapshot["hands"][1] = ["1m"]
 
         with (
-            mock.patch.object(service, "actor_just_drew", return_value=True),
+            mock.patch.object(game_flow, "actor_just_drew", return_value=True),
             mock.patch.object(
                 service,
                 "choose_ai_action_for_current_node",
                 return_value={"type": "reach", "actor": 1},
             ),
             mock.patch.object(
-                service,
+                game_flow,
                 "can_declare_riichi",
                 return_value=False,
             ) as can_declare_riichi,
         ):
-            action = service.choose_ai_discard(snapshot, 1)
+            action = service.GAME_FLOW.choose_ai_discard(snapshot, 1)
 
         self.assertEqual(action["type"], "dahai")
         can_declare_riichi.assert_called_once_with(snapshot, 1)
