@@ -1,6 +1,4 @@
 const path = require('node:path')
-const { pathToFileURL } = require('node:url')
-
 const {
   app,
   BrowserWindow,
@@ -17,11 +15,11 @@ const { registerEnvironmentIpc } = require('./ipc/environment-ipc')
 const { registerGameIpc } = require('./ipc/game-ipc')
 const { registerRecordIpc } = require('./ipc/record-ipc')
 const { registerSettingsIpc } = require('./ipc/settings-ipc')
+const { registerSoundProtocol } = require('./protocol/sound-protocol')
 const { createEnvironmentService } = require('./services/environment-service')
 const { createRecordWorkflow } = require('./services/record-workflow')
 const { buildRuntimeMetrics } = require('./runtime-metrics')
 const { loadSettings } = require('./state/settings')
-const { discoverSoundPacks, resolveSoundPackFile } = require('./state/sound-pack-registry')
 const { createSessionStore } = require('./state/session-store')
 const {
   createGameFileStore,
@@ -60,27 +58,6 @@ protocol.registerSchemesAsPrivileged([{
     supportFetchAPI: true,
   },
 }])
-
-function registerSoundProtocol() {
-  protocol.handle('rms-sound', (request) => {
-    try {
-      const requestUrl = new URL(request.url)
-      const parts = requestUrl.pathname.split('/').filter(Boolean).map(decodeURIComponent)
-      if (requestUrl.hostname !== 'audio' || parts.length !== 2) {
-        return new Response('Sound not found', { status: 404 })
-      }
-      const filePath = resolveSoundPackFile(
-        discoverSoundPacks(appOptions),
-        parts[0],
-        parts[1],
-      )
-      if (!filePath) return new Response('Sound not found', { status: 404 })
-      return net.fetch(pathToFileURL(filePath).toString())
-    } catch {
-      return new Response('Sound not found', { status: 404 })
-    }
-  })
-}
 
 const environmentBackend = createEnvironmentService({ ...appOptions, t })
 const sessionStore = createSessionStore(environmentBackend.environmentGateway)
@@ -213,7 +190,7 @@ function registerIpcHandlers() {
 }
 
 app.whenReady().then(() => {
-  registerSoundProtocol()
+  registerSoundProtocol({ protocol, net, appOptions })
   environmentBackend.backendProcess.onEvent((event) => {
     if (event.type === 'record_changed') {
       markRecordDirty()
