@@ -218,7 +218,7 @@ AUTO_ANALYSIS = auto_analysis_session.AutoAnalysisSession(
 
 ROUND_PROGRESSION = round_progression.RoundProgression(
     round_progression.RoundProgressionDependencies(
-        create_initial_snapshot=lambda match_state: create_initial_snapshot(match_state),
+        create_initial_snapshot=game_setup.create_initial_snapshot,
         create_node=lambda *args, **kwargs: TREE_EDITS.create_node(*args, **kwargs),
         attach_mainline=lambda *args, **kwargs: TREE_EDITS.attach_mainline(*args, **kwargs),
         promote_mainline=lambda *args, **kwargs: TREE_EDITS.promote_path_to_mainline(
@@ -332,27 +332,12 @@ PLAY_PREFETCH = play_prefetch_session.PlayPrefetchSession(
 )
 
 
-def create_match_state(seed):
-    return game_setup.create_match_state(
-        seed,
-        f"match_{STATE['nextGameId']:04d}",
-    )
-
-
 def sync_snapshot_state(snapshot):
     return snapshot_state.sync(snapshot)
 
 
 def persist_snapshot_state(snapshot):
     return snapshot_state.persist(snapshot)
-
-
-def get_wall_view(snapshot):
-    return wall_reconstruction.build_wall_view(snapshot)
-
-
-def create_initial_snapshot(match_state, full_wall=None):
-    return game_setup.create_initial_snapshot(match_state, full_wall)
 
 
 def create_empty_game(seed):
@@ -369,29 +354,6 @@ def create_empty_game(seed):
         match_state,
         created_at=now_iso(),
     )
-
-
-def validate_full_wall_tiles(tiles):
-    return game_setup.validate_full_wall_tiles(tiles)
-
-
-def resolve_round_root_id_for_node(game, node_id):
-    return game_tree.resolve_round_root_id(game, node_id)
-
-
-def collect_subtree_ids(game, root_id):
-    return game_tree.collect_subtree_ids(game, root_id)
-
-
-def normalize_mode(value):
-    return "research" if value == "research" else "play"
-
-
-def normalize_seat(value):
-    seat = int(value)
-    if seat < 0 or seat > 3:
-        raise ValueError("Seat must be between 0 and 3.")
-    return seat
 
 
 def ensure_game_loaded():
@@ -421,12 +383,6 @@ def get_current_snapshot():
     ensure_game_loaded()
     game = STATE["game"]
     return game["nodes"][game["currentNodeId"]]["snapshot"]
-
-
-def get_current_node():
-    ensure_game_loaded()
-    game = STATE["game"]
-    return game["nodes"][game["currentNodeId"]]
 
 
 def reset_runtime_for_game_change():
@@ -496,7 +452,7 @@ def build_legal_actions(snapshot, controlled_seat=None):
         controlled_seat = STATE["controlledSeat"]
     return legal_actions.build_legal_actions(
         snapshot,
-        normalize_seat(controlled_seat),
+        legal_actions.normalize_seat(controlled_seat),
         build_player_state=build_player_state,
         can_declare_tsumo=can_declare_tsumo,
         can_declare_riichi=can_declare_riichi,
@@ -516,7 +472,7 @@ def action_is_meaningful_decision(parent_snapshot, action):
     if not isinstance(parent_snapshot, dict) or not isinstance(action, dict):
         return False
     try:
-        actor = normalize_seat(action.get("actor"))
+        actor = legal_actions.normalize_seat(action.get("actor"))
         return len(build_legal_actions(parent_snapshot, controlled_seat=actor)) > 1
     except (KeyError, TypeError, ValueError):
         return False
@@ -530,7 +486,7 @@ LEGAL_ACTIONS = legal_action_provider.LegalActionProvider(
     build_actions=lambda *args, **kwargs: build_legal_actions(*args, **kwargs),
     controlled_seat=lambda: STATE["controlledSeat"],
     research_mode=lambda: STATE.get("mode") == "research",
-    normalize_seat=normalize_seat,
+    normalize_seat=legal_actions.normalize_seat,
 )
 
 
@@ -549,13 +505,10 @@ ROUND_WALL_REPLACEMENT = round_wall_replacement.RoundWallReplacement(
     STATE,
     round_wall_replacement.RoundWallReplacementDependencies(
         ensure_game_loaded=ensure_game_loaded,
-        validate_full_wall=validate_full_wall_tiles,
-        create_initial_snapshot=lambda match_state, full_wall: create_initial_snapshot(
-            match_state,
-            full_wall=full_wall,
-        ),
-        resolve_round_root=resolve_round_root_id_for_node,
-        collect_subtree_ids=collect_subtree_ids,
+        validate_full_wall=game_setup.validate_full_wall_tiles,
+        create_initial_snapshot=game_setup.create_initial_snapshot,
+        resolve_round_root=game_tree.resolve_round_root_id,
+        collect_subtree_ids=game_tree.collect_subtree_ids,
         purge_decision_analysis=DECISION_ANALYSIS.purge,
         invalidate_analysis_timeline=AUTO_ANALYSIS.invalidate_timeline,
         promote_mainline=TREE_EDITS.promote_path_to_mainline,
@@ -566,7 +519,7 @@ ROUND_WALL_REPLACEMENT = round_wall_replacement.RoundWallReplacement(
 
 REACTION_DECISIONS = reaction_decision_history.ReactionDecisionHistory(
     reaction_decision_history.ReactionDecisionDependencies(
-        normalize_seat=normalize_seat,
+        normalize_seat=legal_actions.normalize_seat,
         build_legal_actions=build_legal_actions,
         create_node=TREE_EDITS.create_node,
         attach_mainline=TREE_EDITS.attach_mainline,
@@ -583,7 +536,7 @@ VIEW_BUILDER = environment_view.EnvironmentView(
         can_declare_tsumo=can_declare_tsumo,
         can_ankan=can_ankan,
         get_node_legal_actions=get_node_legal_actions,
-        resolve_round_root=resolve_round_root_id_for_node,
+        resolve_round_root=game_tree.resolve_round_root_id,
         decision_analysis=DECISION_ANALYSIS,
         opponent_analysis=OPPONENT_ANALYSIS,
         action_recommendations=ACTION_RECOMMENDATIONS,
@@ -647,8 +600,8 @@ RECORD_COMMANDS = record_commands.RecordCommands(
     record_commands.RecordCommandDependencies(
         ensure_loaded=ensure_game_loaded,
         ensure_writable=ensure_writable_game,
-        round_root_for_node=resolve_round_root_id_for_node,
-        collect_subtree_ids=collect_subtree_ids,
+        round_root_for_node=game_tree.resolve_round_root_id,
+        collect_subtree_ids=game_tree.collect_subtree_ids,
         cancel_play_prefetch=PLAY_PREFETCH.cancel,
         cancel_auto_analysis=AUTO_ANALYSIS.cancel,
         schedule_auto_reprioritization=AUTO_ANALYSIS.schedule_reprioritization,
@@ -669,7 +622,7 @@ RECORD_WORKSPACE_COMMANDS = record_workspace_commands.RecordWorkspaceCommands(
     view_builder=VIEW_BUILDER,
     ensure_loaded=ensure_game_loaded,
     ensure_writable=ensure_writable_game,
-    get_wall_view=get_wall_view,
+    get_wall_view=wall_reconstruction.build_wall_view,
     reset_round_wall=ROUND_WALL_REPLACEMENT.replace,
     now_iso=now_iso,
 )
@@ -696,8 +649,8 @@ VIEW_CONTROL_COMMANDS = view_control_commands.ViewControlCommands(
     view_builder=VIEW_BUILDER,
     ensure_loaded=ensure_game_loaded,
     is_read_only=is_read_only_game,
-    normalize_mode=normalize_mode,
-    normalize_seat=normalize_seat,
+    normalize_mode=record_session.RecordSession.normalize_mode,
+    normalize_seat=record_session.RecordSession.normalize_seat,
     get_current_snapshot=get_current_snapshot,
 )
 

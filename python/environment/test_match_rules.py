@@ -1,8 +1,9 @@
 import unittest
 from unittest import mock
 
-import match_progression
 import game_flow
+import game_setup
+import match_progression
 import rule_kernel
 import service
 
@@ -19,7 +20,7 @@ class MatchEndRuleTests(unittest.TestCase):
         }
 
     def test_negative_score_ends_match_before_all_last(self):
-        match_state = service.create_match_state(123456)
+        match_state = game_setup.create_match_state(123456, "match_test")
 
         result = match_progression.apply_round_result_to_match_state(
             match_state,
@@ -30,7 +31,7 @@ class MatchEndRuleTests(unittest.TestCase):
         self.assertEqual(result["roundIndex"], 0)
 
     def test_zero_score_does_not_end_match_before_all_last(self):
-        match_state = service.create_match_state(123456)
+        match_state = game_setup.create_match_state(123456, "match_test")
 
         result = match_progression.apply_round_result_to_match_state(
             match_state,
@@ -41,7 +42,7 @@ class MatchEndRuleTests(unittest.TestCase):
         self.assertEqual(result["roundIndex"], 1)
 
     def test_negative_score_also_ends_after_abortive_draw(self):
-        match_state = service.create_match_state(123456)
+        match_state = game_setup.create_match_state(123456, "match_test")
 
         result = match_progression.apply_round_result_to_match_state(
             match_state,
