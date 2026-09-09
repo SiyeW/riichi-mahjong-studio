@@ -1,4 +1,4 @@
-"""Transport-level command routing around the stateful environment dispatcher."""
+"""Transport-level command routing around the stateful command dispatcher."""
 
 from __future__ import annotations
 

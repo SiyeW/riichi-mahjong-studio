@@ -3,7 +3,7 @@ import test from 'node:test'
 import { ref } from 'vue'
 import { useGameplayActions } from './useGameplayActions.ts'
 import type { GameView } from './contracts/game.ts'
-import type { EnvironmentResponse, StudioStatus } from './contracts/runtime.ts'
+import type { BackendResponse, StudioStatus } from './contracts/runtime.ts'
 
 function fixture() {
   const status = { mode: 'play', controlledSeat: 0 } as StudioStatus
@@ -41,14 +41,14 @@ function replaceWindow(value: Partial<Window>): () => void {
 
 test('stale action responses cannot overwrite a changed gameplay context', async () => {
   const { applied, session } = fixture()
-  let resolveRequest!: (value: EnvironmentResponse) => void
+  let resolveRequest!: (value: BackendResponse) => void
   const restoreWindow = replaceWindow({
     studioAPI: { submitUserAction: () => new Promise((resolve) => { resolveRequest = resolve }) } as unknown as Window['studioAPI'],
   })
   try {
     const request = session.submitAction({ id: 'pon', type: 'pon', actor: 0, label: 'pon' })
     session.invalidateGameplayResponses()
-    resolveRequest(response as EnvironmentResponse)
+    resolveRequest(response as BackendResponse)
     await request
     assert.deepEqual(applied, [])
   } finally {
@@ -58,7 +58,7 @@ test('stale action responses cannot overwrite a changed gameplay context', async
 
 test('concurrent action requests are serialized', async () => {
   const { session } = fixture()
-  let resolveRequest!: (value: EnvironmentResponse) => void
+  let resolveRequest!: (value: BackendResponse) => void
   let requests = 0
   const restoreWindow = replaceWindow({
     studioAPI: {
@@ -72,7 +72,7 @@ test('concurrent action requests are serialized', async () => {
     const first = session.submitAction({ id: 'pon', type: 'pon', actor: 0, label: 'pon' })
     await session.submitAction({ id: 'chi', type: 'chi', actor: 0, label: 'chi' })
     assert.equal(requests, 1)
-    resolveRequest(response as EnvironmentResponse)
+    resolveRequest(response as BackendResponse)
     await first
   } finally {
     restoreWindow()

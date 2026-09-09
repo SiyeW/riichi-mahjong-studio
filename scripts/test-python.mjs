@@ -7,7 +7,9 @@ const root = path.resolve(import.meta.dirname, '..')
 const localPython = process.platform === 'win32'
   ? path.join(root, '.conda-backend', 'python.exe')
   : path.join(root, '.conda-backend', 'bin', 'python')
-const python = String(process.env.MJAI_BACKEND_PYTHON || '').trim()
+const python = String(
+  process.env.RMS_BACKEND_PYTHON || process.env.MJAI_BACKEND_PYTHON || '',
+).trim()
   || (existsSync(localPython) ? localPython : 'python')
 
 const result = spawnSync(python, [

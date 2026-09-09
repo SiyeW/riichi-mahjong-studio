@@ -51,7 +51,10 @@ function normalizeTrainingMode(mode) {
     free_play: 'preview_before_click',
     guided: 'threshold_review',
     strict: 'always_review',
-  }[String(mode || '')] || String(mode || 'threshold_review')
+    preview_before_click: 'preview_before_click',
+    threshold_review: 'threshold_review',
+    always_review: 'always_review',
+  }[String(mode || '')] || 'threshold_review'
 }
 
 function normalizeModeDefaults(modeDefaults = {}) {
@@ -71,22 +74,23 @@ function normalizeTrainingSettings(training = {}) {
 }
 
 function normalizeWorkspaceLayout(workspaceLayout = {}) {
-  const sourcePanels = workspaceLayout.analysisPanels && typeof workspaceLayout.analysisPanels === 'object'
-    ? workspaceLayout.analysisPanels
+  const source = workspaceLayout && typeof workspaceLayout === 'object' ? workspaceLayout : {}
+  const sourcePanels = source.analysisPanels && typeof source.analysisPanels === 'object'
+    ? source.analysisPanels
     : {}
   return {
-    layout: normalizeWorkspaceDockLayout(workspaceLayout.layout, workspaceLayout.order),
-    analysisVisible: workspaceLayout.analysisVisible === true,
+    layout: normalizeWorkspaceDockLayout(source.layout, source.order),
+    analysisVisible: source.analysisVisible === true,
     analysisPanels: {
       opponents: sourcePanels.opponents !== false,
       game: sourcePanels.game !== false,
       risk: sourcePanels.risk === true,
       counts: sourcePanels.counts === true,
     },
-    consoleVisible: workspaceLayout.consoleVisible !== false,
+    consoleVisible: source.consoleVisible !== false,
     panelSizeFractionsVersion: 2,
-    panelSizeFractions: workspaceLayout.panelSizeFractionsVersion === 2
-      ? normalizeDockPanelSizeFractions(workspaceLayout.panelSizeFractions)
+    panelSizeFractions: source.panelSizeFractionsVersion === 2
+      ? normalizeDockPanelSizeFractions(source.panelSizeFractions)
       : {},
   }
 }
@@ -338,6 +342,7 @@ module.exports = {
   migrateSettings,
   normalizeAudioSettings,
   normalizeDisplaySettings,
+  normalizeTrainingMode,
   normalizeWorkspaceLayout,
   saveSettings,
 }

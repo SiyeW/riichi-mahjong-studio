@@ -30,6 +30,7 @@ from .mortal_report_import import (
     repair_mortal_report_game,
 )
 from .service_helpers import build_round_seed_stream, now_iso
+from .seat import normalize_seat
 from .wall_reconstruction import reconstruct_imported_walls
 
 
@@ -83,13 +84,6 @@ class RecordSession:
     def normalize_mode(value: Any) -> str:
         return "research" if value == "research" else "play"
 
-    @staticmethod
-    def normalize_seat(value: Any) -> int:
-        seat = int(value)
-        if seat < 0 or seat > 3:
-            raise ValueError("Seat must be between 0 and 3.")
-        return seat
-
     def serialize(self) -> dict:
         self.ensure_loaded()
         game_copy = copy.deepcopy(self._state["game"])
@@ -129,7 +123,7 @@ class RecordSession:
 
         candidate = copy.deepcopy(game)
         mode = "research" if self.is_read_only(game) else self.normalize_mode(state.get("mode"))
-        controlled_seat = self.normalize_seat(state.get("controlledSeat", 0))
+        controlled_seat = normalize_seat(state.get("controlledSeat", 0))
         visible_hands = bool(state.get("visibleHands"))
         previous = self._state_snapshot()
         self.dependencies.reset_runtime()

@@ -1,7 +1,7 @@
 import type { EngineDescription, EngineSettings } from './engines'
 import type { GameView } from './game'
 import type {
-  EnvironmentResponse,
+  BackendResponse,
   PythonEvent,
   RecordImportResult,
   RuntimeMetrics,
@@ -39,20 +39,20 @@ export interface DesktopBridge {
   }>
   getStatus: () => Promise<StudioStatus>
   getRuntimeMetrics: () => Promise<RuntimeMetrics>
-  getGameView: () => Promise<EnvironmentResponse>
+  getGameView: () => Promise<BackendResponse>
   createGame: () => Promise<StudioStatus>
-  closeGame: () => Promise<EnvironmentResponse>
-  advanceGame: () => Promise<EnvironmentResponse>
-  confirmPendingReview: () => Promise<EnvironmentResponse>
+  closeGame: () => Promise<BackendResponse>
+  advanceGame: () => Promise<BackendResponse>
+  confirmPendingReview: () => Promise<BackendResponse>
   submitUserAction: (action: {
     type: string
     pai?: string
     variant?: string
     fromDrawn?: boolean
     candidateId?: string
-  }) => Promise<EnvironmentResponse>
-  jumpToNode: (nodeId: string, treeRevision?: number) => Promise<EnvironmentResponse>
-  setMainBranch: (nodeId: string) => Promise<EnvironmentResponse>
+  }) => Promise<BackendResponse>
+  jumpToNode: (nodeId: string, treeRevision?: number) => Promise<BackendResponse>
+  setMainBranch: (nodeId: string) => Promise<BackendResponse>
   setNodeComment: (nodeId: string, comment: string) => Promise<{
     request_id: string
     command: string
@@ -61,7 +61,7 @@ export interface DesktopBridge {
     changed: boolean
     timestamp: string
   }>
-  deleteNode: (nodeId: string) => Promise<EnvironmentResponse>
+  deleteNode: (nodeId: string) => Promise<BackendResponse>
   getRecordDirty: () => Promise<boolean>
   saveGame: () => Promise<RecordFileResult | null>
   saveGameAs: () => Promise<RecordFileResult | null>
@@ -89,7 +89,7 @@ export interface DesktopBridge {
   setAnalysisVisibility: (visibility: {
     decisionRecommendations?: boolean
     opponentAnalysis?: boolean
-  }) => Promise<EnvironmentResponse>
+  }) => Promise<BackendResponse>
   restartBackend: () => Promise<{ ok: boolean }>
   getWallView: () => Promise<{
     tiles: Array<{ index: number; tile: string; status: string }>
@@ -99,10 +99,10 @@ export interface DesktopBridge {
     origin: 'generated' | 'imported' | 'reconstructed'
     sourceUrl: string | null
   }>
-  reconstructWalls: (seed?: string) => Promise<EnvironmentResponse & {
+  reconstructWalls: (seed?: string) => Promise<BackendResponse & {
     reconstruction: { seed: number; roundCount: number }
   }>
-  importWall: (tiles: string[]) => Promise<EnvironmentResponse>
+  importWall: (tiles: string[]) => Promise<BackendResponse>
   getLatestMjaiDebug: () => Promise<{ debug: Record<string, unknown> }>
   getAnalysis: () => Promise<Record<string, unknown>>
   getAnalysisDebug: () => Promise<{ debug: Record<string, unknown> }>
@@ -118,8 +118,8 @@ export interface DesktopBridge {
       treeRevision: number
     }
   }>
-  startAutoAnalysis: () => Promise<EnvironmentResponse>
-  cancelAutoAnalysis: () => Promise<EnvironmentResponse>
+  startAutoAnalysis: () => Promise<BackendResponse>
+  cancelAutoAnalysis: () => Promise<BackendResponse>
   readClipboardText: () => Promise<string>
   writeClipboardText: (text: string) => Promise<{ ok: boolean }>
   openExternal: (url: string) => Promise<boolean>

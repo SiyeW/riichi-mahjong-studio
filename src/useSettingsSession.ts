@@ -5,6 +5,7 @@ import { normalizeWorkspaceLayout } from './workspace/settings'
 import { DEFAULT_ANALYSIS_COUNT_LAYOUT, type AnalysisCountLayout } from './analysisCountSpacing'
 import { mostDistinctOklabColor, parseCssColor, type RgbColor } from './perceptualColor'
 import type { StudioSettings } from './contracts/settings'
+import { normalizeTrainingMode } from './trainingSettings.ts'
 import {
   DEFAULT_PERCEPTUAL_SURFACE_TUNING,
   PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
@@ -227,19 +228,6 @@ export function useSettingsSession(t: Translate) {
   const quickMinThinkingLabel = computed(() => `${settings.training.thinkingTimeMinS.toFixed(2)}s`)
   const quickAutoAdvanceLabel = computed(() => `${(settings.modeDefaults.autoAdvanceDelayMs / 1000).toFixed(2)}s`)
 
-  function normalizeTrainingMode(mode: string): StudioSettings['training']['mode'] {
-    const MAP: Record<string, StudioSettings['training']['mode']> = {
-      no_review: 'no_review',
-      free_play: 'preview_before_click',
-      guided: 'threshold_review',
-      strict: 'always_review',
-      preview_before_click: 'preview_before_click',
-      threshold_review: 'threshold_review',
-      always_review: 'always_review',
-    }
-    return MAP[String(mode || '')] || 'threshold_review'
-  }
-
   function applySettings(nextSettings: StudioSettings) {
     Object.assign(settings, nextSettings)
     Object.assign(settings.training, nextSettings.training, {
@@ -405,7 +393,6 @@ export function useSettingsSession(t: Translate) {
     quickAudioVolumeLabel,
     quickMinThinkingLabel,
     quickAutoAdvanceLabel,
-    normalizeTrainingMode,
     applySettings,
     cloneSettingsDraftFromCurrent,
     openSettingsPanel,

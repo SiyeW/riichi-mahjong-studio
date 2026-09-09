@@ -104,17 +104,6 @@ export function useMahjongPresentationLabels(options: {
     return reactionTypeLabel(action.type)
   }
 
-  function normalizeTileFamily(tile: string): string {
-    return String(tile).replace('5mr', '5m').replace('5pr', '5p').replace('5sr', '5s').replace(/r$/, '')
-  }
-
-  function redFive(tile: string): string {
-    if (tile === '5m') return '0m'
-    if (tile === '5p') return '0p'
-    if (tile === '5s') return '0s'
-    return tile
-  }
-
   return {
     relativeSeatLabel,
     seatWindLabel,
@@ -124,8 +113,6 @@ export function useMahjongPresentationLabels(options: {
     reactionTypeLabel,
     ryukyokuActionLabel,
     specialActionLabel,
-    normalizeTileFamily,
-    redFive,
   }
 }
 

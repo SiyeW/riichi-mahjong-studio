@@ -29,8 +29,6 @@ function createFixture() {
   const entry = useDecisionEntryPresentation({
     gameView,
     t: (key) => key,
-    normalizeTileFamily: (tile) => tile.replace(/r$/, ''),
-    redFive: (tile) => `red:${tile}`,
     reactionTypeLabel: (type) => `reaction:${type}`,
   })
   const pass = { id: 'pass', candidateId: 'pass', type: 'none' } as GameAction
@@ -45,8 +43,6 @@ function createFixture() {
     gameView,
     showTrainingRecommendations,
     t: (key) => key,
-    normalizeTileFamily: (tile) => tile.replace(/r$/, ''),
-    redFive: (tile) => `red:${tile}`,
     getSpecialActions: () => [pass],
     getDiscardActions: () => [discard],
     getSouthHandDisplay: () => ['1m', '5m'],

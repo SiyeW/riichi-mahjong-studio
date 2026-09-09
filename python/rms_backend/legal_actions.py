@@ -3,6 +3,7 @@ from itertools import combinations, product
 
 from . import snapshot_state
 from .rule_kernel import can_declare_ron, get_valid_riichi_discards
+from .seat import normalize_seat
 from .service_helpers import (
     actor_just_drew,
     get_forbidden_discard_families_after_self_furo,
@@ -10,15 +11,6 @@ from .service_helpers import (
     sort_tiles,
     unique_preserving_order,
 )
-
-
-def normalize_seat(value):
-    seat = int(value)
-    if seat < 0 or seat > 3:
-        raise ValueError("Seat must be between 0 and 3.")
-    return seat
-
-
 def can_resolve_hora_reaction(snapshot, winner, target, win_tile):
     del target, win_tile
     try:

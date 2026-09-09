@@ -5,7 +5,7 @@ const { createBackendSession } = require('./backend-session')
 const { migrateSettings } = require('../state/settings')
 
 function resolveDevelopmentPython(resourceRoot, env = process.env) {
-  const explicit = String(env.MJAI_BACKEND_PYTHON || '').trim()
+  const explicit = String(env.RMS_BACKEND_PYTHON || env.MJAI_BACKEND_PYTHON || '').trim()
   if (explicit) return explicit
 
   const localPython = process.platform === 'win32'

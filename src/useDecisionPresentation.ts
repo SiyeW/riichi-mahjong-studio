@@ -2,6 +2,7 @@ import { computed, type Ref } from 'vue'
 import type { DecisionMetricDefinition } from './contracts/engines'
 import type { GameAction } from './contracts/game'
 import type { GameView } from './contracts/game'
+import { normalizeTileFamily, toRedFiveDisplayTile } from './tileNotation.ts'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -29,15 +30,11 @@ export function formatDelta(delta: number): string {
 export function useDecisionEntryPresentation(options: {
   gameView: GameView
   t: Translate
-  normalizeTileFamily: (tile: string) => string
-  redFive: (tile: string) => string
   reactionTypeLabel: (type: string) => string
 }) {
   const {
     gameView,
     t,
-    normalizeTileFamily,
-    redFive,
     reactionTypeLabel,
   } = options
 
@@ -150,7 +147,7 @@ export function useDecisionEntryPresentation(options: {
       if (!tile) return []
       const family = normalizeTileFamily(tile)
       return family === '5m' || family === '5p' || family === '5s'
-        ? [redFive(family)]
+        ? [toRedFiveDisplayTile(family)]
         : [tile]
     }
     if (type === 'daiminkan' || type === 'kakan') {
@@ -265,8 +262,6 @@ export function useDecisionActionPresentation(options: {
   gameView: GameView
   showTrainingRecommendations: Readonly<Ref<boolean>>
   t: Translate
-  normalizeTileFamily: (tile: string) => string
-  redFive: (tile: string) => string
   getSpecialActions: () => GameAction[]
   getDiscardActions: () => GameAction[]
   getSouthHandDisplay: () => string[]
@@ -281,8 +276,6 @@ export function useDecisionActionPresentation(options: {
     gameView,
     showTrainingRecommendations,
     t,
-    normalizeTileFamily,
-    redFive,
     getSpecialActions,
     getDiscardActions,
     getSouthHandDisplay,
@@ -303,7 +296,7 @@ export function useDecisionActionPresentation(options: {
         || ''
       const family = normalizeTileFamily(tile)
       return family === '5m' || family === '5p' || family === '5s'
-        ? [redFive(family)]
+        ? [toRedFiveDisplayTile(family)]
         : [tile]
     }
     if (action.type === 'daiminkan' || action.type === 'kakan') {

@@ -10,7 +10,7 @@ from . import analysis_commands
 from . import command_transport
 from . import decision_analysis_session
 from . import engine_management
-from . import environment_view
+from . import renderer_view
 from . import game_flow
 from . import game_setup
 from . import game_tree
@@ -29,6 +29,7 @@ from . import round_actions
 from . import round_progression
 from . import round_wall_replacement
 from . import runtime_metrics
+from . import seat
 from . import snapshot_state
 from . import stateful_command_dispatcher
 from . import view_control_commands
@@ -90,7 +91,9 @@ ENGINE_RUNTIME_REGISTRY = EngineRuntimeRegistry()
 _EMIT_LOCK = threading.Lock()
 _STATE_LOCK = threading.RLock()
 MJAI_STREAMS = MjaiStreamCache(snapshot_state.sync)
-DEBUG_FLOW = os.environ.get("MJAI_FLOW_DEBUG", "").lower() in ("1", "true", "yes", "on")
+DEBUG_FLOW = (
+    os.environ.get("RMS_FLOW_DEBUG") or os.environ.get("MJAI_FLOW_DEBUG", "")
+).lower() in ("1", "true", "yes", "on")
 def debug_flow(message):
     if DEBUG_FLOW:
         print(message, file=sys.stderr)
@@ -459,7 +462,7 @@ def build_legal_actions(snapshot, controlled_seat=None):
         controlled_seat = STATE["controlledSeat"]
     return legal_actions.build_legal_actions(
         snapshot,
-        legal_actions.normalize_seat(controlled_seat),
+        seat.normalize_seat(controlled_seat),
         build_player_state=build_player_state,
         can_declare_tsumo=can_declare_tsumo,
         can_declare_riichi=can_declare_riichi,
@@ -481,7 +484,7 @@ def action_is_meaningful_decision(parent_snapshot, action):
     if not isinstance(parent_snapshot, dict) or not isinstance(action, dict):
         return False
     try:
-        actor = legal_actions.normalize_seat(action.get("actor"))
+        actor = seat.normalize_seat(action.get("actor"))
         return len(build_legal_actions(parent_snapshot, controlled_seat=actor)) > 1
     except (KeyError, TypeError, ValueError):
         return False
@@ -495,7 +498,7 @@ LEGAL_ACTIONS = legal_action_provider.LegalActionProvider(
     build_actions=lambda *args, **kwargs: build_legal_actions(*args, **kwargs),
     controlled_seat=lambda: STATE["controlledSeat"],
     research_mode=lambda: STATE.get("mode") == "research",
-    normalize_seat=legal_actions.normalize_seat,
+    normalize_seat=seat.normalize_seat,
 )
 
 
@@ -528,7 +531,7 @@ ROUND_WALL_REPLACEMENT = round_wall_replacement.RoundWallReplacement(
 
 REACTION_DECISIONS = reaction_decision_history.ReactionDecisionHistory(
     reaction_decision_history.ReactionDecisionDependencies(
-        normalize_seat=legal_actions.normalize_seat,
+        normalize_seat=seat.normalize_seat,
         build_legal_actions=build_legal_actions,
         create_node=TREE_EDITS.create_node,
         attach_mainline=TREE_EDITS.attach_mainline,
@@ -536,9 +539,9 @@ REACTION_DECISIONS = reaction_decision_history.ReactionDecisionHistory(
     )
 )
 
-VIEW_BUILDER = environment_view.EnvironmentView(
+VIEW_BUILDER = renderer_view.RendererView(
     STATE,
-    environment_view.EnvironmentViewDependencies(
+    renderer_view.RendererViewDependencies(
         sync_snapshot=sync_snapshot_state,
         is_read_only_game=is_read_only_game,
         actor_just_drew=actor_just_drew,
@@ -647,7 +650,7 @@ VIEW_CONTROL_COMMANDS = view_control_commands.ViewControlCommands(
     ensure_loaded=ensure_game_loaded,
     is_read_only=is_read_only_game,
     normalize_mode=record_session.RecordSession.normalize_mode,
-    normalize_seat=record_session.RecordSession.normalize_seat,
+    normalize_seat=seat.normalize_seat,
     get_current_snapshot=get_current_snapshot,
 )
 

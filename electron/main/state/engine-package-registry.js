@@ -149,7 +149,9 @@ function defaultRoots(options = {}) {
   if (path.resolve(userEngineRoot) !== path.resolve(builtInEngineRoot)) {
     roots.push({ path: userEngineRoot, builtIn: false })
   }
-  const configuredRoots = String(options.env?.MJAI_ENGINE_ROOTS || '')
+  const configuredRoots = String(
+    options.env?.RMS_ENGINE_ROOTS || options.env?.MJAI_ENGINE_ROOTS || '',
+  )
     .split(path.delimiter)
     .map((rootPath) => rootPath.trim())
     .filter(Boolean)

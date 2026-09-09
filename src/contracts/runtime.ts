@@ -67,7 +67,7 @@ export interface RecordImportResult {
   recordDirty: boolean
 }
 
-export interface EnvironmentResponse {
+export interface BackendResponse {
   request_id: string
   command: string
   state: StudioStatus

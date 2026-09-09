@@ -13,7 +13,7 @@ from . import tree_view
 
 
 @dataclass(frozen=True)
-class EnvironmentViewDependencies:
+class RendererViewDependencies:
     sync_snapshot: Callable[[dict[str, Any]], None]
     is_read_only_game: Callable[..., bool]
     actor_just_drew: Callable[[dict[str, Any], int], bool]
@@ -31,13 +31,13 @@ class EnvironmentViewDependencies:
     now_iso: Callable[[], str]
 
 
-class EnvironmentView:
-    """Read environment state and produce immutable renderer payloads."""
+class RendererView:
+    """Read backend state and produce immutable renderer payloads."""
 
     def __init__(
         self,
         state: dict[str, Any],
-        dependencies: EnvironmentViewDependencies,
+        dependencies: RendererViewDependencies,
     ) -> None:
         self.state = state
         self.dependencies = dependencies

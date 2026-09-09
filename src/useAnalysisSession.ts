@@ -5,6 +5,7 @@ import type { TranslationParams } from './i18n'
 import type { StudioSettings } from './contracts/settings'
 import type { GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
+import { normalizeTrainingMode } from './trainingSettings.ts'
 
 type Translate = (key: string, params?: TranslationParams) => string
 type DecisionAnalysis = NonNullable<GameView['analysis']>
@@ -15,7 +16,6 @@ interface UseAnalysisSessionOptions {
   gameView: GameView
   showAnalysisDock: Readonly<Ref<boolean>>
   t: Translate
-  normalizeTrainingMode: (mode: string) => StudioSettings['training']['mode']
   applyStatus: (status: StudioStatus) => void
   applyGameView: (view: GameView) => void
   scheduleTableZoomRecalc: () => void
@@ -46,7 +46,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     gameView,
     showAnalysisDock,
     t,
-    normalizeTrainingMode,
     applyStatus,
     applyGameView,
     scheduleTableZoomRecalc,

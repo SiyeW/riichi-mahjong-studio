@@ -1,4 +1,4 @@
-"""Collect private memory usage for the environment and engine processes."""
+"""Collect private memory usage for the backend and engine processes."""
 
 from __future__ import annotations
 

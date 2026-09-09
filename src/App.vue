@@ -508,9 +508,7 @@
           :effective-recommendations-enabled="effectiveDecisionRecommendationsEnabled"
           :show-recommendations="showTrainingRecommendations"
           :localized-engine-text="localizedEngineText"
-          :normalize-tile-family="normalizeTileFamily"
           :reaction-type-label="reactionTypeLabel"
-          :red-five="redFive"
           :tile-face-label="tileFaceLabel"
           :tile-image-src="tileImageSrc"
         />
@@ -813,7 +811,6 @@ const {
   quickAudioVolumeLabel,
   quickMinThinkingLabel,
   quickAutoAdvanceLabel,
-  normalizeTrainingMode,
   applySettings,
   cloneSettingsDraftFromCurrent,
   openSettingsPanel,
@@ -1035,7 +1032,6 @@ const {
   gameView,
   showAnalysisDock,
   t,
-  normalizeTrainingMode,
   applyStatus,
   applyGameView,
   scheduleTableZoomRecalc,
@@ -1222,8 +1218,6 @@ const {
   reactionTypeLabel,
   ryukyokuActionLabel,
   specialActionLabel,
-  normalizeTileFamily,
-  redFive,
 } = tableLabels
 
 
@@ -1313,8 +1307,6 @@ const {
 } = useDecisionEntryPresentation({
   gameView,
   t,
-  normalizeTileFamily: (tile) => normalizeTileFamily(tile),
-  redFive: (tile) => redFive(tile),
   reactionTypeLabel: (type) => reactionTypeLabel(type),
 })
 
@@ -1332,8 +1324,6 @@ const {
   gameView,
   showTrainingRecommendations,
   t,
-  normalizeTileFamily: (tile) => normalizeTileFamily(tile),
-  redFive: (tile) => redFive(tile),
   getSpecialActions: () => specialActions.value,
   getDiscardActions: () => discardActions.value,
   getSouthHandDisplay: () => southHandDisplay.value,

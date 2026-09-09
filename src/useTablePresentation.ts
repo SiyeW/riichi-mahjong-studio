@@ -10,6 +10,7 @@ import type { MahjongPresentationLabels } from './useMahjongPresentationLabels'
 import type { StudioSettings } from './contracts/settings'
 import type { GameAction, GameTreeNode, GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
+import { normalizeTileFamily, toRedFiveDisplayTile } from './tileNotation.ts'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 type DiscardEntry = NonNullable<GameView['analysis']>['discardEntries'][number]
@@ -87,8 +88,6 @@ export function useTablePresentation(options: {
     reactionTypeLabel,
     ryukyokuActionLabel,
     specialActionLabel,
-    normalizeTileFamily,
-    redFive,
   } = labels
 
 
@@ -299,7 +298,7 @@ export function useTablePresentation(options: {
         const isOuter = i === 0 || i === 3
         let displayTile = tile
         if (!isOuter && (tile === '5m' || tile === '5p' || tile === '5s')) {
-          displayTile = redFive(tile)
+          displayTile = toRedFiveDisplayTile(tile)
         }
         return { tile: displayTile, isBack: isOuter, tileClass: '' }
       })

@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import type { EnvironmentResponse } from './contracts/runtime'
+import type { BackendResponse } from './contracts/runtime'
 
 interface UsePlayPrefetchOptions {
   currentPosition: () => { gameId: string | null | undefined; nodeId: string | null | undefined }
@@ -19,7 +19,7 @@ export function usePlayPrefetch(options: UsePlayPrefetchOptions) {
   const playPrefetchWaiting = ref(false)
   const earlyReadyPositions = new Set<string>()
 
-  function applyPlayPrefetchStatus(prefetch?: EnvironmentResponse['playPrefetch']) {
+  function applyPlayPrefetchStatus(prefetch?: BackendResponse['playPrefetch']) {
     const current = options.currentPosition()
     const key = playPrefetchPositionKey(current.gameId, current.nodeId)
     const eventReady = key ? earlyReadyPositions.delete(key) : false

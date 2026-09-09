@@ -14,7 +14,10 @@ def normalize_training_mode(mode):
         "free_play": "preview_before_click",
         "guided": "threshold_review",
         "strict": "always_review",
-    }.get(str(mode or ""), str(mode or "threshold_review")) or "threshold_review"
+        "preview_before_click": "preview_before_click",
+        "threshold_review": "threshold_review",
+        "always_review": "always_review",
+    }.get(str(mode or ""), "threshold_review")
 
 
 def default_training_config():

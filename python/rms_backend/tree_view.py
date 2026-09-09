@@ -1,12 +1,6 @@
 import copy
 
-
-def normalize_seat(value):
-    seat = int(value)
-    if seat < 0 or seat > 3:
-        raise ValueError("Seat must be between 0 and 3.")
-    return seat
-
+from .seat import normalize_seat
 
 def node_is_visible_to_seat(node, seat):
     if node.get("type") != "decision" and not (node.get("action") or {}).get("decisionOnly"):

@@ -1,6 +1,6 @@
 import { ref, type Ref } from 'vue'
 import type { GameAction, GameView } from './contracts/game'
-import type { EnvironmentResponse, StudioStatus } from './contracts/runtime'
+import type { BackendResponse, StudioStatus } from './contracts/runtime'
 
 interface UseGameplayActionsOptions {
   gameView: GameView
@@ -9,7 +9,7 @@ interface UseGameplayActionsOptions {
   prefetchReady: Readonly<Ref<boolean>>
   applyStatus: (status: StudioStatus) => void
   applyGameView: (view: GameView) => void
-  applyPlayPrefetchStatus: (prefetch?: EnvironmentResponse['playPrefetch']) => void
+  applyPlayPrefetchStatus: (prefetch?: BackendResponse['playPrefetch']) => void
   beginPlayPrefetchAdvance: () => void
   scheduleAutoAdvance: () => void
 }

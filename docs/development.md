@@ -26,7 +26,7 @@ npm ci
 .\setup-environment.ps1
 ```
 
-开发启动器会自动使用 `.conda-backend`。如需使用其他兼容的 Python 可执行文件，请在 `.vscode/launch.local.env` 中设置 `MJAI_BACKEND_PYTHON`。
+开发启动器会自动使用 `.conda-backend`。如需使用其他兼容的 Python 可执行文件，请在 `.vscode/launch.local.env` 中设置 `RMS_BACKEND_PYTHON`。
 
 #### 启动程序
 
@@ -99,7 +99,7 @@ npm ci
 .\setup-environment.ps1
 ```
 
-開発ランチャーは `.conda-backend` を自動的に使用します。別の互換 Python 実行ファイルを使用する場合は、`.vscode/launch.local.env` に `MJAI_BACKEND_PYTHON` を設定してください。
+開発ランチャーは `.conda-backend` を自動的に使用します。別の互換 Python 実行ファイルを使用する場合は、`.vscode/launch.local.env` に `RMS_BACKEND_PYTHON` を設定してください。
 
 #### アプリケーションの起動
 
@@ -172,7 +172,7 @@ Backend development and packaging use a project-local environment:
 .\setup-environment.ps1
 ```
 
-The development launcher uses `.conda-backend` automatically. To override it, set `MJAI_BACKEND_PYTHON` in `.vscode/launch.local.env`.
+The development launcher uses `.conda-backend` automatically. To override it, set `RMS_BACKEND_PYTHON` in `.vscode/launch.local.env`.
 
 #### Run the application
 

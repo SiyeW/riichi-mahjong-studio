@@ -378,10 +378,23 @@ class AutoAnalysisPlanTest(unittest.TestCase):
         self.assertEqual(third["training"]["mode"], "always_review")
 
     def test_training_defaults_match_desktop_settings(self):
-        self.assertEqual(
-            engine_configuration.normalize_training_mode(None),
-            "threshold_review",
-        )
+        expectations = {
+            "no_review": "no_review",
+            "preview_before_click": "preview_before_click",
+            "threshold_review": "threshold_review",
+            "always_review": "always_review",
+            "free_play": "preview_before_click",
+            "guided": "threshold_review",
+            "strict": "always_review",
+            "unknown": "threshold_review",
+            None: "threshold_review",
+        }
+        for value, expected in expectations.items():
+            with self.subTest(value=value):
+                self.assertEqual(
+                    engine_configuration.normalize_training_mode(value),
+                    expected,
+                )
         self.assertEqual(
             engine_configuration.default_training_config()["mistakeThreshold"],
             0.25,

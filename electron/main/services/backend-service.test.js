@@ -22,8 +22,15 @@ function testDevelopmentPythonResolution() {
 
     assert.equal(resolveDevelopmentPython(root, {}), localPython)
     assert.equal(
-      resolveDevelopmentPython(root, { MJAI_BACKEND_PYTHON: 'custom-python' }),
-      'custom-python',
+      resolveDevelopmentPython(root, {
+        RMS_BACKEND_PYTHON: 'current-python',
+        MJAI_BACKEND_PYTHON: 'legacy-python',
+      }),
+      'current-python',
+    )
+    assert.equal(
+      resolveDevelopmentPython(root, { MJAI_BACKEND_PYTHON: 'legacy-python' }),
+      'legacy-python',
     )
 
     fs.rmSync(localPython)

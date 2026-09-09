@@ -25,7 +25,7 @@ test('mahjong presentation labels follow the live viewpoint and dealer', () => {
   assert.equal(labels.seatWindLabel(3), 'wind.east')
 })
 
-test('mahjong presentation labels keep action, draw, and red-five conventions', () => {
+test('mahjong presentation labels keep action and draw conventions', () => {
   const labels = useMahjongPresentationLabels({
     gameView: { table: null } as GameView,
     status: { controlledSeat: 0 } as StudioStatus,
@@ -36,6 +36,4 @@ test('mahjong presentation labels keep action, draw, and red-five conventions', 
   assert.equal(labels.ryukyokuActionLabel({ reason: 'suufon_renda' }), 'draw.suufon')
   assert.equal(labels.ryukyokuActionLabel({ reasonLabel: '荒牌流局' }), 'draw.exhaustive')
   assert.equal(labels.specialActionLabel({ type: 'hora', variant: 'tsumo' } as GameAction), 'action.tsumo')
-  assert.equal(labels.normalizeTileFamily('5mr'), '5m')
-  assert.equal(labels.redFive('5p'), '0p')
 })

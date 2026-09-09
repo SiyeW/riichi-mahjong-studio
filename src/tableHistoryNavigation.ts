@@ -1,3 +1,5 @@
+import { normalizeTileFamily } from './tileNotation.ts'
+
 interface TableHistoryNode {
   id: string
   action: Record<string, unknown> | null
@@ -21,12 +23,6 @@ const MELD_CREATION_TYPES = new Set(['chi', 'pon', 'daiminkan', 'ankan'])
 function actionActor(action: Record<string, unknown>): number {
   const actor = Number(action.actor)
   return Number.isInteger(actor) && actor >= 0 && actor < PLAYER_COUNT ? actor : -1
-}
-
-function normalizeTileFamily(tile: unknown): string {
-  return String(tile || '')
-    .replaceAll('r', '')
-    .replace(/^0([mps])$/, '5$1')
 }
 
 export function buildTableActionNodeIndex(nodes: TableHistoryNode[]): TableActionNodeIndex {

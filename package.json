@@ -3,7 +3,7 @@
   "version": "1.0.0-dev.0",
   "private": true,
   "author": "SiyeWu",
-  "description": "Local desktop Riichi Mahjong practice trainer with branching game records.",
+  "description": "Desktop application for reviewing riichi mahjong game records and practicing against engines.",
   "main": "electron/main/index.js",
   "engines": {
     "node": ">=22"
