@@ -2354,126 +2354,6 @@ textarea {
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
 }
 
-.wall-clipboard-message {
-  margin: calc(0.5rem * var(--floating-panel-scale)) 0 0;
-  color: rgba(220, 244, 240, 0.82);
-  font-size: var(--ui-text-body);
-}
-
-.wall-loading-state {
-  width: calc(var(--ron-tile-w) * 16.6);
-  margin: 0;
-  padding: calc(2.5rem * var(--floating-panel-scale)) calc(1rem * var(--floating-panel-scale));
-  color: var(--text-dim);
-  font-size: var(--ui-text-body);
-  text-align: center;
-}
-
-.wall-metadata {
-  display: grid;
-  gap: calc(0.38rem * var(--floating-panel-scale));
-  max-width: calc(48rem * var(--floating-panel-scale));
-  margin: calc(0.65rem * var(--floating-panel-scale)) 0 calc(0.2rem * var(--floating-panel-scale));
-  padding: calc(0.55rem * var(--floating-panel-scale)) calc(0.7rem * var(--floating-panel-scale));
-  border: calc(1px * var(--floating-panel-scale)) solid rgba(137, 188, 184, 0.16);
-  border-radius: calc(0.25rem * var(--floating-panel-scale));
-  background: rgba(0, 38, 44, 0.34);
-  color: rgba(190, 215, 211, 0.8);
-  font-size: var(--ui-text-body);
-  line-height: 1.4;
-}
-
-.wall-metadata p {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: calc(0.65rem * var(--floating-panel-scale));
-  align-items: baseline;
-  margin: 0;
-}
-
-.wall-metadata strong,
-.wall-metadata code {
-  min-width: 0;
-  color: rgba(232, 247, 244, 0.9);
-  font-size: inherit;
-  font-weight: 600;
-}
-
-.wall-metadata code {
-  font-family: ui-monospace, monospace;
-  font-weight: 400;
-  overflow-wrap: anywhere;
-}
-
-.wall-reconstruction {
-  display: grid;
-  gap: calc(0.38rem * var(--floating-panel-scale));
-  min-width: calc(27rem * var(--floating-panel-scale));
-  margin-top: calc(0.6rem * var(--floating-panel-scale));
-  color: var(--text-dim);
-  font-size: var(--ui-text-body);
-}
-
-.wall-reconstruction > p {
-  margin: 0;
-  line-height: 1.5;
-}
-
-.wall-reconstruction > button {
-  justify-self: start;
-}
-
-.wall-reconstruction label {
-  display: grid;
-  gap: calc(0.25rem * var(--floating-panel-scale));
-  max-width: calc(24rem * var(--floating-panel-scale));
-}
-
-.wall-reconstruction input {
-  min-height: calc(2rem * var(--chrome-scale));
-}
-
-.wall-grid {
-  display: flex;
-  flex-direction: column;
-  gap: calc(var(--ron-tile-w) * 0.1);
-  align-items: flex-start;
-  width: max-content;
-  margin-top: calc(0.4rem * var(--floating-panel-scale));
-}
-.wall-row {
-  display: flex;
-  gap: calc(var(--ron-tile-w) * 0.2);
-}
-.wall-group {
-  display: flex;
-  gap: 0;
-}
-
-.wall-tile {
-  position: relative;
-  width: var(--ron-tile-w);
-  height: var(--ron-tile-h);
-  border-radius: calc((var(--ron-tile-w) - 4px) * 4 / 30);
-}
-
-.wall-tile-idx {
-  position: absolute;
-  right: calc(0.0625rem * var(--floating-panel-scale));
-  bottom: calc(0.025rem * var(--floating-panel-scale));
-  font-size: var(--floating-text-tile-index);
-  line-height: 1;
-  color: rgba(255, 255, 255, 0.5);
-  pointer-events: none;
-}
-
-.wall-tile-img {
-  --mahjong-tile-artwork-width: var(--ron-tile-w);
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-
 .wall-tint-filters {
   position: absolute;
   width: 0;
@@ -2481,23 +2361,6 @@ textarea {
   overflow: hidden;
   pointer-events: none;
 }
-
-.wall-dora .wall-tile-img {
-  filter: url("#wall-dora-tint");
-}
-
-.wall-ura .wall-tile-img {
-  filter: url("#wall-ura-tint");
-}
-.wall-dealt .wall-tile-idx,
-.wall-drawn .wall-tile-idx,
-.wall-kan_consumed .wall-tile-idx,
-.wall-rinshan_drawn .wall-tile-idx,
-.wall-dora_unrevealed .wall-tile-idx,
-.wall-ura_unrevealed .wall-tile-idx,
-.wall-dora .wall-tile-idx,
-.wall-ura .wall-tile-idx { color: rgba(255, 255, 255, 0.7); }
-.wall-available .wall-tile-idx { color: rgba(0, 0, 0, 0.7); }
 
 /* 牌山、局图等工具使用同一套浮动面板和牌尺寸。 */
 .analysis-float-panel {
@@ -2537,15 +2400,6 @@ textarea {
 
 .shanten-panel-state.is-error {
   color: var(--accent-red);
-}
-
-.wall-window {
-  top: calc(4rem * var(--floating-panel-scale));
-  right: calc(1.25rem * var(--floating-panel-scale));
-  left: auto;
-  max-width: 95vw;
-  max-height: 90vh;
-  overflow: auto;
 }
 
 .engine-window {
