@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   windows:
+    name: Release build (Windows)
     runs-on: windows-latest
 
     steps:
