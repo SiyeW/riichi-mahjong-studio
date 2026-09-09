@@ -210,6 +210,12 @@ const {
   gap: 0;
 }
 
+.mini-tile-img {
+  --mahjong-tile-artwork-width: calc(var(--ui-tile-w) * 0.52);
+  width: calc(var(--ui-tile-w) * 0.52);
+  height: calc(var(--ui-tile-h) * 0.52);
+}
+
 .analysis-discard-kind {
   color: var(--text-dim);
   white-space: nowrap;

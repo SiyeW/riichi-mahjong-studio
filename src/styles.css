@@ -33,18 +33,14 @@ body {
   --pending-offset-y: calc(var(--zoom) * 6px);
   --bg-main: #00272f;
   --bg-panel: #094855;
-  --bg-panel-dark: #01252c;
   --bg-stage: #003944;
   --bg-river: #001d23;
   --tree-surface-bg: rgba(0, 0, 0, 0.15);
   --overlay-card-bg: #00181e;
   --overlay-card-border: 1px solid rgba(140, 190, 185, 0.22);
   --overlay-card-shadow: 0 20px 52px rgba(0, 0, 0, 0.42);
-  --line-soft: rgba(135, 188, 188, 0.22);
   --text-main: rgba(243, 249, 246, 0.9);
   --text-dim: rgba(213, 232, 228, 0.62);
-  --accent-green: #1a931a;
-  --accent-green-soft: rgb(245 247 245);
   --accent-red: rgba(204, 70, 70, 0.95);
   --hint-red: hsl(0, 70%, 50%);
   --color-tsumogiri: hsl(30, 100%, 92%);
@@ -93,7 +89,6 @@ body {
   --overlay-card-padding: calc(1.2rem * var(--chrome-scale)) calc(1.4rem * var(--chrome-scale)) calc(1.1rem * var(--chrome-scale));
   --ui-tile-w: calc(2.125rem * var(--ui-scale));
   --ui-tile-h: calc(2.75rem * var(--ui-scale));
-  --ui-font-tiny: calc(0.625rem * var(--ui-scale));
   --ui-font-xs: calc(0.8125rem * var(--ui-scale));
   --ui-font-sm: calc(0.875rem * var(--ui-scale));
   --ui-font-md: calc(1rem * var(--ui-scale));
@@ -110,16 +105,13 @@ body {
   --table-text-action: calc(var(--zoom) * 12px);
   --table-text-round: calc(1rem * var(--zoom));
   --table-text-center-label: calc(0.98rem * var(--center-ui-scale));
-  --table-text-counter: calc(0.46rem * var(--zoom));
   --table-text-score: calc(1.1rem * var(--center-ui-scale));
   --table-text-bet: calc(0.82rem * var(--center-ui-scale));
   --table-text-callout: calc(var(--zoom) * 42px);
   /* 与牌张、图表和图标几何绑定的字号。 */
   --floating-text-tile-index: calc(0.625rem * var(--floating-panel-scale, 1));
-  --floating-text-chart-axis: calc(0.75rem * var(--floating-panel-scale, 1));
   --floating-text-chart-viewbox: 0.22px;
   --floating-icon-close-size: calc(1.5rem * var(--floating-panel-scale, 1));
-  --side-panel-width: calc(19.625rem * var(--ui-scale));
   --topbar-min-h: calc(3.125rem * var(--ui-scale));
   --footer-min-h: calc(1.75rem * var(--ui-scale));
   --scrollbar-size: calc(0.48rem * var(--chrome-scale));
@@ -1134,22 +1126,6 @@ textarea {
   z-index: 2;
 }
 
-.discard-bars-placeholder {
-  visibility: hidden;
-}
-
-.discard-bars-placeholder.recommendation-toggle {
-  visibility: visible;
-  opacity: 0;
-  cursor: pointer;
-}
-
-.discard-bars-placeholder.recommendation-toggle:focus-visible {
-  opacity: 0.16;
-  outline: 1px solid rgba(151, 195, 187, 0.72);
-  outline-offset: calc(-1px * var(--chrome-scale));
-}
-
 .special-action-bar-track.recommendation-hidden {
   visibility: hidden;
 }
@@ -1512,18 +1488,6 @@ textarea {
 }
 
 
-.side-panel {
-  width: 100%;
-  flex: 1 1 0;
-  overflow: hidden;
-  background: var(--dock-module-background);
-  padding: 0;
-}
-
-.side-panel .panel-header {
-  margin: 0;
-}
-
 .settings-preview {
   box-sizing: border-box;
   min-width: 0;
@@ -1582,12 +1546,6 @@ textarea {
 
 .settings-preview:not(.collapsed) > .panel-section-toggle {
   margin-bottom: calc(0.32rem * var(--chrome-scale));
-}
-
-.mini-tile-img {
-  --mahjong-tile-artwork-width: calc(var(--ui-tile-w) * 0.52);
-  width: calc(var(--ui-tile-w) * 0.52);
-  height: calc(var(--ui-tile-h) * 0.52);
 }
 
 .empty-copy {
@@ -1805,17 +1763,6 @@ textarea {
   background: linear-gradient(180deg, rgba(8, 71, 82, 0.98) 0%, rgba(8, 71, 82, 0.94) 72%, rgba(8, 71, 82, 0) 100%);
 }
 
-.wall-view-panel .settings-modal-header {
-  position: static;
-  top: auto;
-  z-index: auto;
-  margin-left: 0;
-  margin-right: 0;
-  margin-bottom: calc(0.75rem * var(--chrome-scale));
-  padding: 0 0 calc(0.35rem * var(--chrome-scale));
-  background: transparent;
-}
-
 .settings-modal-header h2 {
   font-size: var(--ui-text-title);
 }
@@ -1951,18 +1898,6 @@ textarea {
   color: var(--text-soft);
   font-size: var(--ui-text-body);
   line-height: 1.35;
-}
-
-.wall-view-panel {
-  width: auto;
-  max-width: 95vw;
-  max-height: 90vh;
-  overflow-y: auto;
-  background: #02262c;
-  border: 1px solid rgba(122, 180, 172, 0.18);
-  border-radius: calc(0.5rem * var(--ui-scale));
-  padding: calc(1rem * var(--chrome-scale));
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
 }
 
 .wall-tint-filters {

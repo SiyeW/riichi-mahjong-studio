@@ -9,9 +9,7 @@
 .analysis-count-grid {
   --analysis-tile-width: calc(2.45rem * var(--floating-panel-scale));
   --analysis-tile-height: calc(3.18rem * var(--floating-panel-scale));
-  --analysis-risk-height: calc(var(--analysis-tile-height) * 1.14);
   --analysis-risk-bars-width: calc(var(--analysis-tile-width) * 0.84);
-  --analysis-count-bars-width: calc(var(--analysis-tile-width) - 1px);
   --analysis-chart-gap: calc(var(--analysis-tile-width) * 0.035);
   --analysis-scale-space: calc(2.45rem * var(--floating-panel-scale));
   position: relative;

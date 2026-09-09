@@ -35,6 +35,15 @@ const { t } = useI18n()
 .console-dock {
   container-name: console-dock;
   container-type: inline-size;
+  flex: 1 1 0;
+  width: 100%;
+  overflow: hidden;
+  padding: 0;
+  background: var(--dock-module-background);
+}
+
+.console-dock :deep(.panel-header) {
+  margin: 0;
 }
 
 .console-dock-body {

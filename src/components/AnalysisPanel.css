@@ -1,7 +1,5 @@
 .unified-analysis {
   --analysis-border: rgba(140, 195, 188, 0.16);
-  --analysis-surface: rgba(0, 29, 35, 0.28);
-  --analysis-soft-surface: rgba(0, 20, 25, 0.26);
   position: relative;
   width: 100%;
   max-width: none;

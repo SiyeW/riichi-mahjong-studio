@@ -1,6 +1,6 @@
 <template>
   <div class="settings-modal-backdrop" @click.self="emit('close')">
-    <section class="wall-view-panel mjai-debug-panel">
+    <section class="mjai-debug-panel">
       <div class="settings-modal-header">
         <h2>{{ t('debug.title') }}</h2>
         <div class="settings-modal-actions">
@@ -59,6 +59,12 @@ const { t } = useI18n()
 .mjai-debug-panel {
   width: min(95vw, calc(56.25rem * var(--ui-scale)));
   max-height: 90vh;
+  overflow-y: auto;
+  padding: calc(1rem * var(--chrome-scale));
+  border: 1px solid rgba(122, 180, 172, 0.18);
+  border-radius: calc(0.5rem * var(--ui-scale));
+  background: #02262c;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
 }
 
 .settings-modal-header {
