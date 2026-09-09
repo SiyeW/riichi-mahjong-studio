@@ -133,7 +133,11 @@ try {
     }
   })
   await page.goto(server.resolvedUrls.local[0], { waitUntil: 'domcontentloaded', timeout: 30000 })
-  await page.waitForFunction(() => window.analysisCheck?.vm.tileArtworkReady)
+  // A fresh CI runner has to start Vite and decode the complete tile artwork set
+  // without the warm caches available during local iteration. Keep ordinary UI
+  // assertions on the short default timeout, but give this one-time bootstrap its
+  // own cold-start budget.
+  await page.waitForFunction(() => window.analysisCheck?.vm.tileArtworkReady, null, { timeout: 30000 })
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
   await page.evaluate(() => { window.analysisCheck.vm.showMjaiDebug = true })
   assert.deepEqual(
