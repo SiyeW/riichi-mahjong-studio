@@ -720,7 +720,7 @@ import { flushBeforeClose } from './flushBeforeClose'
 import { createPythonEventRouter } from './pythonEventRouter'
 import { ANALYSIS_PANEL_DEFINITIONS, useWorkspaceSession } from './workspace/useWorkspaceSession'
 import { useWallView } from './useWallView'
-import { useEngineProfiles } from './useEngineProfiles'
+import { useEngineProfiles } from './engines/useEngineProfiles'
 import { useGameplayActions } from './useGameplayActions'
 import { useAutoAdvance } from './useAutoAdvance'
 import { useBranchNavigation } from './useBranchNavigation'
@@ -760,7 +760,7 @@ import ConsoleDock from './components/ConsoleDock.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DecisionEvaluationPanel from './components/DecisionEvaluationPanel.vue'
 import DockLayoutNode from './workspace/DockLayoutNode.vue'
-import EngineManagerWindow from './components/EngineManagerWindow.vue'
+import EngineManagerWindow from './engines/components/EngineManagerWindow.vue'
 import MjaiDebugDialog from './components/MjaiDebugDialog.vue'
 import QuickSettingsPanel from './components/QuickSettingsPanel.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
@@ -1084,6 +1084,7 @@ const {
   toggleEngineOutputFilter,
   unloadingEngineProfileId,
 } = useEngineProfiles({
+  bridge: () => window.studioAPI,
   settings,
   settingsDraft,
   status,

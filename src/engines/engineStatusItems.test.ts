@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { buildEngineStatusItems, normalizeModelActivityState } from './engineStatusItems.ts'
-import type { EngineProfile } from './contracts/engines.ts'
-import type { StudioStatus } from './contracts/runtime.ts'
+import type { EngineProfile } from '../contracts/engines.ts'
+import type { StudioStatus } from '../contracts/runtime.ts'
 
 const profile = { id: 'engine-1', name: 'Reader' } as EngineProfile
 const t = (key: string, params?: Record<string, string | number>) => {

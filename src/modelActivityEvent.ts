@@ -1,4 +1,4 @@
-import { normalizeModelActivityState } from './engineStatusItems.ts'
+import { normalizeModelActivityState } from './engines/engineStatusItems.ts'
 import type { PythonEvent, StudioStatus } from './contracts/runtime'
 
 export interface ModelActivityEventResult {

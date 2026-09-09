@@ -64,8 +64,9 @@
 
 <script setup lang="ts">
 import { nextTick } from 'vue'
-import type { EngineProfileDetailView, SupportedEngineOutputId } from '../useEngineProfiles'
-import { useI18n } from '../i18n'
+import type { EngineProfileDetailView } from '../presentation.ts'
+import type { SupportedEngineOutputId } from '../useEngineCatalog.ts'
+import { useI18n } from '../../i18n.ts'
 
 const props = defineProps<{ detail: EngineProfileDetailView }>()
 const emit = defineEmits<{

@@ -1,7 +1,7 @@
 import { reactive } from 'vue'
-import type { EngineRuntimeKind } from './engineStatusItems'
-import type { EngineProfile, EngineSettings, ModelRuntimeState } from './contracts/engines'
-import type { StudioStatus } from './contracts/runtime'
+import type { EngineRuntimeKind } from './engineStatusItems.ts'
+import type { EngineProfile, EngineSettings, ModelRuntimeState } from '../contracts/engines.ts'
+import type { StudioStatus } from '../contracts/runtime.ts'
 
 export function useEngineRuntimeProfiles(options: {
   status: StudioStatus

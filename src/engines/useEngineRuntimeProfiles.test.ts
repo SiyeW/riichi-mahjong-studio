@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { useEngineRuntimeProfiles } from './useEngineRuntimeProfiles.ts'
-import type { EngineProfile, EngineSettings } from './contracts/engines.ts'
-import type { StudioStatus } from './contracts/runtime.ts'
+import type { EngineProfile, EngineSettings } from '../contracts/engines.ts'
+import type { StudioStatus } from '../contracts/runtime.ts'
 
 function profile(): EngineProfile {
   return {

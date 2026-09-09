@@ -1,6 +1,6 @@
-import type { TranslationParams } from './i18n'
-import type { EngineProfile, ModelActivityState } from './contracts/engines'
-import type { StudioStatus } from './contracts/runtime'
+import type { TranslationParams } from '../i18n.ts'
+import type { EngineProfile, ModelActivityState } from '../contracts/engines.ts'
+import type { StudioStatus } from '../contracts/runtime.ts'
 
 type Translate = (key: string, params?: TranslationParams) => string
 type RuntimeState = { ready: boolean; unloaded: boolean } | null

@@ -53,9 +53,9 @@
 import type {
   EngineOutputFilterItem,
   EngineProfileListItem,
-  SupportedEngineOutputId,
-} from '../useEngineProfiles'
-import { useI18n } from '../i18n'
+} from '../presentation.ts'
+import type { SupportedEngineOutputId } from '../useEngineCatalog.ts'
+import { useI18n } from '../../i18n.ts'
 
 defineProps<{
   busy: boolean
