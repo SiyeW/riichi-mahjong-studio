@@ -43,12 +43,8 @@ npm run dev
 #### 运行检查
 
 ```powershell
-npm run type-check
-npm run build
-$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-  Select-Object -ExpandProperty FullName
-node --test $tests
-.\.conda-backend\python.exe -m unittest discover -s python\tests -t python -p 'test_*.py'
+npx playwright install chromium
+npm run check
 ```
 
 ### 构建 Windows 应用程序
@@ -120,12 +116,8 @@ Vite 開発サーバーと Electron アプリケーションが同時に起動�
 #### チェックの実行
 
 ```powershell
-npm run type-check
-npm run build
-$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-  Select-Object -ExpandProperty FullName
-node --test $tests
-.\.conda-backend\python.exe -m unittest discover -s python\tests -t python -p 'test_*.py'
+npx playwright install chromium
+npm run check
 ```
 
 ### Windows アプリケーションのビルド
@@ -197,12 +189,8 @@ Copy `.vscode/launch.local.env.example` to `.vscode/launch.local.env`, select `R
 #### Run the checks
 
 ```powershell
-npm run type-check
-npm run build
-$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-  Select-Object -ExpandProperty FullName
-node --test $tests
-.\.conda-backend\python.exe -m unittest discover -s python\tests -t python -p 'test_*.py'
+npx playwright install chromium
+npm run check
 ```
 
 ### Build the Windows application
