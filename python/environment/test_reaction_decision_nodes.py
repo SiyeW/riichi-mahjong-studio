@@ -3,6 +3,7 @@ import unittest
 from unittest import mock
 
 import game_record_storage
+import legal_actions
 import service
 
 
@@ -322,7 +323,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         service.STATE["game"] = game
 
         with (
-            mock.patch.object(service, "get_legal_kan_actions", return_value=[kan]),
+            mock.patch.object(legal_actions, "get_legal_kan_actions", return_value=[kan]),
             mock.patch.object(service, "get_ankan_candidates", return_value=["9s"]),
             mock.patch.object(service.DECISION_ANALYSIS, "ensure_cached"),
         ):
@@ -347,7 +348,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(service, "get_legal_kan_actions", return_value=[kan]),
+            mock.patch.object(legal_actions, "get_legal_kan_actions", return_value=[kan]),
             mock.patch.object(service, "get_ankan_candidates", return_value=["9s"]),
             mock.patch.object(service.GAME_FLOW, "choose_ai_discard", return_value=ai_discard),
         ):

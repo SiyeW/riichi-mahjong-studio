@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import patch
 
+import legal_actions
 import service
 from service_helpers import build_comparison_result
 
@@ -16,7 +17,7 @@ class ExactActionCandidatesTest(unittest.TestCase):
             ],
         }
 
-        actions = service._build_local_chi_actions(  # pylint: disable=protected-access
+        actions = legal_actions._build_local_chi_actions(  # pylint: disable=protected-access
             snapshot,
             0,
             "4p",
@@ -29,7 +30,7 @@ class ExactActionCandidatesTest(unittest.TestCase):
         self.assertEqual(len({action["id"] for action in actions}), 2)
 
     def test_pon_combinations_preserve_red_and_normal_variants(self):
-        combinations = service._unique_consumed_combinations(  # pylint: disable=protected-access
+        combinations = legal_actions._unique_consumed_combinations(  # pylint: disable=protected-access
             ["5p", "5p", "5pr"],
             2,
         )

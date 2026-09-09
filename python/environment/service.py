@@ -458,7 +458,9 @@ def build_legal_actions(snapshot, controlled_seat=None):
         can_declare_riichi=can_declare_riichi,
         can_declare_kyuushu_kyuuhai=ROUND_PROGRESSION.can_declare_kyuushu_kyuuhai,
         get_ankan_candidates=get_ankan_candidates,
-        get_legal_kan_actions=get_legal_kan_actions,
+        get_legal_kan_actions=lambda snapshot, actor: legal_actions.get_legal_kan_actions(
+            snapshot, actor
+        ),
         build_local_reaction_actions=_build_local_reaction_actions,
         debug=debug_flow,
     )
@@ -547,18 +549,6 @@ VIEW_BUILDER = environment_view.EnvironmentView(
         now_iso=now_iso,
     ),
 )
-
-
-def get_legal_kan_actions(snapshot, actor):
-    return legal_actions.get_legal_kan_actions(snapshot, actor)
-
-
-def _unique_consumed_combinations(tiles, count):
-    return legal_actions._unique_consumed_combinations(tiles, count)
-
-
-def _build_local_chi_actions(snapshot, actor, called_tile):
-    return legal_actions._build_local_chi_actions(snapshot, actor, called_tile)
 
 
 def _build_local_reaction_actions(snapshot, actor):

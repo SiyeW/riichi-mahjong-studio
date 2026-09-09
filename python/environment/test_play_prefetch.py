@@ -4,6 +4,7 @@ from collections import deque
 from unittest import mock
 
 import play_prefetch_runtime
+import legal_actions
 import service
 
 
@@ -77,7 +78,7 @@ class PlayPrefetchTest(unittest.TestCase):
         with (
             mock.patch.object(service, "build_player_state", return_value={}),
             mock.patch.object(service, "can_declare_tsumo", return_value=False),
-            mock.patch.object(service, "get_legal_kan_actions", return_value=[]),
+            mock.patch.object(legal_actions, "get_legal_kan_actions", return_value=[]),
             mock.patch.object(service, "can_declare_riichi", return_value=False),
             mock.patch.object(
                 service.ROUND_PROGRESSION,
@@ -108,7 +109,7 @@ class PlayPrefetchTest(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(service, "get_legal_kan_actions", return_value=[kan]),
+            mock.patch.object(legal_actions, "get_legal_kan_actions", return_value=[kan]),
             mock.patch.object(service, "get_ankan_candidates", return_value=["9s"]),
         ):
             actions = service.build_legal_actions(snapshot, controlled_seat=0)
@@ -126,7 +127,7 @@ class PlayPrefetchTest(unittest.TestCase):
         snapshot["riichiDiscardState"] = "ankan_choice"
 
         with (
-            mock.patch.object(service, "get_legal_kan_actions", return_value=[]),
+            mock.patch.object(legal_actions, "get_legal_kan_actions", return_value=[]),
             mock.patch.object(service, "get_ankan_candidates", return_value=[]),
         ):
             actions = service.build_legal_actions(snapshot, controlled_seat=0)
