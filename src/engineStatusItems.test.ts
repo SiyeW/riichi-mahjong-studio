@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import { buildEngineStatusItems, normalizeModelActivityState } from './engineStatusItems.ts'
 import type { EngineProfile } from './contracts/engines.ts'
+import type { StudioStatus } from './contracts/runtime.ts'
 
 const profile = { id: 'engine-1', name: 'Reader' } as EngineProfile
 const t = (key: string, params?: Record<string, string | number>) => {
@@ -22,7 +23,7 @@ test('model activity normalization accepts protocol states and legacy booleans',
 test('engine status projection omits inactive profiles', () => {
   const items = buildEngineStatusItems({
     profiles: [profile],
-    status: { controlledSeat: 0 } as TrainerStatusSnapshot,
+    status: { controlledSeat: 0 } as StudioStatus,
     loadingProfileId: '',
     loadErrors: {},
     runtimeState: () => null,
@@ -42,7 +43,7 @@ test('engine status projection combines opponent timing and errors with error pr
       errors: { decision: [], opponentAnalysis: 'model failed' },
     },
     modelPerformance: { decision: [0, 0, 0, 0], opponentAnalysis: 12.5 },
-  } as unknown as TrainerStatusSnapshot
+  } as unknown as StudioStatus
 
   const items = buildEngineStatusItems({
     profiles: [profile],

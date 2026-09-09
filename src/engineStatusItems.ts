@@ -1,5 +1,6 @@
 import type { TranslationParams } from './i18n'
 import type { EngineProfile, ModelActivityState } from './contracts/engines'
+import type { StudioStatus } from './contracts/runtime'
 
 type Translate = (key: string, params?: TranslationParams) => string
 type RuntimeState = { ready: boolean; unloaded: boolean } | null
@@ -18,7 +19,7 @@ export function normalizeModelActivityState(value: unknown): ModelActivityState 
 
 export function buildEngineStatusItems(options: {
   profiles: EngineProfile[]
-  status: TrainerStatusSnapshot
+  status: StudioStatus
   loadingProfileId: string
   loadErrors: Readonly<Record<string, string>>
   runtimeState: (profile: EngineProfile, kind: EngineRuntimeKind) => RuntimeState

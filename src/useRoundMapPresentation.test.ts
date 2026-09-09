@@ -4,6 +4,7 @@ import { ref } from 'vue'
 
 import { useRoundMapPresentation } from './useRoundMapPresentation.ts'
 import type { RoundSummary } from './contracts/game.ts'
+import type { StudioStatus } from './contracts/runtime.ts'
 
 function round(
   id: string,
@@ -35,7 +36,7 @@ test('round map lays out a main path and side continuation only while open', () 
       round('side-next', 1, [], null),
     ]),
     activeRoundRootId: ref('main-next'),
-    status: { controlledSeat: 0 } as TrainerStatusSnapshot,
+    status: { controlledSeat: 0 } as StudioStatus,
     uiScale: ref(1),
     t: (key) => key,
     localizedResultTitle: () => '',

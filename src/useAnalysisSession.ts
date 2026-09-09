@@ -3,19 +3,21 @@ import { acceptsAnalysisEpoch } from './analysisEpoch.ts'
 import { decisionPositionKey } from './analysisPosition.ts'
 import type { TranslationParams } from './i18n'
 import type { StudioSettings } from './contracts/settings'
+import type { GameView } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 
 type Translate = (key: string, params?: TranslationParams) => string
-type DecisionAnalysis = NonNullable<TrainerGameView['analysis']>
+type DecisionAnalysis = NonNullable<GameView['analysis']>
 
 interface UseAnalysisSessionOptions {
   settings: StudioSettings
-  status: TrainerStatusSnapshot
-  gameView: TrainerGameView
+  status: StudioStatus
+  gameView: GameView
   showAnalysisDock: Readonly<Ref<boolean>>
   t: Translate
   normalizeTrainingMode: (mode: string) => StudioSettings['training']['mode']
-  applyStatus: (status: TrainerStatusSnapshot) => void
-  applyGameView: (view: TrainerGameView) => void
+  applyStatus: (status: StudioStatus) => void
+  applyGameView: (view: GameView) => void
   scheduleTableZoomRecalc: () => void
   clearDecisionPresentation: (treeRevision: number) => void
 }
@@ -220,10 +222,10 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   async function fetchShantenOnce() {
-    if (clearingAnalysisCaches.value || !opponentAnalysisNeeded.value || !gameView.table || !window.trainerAPI?.getAnalysis) return
+    if (clearingAnalysisCaches.value || !opponentAnalysisNeeded.value || !gameView.table || !window.studioAPI?.getAnalysis) return
     const generation = ++shantenReadGeneration
     try {
-      const result = await window.trainerAPI.getAnalysis()
+      const result = await window.studioAPI.getAnalysis()
       if (generation !== shantenReadGeneration || !opponentAnalysisNeeded.value) return
       applyShantenResult(result, { clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value })
     } catch (error) {
@@ -233,10 +235,10 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   async function syncAnalysisVisibilityToBackend(refreshView = false): Promise<boolean> {
-    if (!window.trainerAPI?.setAnalysisVisibility) return false
+    if (!window.studioAPI?.setAnalysisVisibility) return false
     const generation = ++analysisVisibilityGeneration
     try {
-      const response = await window.trainerAPI.setAnalysisVisibility({
+      const response = await window.studioAPI.setAnalysisVisibility({
         decisionRecommendations: effectiveDecisionRecommendationsEnabled.value,
         opponentAnalysis: opponentAnalysisNeeded.value,
       })
@@ -273,7 +275,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     if (key) decisionAnalysisEventCache.set(key, analysis)
   }
 
-  function resolveNextDecisionAnalysis(nextView: TrainerGameView, isNewGame: boolean): TrainerGameView['analysis'] {
+  function resolveNextDecisionAnalysis(nextView: GameView, isNewGame: boolean): GameView['analysis'] {
     if (isNewGame) decisionAnalysisEventCache.clear()
     if (nextView.analysis) {
       cacheDecisionAnalysis(nextView.gameId, nextView.currentNodeId, nextView.analysis)
@@ -315,13 +317,13 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   async function clearLoadedAnalysisCaches() {
-    if (!window.trainerAPI?.clearAnalysisCaches || clearingAnalysisCaches.value) return
+    if (!window.studioAPI?.clearAnalysisCaches || clearingAnalysisCaches.value) return
     const gameId = gameView.gameId
     clearingAnalysisCaches.value = true
     invalidateOpponentRead()
     analysisCacheClearMessage.value = ''
     try {
-      const response = await window.trainerAPI.clearAnalysisCaches()
+      const response = await window.studioAPI.clearAnalysisCaches()
       if (gameId !== gameView.gameId) return
       minimumDecisionCacheEpoch = response.cleared.decisionCacheEpoch
       minimumOpponentCacheEpoch = response.cleared.opponentCacheEpoch

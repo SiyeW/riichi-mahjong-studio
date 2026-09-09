@@ -2,13 +2,14 @@ import type { Ref } from 'vue'
 import { backendStoppedState } from './backendStoppedState.ts'
 import { applyModelActivityEvent } from './modelActivityEvent.ts'
 import { shantenResultHasRows } from './useAnalysisSession.ts'
-import type { GameTreeNode } from './contracts/game'
+import type { GameTreeNode, GameView } from './contracts/game'
+import type { PythonEvent, StudioStatus } from './contracts/runtime'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
 export interface PythonEventRouterOptions {
-  status: TrainerStatusSnapshot
-  gameView: TrainerGameView
+  status: StudioStatus
+  gameView: GameView
   bootstrapError: Ref<string>
   backendRecoveryNeeded: Ref<boolean>
   backendHasCheckpoint: Ref<boolean>
@@ -16,8 +17,8 @@ export interface PythonEventRouterOptions {
   effectiveDecisionRecommendationsEnabled: Readonly<Ref<boolean>>
   nodeMapById: Readonly<Ref<ReadonlyMap<string, GameTreeNode>>>
   t: Translate
-  applyStatus: (status: TrainerStatusSnapshot) => void
-  applyGameView: (view: TrainerGameView) => void
+  applyStatus: (status: StudioStatus) => void
+  applyGameView: (view: GameView) => void
   clearRecordMetadata: () => void
   resetForBackendLifecycle: () => void
   invalidateGameplayResponses: () => void
@@ -29,21 +30,21 @@ export interface PythonEventRouterOptions {
   markPlayPrefetchReady: (gameId: string, nodeId: string) => void
   clearOpponentAnalysisWithoutMotion: () => void
   fetchShantenOnce: () => Promise<unknown>
-  applyOpponentAnalysisEvent: (analysis: NonNullable<TrainerGameView['opponentAnalysis']>) => void
+  applyOpponentAnalysisEvent: (analysis: NonNullable<GameView['opponentAnalysis']>) => void
   cacheDecisionAnalysis: (
     gameId: string | null | undefined,
     nodeId: string | null | undefined,
-    analysis: NonNullable<TrainerGameView['analysis']>,
+    analysis: NonNullable<GameView['analysis']>,
   ) => void
 }
 
-function eventMatchesGame(event: TrainerPythonEvent, gameId: string | null | undefined): boolean {
+function eventMatchesGame(event: PythonEvent, gameId: string | null | undefined): boolean {
   return !event.gameId || event.gameId === gameId
 }
 
 function eventMatchesCurrentAnalysisView(
-  event: TrainerPythonEvent,
-  gameView: TrainerGameView,
+  event: PythonEvent,
+  gameView: GameView,
   controlledSeat: number,
 ): boolean {
   if (!eventMatchesGame(event, gameView.gameId)) return false
@@ -52,8 +53,8 @@ function eventMatchesCurrentAnalysisView(
 }
 
 function applyTreeUpdates(
-  event: TrainerPythonEvent,
-  gameView: TrainerGameView,
+  event: PythonEvent,
+  gameView: GameView,
   nodeMapById: ReadonlyMap<string, GameTreeNode>,
 ) {
   event.treeComparisons?.forEach((update) => {
@@ -66,7 +67,7 @@ function applyTreeUpdates(
 }
 
 export function createPythonEventRouter(options: PythonEventRouterOptions) {
-  return function handlePythonEvent(event: TrainerPythonEvent) {
+  return function handlePythonEvent(event: PythonEvent) {
     if (event.type === 'service_recovery_failed') {
       options.bootstrapError.value = options.t('recovery.failed', { message: event.error || '' })
       return
@@ -153,10 +154,10 @@ export function createPythonEventRouter(options: PythonEventRouterOptions) {
       ? Number(event.analysis.seat)
       : null
     if (analysisSeat !== null && analysisSeat !== options.status.controlledSeat) return
-    if (event.state) options.applyStatus(event.state as TrainerStatusSnapshot)
+    if (event.state) options.applyStatus(event.state)
     applyTreeUpdates(event, options.gameView, options.nodeMapById.value)
 
-    const analysis = event.analysis as NonNullable<TrainerGameView['analysis']>
+    const analysis = event.analysis as NonNullable<GameView['analysis']>
     options.cacheDecisionAnalysis(event.gameId || options.gameView.gameId, event.nodeId, analysis)
     if (event.nodeId === options.gameView.currentNodeId) options.gameView.analysis = analysis
   }

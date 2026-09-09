@@ -1,11 +1,12 @@
 import type { TranslationParams } from './i18n'
-import type { GameAction } from './contracts/game'
+import type { GameAction, GameView } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 
 type Translate = (key: string, params?: TranslationParams) => string
 
 export function useMahjongPresentationLabels(options: {
-  gameView: TrainerGameView
-  status: TrainerStatusSnapshot
+  gameView: GameView
+  status: StudioStatus
   t: Translate
 }) {
   const { gameView, status, t } = options

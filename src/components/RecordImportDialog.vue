@@ -48,6 +48,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useI18n } from '../i18n'
+import type { RecordImportResult } from '../contracts/runtime'
 
 const { t } = useI18n()
 
@@ -57,7 +58,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   close: []
-  imported: [result: TrainerRecordImportResult]
+  imported: [result: RecordImportResult]
   'open-external': [url: string]
 }>()
 
@@ -72,7 +73,7 @@ function isMortalReportInput(value: string): boolean {
 }
 
 async function submitImport() {
-  if (!window.trainerAPI || importing.value || !input.value.trim()) return
+  if (!window.studioAPI || importing.value || !input.value.trim()) return
   importing.value = true
   errorMessage.value = ''
   try {
@@ -83,8 +84,8 @@ async function submitImport() {
       seed: seed.value,
     }
     const result = isMortalReportInput(input.value)
-      ? await window.trainerAPI.importMortalReport(payload)
-      : await window.trainerAPI.importCustomTenhou(payload)
+      ? await window.studioAPI.importMortalReport(payload)
+      : await window.studioAPI.importCustomTenhou(payload)
     emit('imported', result)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : t('import.failed')

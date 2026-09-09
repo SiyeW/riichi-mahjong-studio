@@ -10,12 +10,12 @@
 
 <script setup lang="ts">
 import { useI18n } from '../i18n'
-import type { GameTreeNode } from '../contracts/game'
+import type { GameTreeNode, GameView } from '../contracts/game'
 import { useActionAnnouncement } from '../useActionAnnouncement'
 import type { TableSeatView } from '../useTablePresentation'
 
 const props = defineProps<{
-  gameView: TrainerGameView
+  gameView: GameView
   views: TableSeatView[]
   findNode: (nodeId: string) => GameTreeNode | undefined
 }>()

@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import { useEngineRuntimeProfiles } from './useEngineRuntimeProfiles.ts'
 import type { EngineProfile, EngineSettings } from './contracts/engines.ts'
+import type { StudioStatus } from './contracts/runtime.ts'
 
 function profile(): EngineProfile {
   return {
@@ -14,7 +15,7 @@ function profile(): EngineProfile {
   } as unknown as EngineProfile
 }
 
-function status(): TrainerStatusSnapshot {
+function status(): StudioStatus {
   return {
     modelRuntime: {
       decision: { profileId: 'reader', ready: true, unloaded: false },
@@ -25,7 +26,7 @@ function status(): TrainerStatusSnapshot {
       opponentAnalysis: 'idle',
       errors: { decision: [], opponentAnalysis: '' },
     },
-  } as unknown as TrainerStatusSnapshot
+  } as unknown as StudioStatus
 }
 
 function engines(engineProfile: EngineProfile): EngineSettings {

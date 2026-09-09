@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { useRoundResultPresentation } from './useRoundResultPresentation.ts'
+import type { GameView } from './contracts/game.ts'
+import type { StudioStatus } from './contracts/runtime.ts'
 
 function createPresentation(resultInfo: Record<string, unknown>, dealer = 0) {
   const gameView = {
@@ -11,8 +13,8 @@ function createPresentation(resultInfo: Record<string, unknown>, dealer = 0) {
       melds: [[], [], [], []],
       resultInfo,
     },
-  } as unknown as TrainerGameView
-  const status = { controlledSeat: 1 } as TrainerStatusSnapshot
+  } as unknown as GameView
+  const status = { controlledSeat: 1 } as StudioStatus
   return useRoundResultPresentation({
     gameView,
     status,

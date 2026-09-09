@@ -1,7 +1,9 @@
 import { computed, nextTick, onBeforeUnmount, watch, type Ref } from 'vue'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
+import type { GameView } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 
-export type PendingDiscardView = NonNullable<NonNullable<TrainerGameView['table']>['pendingDiscard']>
+export type PendingDiscardView = NonNullable<NonNullable<GameView['table']>['pendingDiscard']>
 export type GameViewTransitionDirection = 'forward' | 'backward'
 
 export interface PendingDiscardReturnFlight {
@@ -15,7 +17,7 @@ export interface PendingDiscardReturnFlight {
 }
 
 export function useDiscardFlight(options: {
-  status: TrainerStatusSnapshot
+  status: StudioStatus
   reduceMotionEnabled: Readonly<Ref<boolean>>
   tileImageSrc: (tile: string) => string
   scheduleAutoAdvance: () => void
@@ -41,7 +43,7 @@ function holdAutoAdvanceForTableMotion(duration = getUiMotionDurationMs()) {
   )
 }
 
-function pendingDiscardFromTable(table: TrainerGameView['table']): PendingDiscardView | null {
+function pendingDiscardFromTable(table: GameView['table']): PendingDiscardView | null {
   return table?.pendingRiichiDiscard || table?.pendingDiscard || null
 }
 

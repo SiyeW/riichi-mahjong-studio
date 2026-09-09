@@ -82,10 +82,12 @@
 import { formatDelta } from '../useDecisionPresentation'
 import { useI18n } from '../i18n'
 import { localizedResultTitle, useRoundResultPresentation } from '../useRoundResultPresentation'
+import type { GameView } from '../contracts/game'
+import type { StudioStatus } from '../contracts/runtime'
 
 const props = defineProps<{
-  gameView: TrainerGameView
-  status: TrainerStatusSnapshot
+  gameView: GameView
+  status: StudioStatus
   isReadOnlyRecord: boolean
   relativeSeatLabel: (seat: number) => string
   tileFaceLabel: (tile: string) => string

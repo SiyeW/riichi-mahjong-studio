@@ -29,9 +29,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { TableSeatView } from '../useTablePresentation'
+import type { GameView } from '../contracts/game'
 
 const props = defineProps<{
-  table: NonNullable<TrainerGameView['table']>
+  table: NonNullable<GameView['table']>
   views: TableSeatView[]
   roundLabel: string
   doraSlots: string[]

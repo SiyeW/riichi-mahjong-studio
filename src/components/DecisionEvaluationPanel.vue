@@ -99,9 +99,10 @@
 import { ref } from 'vue'
 import { useI18n } from '../i18n'
 import { useDecisionEntryPresentation } from '../useDecisionPresentation'
+import type { GameView } from '../contracts/game'
 
 const props = defineProps<{
-  gameView: TrainerGameView
+  gameView: GameView
   effectiveRecommendationsEnabled: boolean
   showRecommendations: boolean
   localizedEngineText: (value: string | Record<string, string> | undefined, fallback: string) => string

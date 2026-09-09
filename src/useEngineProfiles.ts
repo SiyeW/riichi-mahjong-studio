@@ -6,6 +6,7 @@ import { buildEngineStatusItems, type EngineRuntimeKind } from './engineStatusIt
 import { useEngineRuntimeProfiles } from './useEngineRuntimeProfiles'
 import type { EngineDescription, EngineOutputId, EngineProfile, EngineSettings } from './contracts/engines'
 import type { StudioSettings } from './contracts/settings'
+import type { StudioStatus } from './contracts/runtime'
 
 export type SupportedEngineOutputId = EngineOutputId
 
@@ -62,13 +63,13 @@ type Translate = (key: string, params?: TranslationParams) => string
 interface UseEngineProfilesOptions {
   settings: StudioSettings
   settingsDraft: StudioSettings
-  status: TrainerStatusSnapshot
+  status: StudioStatus
   locale: Readonly<Ref<string>>
   t: Translate
   closeSettingsPanel: () => void
   focus: () => void
   applySettings: (settings: StudioSettings) => void
-  applyStatus: (status: TrainerStatusSnapshot) => void
+  applyStatus: (status: StudioStatus) => void
   afterOpponentUnload: () => void | Promise<void>
 }
 
@@ -305,11 +306,11 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
   async function describeEngineProfile(profile: EngineProfile | null) {
     const key = engineDescriptionKey(profile)
     if (!profile?.enginePath || engineDescriptions[key] || describingEngineIds.has(key)) return
-    if (!window.trainerAPI?.describeEngine) return
+    if (!window.studioAPI?.describeEngine) return
     describingEngineIds.add(key)
     delete engineDescribeErrors[key]
     try {
-      const description = await window.trainerAPI.describeEngine({
+      const description = await window.studioAPI.describeEngine({
         engineId: profile.engineId || undefined,
         engineVersion: profile.engineVersion || undefined,
         enginePath: profile.enginePath,
@@ -505,8 +506,8 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
 
   async function chooseEngineFile() {
     const profile = activeEngineProfile.value
-    if (!profile || profileConfigurationLocked(profile) || !window.trainerAPI?.chooseEngineFile) return
-    const selectedPath = await window.trainerAPI.chooseEngineFile()
+    if (!profile || profileConfigurationLocked(profile) || !window.studioAPI?.chooseEngineFile) return
+    const selectedPath = await window.studioAPI.chooseEngineFile()
     if (!selectedPath || profileConfigurationLocked(profile)) return
     profile.enginePath = selectedPath
     profile.engineCommand = [selectedPath]
@@ -525,8 +526,8 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
 
   async function chooseEngineWeight(slotId: string) {
     const profile = activeEngineProfile.value
-    if (!profile || profileConfigurationLocked(profile) || !window.trainerAPI?.chooseEngineWeight) return
-    const selectedPath = await window.trainerAPI.chooseEngineWeight()
+    if (!profile || profileConfigurationLocked(profile) || !window.studioAPI?.chooseEngineWeight) return
+    const selectedPath = await window.studioAPI.chooseEngineWeight()
     if (!selectedPath || profileConfigurationLocked(profile)) return
     const slot = activeEngineWeightSlots.value.find((item) => item.id === slotId)
     if (!slot) return
@@ -684,9 +685,9 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
   )
 
   async function saveEngineDraftSnapshot(snapshot: EngineSettings, revision: number): Promise<boolean> {
-    if (!window.trainerAPI) return false
+    if (!window.studioAPI) return false
     try {
-      const saved = await window.trainerAPI.saveSettings({ engines: snapshot })
+      const saved = await window.studioAPI.saveSettings({ engines: snapshot })
       applySettings(mergeSettingsReply(settings, saved, { engines: snapshot }))
       if (engineSaves.revision === revision) replaceEngineDraft(saved.engines)
       return true
@@ -704,7 +705,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
   }
 
   async function loadEngineProfile(profileId: string) {
-    if (!window.trainerAPI?.activateEngine || loadingEngineProfileId.value || unloadingEngineProfileId.value) return
+    if (!window.studioAPI?.activateEngine || loadingEngineProfileId.value || unloadingEngineProfileId.value) return
     const profile = activeEngineProfiles.value.find((item) => item.id === profileId)
     if (!profile) return
     loadingEngineProfileId.value = profileId
@@ -715,9 +716,9 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
       if (!await flushEngineAutosave()) return
       const activationRevision = engineSaves.revision
       const engines = cloneEngineSettings(settingsDraft.engines)
-      const loaded = await window.trainerAPI.activateEngine({ profileId, engines })
+      const loaded = await window.studioAPI.activateEngine({ profileId, engines })
       applySettings(mergeSettingsReply(settings, loaded, { engines: loaded.engines }))
-      applyStatus(await window.trainerAPI.getStatus())
+      applyStatus(await window.studioAPI.getStatus())
       captureRuntimeEngineProfile('decision', loaded.engines)
       captureRuntimeEngineProfile('opponent', loaded.engines)
       engineSaves.acknowledge(activationRevision)
@@ -725,9 +726,9 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
       engineSaveMessage.value = t('engine.loaded')
     } catch (error) {
       try {
-        const failedSettings = await window.trainerAPI.getSettings()
+        const failedSettings = await window.studioAPI.getSettings()
         applySettings(mergeSettingsReply(settings, failedSettings, { engines: failedSettings.engines }))
-        applyStatus(await window.trainerAPI.getStatus())
+        applyStatus(await window.studioAPI.getStatus())
         captureRuntimeEngineProfile('decision', failedSettings.engines)
         captureRuntimeEngineProfile('opponent', failedSettings.engines)
       } catch {
@@ -742,7 +743,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
   }
 
   async function unloadEngineProfile(profileId: string) {
-    if (!window.trainerAPI?.unloadEngine || loadingEngineProfileId.value || unloadingEngineProfileId.value) return
+    if (!window.studioAPI?.unloadEngine || loadingEngineProfileId.value || unloadingEngineProfileId.value) return
     if (activeEngineProfile.value?.id !== profileId || !profileIsLoaded(activeEngineProfile.value)) return
     const profile = activeEngineProfile.value
     unloadingEngineProfileId.value = profileId
@@ -750,7 +751,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     try {
       if (!await flushEngineAutosave()) return
       const unloadRevision = engineSaves.revision
-      const unloaded = await window.trainerAPI.unloadEngine({ profileId })
+      const unloaded = await window.studioAPI.unloadEngine({ profileId })
       applyStatus(unloaded.state)
       applySettings(mergeSettingsReply(settings, unloaded.settings, { engines: unloaded.settings.engines }))
       if (engineSaves.revision === unloadRevision) replaceEngineDraft(unloaded.settings.engines)

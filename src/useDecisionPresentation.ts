@@ -1,6 +1,7 @@
 import { computed, type Ref } from 'vue'
 import type { DecisionMetricDefinition } from './contracts/engines'
 import type { GameAction } from './contracts/game'
+import type { GameView } from './contracts/game'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -26,7 +27,7 @@ export function formatDelta(delta: number): string {
 }
 
 export function useDecisionEntryPresentation(options: {
-  gameView: TrainerGameView
+  gameView: GameView
   t: Translate
   normalizeTileFamily: (tile: string) => string
   redFive: (tile: string) => string
@@ -261,7 +262,7 @@ export function useDecisionEntryPresentation(options: {
 }
 
 export function useDecisionActionPresentation(options: {
-  gameView: TrainerGameView
+  gameView: GameView
   showTrainingRecommendations: Readonly<Ref<boolean>>
   t: Translate
   normalizeTileFamily: (tile: string) => string

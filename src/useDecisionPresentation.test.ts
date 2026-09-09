@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { GameView } from './contracts/game.ts'
 import { ref } from 'vue'
 import {
   useDecisionActionPresentation,
@@ -23,7 +24,7 @@ function createFixture() {
       metricDefinitions: [{ id: 'score', format: 'points', preferredDirection: 'higher' }],
       primaryMetricId: 'score',
     },
-  } as unknown as TrainerGameView
+  } as unknown as GameView
   const showTrainingRecommendations = ref(true)
   const entry = useDecisionEntryPresentation({
     gameView,

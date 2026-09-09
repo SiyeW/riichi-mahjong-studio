@@ -714,7 +714,8 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
 import type { StudioSettings } from './contracts/settings'
-import type { GameTreeNode } from './contracts/game'
+import type { GameTreeNode, GameView } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 import { flushBeforeClose } from './flushBeforeClose'
 import { mergeSettingsReply } from './settingsChanges'
 import { createPythonEventRouter } from './pythonEventRouter'
@@ -871,7 +872,7 @@ function applyWorkspaceLayoutLocally(nextLayout: StudioSettings['display']['work
 function updateWorkspaceLayout(nextLayout: StudioSettings['display']['workspaceLayout']) {
   const normalized = applyWorkspaceLayoutLocally(nextLayout)
   const generation = ++workspaceLayoutSaveGeneration
-  void window.trainerAPI?.saveSettings({
+  void window.studioAPI?.saveSettings({
     display: {
       workspaceLayout: JSON.parse(JSON.stringify(normalized)),
     },
@@ -1045,7 +1046,7 @@ const {
   },
 })
 
-const status = reactive<TrainerStatusSnapshot>({
+const status = reactive<StudioStatus>({
   aiThinkingTimeS: 0,
   mode: 'play',
   controlledSeat: 0,
@@ -1100,7 +1101,7 @@ const showTsumogiriTone = computed(() => (
 
 const seatSwitchInFlight = ref(false)
 const pendingSeatSwitchLabel = ref('')
-const gameView = reactive<TrainerGameView>({
+const gameView = reactive<GameView>({
   gameId: null,
   matchId: null,
   readOnly: false,
@@ -1247,10 +1248,10 @@ const backendHasCheckpoint = ref(false)
 const backendRetrying = ref(false)
 
 async function retryBackend() {
-  if (backendRetrying.value || !window.trainerAPI) return
+  if (backendRetrying.value || !window.studioAPI) return
   backendRetrying.value = true
   try {
-    if (backendRecoveryNeeded.value) await window.trainerAPI.restartBackend()
+    if (backendRecoveryNeeded.value) await window.studioAPI.restartBackend()
     else await refreshBootstrapState()
   } catch (error) {
     bootstrapError.value = t('recovery.failed', { message: error instanceof Error ? error.message : String(error) })
@@ -1669,7 +1670,7 @@ const {
 } = useTileArtwork(t)
 
 
-function applyStatus(nextStatus: TrainerStatusSnapshot) {
+function applyStatus(nextStatus: StudioStatus) {
   Object.assign(status, nextStatus)
 }
 
@@ -1690,27 +1691,27 @@ const {
   tileImageSrc,
   scheduleAutoAdvance,
 })
-function opponentAnalysisRoundKey(view: TrainerGameView): string | null {
+function opponentAnalysisRoundKey(view: GameView): string | null {
   if (!view.gameId || !view.table) return null
   const roundRootId = view.tree?.currentRoundRootId
   if (roundRootId) return `${view.gameId}\u0000${roundRootId}`
   return `${view.gameId}\u0000${view.table.roundIndex}\u0000${view.table.honba}`
 }
 
-function treeNodeCount(tree: TrainerGameView['tree']): number {
+function treeNodeCount(tree: GameView['tree']): number {
   const nodes = tree?.nodes
   if (Array.isArray(nodes)) return nodes.length
   return nodes && typeof nodes === 'object' ? Object.keys(nodes).length : 0
 }
 
-function treeContainsNode(tree: TrainerGameView['tree'], nodeId: string | null | undefined): boolean {
+function treeContainsNode(tree: GameView['tree'], nodeId: string | null | undefined): boolean {
   if (!nodeId) return false
   const nodes = tree?.nodes
   if (Array.isArray(nodes)) return nodes.some((node) => node.id === nodeId)
   return Boolean(nodes && typeof nodes === 'object' && Object.prototype.hasOwnProperty.call(nodes, nodeId))
 }
 
-function applyGameView(nextView: TrainerGameView, transitionDirection: GameViewTransitionDirection = 'forward') {
+function applyGameView(nextView: GameView, transitionDirection: GameViewTransitionDirection = 'forward') {
   invalidateOpponentRead()
   const previousSoundView: SoundTransitionView = {
     table: gameView.table,
@@ -1811,14 +1812,14 @@ function hasRecommendationAnalysis(): boolean {
 }
 
 function openExternalLink(url: string) {
-  void window.trainerAPI?.openExternal(url).catch((error) => {
+  void window.studioAPI?.openExternal(url).catch((error) => {
     console.error('Failed to open external link:', error)
   })
 }
 
 function openEngineLegalDocument(kind: 'license' | 'notice', index: number) {
   if (!activeCatalogEngine.value) return
-  void window.trainerAPI?.openEngineLegalDocument({
+  void window.studioAPI?.openEngineLegalDocument({
     engineId: activeCatalogEngine.value.id,
     kind,
     index,
@@ -1828,17 +1829,17 @@ function openEngineLegalDocument(kind: 'license' | 'notice', index: number) {
 }
 
 async function refreshGameView() {
-  if (!window.trainerAPI) return
+  if (!window.studioAPI) return
   const requestContext = currentViewRequestContext()
   const nodeId = gameView.currentNodeId
-  const response = await window.trainerAPI.getGameView()
+  const response = await window.studioAPI.getGameView()
   if (nodeId !== gameView.currentNodeId || !acceptsCurrentViewRequestContext(requestContext)) return
   applyStatus(response.state)
   applyGameView(response.view)
 }
 
 async function refreshBootstrapState() {
-  if (!window.trainerAPI) {
+  if (!window.studioAPI) {
     bootstrapError.value = t('error.desktopBridge')
     return
   }
@@ -1846,7 +1847,7 @@ async function refreshBootstrapState() {
     // Load settings first — this works even if the Python backend is down
     let nextSettings: StudioSettings
     try {
-      nextSettings = await window.trainerAPI.getSettings()
+      nextSettings = await window.studioAPI.getSettings()
       applySettings(nextSettings)
       captureRuntimeEngineProfile('decision', nextSettings.engines)
       captureRuntimeEngineProfile('opponent', nextSettings.engines)
@@ -1855,12 +1856,12 @@ async function refreshBootstrapState() {
     } catch {
       // Settings file not readable? Use defaults already in `settings`
     }
-    const nextStatus = await window.trainerAPI.getStatus()
+    const nextStatus = await window.studioAPI.getStatus()
     applyStatus(nextStatus)
     markConfiguredEngineStarting('decision', settings.engines)
     markConfiguredEngineStarting('opponent', settings.engines)
     await syncAnalysisVisibilityToBackend()
-    const restored = await window.trainerAPI.restoreStartupRecovery()
+    const restored = await window.studioAPI.restoreStartupRecovery()
     if (restored) {
       applyStatus(restored.state)
       applyGameView(restored.view)
@@ -1868,8 +1869,8 @@ async function refreshBootstrapState() {
     } else {
       await refreshGameView()
     }
-    if (window.trainerAPI.getRecordDirty) {
-      setRecordDirtySnapshot(await window.trainerAPI.getRecordDirty())
+    if (window.studioAPI.getRecordDirty) {
+      setRecordDirtySnapshot(await window.studioAPI.getRecordDirty())
     }
     bootstrapError.value = ''
   } catch (error) {
@@ -1899,35 +1900,35 @@ async function prepareRendererForDisplay() {
 }
 
 async function toggleMode() {
-  if (!window.trainerAPI || !status.gameLoaded || isReadOnlyRecord.value) return
+  if (!window.studioAPI || !status.gameLoaded || isReadOnlyRecord.value) return
   invalidateGameplayResponses()
   cancelPendingWheelNavigation()
   clearAutoAdvanceTimer()
   const nextMode = status.mode === 'play' ? 'research' : 'play'
-  applyStatus(await window.trainerAPI.setMode(nextMode))
+  applyStatus(await window.studioAPI.setMode(nextMode))
   await refreshGameView()
 }
 
 async function showRoundMapInResearchMode() {
-  if (!window.trainerAPI || !status.gameLoaded) return
+  if (!window.studioAPI || !status.gameLoaded) return
   if (status.mode !== 'research') {
     invalidateGameplayResponses()
     cancelPendingWheelNavigation()
     clearAutoAdvanceTimer()
-    applyStatus(await window.trainerAPI.setMode('research'))
+    applyStatus(await window.studioAPI.setMode('research'))
     await refreshGameView()
   }
   openRoundMapOverlay()
 }
 
 async function toggleVisibleHands() {
-  if (!window.trainerAPI) return
-  applyStatus(await window.trainerAPI.toggleVisibleHands())
+  if (!window.studioAPI) return
+  applyStatus(await window.studioAPI.toggleVisibleHands())
   await refreshGameView()
 }
 
 async function switchSeat(seat: number, label: string) {
-  if (!window.trainerAPI || seatSwitchInFlight.value || seat === status.controlledSeat) return
+  if (!window.studioAPI || seatSwitchInFlight.value || seat === status.controlledSeat) return
   invalidateGameplayResponses()
   invalidateNavigation()
   seatSwitchInFlight.value = true
@@ -1935,7 +1936,7 @@ async function switchSeat(seat: number, label: string) {
   try {
     const requestContext = currentViewRequestContext()
     gameView.analysis = null
-    const response = await window.trainerAPI.requestSeatSwitch(seat)
+    const response = await window.studioAPI.requestSeatSwitch(seat)
     if (!acceptsCurrentViewRequestContext(requestContext)) return
     applyStatus(response)
     await refreshGameView()
@@ -2013,17 +2014,17 @@ const handlePythonEvent = createPythonEventRouter({
 async function fetchAndShowMjaiDebug() {
   showMjaiDebug.value = true
   analysisCacheClearMessage.value = ''
-  if (window.trainerAPI?.getLatestMjaiDebug) {
+  if (window.studioAPI?.getLatestMjaiDebug) {
     try {
-      const result = await window.trainerAPI.getLatestMjaiDebug()
+      const result = await window.studioAPI.getLatestMjaiDebug()
       mjaiDebugData.value = (result as Record<string, unknown>).debug as Record<string, unknown> || {}
     } catch {
       mjaiDebugData.value = { error: 'Failed to fetch mjai debug data' }
     }
   }
-  if (window.trainerAPI?.getAnalysisDebug) {
+  if (window.studioAPI?.getAnalysisDebug) {
     try {
-      const result = await window.trainerAPI.getAnalysisDebug()
+      const result = await window.studioAPI.getAnalysisDebug()
       shantenMjaiData.value = (result as Record<string, unknown>).debug as Record<string, unknown> || {}
     } catch {
       shantenMjaiData.value = { error: 'Failed to fetch shanten mjai' }

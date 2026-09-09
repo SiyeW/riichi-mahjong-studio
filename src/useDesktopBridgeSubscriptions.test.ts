@@ -13,7 +13,7 @@ test('desktop bridge subscriptions forward handlers and clean every listener onc
   ].map(([method, handler]) => [method, (callback: (...args: never[]) => unknown) => {
     registered[handler] = callback
     return () => { cleanupCalls.push(handler) }
-  }])) as unknown as NonNullable<Window['trainerAPI']>
+  }])) as unknown as NonNullable<Window['studioAPI']>
   const calls: string[] = []
   const unsubscribe = subscribeDesktopBridge(api, {
     pythonEvent: () => { calls.push('python') },

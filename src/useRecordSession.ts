@@ -1,13 +1,15 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import type { GameView } from './contracts/game'
+import type { RecordImportResult, StudioStatus } from './contracts/runtime'
 type GameFileOperation = 'create' | 'open' | 'save' | 'save-as' | 'close'
 
 interface UseRecordSessionOptions {
-  status: TrainerStatusSnapshot
-  gameView: TrainerGameView
+  status: StudioStatus
+  gameView: GameView
   flushNodeComment: () => Promise<void>
   hasNodeCommentDrafts: () => boolean
-  applyStatus: (status: TrainerStatusSnapshot) => void
-  applyGameView: (view: TrainerGameView) => void
+  applyStatus: (status: StudioStatus) => void
+  applyGameView: (view: GameView) => void
   refreshGameView: () => Promise<void>
   prepareClose: () => void
   handleReconstruction: (roundCount: number) => void | Promise<void>
@@ -80,7 +82,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     showRecordImportPanel.value = false
   }
 
-  async function handleRecordImported(result: TrainerRecordImportResult) {
+  async function handleRecordImported(result: RecordImportResult) {
     applyStatus(result.state)
     applyGameView(result.view)
     setRecordPath('')
@@ -91,12 +93,12 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   }
 
   async function createGame() {
-    if (!window.trainerAPI || gameFileOperation.value !== null) return
+    if (!window.studioAPI || gameFileOperation.value !== null) return
     clearCloseRecordConfirmation()
     gameFileOperation.value = 'create'
     try {
       await flushNodeComment()
-      applyStatus(await window.trainerAPI.createGame())
+      applyStatus(await window.studioAPI.createGame())
       setRecordPath('')
       recoveryRecord.value = false
       await refreshGameView()
@@ -106,12 +108,12 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   }
 
   async function openGame() {
-    if (!window.trainerAPI || gameFileOperation.value !== null) return
+    if (!window.studioAPI || gameFileOperation.value !== null) return
     clearCloseRecordConfirmation()
     gameFileOperation.value = 'open'
     try {
       await flushNodeComment()
-      const result = await window.trainerAPI.openGame()
+      const result = await window.studioAPI.openGame()
       if (!result) return
       applyStatus(result.state)
       applyGameView(result.view)
@@ -124,7 +126,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   }
 
   async function saveWith(operation: 'save' | 'save-as') {
-    if (!window.trainerAPI || gameFileOperation.value !== null) return
+    if (!window.studioAPI || gameFileOperation.value !== null) return
     if (operation === 'save' && !recordDirty.value) return
     gameFileOperation.value = operation
     try {
@@ -132,8 +134,8 @@ export function useRecordSession(options: UseRecordSessionOptions) {
       const dirtyGeneration = recordDirtyEventGeneration
       const gameId = gameView.gameId
       const result = operation === 'save'
-        ? await window.trainerAPI.saveGame()
-        : await window.trainerAPI.saveGameAs()
+        ? await window.studioAPI.saveGame()
+        : await window.studioAPI.saveGameAs()
       if (!result || gameId !== gameView.gameId) return
       setRecordPath(result.path)
       if (dirtyGeneration === recordDirtyEventGeneration) {
@@ -171,7 +173,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   }
 
   async function closeGame() {
-    if (!window.trainerAPI || !status.gameLoaded || gameFileOperation.value !== null) return
+    if (!window.studioAPI || !status.gameLoaded || gameFileOperation.value !== null) return
     if (recordDirty.value && !closeRecordConfirmationPending.value) {
       requestCloseRecordConfirmation()
       return
@@ -181,7 +183,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     try {
       await flushNodeComment()
       prepareClose()
-      const response = await window.trainerAPI.closeGame()
+      const response = await window.studioAPI.closeGame()
       applyStatus(response.state)
       applyGameView(response.view)
       clearRecordMetadata()
@@ -191,8 +193,8 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   }
 
   async function showRecordInFolder() {
-    if (!recordPath.value || !window.trainerAPI) return
-    await window.trainerAPI.showRecordInFolder()
+    if (!recordPath.value || !window.studioAPI) return
+    await window.studioAPI.showRecordInFolder()
   }
 
   watch(recordDirty, (dirty) => {

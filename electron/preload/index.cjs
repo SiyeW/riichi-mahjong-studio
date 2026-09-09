@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('trainerAPI', {
+contextBridge.exposeInMainWorld('studioAPI', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   describeEngine: (profile) => ipcRenderer.invoke('engine:describe', profile),

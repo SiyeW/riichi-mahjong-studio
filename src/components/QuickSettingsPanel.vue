@@ -97,9 +97,10 @@ import { computed, ref } from 'vue'
 import { vAdaptiveButtonGrid } from '../adaptiveButtonGrid'
 import { useI18n } from '../i18n'
 import type { StudioSettings } from '../contracts/settings'
+import type { StudioStatus } from '../contracts/runtime'
 
 const props = defineProps<{
-  mode: TrainerStatusSnapshot['mode']
+  mode: StudioStatus['mode']
   gameLoaded: boolean
   controlledSeat: number
   seatSwitchInFlight: boolean

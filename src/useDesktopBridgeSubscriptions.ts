@@ -1,17 +1,18 @@
 import { onBeforeUnmount, onMounted } from 'vue'
+import type { DesktopBridge } from './contracts/desktopBridge'
+import type { PythonEvent } from './contracts/runtime'
 
 type UiZoomDirection = 'in' | 'out' | 'reset'
-type TrainerApi = NonNullable<Window['trainerAPI']>
 
 interface DesktopBridgeHandlers {
-  pythonEvent: (event: TrainerPythonEvent) => void
+  pythonEvent: (event: PythonEvent) => void
   recordDirtyChanged: (dirty: boolean) => void
   uiZoomShortcut: (direction: UiZoomDirection) => void
   beforeClose: () => void | Promise<void>
 }
 
 export function subscribeDesktopBridge(
-  api: TrainerApi | undefined,
+  api: DesktopBridge | undefined,
   handlers: DesktopBridgeHandlers,
 ): () => void {
   if (!api) return () => {}
@@ -32,7 +33,7 @@ export function subscribeDesktopBridge(
 export function useDesktopBridgeSubscriptions(handlers: DesktopBridgeHandlers) {
   let unsubscribe: (() => void) | null = null
   onMounted(() => {
-    unsubscribe = subscribeDesktopBridge(window.trainerAPI, handlers)
+    unsubscribe = subscribeDesktopBridge(window.studioAPI, handlers)
   })
   onBeforeUnmount(() => {
     unsubscribe?.()

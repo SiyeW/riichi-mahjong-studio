@@ -1,5 +1,7 @@
 import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import type { StudioSettings } from './contracts/settings'
+import type { GameView } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 
 const ANKAN_CHOICE_TIMEOUT_MS = 6000
 
@@ -7,17 +9,17 @@ interface AutoAdvanceState {
   controlledSeat: number
   defaultDelayMs: number
   legalActionCount: number
-  mode: TrainerStatusSnapshot['mode']
+  mode: StudioStatus['mode']
   pendingReview: boolean
   prefetchReady: boolean
   prefetchWaiting: boolean
   readOnly: boolean
-  table: TrainerGameView['table']
+  table: GameView['table']
 }
 
 interface UseAutoAdvanceOptions {
-  gameView: TrainerGameView
-  status: TrainerStatusSnapshot
+  gameView: GameView
+  status: StudioStatus
   settings: StudioSettings
   readOnlyRecord: Readonly<Ref<boolean>>
   prefetchReady: Readonly<Ref<boolean>>
@@ -67,7 +69,7 @@ export function useAutoAdvance(options: UseAutoAdvanceOptions) {
 
   function scheduleAutoAdvance() {
     clearAutoAdvanceTimer()
-    if (!window.trainerAPI) return
+    if (!window.studioAPI) return
     const delay = resolveAutoAdvanceDelay({
       controlledSeat: options.status.controlledSeat,
       defaultDelayMs: options.settings.modeDefaults.autoAdvanceDelayMs,

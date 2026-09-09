@@ -11,7 +11,8 @@ import {
 } from './branchTreeLayout'
 import { useNextMoveHints } from './useNextMoveHints'
 import type { StudioSettings } from './contracts/settings'
-import type { GameTreeNode, RoundSummary } from './contracts/game'
+import type { GameTreeNode, GameView, RoundSummary } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 import { useRoundMapPresentation } from './useRoundMapPresentation'
 import { useVirtualizedTreeViewport } from './useVirtualizedTreeViewport'
 
@@ -45,8 +46,8 @@ export interface TreeRowLayout {
 }
 
 export function useBranchTreePresentation(options: {
-  gameView: TrainerGameView
-  status: TrainerStatusSnapshot
+  gameView: GameView
+  status: StudioStatus
   settings: StudioSettings
   uiScale: Readonly<Ref<number>>
   showTreeComparisons: Readonly<Ref<boolean>>

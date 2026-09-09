@@ -1,6 +1,7 @@
 import { computed, ref, type Ref } from 'vue'
 import { buildGraphHitRegions } from './graphHitRegions.ts'
 import type { GameTreeNode, RoundSummary } from './contracts/game.ts'
+import type { StudioStatus } from './contracts/runtime.ts'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -44,7 +45,7 @@ export interface RoundMapSettlementEntry {
 export function useRoundMapPresentation(options: {
   roundSummaryList: Readonly<Ref<RoundSummary[]>>
   activeRoundRootId: Readonly<Ref<string | null>>
-  status: TrainerStatusSnapshot
+  status: StudioStatus
   uiScale: Readonly<Ref<number>>
   t: Translate
   localizedResultTitle: (value: unknown) => string

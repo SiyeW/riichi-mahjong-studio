@@ -1,9 +1,10 @@
 import { reactive } from 'vue'
 import type { EngineRuntimeKind } from './engineStatusItems'
 import type { EngineProfile, EngineSettings, ModelRuntimeState } from './contracts/engines'
+import type { StudioStatus } from './contracts/runtime'
 
 export function useEngineRuntimeProfiles(options: {
-  status: TrainerStatusSnapshot
+  status: StudioStatus
   opponentOutputIds: string[]
   assignedOutputs: (profile: EngineProfile) => string[]
 }) {

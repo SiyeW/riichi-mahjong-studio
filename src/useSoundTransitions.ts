@@ -1,19 +1,21 @@
 import { onBeforeUnmount } from 'vue'
 import type { GameViewTransitionDirection } from './useDiscardFlight'
 import type { StudioSettings } from './contracts/settings'
+import type { GameView } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 
-export type SoundTransitionView = Pick<TrainerGameView, 'table' | 'legalActions' | 'pendingReview'>
+export type SoundTransitionView = Pick<GameView, 'table' | 'legalActions' | 'pendingReview'>
 
 interface SoundTransitionContext {
   blocked: boolean
   isNewGame: boolean
-  mode: TrainerStatusSnapshot['mode']
+  mode: StudioStatus['mode']
   transitionDirection: GameViewTransitionDirection
 }
 
 interface UseSoundTransitionsOptions {
   settings: StudioSettings
-  status: TrainerStatusSnapshot
+  status: StudioStatus
   isBlocked: () => boolean
 }
 
@@ -31,7 +33,7 @@ function announcementSoundEvent(type: string): string | null {
   return map[type] || null
 }
 
-export function soundActionSignature(action: NonNullable<TrainerGameView['table']>['lastAction']): string {
+export function soundActionSignature(action: NonNullable<GameView['table']>['lastAction']): string {
   if (!action) return ''
   return [
     action.type || '',

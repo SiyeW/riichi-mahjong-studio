@@ -1,13 +1,14 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { sameViewRequestContext } from './analysisPosition'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
-import type { GameTreeNode, RoundSummary } from './contracts/game'
+import type { GameTreeNode, GameView, RoundSummary } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 
 type GameViewTransitionDirection = 'forward' | 'backward'
 
 export function useBranchNavigation(options: {
-  gameView: TrainerGameView
-  status: TrainerStatusSnapshot
+  gameView: GameView
+  status: StudioStatus
   isReadOnlyRecord: Readonly<Ref<boolean>>
   nodeMapById: Readonly<Ref<Map<string, GameTreeNode>>>
   activeRoundRootId: Readonly<Ref<string | null>>
@@ -15,8 +16,8 @@ export function useBranchNavigation(options: {
   confirmationTimeoutMs: number
   getGameplayResponseGeneration: () => number
   markRecordDirty: () => void
-  applyStatus: (status: TrainerStatusSnapshot) => void
-  applyGameView: (view: TrainerGameView, direction?: GameViewTransitionDirection) => void
+  applyStatus: (status: StudioStatus) => void
+  applyGameView: (view: GameView, direction?: GameViewTransitionDirection) => void
 }) {
   const {
     gameView,
@@ -39,8 +40,8 @@ const nodeMutationRequestInFlight = ref(false)
 const nodeCommentDraft = ref('')
 const nodeComments = createNodeCommentQueue(
   async (update) => {
-    if (!window.trainerAPI?.setNodeComment) throw new Error('Node comment service unavailable')
-    return window.trainerAPI.setNodeComment(update.nodeId, update.comment)
+    if (!window.studioAPI?.setNodeComment) throw new Error('Node comment service unavailable')
+    return window.studioAPI.setNodeComment(update.nodeId, update.comment)
   },
   (update, comment) => {
     if (
@@ -64,7 +65,7 @@ function cancelPendingWheelNavigation() {
   wheelNavigationGeneration = 0
 }
 
-function syncNodeCommentFromView(view: TrainerGameView) {
+function syncNodeCommentFromView(view: GameView) {
   const key = nodeCommentKey(view.gameId, view.currentNodeId)
   nodeCommentDraft.value = nodeComments.get(key) ?? String(view.nodeComment || '')
 }
@@ -142,11 +143,11 @@ watch(deleteNodeConfirmationId, (nodeId) => {
 })
 
 async function setCurrentNodeAsMainBranch() {
-  if (!window.trainerAPI || !gameView.currentNodeId || !canSetCurrentNodeAsMainBranch.value || nodeMutationRequestInFlight.value) return
+  if (!window.studioAPI || !gameView.currentNodeId || !canSetCurrentNodeAsMainBranch.value || nodeMutationRequestInFlight.value) return
   deleteNodeConfirmationId.value = null
   nodeMutationRequestInFlight.value = true
   try {
-    const response = await window.trainerAPI.setMainBranch(gameView.currentNodeId)
+    const response = await window.studioAPI.setMainBranch(gameView.currentNodeId)
     applyStatus(response.state)
     applyGameView(response.view)
   } finally {
@@ -156,7 +157,7 @@ async function setCurrentNodeAsMainBranch() {
 
 async function deleteCurrentNode() {
   const nodeId = gameView.currentNodeId
-  if (!window.trainerAPI || !nodeId || !canDeleteCurrentNode.value || nodeMutationRequestInFlight.value) return
+  if (!window.studioAPI || !nodeId || !canDeleteCurrentNode.value || nodeMutationRequestInFlight.value) return
   if (deleteNodeConfirmationId.value !== nodeId) {
     deleteNodeConfirmationId.value = nodeId
     return
@@ -165,7 +166,7 @@ async function deleteCurrentNode() {
   nodeMutationRequestInFlight.value = true
   try {
     discardNodeCommentDraft(nodeId)
-    const response = await window.trainerAPI.deleteNode(nodeId)
+    const response = await window.studioAPI.deleteNode(nodeId)
     cancelPendingWheelNavigation()
     branchReturnMap.value = {}
     applyStatus(response.state)
@@ -191,7 +192,7 @@ function currentViewRequestContext() {
 }
 
 async function jumpToNode(nodeId: string, navigationIntentId?: number) {
-  if (!window.trainerAPI) return
+  if (!window.studioAPI) return
   cancelPendingWheelNavigation()
   const intentId = navigationIntentId ?? ++latestNavigationIntentId
   latestNavigationIntentId = Math.max(latestNavigationIntentId, intentId)
@@ -205,7 +206,7 @@ async function jumpToNode(nodeId: string, navigationIntentId?: number) {
       [targetNode.parentId]: nodeId,
     }
   }
-  const response = await window.trainerAPI.jumpToNode(nodeId, gameView.tree?.revision)
+  const response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision)
   if (intentId !== latestNavigationIntentId || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
   applyStatus(response.state)
   applyGameView(response.view, transitionDirection)
@@ -213,7 +214,7 @@ async function jumpToNode(nodeId: string, navigationIntentId?: number) {
 }
 
 async function dispatchQueuedWheelNavigation() {
-  if (!window.trainerAPI || wheelNavigationRequestInFlight || !wheelNavigationQueuedNodeId) return
+  if (!window.studioAPI || wheelNavigationRequestInFlight || !wheelNavigationQueuedNodeId) return
   const nodeId = wheelNavigationQueuedNodeId
   const transitionDirection = wheelNavigationQueuedDirection ?? resolveNodeTransitionDirection(nodeId)
   const generation = wheelNavigationGeneration
@@ -223,7 +224,7 @@ async function dispatchQueuedWheelNavigation() {
   wheelNavigationRequestInFlight = true
 
   try {
-    const response = await window.trainerAPI.jumpToNode(nodeId, gameView.tree?.revision)
+    const response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision)
     if (generation !== wheelNavigationGeneration || generation !== latestNavigationIntentId
       || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
     applyStatus(response.state)
@@ -310,7 +311,7 @@ function navigateTreeByOffset(offset: number) {
     nodeComments.clear()
   }
 
-  function syncFromGameView(view: TrainerGameView) {
+  function syncFromGameView(view: GameView) {
     syncNodeCommentFromView(view)
     if (wheelNavigationGeneration === 0) {
       wheelNavigationCursorNodeId = view.currentNodeId

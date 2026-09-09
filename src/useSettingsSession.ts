@@ -278,7 +278,7 @@ export function useSettingsSession(t: Translate) {
   }
 
   async function saveSettingsPanel() {
-    if (!window.trainerAPI) return
+    if (!window.studioAPI) return
     settingsDraft.display.language = normalizeLanguagePreference(settingsDraft.display.language)
     settingsDraft.display.colorScheme = normalizeColorScheme(settingsDraft.display.colorScheme)
     settingsDraft.display.uiScale = normalizeUiScale(settingsDraft.display.uiScale)
@@ -291,7 +291,7 @@ export function useSettingsSession(t: Translate) {
     const baseline = settingsPanelBaseline
     const submitted = JSON.parse(JSON.stringify(settingsDraft)) as StudioSettings
     const patch = settingsChanges(baseline || settings, submitted)
-    const saved = await window.trainerAPI.saveSettings(patch)
+    const saved = await window.studioAPI.saveSettings(patch)
     applySettings(mergeSettingsReply(settings, saved, patch))
     if (settingsPanelBaseline === baseline) {
       settingsPanelBaseline = submitted
@@ -300,12 +300,12 @@ export function useSettingsSession(t: Translate) {
   }
 
   async function saveQuickSettings(mutator: (draft: StudioSettings) => void) {
-    if (!window.trainerAPI) return
+    if (!window.studioAPI) return
     const next = JSON.parse(JSON.stringify(settings)) as StudioSettings
     mutator(next)
     next.training.mode = normalizeTrainingMode(next.training.mode)
     const patch = settingsChanges(settings, next)
-    const saved = await window.trainerAPI.saveSettings(patch)
+    const saved = await window.studioAPI.saveSettings(patch)
     applySettings(mergeSettingsReply(settings, saved, patch))
   }
 
@@ -367,7 +367,7 @@ export function useSettingsSession(t: Translate) {
     settings.display.uiScale = next
     if (showSettingsPanel.value) settingsDraft.display.uiScale = next
     try {
-      await window.trainerAPI?.saveSettings({
+      await window.studioAPI?.saveSettings({
         display: { uiScale: next },
       })
     } catch (error) {
