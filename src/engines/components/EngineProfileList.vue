@@ -93,7 +93,7 @@ const { t } = useI18n()
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: calc(0.24rem * var(--floating-panel-scale));
   padding-bottom: calc(0.38rem * var(--floating-panel-scale));
-  border-bottom: 1px solid rgba(140, 195, 188, 0.12);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .engine-output-filter {

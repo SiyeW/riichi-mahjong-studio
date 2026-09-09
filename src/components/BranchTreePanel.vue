@@ -268,7 +268,7 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   border: 1px solid rgba(0, 0, 0, 0.25);
-  background: rgba(8, 80, 94, 0.9);
+  background: var(--surface-control);
   color: var(--text-main);
   border-radius: calc(3px * var(--chrome-scale));
   cursor: pointer;

@@ -20,7 +20,7 @@
   gap: 1px;
   width: min(calc(13rem * var(--floating-panel-scale)), 100%);
   padding: 1px;
-  background: #2b6975;
+  background: var(--border-accent);
 }
 
 .analysis-count-layout-toggle button {

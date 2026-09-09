@@ -66,8 +66,8 @@ const {
   box-sizing: border-box;
   min-width: 0;
   max-width: 100%;
-  border: 1px solid rgba(0, 0, 0, 0.28);
-  background: rgba(23, 122, 70, 0.9);
+  border: 1px solid var(--border-dark);
+  background: var(--surface-control-active);
   color: var(--text-main);
   padding: calc(0.34rem * var(--chrome-scale)) calc(0.66rem * var(--chrome-scale));
   border-radius: calc(0.1875rem * var(--chrome-scale));
