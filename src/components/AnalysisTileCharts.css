@@ -1,0 +1,79 @@
+
+
+.analysis-tiles-view {
+  position: relative;
+  min-width: 0;
+}
+
+.analysis-risk-grid,
+.analysis-count-grid {
+  --analysis-tile-width: calc(2.45rem * var(--floating-panel-scale));
+  --analysis-tile-height: calc(3.18rem * var(--floating-panel-scale));
+  --analysis-risk-height: calc(var(--analysis-tile-height) * 1.14);
+  --analysis-risk-bars-width: calc(var(--analysis-tile-width) * 0.84);
+  --analysis-count-bars-width: calc(var(--analysis-tile-width) - 1px);
+  --analysis-chart-gap: calc(var(--analysis-tile-width) * 0.035);
+  --analysis-scale-space: calc(2.45rem * var(--floating-panel-scale));
+  position: relative;
+  display: grid;
+  gap: calc(var(--analysis-tile-width) * 0.1);
+  padding-top: 0;
+  overflow: visible;
+}
+
+.is-risk-section .analysis-tiles-view,
+.is-count-section .analysis-tiles-view {
+  height: 100%;
+}
+
+.analysis-tile-chart-row {
+  position: relative;
+  display: flex;
+  width: max-content;
+  padding-right: var(--analysis-scale-space);
+  padding-bottom: calc(var(--analysis-tile-width) * 0.08);
+}
+
+.analysis-risk-row .analysis-tile-sequence {
+  position: relative;
+  width: var(--analysis-risk-main-row-width);
+  height: 100%;
+}
+
+.analysis-count-row .analysis-tile-sequence {
+  position: relative;
+  height: 100%;
+  gap: var(--analysis-count-tile-gap, 1px);
+}
+
+.analysis-tile-sequence {
+  display: flex;
+  gap: 0;
+}
+
+.analysis-risk-tile,
+.analysis-count-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 var(--analysis-tile-width);
+  width: var(--analysis-tile-width);
+  gap: var(--analysis-chart-gap);
+}
+
+.unified-analysis .analysis-tile-face {
+  --mahjong-tile-artwork-width: var(--analysis-tile-width);
+  display: block;
+  width: var(--analysis-tile-width);
+  height: var(--analysis-tile-height);
+}
+
+.analysis-risk-bars,
+.analysis-count-bars {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  gap: 0;
+  overflow: hidden;
+}

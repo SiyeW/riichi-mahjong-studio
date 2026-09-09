@@ -29,3 +29,5 @@ import type { AnalysisHoverTooltipState } from '../useAnalysisHoverTooltip'
 defineProps<{ tooltip: AnalysisHoverTooltipState }>()
 const tooltipElement = defineModel<HTMLElement | null>('element', { required: true })
 </script>
+
+<style scoped src="./AnalysisHoverTooltip.css"></style>

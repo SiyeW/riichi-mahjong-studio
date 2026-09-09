@@ -119,3 +119,5 @@ function showProbabilityTooltip(event: Event, title: string, label: string, valu
   tooltip.show(event, { title, lines: [], rows: [{ label, value: formatProbability(value) }] })
 }
 </script>
+
+<style scoped src="./DealInRiskSection.css"></style>

@@ -1,0 +1,44 @@
+
+
+.analysis-floating-tooltip {
+  max-width: calc(100% - 1rem);
+  transform: translateX(-50%);
+  visibility: hidden;
+}
+
+.analysis-floating-tooltip.is-positioned {
+  visibility: visible;
+}
+
+.analysis-floating-tooltip-line {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.analysis-floating-tooltip .ui-hover-tooltip-row.has-bar {
+  grid-template-columns:
+    minmax(calc(4.5rem * var(--floating-panel-scale)), max-content)
+    minmax(calc(4rem * var(--floating-panel-scale)), 1fr)
+    calc(2.9rem * var(--floating-panel-scale));
+  gap: calc(0.28rem * var(--floating-panel-scale));
+  min-width: min(calc(14.5rem * var(--floating-panel-scale)), calc(100% - 1rem));
+}
+
+.analysis-floating-tooltip .ui-hover-tooltip-row.has-bar > :first-child {
+  overflow: hidden;
+  max-width: calc(7rem * var(--floating-panel-scale));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-tooltip-bar {
+  display: block;
+  height: calc(0.42rem * var(--floating-panel-scale));
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.analysis-tooltip-bar > span {
+  display: block;
+  height: 100%;
+}

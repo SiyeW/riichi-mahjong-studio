@@ -282,3 +282,17 @@
   text-align: right;
 }
 
+
+
+.analysis-outcome-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(0.18rem * var(--floating-panel-scale));
+  white-space: nowrap;
+}
+
+.analysis-outcome-legend i {
+  display: inline-block;
+  width: calc(0.52rem * var(--floating-panel-scale));
+  height: calc(0.52rem * var(--floating-panel-scale));
+}

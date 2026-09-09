@@ -331,3 +331,5 @@ watch(() => props.countLayout, () => {
 })
 onBeforeUnmount(() => countCanvasElements.clear())
 </script>
+
+<style scoped src="./TileCountAnalysisSection.css"></style>

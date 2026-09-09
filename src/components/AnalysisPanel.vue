@@ -77,3 +77,4 @@ const { tooltip, tooltipElement } = useAnalysisHoverTooltip(analysisRootElement)
 </script>
 
 <style src="./AnalysisPanel.css"></style>
+<style src="./AnalysisTileCharts.css"></style>

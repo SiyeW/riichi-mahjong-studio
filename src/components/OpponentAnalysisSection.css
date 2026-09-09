@@ -1,9 +1,4 @@
 .analysis-opponent-section {
-  min-width: 0;
-  background: transparent;
-}
-
-.analysis-opponent-section {
   --analysis-distribution-track-surface: rgba(255, 255, 255, 0.045);
   --analysis-dora-distribution-min-height: calc(2.25rem * var(--floating-panel-scale));
   --analysis-dora-distribution-max-height: calc(4.25rem * var(--floating-panel-scale));
@@ -11,7 +6,9 @@
   --analysis-score-distribution-max-height: calc(3.15rem * var(--floating-panel-scale));
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 100%;
+  background: transparent;
 }
 
 .analysis-opponent-grid {
@@ -230,4 +227,3 @@
   width: calc(0.52rem * var(--floating-panel-scale));
   height: calc(0.52rem * var(--floating-panel-scale));
 }
-
