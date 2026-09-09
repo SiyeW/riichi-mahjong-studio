@@ -30,3 +30,21 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 </script>
+
+<style scoped>
+.console-dock {
+  container-name: console-dock;
+  container-type: inline-size;
+}
+
+.console-dock-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: calc(0.36rem * var(--chrome-scale));
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: calc(0.5rem * var(--chrome-scale)) calc(0.48rem * var(--chrome-scale)) calc(0.7rem * var(--chrome-scale));
+}
+</style>
