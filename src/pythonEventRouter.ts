@@ -1,7 +1,7 @@
 import type { Ref } from 'vue'
 import { backendStoppedState } from './backendStoppedState.ts'
 import { applyModelActivityEvent } from './modelActivityEvent.ts'
-import { shantenResultHasRows } from './useAnalysisSession.ts'
+import { analysisResultHasRows } from './useAnalysisSession.ts'
 import type { GameTreeNode, GameView } from './contracts/game'
 import type { PythonEvent, StudioStatus } from './contracts/runtime'
 
@@ -29,7 +29,7 @@ export interface PythonEventRouterOptions {
   acceptsDecisionEventEpoch: (epoch: unknown) => boolean
   markPlayPrefetchReady: (gameId: string, nodeId: string) => void
   clearOpponentAnalysisWithoutMotion: () => void
-  fetchShantenOnce: () => Promise<unknown>
+  fetchAnalysisOnce: () => Promise<unknown>
   applyOpponentAnalysisEvent: (analysis: NonNullable<GameView['opponentAnalysis']>) => void
   cacheDecisionAnalysis: (
     gameId: string | null | undefined,
@@ -132,10 +132,10 @@ export function createPythonEventRouter(options: PythonEventRouterOptions) {
     if (event.type === 'model_activity') {
       const { opponentFailed } = applyModelActivityEvent(options.status, event, options.t('error.unknown'))
       if (opponentFailed) {
-        if (!shantenResultHasRows(options.gameView.opponentAnalysis)) {
+        if (!analysisResultHasRows(options.gameView.opponentAnalysis)) {
           options.clearOpponentAnalysisWithoutMotion()
         }
-        void options.fetchShantenOnce()
+        void options.fetchAnalysisOnce()
       }
       return
     }

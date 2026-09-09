@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { resolveAppVersion, resolveDevelopmentPython } = require('./environment-service')
+const { resolveAppVersion, resolveDevelopmentPython } = require('./backend-service')
 
 function testAppVersionResolution() {
   assert.equal(resolveAppVersion({ appVersion: '1.0.0-dev.0' }), '1.0.0-dev.0')
@@ -35,4 +35,4 @@ function testDevelopmentPythonResolution() {
 
 testAppVersionResolution()
 testDevelopmentPythonResolution()
-console.log('environment service tests passed')
+console.log('backend service tests passed')

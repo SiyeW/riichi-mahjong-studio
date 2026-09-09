@@ -5,7 +5,7 @@ const { registerAnalysisIpc } = require('./analysis-ipc')
 function fixture(cleared = {}) {
   const handlers = new Map()
   let dirtyCalls = 0
-  const environmentGateway = {
+  const backendGateway = {
     setAnalysisVisibility: async (value) => ({ value }),
     getAnalysis: async () => 'analysis',
     getAnalysisDebug: async () => 'debug',
@@ -15,7 +15,7 @@ function fixture(cleared = {}) {
   }
   registerAnalysisIpc({
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
-    environmentGateway,
+    backendGateway,
     markRecordDirty: () => { dirtyCalls += 1 },
   })
   return { dirtyCalls: () => dirtyCalls, handlers }

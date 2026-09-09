@@ -50,7 +50,7 @@ function createHarness() {
     acceptsDecisionEventEpoch: () => true,
     markPlayPrefetchReady: (gameId, nodeId) => calls.prefetch.push([gameId, nodeId]),
     clearOpponentAnalysisWithoutMotion: () => {},
-    fetchShantenOnce: async () => {},
+    fetchAnalysisOnce: async () => {},
     applyOpponentAnalysisEvent: (analysis) => calls.opponent.push(analysis),
     cacheDecisionAnalysis: (gameId, nodeId, analysis) => calls.cached.push({ gameId, nodeId, analysis }),
   }

@@ -113,7 +113,7 @@ function normalizeSnapshot(payload = {}) {
   }
 }
 
-function createSessionStore(environmentGateway) {
+function createSessionStore(backendGateway) {
   let snapshot = createInitialSnapshot()
 
   function cloneSnapshot() {
@@ -121,11 +121,11 @@ function createSessionStore(environmentGateway) {
   }
 
   async function syncFromEnvironment(methodName, ...args) {
-    if (!environmentGateway || typeof environmentGateway[methodName] !== 'function') {
+    if (!backendGateway || typeof backendGateway[methodName] !== 'function') {
       return cloneSnapshot()
     }
 
-    const response = await environmentGateway[methodName](...args)
+    const response = await backendGateway[methodName](...args)
     snapshot = normalizeSnapshot(response?.state || {})
     return cloneSnapshot()
   }

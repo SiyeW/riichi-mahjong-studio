@@ -26,15 +26,15 @@ function resolveBundledBackend(resourceDir) {
   return exePath
 }
 
-function createEnvironmentService(options = {}) {
+function createBackendService(options = {}) {
   // Persist schema migrations before Python reads config.json for prewarming.
   const settings = migrateSettings(options)
   const resourceRoot = options.resourceDir || options.appDir || process.cwd()
   const bundledBackend = resolveBundledBackend(resourceRoot)
   const useBundledBackend = Boolean(options.isPackaged)
 
-  const environmentProcess = createBackendProcess({
-    name: 'environment',
+  const backendProcess = createBackendProcess({
+    name: 'backend',
     pythonExecutable: useBundledBackend
       ? bundledBackend
       : resolveDevelopmentPython(resourceRoot, options.env),
@@ -50,42 +50,42 @@ function createEnvironmentService(options = {}) {
     },
   })
 
-  const environmentService = createBackendSession(environmentProcess)
+  const backendSession = createBackendSession(backendProcess)
   let onEvent = null
-  environmentProcess.onEvent(event => {
-    environmentService.handleEvent(event)
+  backendProcess.onEvent(event => {
+    backendSession.handleEvent(event)
     onEvent?.(event.type === 'service_stopped'
-      ? { ...event, hasCheckpoint: environmentService.hasCheckpoint() } : event)
+      ? { ...event, hasCheckpoint: backendSession.hasCheckpoint() } : event)
   })
   return {
     backendProcess: { onEvent(callback) { onEvent = callback } },
-    environmentGateway: {
+    backendGateway: {
       getStatus() {
-        return environmentService.sendRequest('get_status', {}, 30_000)
+        return backendSession.sendRequest('get_status', {}, 30_000)
       },
       getRuntimeMetrics() {
-        return environmentService.sendRequest('get_runtime_metrics', {}, 5_000)
+        return backendSession.sendRequest('get_runtime_metrics', {}, 5_000)
       },
       getGameView() {
-        return environmentService.sendRequest('get_game_view')
+        return backendSession.sendRequest('get_game_view')
       },
       exportGameRecord() {
-        return environmentService.sendRequest('export_game_record')
+        return backendSession.sendRequest('export_game_record')
       },
       describeEngine(profile) {
-        return environmentService.sendRequest('describe_engine', profile, 30_000)
+        return backendSession.sendRequest('describe_engine', profile, 30_000)
       },
       reloadEngine(profileId) {
-        return environmentService.sendRequest('reload_engines', { profileId }, 180_000)
+        return backendSession.sendRequest('reload_engines', { profileId }, 180_000)
       },
       unloadEngine(kind, profileId) {
-        return environmentService.sendRequest('unload_engine', { kind, profileId }, 30_000)
+        return backendSession.sendRequest('unload_engine', { kind, profileId }, 30_000)
       },
       importGameRecord(record) {
-        return environmentService.sendRequest('import_game_record', { record })
+        return backendSession.sendRequest('import_game_record', { record })
       },
       importMortalReport(report, sourceUrl, options = {}) {
-        return environmentService.sendRequest('import_mortal_report', {
+        return backendSession.sendRequest('import_mortal_report', {
           report,
           sourceUrl,
           sourceImportUrl: options.sourceImportUrl,
@@ -94,95 +94,95 @@ function createEnvironmentService(options = {}) {
         }, 120_000)
       },
       importCustomTenhou(input, options = {}) {
-        return environmentService.sendRequest('import_custom_tenhou', {
+        return backendSession.sendRequest('import_custom_tenhou', {
           input,
           reconstructWalls: Boolean(options.reconstructWalls),
           seed: options.seed,
         }, 120_000)
       },
       exportCustomTenhou() {
-        return environmentService.sendRequest('export_custom_tenhou')
+        return backendSession.sendRequest('export_custom_tenhou')
       },
       createGame() {
-        return environmentService.sendRequest('create_game')
+        return backendSession.sendRequest('create_game')
       },
       closeGame() {
-        return environmentService.sendRequest('close_game')
+        return backendSession.sendRequest('close_game')
       },
       advanceGame() {
-        return environmentService.sendRequest('advance_game')
+        return backendSession.sendRequest('advance_game')
       },
       confirmPendingReview() {
-        return environmentService.sendRequest('confirm_pending_review')
+        return backendSession.sendRequest('confirm_pending_review')
       },
       setMode(mode) {
-        return environmentService.sendRequest('set_mode', { mode })
+        return backendSession.sendRequest('set_mode', { mode })
       },
       requestSeatSwitch(seat) {
-        return environmentService.sendRequest('request_seat_switch', { seat })
+        return backendSession.sendRequest('request_seat_switch', { seat })
       },
       toggleVisibleHands() {
-        return environmentService.sendRequest('toggle_visible_hands')
+        return backendSession.sendRequest('toggle_visible_hands')
       },
       setAnalysisVisibility(visibility) {
-        return environmentService.sendRequest('set_analysis_visibility', visibility)
+        return backendSession.sendRequest('set_analysis_visibility', visibility)
       },
       submitUserAction(action) {
-        return environmentService.sendRequest('submit_user_action', action)
+        return backendSession.sendRequest('submit_user_action', action)
       },
       jumpToNode(nodeId, treeRevision) {
-        return environmentService.sendRequest('jump_to_node', { nodeId, treeRevision })
+        return backendSession.sendRequest('jump_to_node', { nodeId, treeRevision })
       },
       setMainBranch(nodeId) {
-        return environmentService.sendRequest('set_main_branch', { nodeId })
+        return backendSession.sendRequest('set_main_branch', { nodeId })
       },
       setNodeComment(nodeId, comment) {
-        return environmentService.sendRequest('set_node_comment', { nodeId, comment })
+        return backendSession.sendRequest('set_node_comment', { nodeId, comment })
       },
       deleteNode(nodeId) {
-        return environmentService.sendRequest('delete_node', { nodeId })
+        return backendSession.sendRequest('delete_node', { nodeId })
       },
       restartBackend() {
-        return environmentService.restart()
+        return backendSession.restart()
       },
       needsRecovery() {
-        return environmentService.needsRecovery()
+        return backendSession.needsRecovery()
       },
       getWallView() {
-        return environmentService.sendRequest('get_wall_view')
+        return backendSession.sendRequest('get_wall_view')
       },
       reconstructWalls(seed) {
-        return environmentService.sendRequest('reconstruct_walls', { seed }, 120_000)
+        return backendSession.sendRequest('reconstruct_walls', { seed }, 120_000)
       },
       importWall(tiles) {
-        return environmentService.sendRequest('import_wall', { tiles })
+        return backendSession.sendRequest('import_wall', { tiles })
       },
       getLatestMjaiDebug() {
-        return environmentService.sendRequest('get_latest_mjai_debug')
+        return backendSession.sendRequest('get_latest_mjai_debug')
       },
       getAnalysis() {
-        return environmentService.sendRequest('get_analysis')
+        return backendSession.sendRequest('get_analysis')
       },
       getAnalysisDebug() {
-        return environmentService.sendRequest('get_analysis_debug')
+        return backendSession.sendRequest('get_analysis_debug')
       },
       clearAnalysisCaches() {
-        return environmentService.sendRequest('clear_analysis_caches')
+        return backendSession.sendRequest('clear_analysis_caches')
       },
       startAutoAnalysis() {
-        return environmentService.sendRequest('start_auto_analysis')
+        return backendSession.sendRequest('start_auto_analysis')
       },
       cancelAutoAnalysis() {
-        return environmentService.sendRequest('cancel_auto_analysis')
+        return backendSession.sendRequest('cancel_auto_analysis')
       },
     },
     startAll() {
-      environmentProcess.start()
+      backendProcess.start()
     },
     stopAll() {
-      environmentProcess.stop()
+      backendProcess.stop()
     },
   }
 }
 
-module.exports = { createEnvironmentService, resolveAppVersion, resolveDevelopmentPython }
+module.exports = { createBackendService, resolveAppVersion, resolveDevelopmentPython }

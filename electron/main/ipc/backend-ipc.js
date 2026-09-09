@@ -1,8 +1,8 @@
 const { requestRendererFlush } = require('../close-persistence')
 
-function registerEnvironmentIpc({
+function registerBackendIpc({
   ipcMain,
-  environmentGateway,
+  backendGateway,
   gameFileStore,
   getMainWindow,
   markRecordDirty,
@@ -18,13 +18,13 @@ function registerEnvironmentIpc({
   }
 
   ipcMain.handle('backend:restart', async () => {
-    const fromCheckpoint = environmentGateway.needsRecovery()
+    const fromCheckpoint = backendGateway.needsRecovery()
     if (!fromCheckpoint) {
       await flushRenderer(getMainWindow(), ipcMain, t('native.closeSaveTimeout'))
     }
     let response
     try {
-      response = await environmentGateway.restartBackend()
+      response = await backendGateway.restartBackend()
     } catch (error) {
       sendPythonEvent({
         type: 'service_recovery_failed',
@@ -41,7 +41,7 @@ function registerEnvironmentIpc({
     sendPythonEvent({ type: 'service_restored', state: response.state, view: response.view })
     return response
   })
-  ipcMain.handle('debug:latest-mjai', () => environmentGateway.getLatestMjaiDebug())
+  ipcMain.handle('debug:latest-mjai', () => backendGateway.getLatestMjaiDebug())
 }
 
-module.exports = { registerEnvironmentIpc }
+module.exports = { registerBackendIpc }

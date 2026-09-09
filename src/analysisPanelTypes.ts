@@ -16,7 +16,7 @@ export type TileSource = { key: CountSourceKey; label: string; seat: number | nu
 
 export interface AnalysisPanelDataProps {
   analysis: AnalysisRecord | null | undefined
-  shantenOpponents: AnalysisOpponent[]
+  analysisOpponents: AnalysisOpponent[]
   controlledSeat: number
   dealer: number
 }

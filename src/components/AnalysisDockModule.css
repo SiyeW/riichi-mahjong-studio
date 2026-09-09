@@ -47,7 +47,7 @@
   scrollbar-gutter: stable;
 }
 
-.shanten-panel-state {
+.analysis-panel-state {
   width: 100%;
   margin: 0;
   padding: calc(1.5rem * var(--floating-panel-scale)) 0;
@@ -56,6 +56,6 @@
   text-align: center;
 }
 
-.shanten-panel-state.is-error {
+.analysis-panel-state.is-error {
   color: var(--accent-red);
 }

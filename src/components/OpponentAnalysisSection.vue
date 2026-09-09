@@ -120,7 +120,7 @@ import ShantenPieChart from './ShantenPieChart.vue'
 
 const props = defineProps<{
   analysis: AnalysisRecord | null | undefined
-  shantenOpponents: AnalysisPanelDataProps['shantenOpponents']
+  analysisOpponents: AnalysisPanelDataProps['analysisOpponents']
   shantenColors: string[]
   shantenLabels: string[]
   shantenShortLabels: string[]

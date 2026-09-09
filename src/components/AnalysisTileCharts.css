@@ -60,7 +60,7 @@
   gap: var(--analysis-chart-gap);
 }
 
-.unified-analysis .analysis-tile-face {
+.analysis-panel-content .analysis-tile-face {
   --mahjong-tile-artwork-width: var(--analysis-tile-width);
   display: block;
   width: var(--analysis-tile-width);

@@ -12,7 +12,7 @@ function createApp() {
 test('runtime metrics collector combines Electron, system, and backend samples', async () => {
   const collect = createRuntimeMetricsCollector({
     app: createApp(),
-    environmentGateway: {
+    backendGateway: {
       getRuntimeMetrics: async () => ({
         metrics: {
           backendPrivateBytes: 2048,
@@ -45,7 +45,7 @@ test('runtime metrics collector suppresses repeated backend warnings until recov
   let failure = 'offline'
   const collect = createRuntimeMetricsCollector({
     app: createApp(),
-    environmentGateway: {
+    backendGateway: {
       getRuntimeMetrics: async () => {
         if (failure) throw new Error(failure)
         return { metrics: null }

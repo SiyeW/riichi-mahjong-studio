@@ -32,14 +32,14 @@
       </div>
     </div>
     <div class="analysis-dock-body">
-      <p v-if="loading" class="shanten-panel-state">{{ t('common.loading') }}</p>
+      <p v-if="loading" class="analysis-panel-state">{{ t('common.loading') }}</p>
       <template v-else>
-        <p v-if="loadError" class="shanten-panel-state is-error">{{ loadError }}</p>
+        <p v-if="loadError" class="analysis-panel-state is-error">{{ loadError }}</p>
         <AnalysisPanel
           v-else
           :section="section"
           :analysis="analysis"
-          :shanten-opponents="shantenOpponents"
+          :analysis-opponents="analysisOpponents"
           :shanten-colors="shantenColors"
           :shanten-labels="shantenLabels"
           :shanten-short-labels="shantenShortLabels"
@@ -76,7 +76,7 @@ defineProps<{
   loading: boolean
   loadError: string
   analysis: Record<string, unknown> | null | undefined
-  shantenOpponents: AnalysisPanelDataProps['shantenOpponents']
+  analysisOpponents: AnalysisPanelDataProps['analysisOpponents']
   shantenColors: string[]
   shantenLabels: string[]
   shantenShortLabels: string[]

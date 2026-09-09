@@ -28,7 +28,7 @@ function hasShantenRows(group: Record<string, number[]> | undefined): group is R
   return Boolean(group && Object.values(group).some((values) => Array.isArray(values) && values.length > 0))
 }
 
-export function shantenResultHasRows(result: Record<string, unknown> | null | undefined): boolean {
+export function analysisResultHasRows(result: Record<string, unknown> | null | undefined): boolean {
   if (!result) return false
   const predictions = result.predictions as Record<string, unknown> | undefined
   const groundTruth = result.ground_truth as Record<string, unknown> | undefined
@@ -69,8 +69,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   let opponentAnalysisResetGeneration = 0
   let minimumDecisionCacheEpoch: number | null = null
   let minimumOpponentCacheEpoch: number | null = null
-  let deferredShantenResult: Record<string, unknown> | null = null
-  let shantenReadGeneration = 0
+  let deferredAnalysisResult: Record<string, unknown> | null = null
+  let analysisReadGeneration = 0
   let analysisVisibilityGeneration = 0
 
   const shantenData = computed(() => (
@@ -102,7 +102,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     showTrainingRecommendations.value || showAnalysisDock.value
   ))
   const hasOpponentAnalysisResult = computed(() => (
-    shantenResultHasRows(gameView.opponentAnalysis)
+    analysisResultHasRows(gameView.opponentAnalysis)
     || hasShantenRows(shantenPredData.value)
     || hasShantenRows(ronWaitPredData.value)
     || hasShantenRows(shantenGTData.value)
@@ -129,7 +129,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     return !hasOpponentAnalysisResult.value
       && (activity === 'running' || gameView.opponentAnalysis?.status === 'loading')
   })
-  const shantenOpponents = computed(() => {
+  const analysisOpponents = computed(() => {
     const controlledSeat = status.controlledSeat
     const opponents = [
       { key: 'kamicha', seat: (controlledSeat + 3) % 4, label: t('seat.kamicha') },
@@ -143,7 +143,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   })
   const canToggleDecisionRecommendations = computed(() => status.mode === 'research')
 
-  function shantenResultMatchesCurrentPosition(result: Record<string, unknown>): boolean {
+  function analysisResultMatchesCurrentPosition(result: Record<string, unknown>): boolean {
     const context = result.context as Record<string, unknown> | undefined
     if (!context || !acceptsAnalysisEpoch(context.cacheEpoch, minimumOpponentCacheEpoch)) return false
     return context.gameId === gameView.gameId
@@ -154,15 +154,15 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   function suppressOpponentAnalysisMotion() {
     const resetGeneration = ++opponentAnalysisResetGeneration
     suppressOpponentAnalysisTransitions.value = true
-    deferredShantenResult = null
+    deferredAnalysisResult = null
     void nextTick(() => {
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
           if (resetGeneration !== opponentAnalysisResetGeneration) return
           suppressOpponentAnalysisTransitions.value = false
-          const deferredResult = deferredShantenResult
-          deferredShantenResult = null
-          if (deferredResult) applyShantenResult(deferredResult)
+          const deferredResult = deferredAnalysisResult
+          deferredAnalysisResult = null
+          if (deferredResult) applyAnalysisResult(deferredResult)
         })
       })
     })
@@ -178,14 +178,14 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     shantenStatus.value = '—'
   }
 
-  function applyShantenResult(
+  function applyAnalysisResult(
     result: Record<string, unknown>,
     applyOptions: { withoutMotion?: boolean; clearWhenEmpty?: boolean } = {},
   ): boolean {
-    if (!shantenResultMatchesCurrentPosition(result)) return false
+    if (!analysisResultMatchesCurrentPosition(result)) return false
     gameView.opponentAnalysis = result
     if (suppressOpponentAnalysisTransitions.value && !applyOptions.withoutMotion) {
-      deferredShantenResult = result
+      deferredAnalysisResult = result
       return true
     }
 
@@ -218,18 +218,18 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   function invalidateOpponentRead() {
-    shantenReadGeneration += 1
+    analysisReadGeneration += 1
   }
 
-  async function fetchShantenOnce() {
+  async function fetchAnalysisOnce() {
     if (clearingAnalysisCaches.value || !opponentAnalysisNeeded.value || !gameView.table || !window.studioAPI?.getAnalysis) return
-    const generation = ++shantenReadGeneration
+    const generation = ++analysisReadGeneration
     try {
       const result = await window.studioAPI.getAnalysis()
-      if (generation !== shantenReadGeneration || !opponentAnalysisNeeded.value) return
-      applyShantenResult(result, { clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value })
+      if (generation !== analysisReadGeneration || !opponentAnalysisNeeded.value) return
+      applyAnalysisResult(result, { clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value })
     } catch (error) {
-      if (generation !== shantenReadGeneration) return
+      if (generation !== analysisReadGeneration) return
       shantenStatus.value = `err: ${String(error)}`
     }
   }
@@ -262,7 +262,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
       gameView.analysis = null
     }
     if (await syncAnalysisVisibilityToBackend(true)) {
-      if (opponentAnalysisNeeded.value) void fetchShantenOnce()
+      if (opponentAnalysisNeeded.value) void fetchAnalysisOnce()
     } else decisionRecommendationsEnabled.value = !enabled
   }
 
@@ -311,9 +311,9 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   function applyOpponentAnalysisEvent(result: Record<string, unknown>): boolean {
-    if (clearingAnalysisCaches.value || !shantenResultMatchesCurrentPosition(result)) return false
+    if (clearingAnalysisCaches.value || !analysisResultMatchesCurrentPosition(result)) return false
     invalidateOpponentRead()
-    return applyShantenResult(result)
+    return applyAnalysisResult(result)
   }
 
   async function clearLoadedAnalysisCaches() {
@@ -355,7 +355,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
       await syncAnalysisVisibilityToBackend()
       return
     }
-    if (await syncAnalysisVisibilityToBackend()) void fetchShantenOnce()
+    if (await syncAnalysisVisibilityToBackend()) void fetchAnalysisOnce()
   })
 
   watch(
@@ -364,7 +364,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
       const modeChanged = mode !== previousMode
       if (decisionEnabled !== previousDecisionEnabled && !modeChanged) return
       if (await syncAnalysisVisibilityToBackend(modeChanged) && opponentAnalysisNeeded.value) {
-        void fetchShantenOnce()
+        void fetchAnalysisOnce()
       }
     },
   )
@@ -375,7 +375,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     acceptsOpponentEventEpoch,
     analysisCacheClearMessage,
     applyOpponentAnalysisEvent,
-    applyShantenResult,
+    applyAnalysisResult,
     cacheDecisionAnalysis,
     canToggleDecisionRecommendations,
     clearLoadedAnalysisCaches,
@@ -383,7 +383,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     clearingAnalysisCaches,
     decisionRecommendationsEnabled,
     effectiveDecisionRecommendationsEnabled,
-    fetchShantenOnce,
+    fetchAnalysisOnce,
     hasOpponentGroundTruth,
     invalidateOpponentRead,
     opponentAnalysisIsLoading,
@@ -394,7 +394,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     resetForNewGame,
     resolveNextDecisionAnalysis,
     ronWaitPredData,
-    shantenOpponents,
+    analysisOpponents,
     shantenRawData,
     shantenRawJson,
     shantenStatus,

@@ -19,7 +19,7 @@ test('record dirty publication is deduplicated and forced record starts still pu
     app: { getVersion: () => '1.0.0' },
     appOptions: {},
     dialog: {},
-    environmentGateway: {},
+    backendGateway: {},
     gameFileStore,
     getMainWindow: () => ({ isDestroyed: () => false, webContents: { send: (...args) => messages.push(args) } }),
     t: (key) => key,
@@ -50,7 +50,7 @@ test('saving owns record export, encoding, path tracking, and dirty publication'
     app: { getVersion: () => '1.2.3' },
     appOptions: {},
     dialog: {},
-    environmentGateway: {
+    backendGateway: {
       exportGameRecord: async () => ({
         record: {
           metadata: { models: ['private'], source: 'test' },

@@ -408,7 +408,7 @@
         :loading="opponentAnalysisIsLoading"
         :load-error="opponentAnalysisLoadError"
         :analysis="gameView.opponentAnalysis"
-        :shanten-opponents="shantenOpponents"
+        :analysis-opponents="analysisOpponents"
         :shanten-colors="shantenColors"
         :shanten-labels="SHANTEN_LABELS"
         :shanten-short-labels="SHANTEN_SHORT_LABELS"
@@ -689,7 +689,7 @@
       :debug-json="mjaiDebugJson"
       :game-loaded="status.gameLoaded"
       :has-shanten-raw-data="Boolean(shantenRawData.kamicha)"
-      :shanten-json="shantenMjaiJson"
+      :analysis-json="analysisDebugJson"
       :shanten-raw-json="shantenRawJson"
       :shanten-status="shantenStatus"
       @clear-cache="clearLoadedAnalysisCaches"
@@ -744,7 +744,7 @@ import { useTableViewport } from './useTableViewport'
 import { useTileArtwork } from './useTileArtwork'
 import {
   SHANTEN_SHORT_LABELS,
-  shantenResultHasRows,
+  analysisResultHasRows,
   useAnalysisSession,
 } from './useAnalysisSession'
 import {
@@ -833,8 +833,8 @@ const customTenhouExportRefreshKey = ref(0)
 const showMjaiDebug = ref(false)
 const mjaiDebugData = ref<Record<string, unknown>>({})
 const mjaiDebugJson = computed(() => JSON.stringify(mjaiDebugData.value, null, 2))
-const shantenMjaiData = ref<Record<string, unknown>>({})
-const shantenMjaiJson = computed(() => JSON.stringify(shantenMjaiData.value, null, 2))
+const analysisDebugData = ref<Record<string, unknown>>({})
+const analysisDebugJson = computed(() => JSON.stringify(analysisDebugData.value, null, 2))
 
 const {
   analysisPanelIsSelected,
@@ -1001,7 +1001,7 @@ const {
   acceptsOpponentEventEpoch,
   analysisCacheClearMessage,
   applyOpponentAnalysisEvent,
-  applyShantenResult,
+  applyAnalysisResult,
   cacheDecisionAnalysis,
   canToggleDecisionRecommendations,
   clearLoadedAnalysisCaches,
@@ -1009,7 +1009,7 @@ const {
   clearingAnalysisCaches,
   decisionRecommendationsEnabled,
   effectiveDecisionRecommendationsEnabled,
-  fetchShantenOnce,
+  fetchAnalysisOnce,
   hasOpponentGroundTruth,
   invalidateOpponentRead,
   opponentAnalysisIsLoading,
@@ -1020,7 +1020,7 @@ const {
   resetForNewGame,
   resolveNextDecisionAnalysis,
   ronWaitPredData,
-  shantenOpponents,
+  analysisOpponents,
   shantenRawData,
   shantenRawJson,
   shantenStatus,
@@ -1095,16 +1095,16 @@ const {
   applySettings,
   applyStatus,
   afterOpponentUnload: () => {
-    if (!shantenResultHasRows(gameView.opponentAnalysis)) {
+    if (!analysisResultHasRows(gameView.opponentAnalysis)) {
       clearOpponentAnalysisWithoutMotion()
     }
-    void fetchShantenOnce()
+    void fetchAnalysisOnce()
   },
 })
 
 watch(
   () => [gameView.gameId, gameView.currentNodeId, status.controlledSeat],
-  () => { void fetchShantenOnce() },
+  () => { void fetchAnalysisOnce() },
 )
 
 const {
@@ -1641,7 +1641,7 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   gameView.pendingReview = nextView.pendingReview
   if (gameView.opponentAnalysis) {
     const analysisUnavailable = opponentAnalysisPermanentlyUnavailable.value
-    applyShantenResult(gameView.opponentAnalysis, {
+    applyAnalysisResult(gameView.opponentAnalysis, {
       withoutMotion: analysisUnavailable,
       clearWhenEmpty: analysisUnavailable,
     })
@@ -1883,7 +1883,7 @@ const handlePythonEvent = createPythonEventRouter({
   acceptsDecisionEventEpoch,
   markPlayPrefetchReady,
   clearOpponentAnalysisWithoutMotion,
-  fetchShantenOnce,
+  fetchAnalysisOnce,
   applyOpponentAnalysisEvent,
   cacheDecisionAnalysis,
 })
@@ -1902,9 +1902,9 @@ async function fetchAndShowMjaiDebug() {
   if (window.studioAPI?.getAnalysisDebug) {
     try {
       const result = await window.studioAPI.getAnalysisDebug()
-      shantenMjaiData.value = (result as Record<string, unknown>).debug as Record<string, unknown> || {}
+      analysisDebugData.value = (result as Record<string, unknown>).debug as Record<string, unknown> || {}
     } catch {
-      shantenMjaiData.value = { error: 'Failed to fetch shanten mjai' }
+      analysisDebugData.value = { error: 'Failed to fetch opponent analysis debug data' }
     }
   }
 }
@@ -1996,7 +1996,7 @@ if (import.meta.env.MODE === 'ui-test') {
     showEngineWindow,
     showMjaiDebug,
     handlePythonEvent,
-    fetchShantenOnce,
+    fetchAnalysisOnce,
     jumpToNode,
     toggleAnalysisDock,
     clearLoadedAnalysisCaches,

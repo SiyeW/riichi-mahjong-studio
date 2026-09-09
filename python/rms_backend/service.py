@@ -707,7 +707,7 @@ SERVICE_RUNTIME.add_shutdown(ACTION_RECOMMENDATIONS.shutdown)
 def main():
     SERVICE_RUNTIME.run(
         sys.stdin,
-        service_name="environment",
+        service_name="backend",
         configure=lambda: ENGINE_MANAGEMENT.apply_runtime_config(
             ENGINE_MANAGEMENT.load_project_config()
         ),

@@ -1,7 +1,7 @@
 <template>
   <div
     ref="analysisRootElement"
-    class="unified-analysis"
+    class="analysis-panel-content"
     :class="{
       'is-opponent-section': section === 'opponents',
       'reduce-motion': reduceMotion,
@@ -12,7 +12,7 @@
     <OpponentAnalysisSection
       v-if="section === 'opponents'"
       :analysis="analysis"
-      :shanten-opponents="shantenOpponents"
+      :analysis-opponents="analysisOpponents"
       :shanten-colors="shantenColors"
       :shanten-labels="shantenLabels"
       :shanten-short-labels="shantenShortLabels"
@@ -24,7 +24,7 @@
     <GameAnalysisSection
       v-else-if="section === 'game'"
       :analysis="analysis"
-      :shanten-opponents="shantenOpponents"
+      :analysis-opponents="analysisOpponents"
       :controlled-seat="controlledSeat"
       :dealer="dealer"
       :perceptual-surface="perceptualSurface"
@@ -32,7 +32,7 @@
     <DealInRiskSection
       v-else-if="section === 'risk'"
       :analysis="analysis"
-      :shanten-opponents="shantenOpponents"
+      :analysis-opponents="analysisOpponents"
       :controlled-seat="controlledSeat"
       :dealer="dealer"
       :tile-image-src="tileImageSrc"
@@ -42,7 +42,7 @@
     <TileCountAnalysisSection
       v-else
       :analysis="analysis"
-      :shanten-opponents="shantenOpponents"
+      :analysis-opponents="analysisOpponents"
       :controlled-seat="controlledSeat"
       :dealer="dealer"
       :tile-image-src="tileImageSrc"

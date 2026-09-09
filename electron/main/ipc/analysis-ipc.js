@@ -1,9 +1,9 @@
-function registerAnalysisIpc({ ipcMain, environmentGateway, markRecordDirty }) {
-  ipcMain.handle('analysis:visibility', (event, visibility) => environmentGateway.setAnalysisVisibility(visibility))
-  ipcMain.handle('analysis:get', () => environmentGateway.getAnalysis())
-  ipcMain.handle('debug:analysis', () => environmentGateway.getAnalysisDebug())
+function registerAnalysisIpc({ ipcMain, backendGateway, markRecordDirty }) {
+  ipcMain.handle('analysis:visibility', (event, visibility) => backendGateway.setAnalysisVisibility(visibility))
+  ipcMain.handle('analysis:get', () => backendGateway.getAnalysis())
+  ipcMain.handle('debug:analysis', () => backendGateway.getAnalysisDebug())
   ipcMain.handle('debug:clear-analysis-caches', async () => {
-    const response = await environmentGateway.clearAnalysisCaches()
+    const response = await backendGateway.clearAnalysisCaches()
     const cleared = response.cleared || {}
     if (
       Number(cleared.mortalEntries || 0) > 0
@@ -15,8 +15,8 @@ function registerAnalysisIpc({ ipcMain, environmentGateway, markRecordDirty }) {
     }
     return response
   })
-  ipcMain.handle('analysis:auto-start', () => environmentGateway.startAutoAnalysis())
-  ipcMain.handle('analysis:auto-cancel', () => environmentGateway.cancelAutoAnalysis())
+  ipcMain.handle('analysis:auto-start', () => backendGateway.startAutoAnalysis())
+  ipcMain.handle('analysis:auto-cancel', () => backendGateway.cancelAutoAnalysis())
 }
 
 module.exports = { registerAnalysisIpc }

@@ -12,7 +12,7 @@ import { analysisRecord, useAnalysisOutputs } from './useAnalysisOutputs.ts'
 
 export function useRiskAnalysisData(props: AnalysisPanelDataProps) {
   const { playerOutput } = useAnalysisOutputs(() => props.analysis)
-  const opponentSources = computed<TileSource[]>(() => props.shantenOpponents.map((opponent) => ({
+  const opponentSources = computed<TileSource[]>(() => props.analysisOpponents.map((opponent) => ({
     key: opponent.key,
     label: opponent.label,
     seat: opponent.seat,

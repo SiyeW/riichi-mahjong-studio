@@ -24,7 +24,7 @@ export interface AnalysisTestApi {
   readonly showEngineWindow: boolean
   showMjaiDebug: boolean
   handlePythonEvent: (event: PythonEvent) => void
-  fetchShantenOnce: () => Promise<void>
+  fetchAnalysisOnce: () => Promise<void>
   jumpToNode: (nodeId: string) => Promise<void>
   toggleAnalysisDock: () => void
   clearLoadedAnalysisCaches: () => Promise<void>

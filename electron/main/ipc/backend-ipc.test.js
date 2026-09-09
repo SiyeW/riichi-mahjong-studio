@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
-const { registerEnvironmentIpc } = require('./environment-ipc')
+const { registerBackendIpc } = require('./backend-ipc')
 
 function createFixture({ needsRecovery = false, restartBackend } = {}) {
   const handlers = new Map()
@@ -10,9 +10,9 @@ function createFixture({ needsRecovery = false, restartBackend } = {}) {
     isDestroyed: () => false,
     webContents: { send: (...args) => calls.push(['send', ...args]) },
   }
-  registerEnvironmentIpc({
+  registerBackendIpc({
     ipcMain,
-    environmentGateway: {
+    backendGateway: {
       getLatestMjaiDebug: () => 'debug',
       needsRecovery: () => needsRecovery,
       restartBackend: restartBackend || (async () => ({
@@ -33,7 +33,7 @@ function createFixture({ needsRecovery = false, restartBackend } = {}) {
   return { calls, handlers, ipcMain, window }
 }
 
-test('environment IPC registers restart and debug channels', () => {
+test('backend IPC registers restart and debug channels', () => {
   const { handlers } = createFixture()
   assert.deepEqual([...handlers.keys()].sort(), ['backend:restart', 'debug:latest-mjai'])
   assert.equal(handlers.get('debug:latest-mjai')(), 'debug')

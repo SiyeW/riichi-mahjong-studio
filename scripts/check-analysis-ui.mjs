@@ -262,7 +262,7 @@ try {
     const check = window.analysisCheck
     const read = window.studioAPI.getAnalysis
     window.studioAPI.getAnalysis = () => new Promise(resolve => { check.resolveRead = resolve })
-    check.pendingRead = check.vm.fetchShantenOnce()
+    check.pendingRead = check.vm.fetchAnalysisOnce()
     window.studioAPI.getAnalysis = read
     check.publish(check.result(3.5))
     check.resolveRead(check.result(0.5))
@@ -306,7 +306,7 @@ try {
     const check = window.analysisCheck
     const read = window.studioAPI.getAnalysis
     window.studioAPI.getAnalysis = () => new Promise(resolve => { check.resolveRead = resolve })
-    check.pendingRead = check.vm.fetchShantenOnce()
+    check.pendingRead = check.vm.fetchAnalysisOnce()
     check.oldResult = check.result()
     window.studioAPI.getAnalysis = read
   })
