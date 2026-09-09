@@ -67,6 +67,9 @@ try {
       }
       const check = window.analysisCheck
       if (vm.showPerceptualColorDebugger !== false) throw new Error('F8 debugger must start hidden')
+      // Keep copy assertions independent of the host operating-system locale.
+      // Dedicated responsive checks below still exercise every supported language.
+      vm.settings.display.language = 'zh-CN'
       window.trainerAPI = {
         getSettings: async () => JSON.parse(JSON.stringify(vm.settings)),
         getStatus: async () => JSON.parse(JSON.stringify(vm.status)),
