@@ -162,7 +162,7 @@ async function emitOption(key: string, event: Event) {
   padding: calc(0.18rem * var(--floating-panel-scale)) calc(0.24rem * var(--floating-panel-scale));
   border: none;
   background: transparent;
-  gap: calc(0.34rem * var(--floating-panel-scale)) !important;
+  gap: calc(0.34rem * var(--floating-panel-scale));
 }
 
 .engine-output-assignment:has(input:disabled) {
