@@ -2,7 +2,7 @@
 
 type TrainerSettingsPatch = {
   [K in 'training' | 'modeDefaults' | 'display' | 'records' | 'audio']?: Partial<TrainerSettings[K]>
-} & { engines?: TrainerEngineSettings }
+} & { engines?: import('./contracts/engines').EngineSettings }
 
 interface TrainerSettings {
   configPath: string
@@ -93,109 +93,7 @@ interface TrainerSettings {
     volume: number
     soundPackId: string
   }
-  engines: TrainerEngineSettings
-}
-
-interface TrainerEngineProfile {
-  id: string
-  name: string
-  engineId: string
-  enginePath: string
-  builtIn: boolean
-  autoName?: boolean
-  available: boolean
-  unavailableReason?: string
-  engineVersion?: string
-  engineCommand?: string[]
-  engineCwd?: string
-  weights: Array<{ slotId: string; format: string; path: string }>
-  device: string
-  options: {
-    botVersion?: 'v3' | 'v4'
-    temperature?: number
-    [key: string]: unknown
-  }
-}
-
-interface TrainerDecisionMetricDefinition {
-  id: string
-  title: string | Record<string, string>
-  description?: string | Record<string, string>
-  format: 'number' | 'percentage' | 'points'
-  preferredDirection: 'higher' | 'lower' | 'none'
-  fractionDigits?: number
-}
-
-interface TrainerEngineDescription {
-  protocol: { name: string; major: number; minor?: number }
-  engine: {
-    id: string
-    name: string
-    version: string
-  }
-  outputContracts: Array<{
-    id: string
-    version?: number
-    representations?: string[]
-    supportsRevealedHands?: boolean
-    metrics?: TrainerDecisionMetricDefinition[]
-  }>
-  weightSlots: Array<{
-    id: string
-    title: string | Record<string, string>
-    formats: Array<{ id: string; extensions?: string[] }>
-    requiredForOutputs?: Array<{ id: string; version?: number }>
-  }>
-  devices: Array<{
-    type: string
-    title?: string | Record<string, string>
-  }>
-  runtimeCapabilities: Record<string, boolean>
-  optionsSchema: {
-    type?: string
-    properties?: Record<string, {
-      type?: 'string' | 'number' | 'integer' | 'boolean'
-      enum?: Array<string | number | boolean>
-      default?: unknown
-      minimum?: number
-      maximum?: number
-      'x-ui'?: { label?: string; control?: string }
-    }>
-  }
-}
-
-interface TrainerEngineSettings {
-  schemaVersion: number
-  profiles: TrainerEngineProfile[]
-  outputAssignments: Record<
-    | 'action-recommendation'
-    | 'opponent-shanten'
-    | 'opponent-deal-in-probability'
-    | 'opponent-concealed-tile-count'
-    | 'wall-tile-count'
-    | 'opponent-dora-count'
-    | 'opponent-score'
-    | 'kyoku-outcome'
-    | 'kyoku-score-delta'
-    | 'match-placement'
-    | 'match-score',
-    string
-  >
-  loadedProfileIds: string[]
-}
-
-type TrainerModelActivityState = 'idle' | 'loading' | 'running' | 'error'
-
-interface TrainerModelRuntimeState {
-  profileId: string
-  profileIds?: string[]
-  profiles?: Record<string, {
-    ready: boolean
-    unloaded: boolean
-    error?: string
-  }>
-  ready: boolean
-  unloaded: boolean
+  engines: import('./contracts/engines').EngineSettings
 }
 
 interface TrainerAutoAnalysisStatus {
@@ -229,16 +127,16 @@ interface TrainerStatusSnapshot {
     opponentAnalysis: boolean
   }
   modelActivity: {
-    decision: TrainerModelActivityState[]
-    opponentAnalysis: TrainerModelActivityState
+    decision: import('./contracts/engines').ModelActivityState[]
+    opponentAnalysis: import('./contracts/engines').ModelActivityState
     errors?: {
       decision: Array<string | null>
       opponentAnalysis: string | null
     }
   }
   modelRuntime: {
-    decision: TrainerModelRuntimeState
-    opponentAnalysis: TrainerModelRuntimeState
+    decision: import('./contracts/engines').ModelRuntimeState
+    opponentAnalysis: import('./contracts/engines').ModelRuntimeState
   }
   autoAnalysis: TrainerAutoAnalysisStatus
 }
@@ -502,7 +400,7 @@ interface TrainerGameView {
     seat: number
     mode?: string
     bestAction?: Record<string, unknown> | null
-    metricDefinitions?: TrainerDecisionMetricDefinition[]
+    metricDefinitions?: import('./contracts/engines').DecisionMetricDefinition[]
     primaryMetricId?: string
     recommendationMetricId?: string
     discardEntries: Array<{
@@ -636,10 +534,10 @@ interface TrainerPythonEvent {
   model?: 'decision' | 'opponent_analysis'
   seat?: number
   active?: boolean
-  activityState?: TrainerModelActivityState
+  activityState?: import('./contracts/engines').ModelActivityState
   error?: string | null
   averageMs?: number
-  runtime?: TrainerModelRuntimeState
+  runtime?: import('./contracts/engines').ModelRuntimeState
   opponentAnalysis?: Record<string, unknown>
   nodeId?: string
   gameId?: string
@@ -667,12 +565,12 @@ interface Window {
       enginePath: string
       engineCommand?: string[]
       engineCwd?: string
-    }) => Promise<TrainerEngineDescription>
+    }) => Promise<import('./contracts/engines').EngineDescription>
     chooseEngineFile: () => Promise<string>
     chooseEngineWeight: () => Promise<string>
     activateEngine: (payload: {
       profileId: string
-      engines: TrainerEngineSettings
+      engines: import('./contracts/engines').EngineSettings
     }) => Promise<TrainerSettings>
     unloadEngine: (payload: {
       profileId: string

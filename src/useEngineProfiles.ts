@@ -4,19 +4,9 @@ import { mergeSettingsReply } from './settingsChanges'
 import type { TranslationParams } from './i18n'
 import { buildEngineStatusItems, type EngineRuntimeKind } from './engineStatusItems'
 import { useEngineRuntimeProfiles } from './useEngineRuntimeProfiles'
+import type { EngineDescription, EngineOutputId, EngineProfile, EngineSettings } from './contracts/engines'
 
-export type SupportedEngineOutputId =
-  | 'action-recommendation'
-  | 'opponent-shanten'
-  | 'opponent-deal-in-probability'
-  | 'opponent-concealed-tile-count'
-  | 'wall-tile-count'
-  | 'opponent-dora-count'
-  | 'opponent-score'
-  | 'kyoku-outcome'
-  | 'kyoku-score-delta'
-  | 'match-placement'
-  | 'match-score'
+export type SupportedEngineOutputId = EngineOutputId
 
 export interface EngineOutputFilterItem {
   id: SupportedEngineOutputId
@@ -98,8 +88,8 @@ const SUPPORTED_ENGINE_OUTPUT_DEFINITIONS: Array<{ id: SupportedEngineOutputId; 
 const DELETE_CONFIRMATION_TIMEOUT_MS = 3000
 const ENGINE_AUTOSAVE_DELAY_MS = 250
 
-function cloneEngineSettings(engines: TrainerEngineSettings): TrainerEngineSettings {
-  return JSON.parse(JSON.stringify(engines)) as TrainerEngineSettings
+function cloneEngineSettings(engines: EngineSettings): EngineSettings {
+  return JSON.parse(JSON.stringify(engines)) as EngineSettings
 }
 
 export function useEngineProfiles(options: UseEngineProfilesOptions) {
@@ -134,7 +124,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
   const describingEngineIds = reactive(new Set<string>())
   const engineOutputFilter = ref<SupportedEngineOutputId | null>(null)
   const editingEngineProfileId = ref('')
-  const engineDescriptions = reactive<Record<string, TrainerEngineDescription>>({})
+  const engineDescriptions = reactive<Record<string, EngineDescription>>({})
   const engineDescribeErrors = reactive<Record<string, string>>({})
   const engineLoadErrors = reactive<Record<string, string>>({})
   let deleteEngineConfirmationTimer: number | null = null
@@ -171,7 +161,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     engineDescriptions[engineDescriptionKey(activeEngineProfile.value)] || null
   ))
 
-  function supportedOutputsForProfile(profile: TrainerEngineProfile) {
+  function supportedOutputsForProfile(profile: EngineProfile) {
     const contracts = engineDescriptions[engineDescriptionKey(profile)]?.outputContracts || []
     return SUPPORTED_ENGINE_OUTPUTS.value.filter((supported) => contracts.some((contract) => (
       contract.id === supported.id
@@ -183,7 +173,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     return profile ? supportedOutputsForProfile(profile) : []
   })
 
-  function weightSlotsForProfile(profile: TrainerEngineProfile) {
+  function weightSlotsForProfile(profile: EngineProfile) {
     const description = engineDescriptions[engineDescriptionKey(profile)]
     const supportedIds = new Set(supportedOutputsForProfile(profile).map((output) => output.id))
     return (description?.weightSlots || []).filter((slot) => (
@@ -259,19 +249,19 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     }, DELETE_CONFIRMATION_TIMEOUT_MS)
   })
 
-  function catalogEngineForProfile(profile: TrainerEngineProfile | null) {
+  function catalogEngineForProfile(profile: EngineProfile | null) {
     return settings.runtime?.engineCatalog?.engines.find((engine) => (
       engine.id === profile?.engineId
       || engine.enginePath.toLowerCase() === String(profile?.enginePath || '').toLowerCase()
     )) || null
   }
 
-  function engineDescriptionKey(profile: TrainerEngineProfile | null): string {
+  function engineDescriptionKey(profile: EngineProfile | null): string {
     return String(profile?.enginePath || profile?.engineId || '')
   }
 
   function engineProfileSupportsOutput(
-    profile: TrainerEngineProfile,
+    profile: EngineProfile,
     outputId: SupportedEngineOutputId,
   ): boolean {
     const description = engineDescriptions[engineDescriptionKey(profile)]
@@ -281,7 +271,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     )))
   }
 
-  function engineOutputAssignmentProfile(outputId: SupportedEngineOutputId): TrainerEngineProfile | null {
+  function engineOutputAssignmentProfile(outputId: SupportedEngineOutputId): EngineProfile | null {
     const profileId = settingsDraft.engines.outputAssignments[outputId]
     return activeEngineProfiles.value.find((profile) => profile.id === profileId) || null
   }
@@ -311,7 +301,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
       || (profileMatchesRuntime(profile, kind) && Boolean(runtimeEngineError(kind, profile)))
   }
 
-  async function describeEngineProfile(profile: TrainerEngineProfile | null) {
+  async function describeEngineProfile(profile: EngineProfile | null) {
     const key = engineDescriptionKey(profile)
     if (!profile?.enginePath || engineDescriptions[key] || describingEngineIds.has(key)) return
     if (!window.trainerAPI?.describeEngine) return
@@ -353,14 +343,14 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     opponentOutputIds: opponentEngineOutputIds,
     assignedOutputs: profileAssignedOutputs,
   })
-  function profileIsLoaded(profile: TrainerEngineProfile): boolean {
+  function profileIsLoaded(profile: EngineProfile): boolean {
     const runtimeGroups = profileRuntimeKinds(profile)
     return runtimeGroups.length > 0 && runtimeGroups.every((kind) => (
       profileRuntimeState(profile, kind)?.ready === true
     ))
   }
 
-  function profileIsLoading(profile: TrainerEngineProfile): boolean {
+  function profileIsLoading(profile: EngineProfile): boolean {
     if (engineLoadErrors[profile.id]) return false
     if (profile.id === loadingEngineProfileId.value) return true
     return profileRuntimeKinds(profile).some((kind) => {
@@ -372,11 +362,11 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     })
   }
 
-  function profileConfigurationLocked(profile: TrainerEngineProfile): boolean {
+  function profileConfigurationLocked(profile: EngineProfile): boolean {
     return profileIsLoaded(profile) || profileIsLoading(profile)
   }
 
-  function engineProfileClasses(profile: TrainerEngineProfile) {
+  function engineProfileClasses(profile: EngineProfile) {
     const runtimeGroups = profileRuntimeKinds(profile)
     const loaded = profileIsLoaded(profile)
     const matchesRuntime = runtimeGroups.some((kind) => profileMatchesRuntime(profile, kind))
@@ -395,7 +385,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     }
   }
 
-  function engineProfileSubtitle(profile: TrainerEngineProfile): string {
+  function engineProfileSubtitle(profile: EngineProfile): string {
     if (profile.id === loadingEngineProfileId.value) return t('engine.status.loading')
     if (engineLoadErrors[profile.id]) return t('engine.status.failed')
     const runtimeGroups = profileRuntimeKinds(profile)
@@ -417,7 +407,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     return runtimeError || engineSaveMessage.value
   })
 
-  function shouldShowEngineActionButton(profile: TrainerEngineProfile): boolean {
+  function shouldShowEngineActionButton(profile: EngineProfile): boolean {
     const loadOutputs = profileLoadOutputs(profile)
     return profileIsLoaded(profile)
       || (!profileIsLoading(profile)
@@ -445,7 +435,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
   function duplicateEngineProfile() {
     const source = activeEngineProfile.value
     if (!source) return
-    const copyProfile: TrainerEngineProfile = JSON.parse(JSON.stringify(source))
+    const copyProfile: EngineProfile = JSON.parse(JSON.stringify(source))
     copyProfile.id = `profile.user.${Date.now().toString(36)}`
     copyProfile.name = t('engine.copySuffix', { name: source.name })
     copyProfile.builtIn = false
@@ -470,7 +460,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
 
   function addEngineProfile() {
     engineOutputFilter.value = null
-    const profile: TrainerEngineProfile = {
+    const profile: EngineProfile = {
       id: `profile.user.${Date.now().toString(36)}`,
       name: '',
       engineId: '',
@@ -490,7 +480,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     return String(value || '').split(/[\\/]/).pop() || ''
   }
 
-  function suggestedEngineProfileName(profile: TrainerEngineProfile): string {
+  function suggestedEngineProfileName(profile: EngineProfile): string {
     const engineName = engineDescriptions[engineDescriptionKey(profile)]?.engine.name
       || catalogEngineForProfile(profile)?.name
       || fileNameFromPath(profile.enginePath).replace(/\.[^.]+$/, '')
@@ -500,7 +490,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     return [engineName, ...weightNames].filter(Boolean).join(' + ')
   }
 
-  function refreshAutomaticEngineName(profile: TrainerEngineProfile) {
+  function refreshAutomaticEngineName(profile: EngineProfile) {
     if (profile.autoName !== false && !profile.builtIn) profile.name = suggestedEngineProfileName(profile)
   }
 
@@ -566,19 +556,19 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
       || fallback
   }
 
-  function profileAssignedOutputs(profile: TrainerEngineProfile): SupportedEngineOutputId[] {
+  function profileAssignedOutputs(profile: EngineProfile): SupportedEngineOutputId[] {
     return SUPPORTED_ENGINE_OUTPUTS.value
       .map((output) => output.id)
       .filter((outputId) => settingsDraft.engines.outputAssignments[outputId] === profile.id)
   }
 
-  function profileLoadOutputs(profile: TrainerEngineProfile): SupportedEngineOutputId[] {
+  function profileLoadOutputs(profile: EngineProfile): SupportedEngineOutputId[] {
     const assigned = profileAssignedOutputs(profile)
     if (assigned.length) return assigned
     return supportedOutputsForProfile(profile).map((output) => output.id)
   }
 
-  function assignSupportedOutputsForLoading(profile: TrainerEngineProfile) {
+  function assignSupportedOutputsForLoading(profile: EngineProfile) {
     if (profileAssignedOutputs(profile).length) return
     for (const outputId of profileLoadOutputs(profile)) {
       settingsDraft.engines.outputAssignments[outputId] = profile.id
@@ -591,13 +581,13 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     settingsDraft.engines.outputAssignments[outputId] = checked ? profile.id : ''
   }
 
-  function engineWeight(profile: TrainerEngineProfile, slotId: string) {
+  function engineWeight(profile: EngineProfile, slotId: string) {
     return (profile.weights || []).find((weight) => weight.slotId === slotId)
   }
 
   function weightSlotIsActive(
-    slot: TrainerEngineDescription['weightSlots'][number],
-    profile: TrainerEngineProfile,
+    slot: EngineDescription['weightSlots'][number],
+    profile: EngineProfile,
     outputIds = profileAssignedOutputs(profile),
   ): boolean {
     const required = slot.requiredForOutputs || []
@@ -606,7 +596,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     return required.some((output) => assigned.has(output.id as SupportedEngineOutputId))
   }
 
-  function requiredWeightsReady(profile: TrainerEngineProfile, outputIds = profileAssignedOutputs(profile)): boolean {
+  function requiredWeightsReady(profile: EngineProfile, outputIds = profileAssignedOutputs(profile)): boolean {
     return weightSlotsForProfile(profile)
       .filter((slot) => weightSlotIsActive(slot, profile, outputIds))
       .every((slot) => {
@@ -657,7 +647,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     } else profile.options[option.key] = raw
   }
 
-  function replaceEngineDraft(engines: TrainerEngineSettings) {
+  function replaceEngineDraft(engines: EngineSettings) {
     suppressEngineAutosave = true
     try {
       Object.assign(settingsDraft.engines, cloneEngineSettings(engines))
@@ -692,7 +682,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     { deep: true, flush: 'sync' },
   )
 
-  async function saveEngineDraftSnapshot(snapshot: TrainerEngineSettings, revision: number): Promise<boolean> {
+  async function saveEngineDraftSnapshot(snapshot: EngineSettings, revision: number): Promise<boolean> {
     if (!window.trainerAPI) return false
     try {
       const saved = await window.trainerAPI.saveSettings({ engines: snapshot })

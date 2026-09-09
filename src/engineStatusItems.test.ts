@@ -2,8 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { buildEngineStatusItems, normalizeModelActivityState } from './engineStatusItems.ts'
+import type { EngineProfile } from './contracts/engines.ts'
 
-const profile = { id: 'engine-1', name: 'Reader' } as TrainerEngineProfile
+const profile = { id: 'engine-1', name: 'Reader' } as EngineProfile
 const t = (key: string, params?: Record<string, string | number>) => {
   if (key === 'common.listSeparator') return ', '
   if (key === 'status.recentAverage') return `${params?.engine} ${params?.value}ms`

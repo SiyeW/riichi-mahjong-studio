@@ -1,21 +1,22 @@
 import { reactive } from 'vue'
 import type { EngineRuntimeKind } from './engineStatusItems'
+import type { EngineProfile, EngineSettings, ModelRuntimeState } from './contracts/engines'
 
 export function useEngineRuntimeProfiles(options: {
   status: TrainerStatusSnapshot
   opponentOutputIds: string[]
-  assignedOutputs: (profile: TrainerEngineProfile) => string[]
+  assignedOutputs: (profile: EngineProfile) => string[]
 }) {
   const { status, opponentOutputIds, assignedOutputs } = options
-  const runtimeProfiles = reactive<Record<string, TrainerEngineProfile>>({})
+  const runtimeProfiles = reactive<Record<string, EngineProfile>>({})
 
-  function runtimeState(kind: EngineRuntimeKind): TrainerModelRuntimeState {
+  function runtimeState(kind: EngineRuntimeKind): ModelRuntimeState {
     return kind === 'opponent'
       ? status.modelRuntime.opponentAnalysis
       : status.modelRuntime.decision
   }
 
-  function runtimeError(kind: EngineRuntimeKind, profile: TrainerEngineProfile | null = null): string {
+  function runtimeError(kind: EngineRuntimeKind, profile: EngineProfile | null = null): string {
     if (kind === 'opponent') {
       if (profile) return String(runtimeState(kind).profiles?.[profile.id]?.error || '')
       return String(status.modelActivity?.errors?.opponentAnalysis || '')
@@ -23,7 +24,7 @@ export function useEngineRuntimeProfiles(options: {
     return (status.modelActivity?.errors?.decision || []).find(Boolean) || ''
   }
 
-  function runtimeFields(profile: TrainerEngineProfile): string {
+  function runtimeFields(profile: EngineProfile): string {
     return JSON.stringify({
       engineId: profile.engineId,
       engineVersion: profile.engineVersion,
@@ -36,7 +37,7 @@ export function useEngineRuntimeProfiles(options: {
     })
   }
 
-  function captureProfile(kind: EngineRuntimeKind, engines: TrainerEngineSettings) {
+  function captureProfile(kind: EngineRuntimeKind, engines: EngineSettings) {
     const outputIds = kind === 'decision' ? ['action-recommendation'] : opponentOutputIds
     for (const outputId of outputIds) {
       const profileId = engines.outputAssignments[outputId as keyof typeof engines.outputAssignments]
@@ -45,7 +46,7 @@ export function useEngineRuntimeProfiles(options: {
     }
   }
 
-  function markConfiguredStarting(kind: EngineRuntimeKind, engines: TrainerEngineSettings) {
+  function markConfiguredStarting(kind: EngineRuntimeKind, engines: EngineSettings) {
     const runtime = runtimeState(kind)
     if (runtime.ready || runtime.unloaded || runtimeError(kind)) return
     const profileId = kind === 'decision'
@@ -61,7 +62,7 @@ export function useEngineRuntimeProfiles(options: {
   }
 
   function profileRuntimeState(
-    profile: TrainerEngineProfile,
+    profile: EngineProfile,
     kind: EngineRuntimeKind,
   ): { ready: boolean; unloaded: boolean } | null {
     const captured = runtimeProfiles[profile.id]
@@ -73,7 +74,7 @@ export function useEngineRuntimeProfiles(options: {
     return null
   }
 
-  function profileRuntimeKinds(profile: TrainerEngineProfile): EngineRuntimeKind[] {
+  function profileRuntimeKinds(profile: EngineProfile): EngineRuntimeKind[] {
     const outputs = assignedOutputs(profile)
     const kinds: EngineRuntimeKind[] = []
     if (outputs.includes('action-recommendation')) kinds.push('decision')
@@ -81,7 +82,7 @@ export function useEngineRuntimeProfiles(options: {
     return kinds
   }
 
-  function profileMatchesRuntime(profile: TrainerEngineProfile, kind: EngineRuntimeKind): boolean {
+  function profileMatchesRuntime(profile: EngineProfile, kind: EngineRuntimeKind): boolean {
     return profileRuntimeState(profile, kind) !== null
   }
 

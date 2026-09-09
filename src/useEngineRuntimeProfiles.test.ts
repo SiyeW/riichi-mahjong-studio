@@ -2,15 +2,16 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { useEngineRuntimeProfiles } from './useEngineRuntimeProfiles.ts'
+import type { EngineProfile, EngineSettings } from './contracts/engines.ts'
 
-function profile(): TrainerEngineProfile {
+function profile(): EngineProfile {
   return {
     id: 'reader',
     name: 'Reader',
     enginePath: 'reader.exe',
     weights: [],
     options: { strength: 1 },
-  } as unknown as TrainerEngineProfile
+  } as unknown as EngineProfile
 }
 
 function status(): TrainerStatusSnapshot {
@@ -27,14 +28,14 @@ function status(): TrainerStatusSnapshot {
   } as unknown as TrainerStatusSnapshot
 }
 
-function engines(engineProfile: TrainerEngineProfile): TrainerEngineSettings {
+function engines(engineProfile: EngineProfile): EngineSettings {
   return {
     profiles: [engineProfile],
     outputAssignments: {
       'action-recommendation': engineProfile.id,
       'opponent-shanten': engineProfile.id,
     },
-  } as TrainerEngineSettings
+  } as EngineSettings
 }
 
 test('runtime profile matching requires an explicitly captured unchanged profile', () => {

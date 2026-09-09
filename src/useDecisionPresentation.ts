@@ -1,4 +1,5 @@
 import { computed, type Ref } from 'vue'
+import type { DecisionMetricDefinition } from './contracts/engines'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -157,7 +158,7 @@ export function useDecisionEntryPresentation(options: {
     return []
   }
 
-  const decisionMetricDefinitions = computed<TrainerDecisionMetricDefinition[]>(() => (
+  const decisionMetricDefinitions = computed<DecisionMetricDefinition[]>(() => (
     gameView.analysis?.metricDefinitions || []
   ))
 
@@ -202,7 +203,7 @@ export function useDecisionEntryPresentation(options: {
 
   function formatDecisionMetric(
     value: number | null | undefined,
-    metric: TrainerDecisionMetricDefinition,
+    metric: DecisionMetricDefinition,
   ): string {
     if (value == null || !Number.isFinite(value)) return '—'
     const displayedValue = metric.format === 'percentage' ? value * 100 : value

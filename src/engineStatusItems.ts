@@ -1,4 +1,5 @@
 import type { TranslationParams } from './i18n'
+import type { EngineProfile, ModelActivityState } from './contracts/engines'
 
 type Translate = (key: string, params?: TranslationParams) => string
 type RuntimeState = { ready: boolean; unloaded: boolean } | null
@@ -7,21 +8,21 @@ export type EngineRuntimeKind = 'decision' | 'opponent'
 export interface EngineStatusItem {
   id: string
   label: string
-  state: TrainerModelActivityState
+  state: ModelActivityState
 }
 
-export function normalizeModelActivityState(value: unknown): TrainerModelActivityState {
+export function normalizeModelActivityState(value: unknown): ModelActivityState {
   if (value === 'loading' || value === 'running' || value === 'error') return value
   return value === true ? 'running' : 'idle'
 }
 
 export function buildEngineStatusItems(options: {
-  profiles: TrainerEngineProfile[]
+  profiles: EngineProfile[]
   status: TrainerStatusSnapshot
   loadingProfileId: string
   loadErrors: Readonly<Record<string, string>>
-  runtimeState: (profile: TrainerEngineProfile, kind: EngineRuntimeKind) => RuntimeState
-  runtimeKinds: (profile: TrainerEngineProfile) => EngineRuntimeKind[]
+  runtimeState: (profile: EngineProfile, kind: EngineRuntimeKind) => RuntimeState
+  runtimeKinds: (profile: EngineProfile) => EngineRuntimeKind[]
   t: Translate
 }): EngineStatusItem[] {
   const { profiles, status, loadingProfileId, loadErrors, runtimeState, runtimeKinds, t } = options
@@ -29,7 +30,7 @@ export function buildEngineStatusItems(options: {
   const decision = (status.modelActivity?.decision || []).map(normalizeModelActivityState)
   const errors = status.modelActivity?.errors
   const performance = status.modelPerformance || { decision: [0, 0, 0, 0], opponentAnalysis: 0 }
-  const statePriority: TrainerModelActivityState[] = ['error', 'loading', 'running', 'idle']
+  const statePriority: ModelActivityState[] = ['error', 'loading', 'running', 'idle']
   const decisionState = statePriority.find((state) => decision.includes(state)) || 'idle'
   const relativeNames = [t('seat.self'), t('seat.shimocha'), t('seat.toimen'), t('seat.kamicha')]
   const activeRoles = relativeNames.filter((_, offset) => {
@@ -54,7 +55,7 @@ export function buildEngineStatusItems(options: {
     const localError = loadErrors[profile.id] || ''
     if (!kinds.size && !localError) return []
 
-    const states: TrainerModelActivityState[] = []
+    const states: ModelActivityState[] = []
     const timingValues: number[] = []
     const errorValues: string[] = localError ? [localError] : []
     if (kinds.has('decision')) {
