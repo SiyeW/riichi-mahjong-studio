@@ -1,7 +1,7 @@
 function registerAnalysisIpc({ ipcMain, environmentGateway, markRecordDirty }) {
   ipcMain.handle('analysis:visibility', (event, visibility) => environmentGateway.setAnalysisVisibility(visibility))
-  ipcMain.handle('game:shanten', () => environmentGateway.getShanten())
-  ipcMain.handle('debug:shanten-mjai', () => environmentGateway.getShantenMjai())
+  ipcMain.handle('analysis:get', () => environmentGateway.getAnalysis())
+  ipcMain.handle('debug:analysis', () => environmentGateway.getAnalysisDebug())
   ipcMain.handle('debug:clear-analysis-caches', async () => {
     const response = await environmentGateway.clearAnalysisCaches()
     const cleared = response.cleared || {}

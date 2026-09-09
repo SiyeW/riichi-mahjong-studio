@@ -220,10 +220,10 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   async function fetchShantenOnce() {
-    if (clearingAnalysisCaches.value || !opponentAnalysisNeeded.value || !gameView.table || !window.trainerAPI?.getShanten) return
+    if (clearingAnalysisCaches.value || !opponentAnalysisNeeded.value || !gameView.table || !window.trainerAPI?.getAnalysis) return
     const generation = ++shantenReadGeneration
     try {
-      const result = await window.trainerAPI.getShanten()
+      const result = await window.trainerAPI.getAnalysis()
       if (generation !== shantenReadGeneration || !opponentAnalysisNeeded.value) return
       applyShantenResult(result, { clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value })
     } catch (error) {

@@ -67,10 +67,10 @@ class StatefulCommandDispatcher:
             "get_latest_mjai_debug": lambda: self._analysis.latest_action_debug(
                 request_id, command
             ),
-            "get_shanten": lambda: self._analysis.current_opponent_analysis(
+            "get_analysis": lambda: self._analysis.current_opponent_analysis(
                 request_id, command
             ),
-            "get_shanten_mjai": lambda: self._analysis.latest_opponent_debug(
+            "get_analysis_debug": lambda: self._analysis.latest_opponent_debug(
                 request_id, command
             ),
             "clear_analysis_caches": lambda: self._analysis.clear_caches(

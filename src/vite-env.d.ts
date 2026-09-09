@@ -543,8 +543,8 @@ interface Window {
     }>
     importWall: (tiles: string[]) => Promise<TrainerEnvironmentResponse>
     getLatestMjaiDebug: () => Promise<{ debug: Record<string, unknown> }>
-    getShanten: () => Promise<{ opponents: Record<string, number[]> }>
-    getShantenMjai: () => Promise<{ debug: Record<string, unknown> }>
+    getAnalysis: () => Promise<Record<string, unknown>>
+    getAnalysisDebug: () => Promise<{ debug: Record<string, unknown> }>
     clearAnalysisCaches: () => Promise<{
       state: TrainerStatusSnapshot
       cleared: {

@@ -76,7 +76,7 @@ try {
         restoreStartupRecovery: async () => null,
         getRecordDirty: async () => false,
         onRecordDirtyChanged: callback => { check.notifyDirty = callback; return () => {} },
-        getShanten: async () => { check.reads++; return check.result() },
+        getAnalysis: async () => { check.reads++; return check.result() },
         getWallView: async () => {
           check.wallReads++
           return {
@@ -260,10 +260,10 @@ try {
   // An older one-shot reply cannot replace a result delivered while it waits.
   await page.evaluate(() => {
     const check = window.analysisCheck
-    const read = window.trainerAPI.getShanten
-    window.trainerAPI.getShanten = () => new Promise(resolve => { check.resolveRead = resolve })
+    const read = window.trainerAPI.getAnalysis
+    window.trainerAPI.getAnalysis = () => new Promise(resolve => { check.resolveRead = resolve })
     check.pendingRead = check.vm.fetchShantenOnce()
-    window.trainerAPI.getShanten = read
+    window.trainerAPI.getAnalysis = read
     check.publish(check.result(3.5))
     check.resolveRead(check.result(0.5))
   })
@@ -304,11 +304,11 @@ try {
   // Clear both the renderer data and hover; an outstanding reply stays discarded.
   await page.evaluate(() => {
     const check = window.analysisCheck
-    const read = window.trainerAPI.getShanten
-    window.trainerAPI.getShanten = () => new Promise(resolve => { check.resolveRead = resolve })
+    const read = window.trainerAPI.getAnalysis
+    window.trainerAPI.getAnalysis = () => new Promise(resolve => { check.resolveRead = resolve })
     check.pendingRead = check.vm.fetchShantenOnce()
     check.oldResult = check.result()
-    window.trainerAPI.getShanten = read
+    window.trainerAPI.getAnalysis = read
   })
   await page.evaluate(() => window.analysisCheck.vm.clearLoadedAnalysisCaches())
   await page.evaluate(async () => { const check = window.analysisCheck; check.resolveRead(check.oldResult); await check.pendingRead })

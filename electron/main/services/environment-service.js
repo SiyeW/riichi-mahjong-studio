@@ -159,11 +159,11 @@ function createEnvironmentService(options = {}) {
       getLatestMjaiDebug() {
         return environmentService.sendRequest('get_latest_mjai_debug')
       },
-      getShanten() {
-        return environmentService.sendRequest('get_shanten')
+      getAnalysis() {
+        return environmentService.sendRequest('get_analysis')
       },
-      getShantenMjai() {
-        return environmentService.sendRequest('get_shanten_mjai')
+      getAnalysisDebug() {
+        return environmentService.sendRequest('get_analysis_debug')
       },
       clearAnalysisCaches() {
         return environmentService.sendRequest('clear_analysis_caches')

@@ -2020,9 +2020,9 @@ async function fetchAndShowMjaiDebug() {
       mjaiDebugData.value = { error: 'Failed to fetch mjai debug data' }
     }
   }
-  if (window.trainerAPI?.getShantenMjai) {
+  if (window.trainerAPI?.getAnalysisDebug) {
     try {
-      const result = await window.trainerAPI.getShantenMjai()
+      const result = await window.trainerAPI.getAnalysisDebug()
       shantenMjaiData.value = (result as Record<string, unknown>).debug as Record<string, unknown> || {}
     } catch {
       shantenMjaiData.value = { error: 'Failed to fetch shanten mjai' }
