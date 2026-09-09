@@ -1,0 +1,233 @@
+.analysis-opponent-section {
+  min-width: 0;
+  background: transparent;
+}
+
+.analysis-opponent-section {
+  --analysis-distribution-track-surface: rgba(255, 255, 255, 0.045);
+  --analysis-dora-distribution-min-height: calc(2.25rem * var(--floating-panel-scale));
+  --analysis-dora-distribution-max-height: calc(4.25rem * var(--floating-panel-scale));
+  --analysis-score-distribution-min-height: calc(1.65rem * var(--floating-panel-scale));
+  --analysis-score-distribution-max-height: calc(3.15rem * var(--floating-panel-scale));
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.analysis-opponent-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.analysis-opponent-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  padding: calc(0.34rem * var(--floating-panel-scale)) calc(0.36rem * var(--floating-panel-scale));
+}
+
+.analysis-opponent-card + .analysis-opponent-card {
+  border-left: 1px solid var(--analysis-border);
+}
+
+.analysis-opponent-card :deep(.shanten-chart) {
+  gap: calc(0.12rem * var(--floating-panel-scale));
+  width: min(100%, calc(7rem * var(--floating-panel-scale)));
+}
+
+.analysis-opponent-card :deep(.shanten-opp-label) {
+  color: rgba(226, 239, 235, 0.82);
+  font-size: var(--ui-text-body);
+}
+
+.analysis-opponent-prediction-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.analysis-opponent-prediction-grid.has-dora-distributions,
+.analysis-opponent-prediction-grid.has-score-distributions {
+  flex: 1 1 auto;
+}
+
+.analysis-opponent-prediction-grid.has-dora-distributions:not(.has-score-distributions) {
+  min-height: calc(5.5rem * var(--floating-panel-scale));
+  max-height: calc(7.5rem * var(--floating-panel-scale));
+}
+
+.analysis-opponent-prediction-grid.has-score-distributions:not(.has-dora-distributions) {
+  min-height: calc(5.55rem * var(--floating-panel-scale));
+  max-height: calc(7.05rem * var(--floating-panel-scale));
+}
+
+.analysis-opponent-prediction-grid.has-dora-distributions.has-score-distributions {
+  min-height: calc(8.2rem * var(--floating-panel-scale));
+  max-height: calc(11.7rem * var(--floating-panel-scale));
+}
+
+.analysis-opponent-predictions {
+  display: grid;
+  gap: calc(0.28rem * var(--floating-panel-scale));
+  height: 100%;
+  min-width: 0;
+  padding: calc(0.34rem * var(--floating-panel-scale)) calc(0.36rem * var(--floating-panel-scale));
+}
+
+.analysis-opponent-prediction-grid.has-dora-distributions.has-score-distributions .analysis-opponent-predictions {
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+}
+
+.analysis-opponent-prediction-grid.has-dora-distributions:not(.has-score-distributions) .analysis-opponent-predictions {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.analysis-opponent-prediction-grid.has-score-distributions:not(.has-dora-distributions) .analysis-opponent-predictions {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.analysis-opponent-predictions + .analysis-opponent-predictions {
+  border-left: 1px solid var(--analysis-border);
+}
+
+.analysis-opponent-prediction {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.analysis-prediction-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: calc(0.22rem * var(--floating-panel-scale));
+  min-width: 0;
+  margin-bottom: calc(0.16rem * var(--floating-panel-scale));
+}
+
+.analysis-prediction-heading strong {
+  color: rgba(229, 240, 237, 0.88);
+  font-size: var(--ui-text-body);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.analysis-prediction-heading small {
+  color: rgba(186, 211, 207, 0.68);
+  font-size: var(--ui-text-caption);
+}
+
+.analysis-dora-distribution {
+  display: grid;
+  flex: 1 1 var(--analysis-dora-distribution-min-height);
+  grid-auto-columns: minmax(0, 1fr);
+  grid-auto-flow: column;
+  gap: 0;
+  min-height: var(--analysis-dora-distribution-min-height);
+  max-height: var(--analysis-dora-distribution-max-height);
+}
+
+.analysis-dora-distribution > span {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: calc(0.06rem * var(--floating-panel-scale));
+  min-width: 0;
+}
+
+.analysis-dora-distribution i,
+.analysis-score-distribution i {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--analysis-distribution-track-surface);
+}
+
+.analysis-dora-distribution > span + span i {
+  border-left: 1px solid rgba(1, 42, 49, 0.82);
+}
+
+.analysis-dora-distribution em,
+.analysis-score-distribution span {
+  display: block;
+  width: 100%;
+  background: var(--analysis-dora-color);
+  transition: height var(--ui-motion-duration) var(--ui-motion-easing);
+}
+
+.analysis-dora-distribution small {
+  overflow: hidden;
+  color: rgba(198, 219, 214, 0.72);
+  font-size: var(--ui-text-caption);
+  font-style: normal;
+  line-height: 1;
+  text-align: center;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.analysis-score-distribution {
+  display: flex;
+  flex: 1 1 var(--analysis-score-distribution-min-height);
+  align-items: stretch;
+  gap: 0;
+  min-height: var(--analysis-score-distribution-min-height);
+  max-height: var(--analysis-score-distribution-max-height);
+  overflow: hidden;
+}
+
+.analysis-score-distribution i {
+  flex: 1 1 0;
+}
+
+.analysis-score-distribution span {
+  background: var(--analysis-score-color);
+}
+
+.analysis-score-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: calc(0.12rem * var(--floating-panel-scale));
+  margin-top: calc(0.12rem * var(--floating-panel-scale));
+}
+
+.analysis-score-modes span {
+  overflow: hidden;
+  padding: calc(0.08rem * var(--floating-panel-scale)) calc(0.12rem * var(--floating-panel-scale));
+  color: rgba(220, 232, 228, 0.76);
+  background: color-mix(in srgb, var(--analysis-score-color) 10%, transparent);
+  font-size: var(--ui-text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.analysis-shanten-legend {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: calc(0.18rem * var(--floating-panel-scale)) calc(0.48rem * var(--floating-panel-scale));
+  padding: calc(0.3rem * var(--floating-panel-scale)) calc(0.38rem * var(--floating-panel-scale));
+  border-top: 1px solid var(--analysis-border);
+  border-bottom: 1px solid var(--analysis-border);
+  color: rgba(205, 224, 220, 0.7);
+  font-size: var(--ui-text-caption);
+}
+
+.analysis-shanten-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(0.18rem * var(--floating-panel-scale));
+  white-space: nowrap;
+}
+
+.analysis-shanten-legend i {
+  display: inline-block;
+  width: calc(0.52rem * var(--floating-panel-scale));
+  height: calc(0.52rem * var(--floating-panel-scale));
+}
+

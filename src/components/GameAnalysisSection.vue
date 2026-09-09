@@ -198,3 +198,5 @@ function showDealInTooltip(event: Event, player: typeof playerRows.value[number]
   })
 }
 </script>
+
+<style scoped src="./GameAnalysisSection.css"></style>

@@ -170,3 +170,5 @@ function showPredictionTooltip(
   tooltip.show(event, { title: `${subject} · ${label}`, lines: [scalar], rows: [] })
 }
 </script>
+
+<style scoped src="./OpponentAnalysisSection.css"></style>
