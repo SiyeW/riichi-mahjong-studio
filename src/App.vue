@@ -378,9 +378,11 @@
               :tile-image-src="tileImageSrc"
               @toggle-round-map="toggleRoundMapOverlay"
             />
-            <div v-if="actionAnnouncement.visible" :key="actionAnnouncement.key" :class="['table-callout', `is-${actionAnnouncement.position}`]">
-              {{ actionAnnouncement.text }}
-            </div>
+            <TableActionAnnouncement
+              :game-view="gameView"
+              :views="tableSeatViews"
+              :find-node="findTreeNodeById"
+            />
             <RoundResultOverlay
               :game-view="gameView"
               :status="status"
@@ -732,7 +734,6 @@ import { useWorkspaceDock } from './useWorkspaceDock'
 import { useWallView } from './useWallView'
 import { useEngineProfiles } from './useEngineProfiles'
 import { useGameplayActions } from './useGameplayActions'
-import { useActionAnnouncement } from './useActionAnnouncement'
 import { useAutoAdvance } from './useAutoAdvance'
 import { useBranchNavigation } from './useBranchNavigation'
 import { useBranchTreePresentation } from './useBranchTreePresentation'
@@ -782,6 +783,7 @@ import RecordImportDialog from './components/RecordImportDialog.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
 import RoundResultOverlay from './components/RoundResultOverlay.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
+import TableActionAnnouncement from './components/TableActionAnnouncement.vue'
 import TableCenterInfo from './components/TableCenterInfo.vue'
 import TableOpponentHands, { type OpponentHandPresentation } from './components/TableOpponentHands.vue'
 import TableRivers from './components/TableRivers.vue'
@@ -1588,12 +1590,9 @@ function registerTreeScrollElement(element: Element | null) {
   if (treeScrollEl.value) void nextTick(updateTreeViewport)
 }
 
-const { actionAnnouncement } = useActionAnnouncement({
-  gameView,
-  findNode: (nodeId) => nodeMapById.value.get(nodeId),
-  positionForActor: (actor) => tableSeatViews.value.find((entry) => entry.seat === actor)?.position || 'south',
-  t,
-})
+function findTreeNodeById(nodeId: string): TrainerTreeNode | undefined {
+  return nodeMapById.value.get(nodeId)
+}
 const {
   acceptsCurrentViewRequestContext,
   canDeleteCurrentNode,
