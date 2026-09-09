@@ -4,8 +4,6 @@ import type { GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 
 export type PendingDiscardView = NonNullable<NonNullable<GameView['table']>['pendingDiscard']>
-export type GameViewTransitionDirection = 'forward' | 'backward'
-
 export interface PendingDiscardReturnFlight {
   ghost: HTMLElement
   destination: HTMLElement

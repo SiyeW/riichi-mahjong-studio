@@ -2,8 +2,7 @@ import type { AnalysisCountLayout } from './analysisCountSpacing.ts'
 import type { PerceptualSurfaceBinding } from './perceptualSurface.ts'
 import type { CountSourceKey } from './analysisCountPalette.ts'
 import type { AnalysisRecord } from './useAnalysisOutputs.ts'
-
-export type AnalysisPanelSection = 'opponents' | 'game' | 'risk' | 'counts'
+import type { AnalysisPanelSection } from './contracts/workspace.ts'
 
 export type AnalysisOpponent = {
   key: Exclude<CountSourceKey, 'wall'>

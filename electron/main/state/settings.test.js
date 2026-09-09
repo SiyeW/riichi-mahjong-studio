@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { buildPortableDefaultSettings, loadSettings, saveSettings } = require('./settings')
+const { buildPortableDefaultSettings, buildSettings, loadSettings, saveSettings } = require('./settings')
 const { createDefaultDockLayout } = require('./workspace-layout')
 
 function expectedWorkspaceLayout({ legacyOrder, ...overrides } = {}) {
@@ -34,6 +34,20 @@ function testPortableDefaultsHaveNoEngines() {
   assert.equal(settings.display.language, 'system')
   assert.deepEqual(settings.display.workspaceLayout, expectedWorkspaceLayout())
   assert.equal('voice' in settings.audio, false)
+}
+
+function testCurrentConfigPathTakesPriorityAndLegacyNameRemainsCompatible() {
+  const settings = buildPortableDefaultSettings()
+  assert.equal(
+    buildSettings(settings, {
+      env: { RMS_BACKEND_CONFIG: 'current.json', MJAI_TRAINER_CONFIG: 'legacy.json' },
+    }).configPath,
+    'current.json',
+  )
+  assert.equal(
+    buildSettings(settings, { env: { MJAI_TRAINER_CONFIG: 'legacy.json' } }).configPath,
+    'legacy.json',
+  )
 }
 
 function testUserProfilePersists() {
@@ -195,6 +209,7 @@ function testSoundPackSelectionPersistsOnlyWhileAvailable() {
 }
 
 testPortableDefaultsHaveNoEngines()
+testCurrentConfigPathTakesPriorityAndLegacyNameRemainsCompatible()
 testUserProfilePersists()
 testSoundPackSelectionPersistsOnlyWhileAvailable()
 testInvalidTablePositionUsesCenter()

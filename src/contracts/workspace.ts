@@ -9,6 +9,7 @@ export const WORKSPACE_ITEM_IDS = [
 
 export type WorkspaceItemId = typeof WORKSPACE_ITEM_IDS[number]
 export type AnalysisPanelId = Extract<WorkspaceItemId, `analysis-${string}`>
+export type AnalysisPanelSection = 'opponents' | 'game' | 'risk' | 'counts'
 export type DockPanelId = Exclude<WorkspaceItemId, 'table'>
 export type DockDirection = 'horizontal' | 'vertical'
 export type DockEdge = 'left' | 'right' | 'top' | 'bottom'

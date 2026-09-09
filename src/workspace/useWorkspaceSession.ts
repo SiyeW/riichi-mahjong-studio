@@ -2,6 +2,7 @@ import { computed, nextTick, type Ref } from 'vue'
 import type { StudioSettings } from '../contracts/settings.ts'
 import type {
   AnalysisPanelId,
+  AnalysisPanelSection,
   DockPanelId,
   WorkspaceItemId,
   WorkspaceLayoutSettings,
@@ -11,8 +12,6 @@ import { normalizeWorkspaceLayout } from './settings.ts'
 import { useWorkspaceDock } from './useWorkspaceDock.ts'
 
 export type AnalysisPanelKey = keyof WorkspaceLayoutSettings['analysisPanels']
-export type AnalysisPanelSection = 'opponents' | 'game' | 'risk' | 'counts'
-
 export const ANALYSIS_PANEL_DEFINITIONS: ReadonlyArray<{
   id: AnalysisPanelId
   key: AnalysisPanelKey

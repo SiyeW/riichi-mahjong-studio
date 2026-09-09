@@ -1,5 +1,5 @@
 import { onBeforeUnmount } from 'vue'
-import type { GameViewTransitionDirection } from './useDiscardFlight'
+import type { GameViewTransitionDirection } from './contracts/game'
 import type { StudioSettings } from './contracts/settings'
 import type { GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'

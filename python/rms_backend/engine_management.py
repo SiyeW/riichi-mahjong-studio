@@ -104,7 +104,11 @@ class EngineManagement:
         return value if isinstance(value, dict) else {}
 
     def project_config_paths(self) -> tuple[Path, ...]:
-        configured_path = str(os.environ.get("MJAI_TRAINER_CONFIG") or "").strip()
+        configured_path = str(
+            os.environ.get("RMS_BACKEND_CONFIG")
+            or os.environ.get("MJAI_TRAINER_CONFIG")
+            or ""
+        ).strip()
         if configured_path:
             return (Path(configured_path).expanduser().resolve(),)
         if getattr(sys, "frozen", False):

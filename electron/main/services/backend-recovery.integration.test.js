@@ -23,7 +23,7 @@ test('real backend crash restores an unsaved comment and selected node from the 
       scriptPath: null,
       args: ['-m', 'rms_backend'],
       cwd: path.join(root, 'python'),
-      env: { MJAI_TRAINER_PORTABLE_DIR: portableDir },
+      env: { RMS_PORTABLE_DIR: portableDir },
       spawnProcess(...args) { child = spawn(...args); return child },
     })
     const send = backend.sendRequest
@@ -42,7 +42,7 @@ test('real backend crash restores an unsaved comment and selected node from the 
     try {
       const record = JSON.parse(execFileSync(python, ['-c',
         'import json; from rms_backend import service; service.STATE["game"] = service.create_empty_game(123456); service.STATE["gameLoaded"] = True; service.STATE["mode"] = "research"; print(json.dumps(service.RECORD_SESSION.serialize()))',
-      ], { cwd: path.join(root, 'python'), env: { ...process.env, MJAI_TRAINER_PORTABLE_DIR: portableDir }, encoding: 'utf8' }))
+      ], { cwd: path.join(root, 'python'), env: { ...process.env, RMS_PORTABLE_DIR: portableDir }, encoding: 'utf8' }))
       const created = await session.sendRequest('import_game_record', { record })
       const node = created.view.currentNodeId
       await session.sendRequest('set_node_comment', { nodeId: node, comment: 'unsaved recovery test' })

@@ -319,3 +319,5 @@ export interface GameView {
   pendingReview: PendingReview | null
   tree: GameTreeView | null
 }
+
+export type GameViewTransitionDirection = 'forward' | 'backward'

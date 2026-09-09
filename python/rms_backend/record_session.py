@@ -1,4 +1,4 @@
-"""Game record lifecycle and serialization for the environment service."""
+"""Game record lifecycle and serialization for the backend service."""
 
 from __future__ import annotations
 

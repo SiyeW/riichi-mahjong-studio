@@ -207,7 +207,7 @@ function buildPortableDefaultSettings() {
 function getSettingsPath(options = {}) {
   const portableRoot = options.portableDir || options.appDir || process.cwd()
   const projectPath = path.join(portableRoot, 'config.json')
-  const envPath = options.env?.MJAI_TRAINER_CONFIG
+  const envPath = options.env?.RMS_BACKEND_CONFIG || options.env?.MJAI_TRAINER_CONFIG
   return envPath || projectPath
 }
 

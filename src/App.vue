@@ -714,7 +714,7 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
 import type { StudioSettings } from './contracts/settings'
-import type { GameTreeNode, GameView } from './contracts/game'
+import type { GameTreeNode, GameView, GameViewTransitionDirection } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 import { flushBeforeClose } from './flushBeforeClose'
 import { createPythonEventRouter } from './pythonEventRouter'
@@ -725,7 +725,7 @@ import { useGameplayActions } from './useGameplayActions'
 import { useAutoAdvance } from './useAutoAdvance'
 import { useBranchNavigation } from './useBranchNavigation'
 import { useBranchTreePresentation } from './useBranchTreePresentation'
-import { useDiscardFlight, type GameViewTransitionDirection } from './useDiscardFlight'
+import { useDiscardFlight } from './useDiscardFlight'
 import {
   formatDelta,
   useDecisionActionPresentation,

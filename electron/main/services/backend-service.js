@@ -45,7 +45,7 @@ function createBackendService(options = {}) {
       ? options.t('native.backend.startFailed', { name, message })
       : `${name} failed to start: ${message}`,
     env: {
-      MJAI_TRAINER_PORTABLE_DIR: options.portableDir || process.cwd(),
+      RMS_PORTABLE_DIR: options.portableDir || process.cwd(),
       RMS_APP_VERSION: resolveAppVersion(options),
     },
   })

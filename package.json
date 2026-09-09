@@ -23,7 +23,8 @@
     "test:node": "node scripts/test-node.mjs",
     "test:python": "node scripts/test-python.mjs",
     "test:ui": "node scripts/check-analysis-ui.mjs",
-    "check": "npm test && npm run build && npm run test:ui",
+    "check:dependencies": "node scripts/check-dependency-cycles.mjs",
+    "check": "npm run check:dependencies && npm test && npm run build && npm run test:ui",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -1,10 +1,8 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { sameViewRequestContext } from './analysisPosition'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
-import type { GameTreeNode, GameView, RoundSummary } from './contracts/game'
+import type { GameTreeNode, GameView, GameViewTransitionDirection, RoundSummary } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
-
-type GameViewTransitionDirection = 'forward' | 'backward'
 
 export function useBranchNavigation(options: {
   gameView: GameView

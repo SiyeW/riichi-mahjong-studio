@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import threading
+from collections.abc import Mapping
 from pathlib import Path
 
 from . import auto_analysis_session
@@ -72,7 +73,17 @@ STATE = {
     "nextGameId": 1,
 }
 PROJECT_ROOT = get_project_root()
-PORTABLE_ROOT = Path(os.environ.get("MJAI_TRAINER_PORTABLE_DIR") or PROJECT_ROOT).resolve()
+
+
+def resolve_portable_root(
+    environment: Mapping[str, str] = os.environ,
+    project_root: Path = PROJECT_ROOT,
+) -> Path:
+    configured = environment.get("RMS_PORTABLE_DIR") or environment.get("MJAI_TRAINER_PORTABLE_DIR")
+    return Path(configured or project_root).resolve()
+
+
+PORTABLE_ROOT = resolve_portable_root()
 ACTION_RECOMMENDATIONS = ActionRecommendationGateway()
 OPPONENT_PREDICTIONS = OpponentPredictionCoordinator()
 ENGINE_RUNTIME_REGISTRY = EngineRuntimeRegistry()
