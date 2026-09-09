@@ -2392,10 +2392,6 @@ textarea {
   margin-bottom: calc(0.32rem * var(--chrome-scale));
 }
 
-.settings-preview-tree {
-  padding-bottom: calc(0.32rem * var(--chrome-scale));
-}
-
 .settings-preview-match {
   background: var(--dock-module-surface);
 }
@@ -2414,180 +2410,16 @@ textarea {
   font-size: var(--ui-text-body);
 }
 
-.tree-actions {
-  display: grid;
-  grid-template-columns: repeat(var(--adaptive-button-columns, 3), minmax(max-content, 1fr));
-  align-items: center;
-  gap: calc(0.45rem * var(--chrome-scale));
-  margin-bottom: calc(0.20rem * var(--chrome-scale));
-  min-width: 0;
-}
-
-.tree-actions button {
-  box-sizing: border-box;
-  min-width: 0;
-  max-width: 100%;
-  font-size: var(--ui-text-body);
-  padding: calc(0.25rem * var(--ui-scale)) clamp(calc(0.25rem * var(--ui-scale)), 2cqi, calc(0.5rem * var(--ui-scale)));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tree-actions button {
-  border: 1px solid rgba(0, 0, 0, 0.25);
-  background: rgba(8, 80, 94, 0.9);
-  color: var(--text-main);
-  border-radius: calc(3px * var(--chrome-scale));
-  cursor: pointer;
-  transition: background var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.tree-actions .tree-delete-button.confirm-delete {
-  border-color: rgba(214, 117, 103, 0.58);
-  background: rgba(145, 55, 45, 0.92);
-}
-
 .comparison-box p {
   font-size: var(--ui-text-body);
   line-height: 1.4;
   padding: calc(0.06rem * var(--chrome-scale)) 0;
 }
 
-.tree-actions[data-adaptive-columns="2"] button:last-child:nth-child(odd) {
-  grid-column: 1 / -1;
-}
-
 .mini-tile-img {
   --mahjong-tile-artwork-width: calc(var(--ui-tile-w) * 0.52);
   width: calc(var(--ui-tile-w) * 0.52);
   height: calc(var(--ui-tile-h) * 0.52);
-}
-
-.tree-scroll {
-  max-height: calc(20rem * var(--ui-scale));
-  overflow: auto;
-  padding: calc(0.16rem * var(--chrome-scale)) calc(0.08rem * var(--chrome-scale)) calc(0.16rem * var(--chrome-scale)) 0;
-}
-
-.tree-scroll-svg {
-  background: var(--tree-surface-bg);
-  border: 1px solid rgba(140, 195, 185, 0.10);
-}
-
-.node-comment {
-  display: block;
-  box-sizing: border-box;
-  width: 100%;
-  min-height: calc(1.8rem * var(--ui-scale));
-  max-height: calc(20rem * var(--ui-scale));
-  margin-top: calc(0.28rem * var(--chrome-scale));
-  padding: calc(0.28rem * var(--ui-scale)) calc(0.42rem * var(--ui-scale));
-  overflow-x: hidden;
-  resize: none;
-  border: 1px solid rgba(133, 190, 178, 0.16);
-  border-radius: calc(2px * var(--chrome-scale));
-  outline: none;
-  background: var(--tree-surface-bg);
-  color: rgba(218, 237, 232, 0.86);
-  caret-color: rgba(188, 228, 216, 0.92);
-  font: inherit;
-  font-size: var(--ui-text-control);
-  line-height: 1.45;
-  transition: border-color var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.node-comment:placeholder-shown {
-  font-size: var(--ui-text-body);
-  line-height: 1.35;
-}
-
-.node-comment::placeholder {
-  color: rgba(175, 210, 201, 0.38);
-}
-
-.node-comment:focus {
-  border-color: rgba(133, 190, 178, 0.30);
-}
-
-.tree-canvas {
-  display: flex;
-  align-items: flex-start;
-  column-gap: calc(0.3rem * var(--chrome-scale));
-  width: max-content;
-  min-width: 100%;
-}
-
-.tree-axis {
-  position: relative;
-  flex: 0 0 auto;
-  align-self: flex-start;
-  color: rgba(214, 225, 223, 0.54);
-}
-
-.tree-axis-sizer {
-  display: grid;
-  width: max-content;
-  visibility: hidden;
-  height: 0;
-  overflow: hidden;
-  padding: 0 calc(0.16rem * var(--chrome-scale));
-  font-size: var(--ui-text-body);
-  line-height: var(--tree-row-height);
-  white-space: nowrap;
-}
-
-.tree-axis-label {
-  position: absolute;
-  left: 0;
-  box-sizing: border-box;
-  width: 100%;
-  transform: translateY(-50%);
-  overflow: hidden;
-  padding: 0 calc(0.16rem * var(--chrome-scale));
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  font-size: var(--ui-text-body);
-  line-height: var(--tree-row-height);
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.tree-axis-label.is-controlled {
-  color: rgba(224, 239, 236, 0.82);
-}
-
-.tree-axis-label:hover {
-  color: var(--text-main);
-}
-
-.tree-svg {
-  flex: 1 0 auto;
-  display: block;
-  background:
-    linear-gradient(to right, rgba(255, 255, 255, 0.03) 0, rgba(255, 255, 255, 0.03) 1px, transparent 1px, transparent calc(0.875rem * var(--ui-scale)));
-}
-
-.tree-dot {
-  pointer-events: none;
-  transition:
-    filter var(--ui-motion-duration) var(--ui-motion-easing),
-    transform var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.tree-dot.is-hovered {
-  filter: brightness(1.25);
-}
-
-.tree-hit-region {
-  fill: transparent;
-  pointer-events: all;
-  cursor: pointer;
 }
 
 .empty-copy {
