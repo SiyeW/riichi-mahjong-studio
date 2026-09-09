@@ -137,3 +137,5 @@ const positionIndex: Record<TableSeatView['position'], number> = {
   west: 3,
 }
 </script>
+
+<style scoped src="./TableOpponentHands.css"></style>

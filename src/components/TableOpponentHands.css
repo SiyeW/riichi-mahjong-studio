@@ -1,0 +1,110 @@
+
+
+.grid-hand-p1 {
+  grid-area: ah-p1;
+  flex-direction: column-reverse;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  padding-top: calc(var(--zoom) * 15px);
+  padding-bottom: calc(var(--zoom) * 5px);
+  padding-left: calc(var(--zoom) * 20px);
+}
+
+.grid-hand-p2 {
+  grid-area: ah-p2;
+  flex-flow: row-reverse;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  padding-left: calc(var(--zoom) * 15px);
+  padding-right: calc(var(--zoom) * 5px);
+  padding-bottom: calc(var(--zoom) * 20px);
+}
+
+.grid-hand-p3 {
+  grid-area: ah-p3;
+  align-self: start;
+  height: var(--side-hand-lane-span);
+  flex-direction: column;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  padding-bottom: calc(var(--zoom) * 15px);
+  padding-top: calc(var(--zoom) * 5px);
+  padding-right: calc(var(--zoom) * 20px);
+}
+
+.draw-gap-p2 {
+  width: calc(0.4 * var(--tile-w));
+  height: 1px;
+}
+
+.draw-gap-p1,
+.draw-gap-p3 {
+  width: 1px;
+  height: calc(0.4 * var(--tile-w));
+}
+
+/* p1/p2/p3: hand-calls relative, z-index for stacking */
+.hand-calls-p1,
+.hand-calls-p2,
+.hand-calls-p3 {
+  position: relative;
+  z-index: 1;
+}
+.hand-closed-p1,
+.hand-closed-p2,
+.hand-closed-p3 {
+  position: relative;
+  z-index: 2;
+}
+
+.opponent-hand-toggle {
+  cursor: pointer;
+}
+
+.opponent-hand-toggle:focus-visible {
+  outline: calc(1px * var(--zoom)) solid rgba(151, 195, 187, 0.72);
+  outline-offset: calc(1px * var(--zoom));
+}
+
+/* 其他家暗牌时：hand-calls > hand-closed（副露比暗手牌重要） */
+.hands-hidden .hand-closed-p1,
+.hands-hidden .hand-closed-p2,
+.hands-hidden .hand-closed-p3 {
+  z-index: 1;
+}
+.hands-hidden .hand-calls-p1,
+.hands-hidden .hand-calls-p2,
+.hands-hidden .hand-calls-p3 {
+  z-index: 2;
+}
+
+.hand-closed-p1,
+.hand-calls-p1,
+.hand-closed-p2,
+.hand-calls-p2,
+.hand-closed-p3,
+.hand-calls-p3 {
+  display: flex;
+}
+
+.hand-closed-p1,
+.hand-calls-p1 {
+  flex-direction: column-reverse;
+}
+
+.hand-closed-p2,
+.hand-calls-p2 {
+  flex-direction: row-reverse;
+}
+
+.hand-closed-p3,
+.hand-calls-p3 {
+  flex-direction: column;
+}
+.hand-closed-p1 .tileDiv.narrow,
+.hand-calls-p1 .tileDiv.narrow,
+.hand-closed-p3 .tileDiv.narrow,
+.hand-calls-p3 .tileDiv.narrow {
+  width: var(--tile-h);
+  height: calc(0.4 * var(--tile-w));
+}

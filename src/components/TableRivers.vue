@@ -55,3 +55,5 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   props.views.filter((view) => view.position === position)
 )))
 </script>
+
+<style scoped src="./TableRivers.css"></style>
