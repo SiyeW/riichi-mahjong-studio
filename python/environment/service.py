@@ -44,7 +44,7 @@ from engine_runtime import EngineRuntimeRegistry
 from mjai_stream_cache import MjaiStreamCache
 from opponent_prediction_coordinator import OpponentPredictionCoordinator
 from opponent_prediction_gateway import get_latest_opponent_prediction_mjai
-from service_debug import run_debug_scenario
+from service_debug import DebugScenarioDependencies, run_debug_scenario
 from service_helpers import actor_just_drew, now_iso
 from rule_kernel import (
     can_ankan,
@@ -668,12 +668,22 @@ def _configure_command_thinking_time():
     )
 
 
+DEBUG_SCENARIO_DEPENDENCIES = DebugScenarioDependencies(
+    state=STATE,
+    create_empty_game=create_empty_game,
+    sync_snapshot=sync_snapshot_state,
+    persist_snapshot=persist_snapshot_state,
+    evaluate_reactions=ROUND_ACTIONS.evaluate_reactions,
+    get_reaction_priority=ROUND_ACTIONS.get_reaction_priority,
+)
+
+
 STATEFUL_COMMANDS = stateful_command_dispatcher.StatefulCommandDispatcher(
     state_lock=_STATE_LOCK,
     configure_thinking_time=_configure_command_thinking_time,
     run_debug_scenario=lambda command: run_debug_scenario(
         command,
-        sys.modules[__name__],
+        DEBUG_SCENARIO_DEPENDENCIES,
     ),
     view_builder=VIEW_BUILDER,
     analysis_commands=ANALYSIS_COMMANDS,

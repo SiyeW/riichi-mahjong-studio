@@ -1,19 +1,31 @@
 import copy
+from dataclasses import dataclass
+from typing import Any, Callable
 
 
-def _activate_game(service, game):
+@dataclass(frozen=True)
+class DebugScenarioDependencies:
+    state: dict[str, Any]
+    create_empty_game: Callable[[int], dict[str, Any]]
+    sync_snapshot: Callable[[dict[str, Any]], Any]
+    persist_snapshot: Callable[[dict[str, Any]], Any]
+    evaluate_reactions: Callable[[dict[str, Any]], Any]
+    get_reaction_priority: Callable[[str], int]
+
+
+def _activate_game(deps, game):
     game["currentNodeId"] = game["rootNodeId"]
     game["mainLeafNodeId"] = game["rootNodeId"]
     game["pendingReview"] = None
-    service.STATE["game"] = game
-    service.STATE["gameLoaded"] = True
-    service.STATE["mode"] = "play"
+    deps.state["game"] = game
+    deps.state["gameLoaded"] = True
+    deps.state["mode"] = "play"
 
 
-def create_debug_user_pon_scenario(service):
-    game = service.create_empty_game(424242)
+def create_debug_user_pon_scenario(deps):
+    game = deps.create_empty_game(424242)
     snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-    service.sync_snapshot_state(snapshot)
+    deps.sync_snapshot(snapshot)
 
     snapshot["initialHands"][0] = ["E", "E", "1m", "2m", "3m", "4p", "5p", "6p", "7s", "8s", "9s", "P", "F"]
     snapshot["hands"][0] = ["E", "E", "1m", "2m", "3m", "4p", "5p", "6p", "7s", "8s", "9s", "P", "F"]
@@ -36,16 +48,16 @@ def create_debug_user_pon_scenario(service):
         {"type": "tsumo", "actor": 0, "pai": "F", "tsumogiri": False},
         {"type": "dahai", "actor": 3, "pai": "E", "tsumogiri": False},
     ]
-    service.persist_snapshot_state(snapshot)
-    snapshot["reactionWindow"] = service.evaluate_reactions(snapshot)
-    service.persist_snapshot_state(snapshot)
-    _activate_game(service, game)
+    deps.persist_snapshot(snapshot)
+    snapshot["reactionWindow"] = deps.evaluate_reactions(snapshot)
+    deps.persist_snapshot(snapshot)
+    _activate_game(deps, game)
 
 
-def create_debug_user_chi_scenario(service):
-    game = service.create_empty_game(515151)
+def create_debug_user_chi_scenario(deps):
+    game = deps.create_empty_game(515151)
     snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-    service.sync_snapshot_state(snapshot)
+    deps.sync_snapshot(snapshot)
 
     snapshot["initialHands"][0] = ["2m", "4m", "4m", "6p", "7p", "8p", "2s", "3s", "4s", "E", "E", "P", "F"]
     snapshot["hands"][0] = ["2m", "4m", "4m", "6p", "7p", "8p", "2s", "3s", "4s", "E", "E", "P", "F"]
@@ -68,16 +80,16 @@ def create_debug_user_chi_scenario(service):
         {"type": "tsumo", "actor": 0, "pai": "F", "tsumogiri": False},
         {"type": "dahai", "actor": 3, "pai": "3m", "tsumogiri": False},
     ]
-    service.persist_snapshot_state(snapshot)
-    snapshot["reactionWindow"] = service.evaluate_reactions(snapshot)
-    service.persist_snapshot_state(snapshot)
-    _activate_game(service, game)
+    deps.persist_snapshot(snapshot)
+    snapshot["reactionWindow"] = deps.evaluate_reactions(snapshot)
+    deps.persist_snapshot(snapshot)
+    _activate_game(deps, game)
 
 
-def create_debug_user_riichi_scenario(service):
-    game = service.create_empty_game(616161)
+def create_debug_user_riichi_scenario(deps):
+    game = deps.create_empty_game(616161)
     snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-    service.sync_snapshot_state(snapshot)
+    deps.sync_snapshot(snapshot)
 
     hand = ["1m", "2m", "3m", "4m", "5m", "6m", "7m", "8m", "9m", "1p", "1p", "2p", "2p", "3p"]
     snapshot["initialHands"][0] = hand[:13]
@@ -91,14 +103,14 @@ def create_debug_user_riichi_scenario(service):
     snapshot["phase"] = "discard"
     snapshot["lastAction"] = {"type": "tsumo", "actor": 0, "pai": "3p"}
     snapshot["actionHistory"] = [{"type": "tsumo", "actor": 0, "pai": "3p", "tsumogiri": False}]
-    service.persist_snapshot_state(snapshot)
-    _activate_game(service, game)
+    deps.persist_snapshot(snapshot)
+    _activate_game(deps, game)
 
 
-def create_debug_user_tsumo_scenario(service):
-    game = service.create_empty_game(717171)
+def create_debug_user_tsumo_scenario(deps):
+    game = deps.create_empty_game(717171)
     snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-    service.sync_snapshot_state(snapshot)
+    deps.sync_snapshot(snapshot)
 
     hand = ["2m", "3m", "4m", "7m", "8m", "9m", "1p", "2p", "3p", "4p", "5p", "6p", "6p", "6p"]
     snapshot["initialHands"][0] = hand[:13]
@@ -117,14 +129,14 @@ def create_debug_user_tsumo_scenario(service):
     snapshot["wall"] = ["x"] * 70
     snapshot["lastAction"] = {"type": "tsumo", "actor": 0, "pai": "6p"}
     snapshot["actionHistory"] = [{"type": "tsumo", "actor": 0, "pai": "6p", "tsumogiri": False}]
-    service.persist_snapshot_state(snapshot)
-    _activate_game(service, game)
+    deps.persist_snapshot(snapshot)
+    _activate_game(deps, game)
 
 
-def create_debug_user_ron_scenario(service):
-    game = service.create_empty_game(818181)
+def create_debug_user_ron_scenario(deps):
+    game = deps.create_empty_game(818181)
     snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-    service.sync_snapshot_state(snapshot)
+    deps.sync_snapshot(snapshot)
 
     hand = ["2m", "2m", "4m", "4m", "4m", "3p", "3p", "3p", "5p", "6p", "7p", "4s", "4s"]
     snapshot["initialHands"][0] = hand[:13]
@@ -150,16 +162,16 @@ def create_debug_user_ron_scenario(service):
     }
     snapshot["lastAction"] = {"type": "dahai", "actor": 3, "pai": "4s", "tsumogiri": False}
     snapshot["actionHistory"] = [{"type": "dahai", "actor": 3, "pai": "4s", "tsumogiri": False}]
-    service.persist_snapshot_state(snapshot)
-    snapshot["reactionWindow"] = service.evaluate_reactions(snapshot)
-    service.persist_snapshot_state(snapshot)
-    _activate_game(service, game)
+    deps.persist_snapshot(snapshot)
+    snapshot["reactionWindow"] = deps.evaluate_reactions(snapshot)
+    deps.persist_snapshot(snapshot)
+    _activate_game(deps, game)
 
 
-def create_debug_user_ankan_scenario(service):
-    game = service.create_empty_game(919191)
+def create_debug_user_ankan_scenario(deps):
+    game = deps.create_empty_game(919191)
     snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-    service.sync_snapshot_state(snapshot)
+    deps.sync_snapshot(snapshot)
 
     hand = ["1m", "1m", "1m", "1m", "2m", "3m", "4m", "5p", "6p", "7p", "2s", "3s", "4s", "E"]
     snapshot["initialHands"][0] = hand[:13]
@@ -174,14 +186,14 @@ def create_debug_user_ankan_scenario(service):
     snapshot["phase"] = "discard"
     snapshot["lastAction"] = {"type": "tsumo", "actor": 0, "pai": "E"}
     snapshot["actionHistory"] = [{"type": "tsumo", "actor": 0, "pai": "E", "tsumogiri": False}]
-    service.persist_snapshot_state(snapshot)
-    _activate_game(service, game)
+    deps.persist_snapshot(snapshot)
+    _activate_game(deps, game)
 
 
-def create_debug_user_kakan_scenario(service):
-    game = service.create_empty_game(929292)
+def create_debug_user_kakan_scenario(deps):
+    game = deps.create_empty_game(929292)
     snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-    service.sync_snapshot_state(snapshot)
+    deps.sync_snapshot(snapshot)
 
     initial_hand = ["5p", "5p", "5p", "1m", "2m", "3m", "4m", "6m", "7m", "8m", "2s", "3s", "4s"]
     hand = ["5p", "1m", "2m", "3m", "4m", "6m", "7m", "8m", "2s", "3s", "C"]
@@ -205,14 +217,14 @@ def create_debug_user_kakan_scenario(service):
         {"type": "dahai", "actor": 0, "pai": "4s", "tsumogiri": False},
         {"type": "tsumo", "actor": 0, "pai": "C", "tsumogiri": False, "source": "wall"},
     ]
-    service.persist_snapshot_state(snapshot)
-    _activate_game(service, game)
+    deps.persist_snapshot(snapshot)
+    _activate_game(deps, game)
 
 
-def create_debug_user_chankan_scenario(service):
-    game = service.create_empty_game(939393)
+def create_debug_user_chankan_scenario(deps):
+    game = deps.create_empty_game(939393)
     snapshot = game["nodes"][game["currentNodeId"]]["snapshot"]
-    service.sync_snapshot_state(snapshot)
+    deps.sync_snapshot(snapshot)
 
     hand = ["2m", "2m", "4m", "4m", "4m", "3p", "3p", "3p", "5p", "6p", "7p", "4s", "4s"]
     snapshot["initialHands"][0] = hand[:13]
@@ -242,7 +254,7 @@ def create_debug_user_chankan_scenario(service):
             {
                 "seat": 0,
                 "response": {"type": "hora", "actor": 0, "target": 3, "pai": "4s", "variant": "hora", "label": "Ron"},
-                "priority": service.get_reaction_priority("hora"),
+                "priority": deps.get_reaction_priority("hora"),
             },
             {"seat": 1, "response": {"type": "none", "actor": 1, "variant": "none", "label": "Pass"}, "priority": 0},
             {"seat": 2, "response": {"type": "none", "actor": 2, "variant": "none", "label": "Pass"}, "priority": 0},
@@ -250,12 +262,12 @@ def create_debug_user_chankan_scenario(service):
         "selected": {
             "seat": 0,
             "response": {"type": "hora", "actor": 0, "target": 3, "pai": "4s", "variant": "hora", "label": "Ron"},
-            "priority": service.get_reaction_priority("hora"),
+            "priority": deps.get_reaction_priority("hora"),
         },
         "paceHintMs": 520,
     }
-    service.persist_snapshot_state(snapshot)
-    _activate_game(service, game)
+    deps.persist_snapshot(snapshot)
+    _activate_game(deps, game)
 
 
 SCENARIO_BUILDERS = {
@@ -270,9 +282,9 @@ SCENARIO_BUILDERS = {
 }
 
 
-def run_debug_scenario(command, service):
+def run_debug_scenario(command, deps: DebugScenarioDependencies):
     builder = SCENARIO_BUILDERS.get(command)
     if builder is None:
         return False
-    builder(service)
+    builder(deps)
     return True
