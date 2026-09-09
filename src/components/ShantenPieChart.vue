@@ -155,3 +155,5 @@ svg.is-empty {
   animation: none;
 }
 </style>
+
+<style scoped src="./ShantenPieChart.css"></style>

@@ -97,3 +97,5 @@ const emit = defineEmits<{
   close: []
 }>()
 </script>
+
+<style scoped src="./AnalysisDockModule.css"></style>

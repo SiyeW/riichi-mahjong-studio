@@ -1,0 +1,43 @@
+
+.shanten-chart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(var(--ron-tile-w) * 0.08);
+  width: var(--shanten-pie-size);
+}
+.shanten-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  animation: shanten-pie-reveal var(--ui-motion-duration) var(--ui-motion-easing);
+}
+.shanten-chart path {
+  cursor: default;
+}
+.shanten-slice-label {
+  fill: rgb(248 252 250 / 75%);
+  paint-order: stroke fill;
+  font-family: system-ui, sans-serif;
+  font-size: var(--floating-text-chart-viewbox);
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+  user-select: none;
+}
+.shanten-opp-label {
+  font-size: var(--ui-text-control);
+  color: var(--text-dim);
+}
+
+@keyframes shanten-pie-reveal {
+  from {
+    opacity: 0.7;
+    transform: scale(0.96);
+  }
+}
+
+:global(html.reduce-motion) .shanten-chart svg {
+  animation: none;
+}
