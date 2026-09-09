@@ -713,6 +713,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
+import type { StudioSettings } from './contracts/settings'
 import { flushBeforeClose } from './flushBeforeClose'
 import { mergeSettingsReply } from './settingsChanges'
 import { createPythonEventRouter } from './pythonEventRouter'
@@ -788,7 +789,7 @@ const { locale, numberLocale, t } = useI18n()
 
 const seats = [0, 1, 2, 3]
 const CONFIRMATION_TIMEOUT_MS = 3000
-type AnalysisPanelKey = keyof TrainerSettings['display']['workspaceLayout']['analysisPanels']
+type AnalysisPanelKey = keyof StudioSettings['display']['workspaceLayout']['analysisPanels']
 
 const {
   settings,
@@ -858,7 +859,7 @@ const shantenMjaiJson = computed(() => JSON.stringify(shantenMjaiData.value, nul
 const workspaceLayout = computed(() => normalizeWorkspaceLayout(settings.display.workspaceLayout))
 let workspaceLayoutSaveGeneration = 0
 
-function applyWorkspaceLayoutLocally(nextLayout: TrainerSettings['display']['workspaceLayout']) {
+function applyWorkspaceLayoutLocally(nextLayout: StudioSettings['display']['workspaceLayout']) {
   const normalized = normalizeWorkspaceLayout(nextLayout)
   settings.display.workspaceLayout = normalized
   if (showSettingsPanel.value) settingsDraft.display.workspaceLayout = JSON.parse(JSON.stringify(normalized))
@@ -866,7 +867,7 @@ function applyWorkspaceLayoutLocally(nextLayout: TrainerSettings['display']['wor
   return normalized
 }
 
-function updateWorkspaceLayout(nextLayout: TrainerSettings['display']['workspaceLayout']) {
+function updateWorkspaceLayout(nextLayout: StudioSettings['display']['workspaceLayout']) {
   const normalized = applyWorkspaceLayoutLocally(nextLayout)
   const generation = ++workspaceLayoutSaveGeneration
   void window.trainerAPI?.saveSettings({
@@ -1842,7 +1843,7 @@ async function refreshBootstrapState() {
   }
   try {
     // Load settings first — this works even if the Python backend is down
-    let nextSettings: TrainerSettings
+    let nextSettings: StudioSettings
     try {
       nextSettings = await window.trainerAPI.getSettings()
       applySettings(nextSettings)

@@ -1,7 +1,8 @@
 import { normalizeWorkspaceDockLayout, type WorkspaceItemId, type DockDirection } from './workspaceLayout.ts'
+import type { StudioSettings } from './contracts/settings.ts'
 
 export type DockPanelId = Exclude<WorkspaceItemId, 'table'>
-export type DockPanelSizeFractions = TrainerSettings['display']['workspaceLayout']['panelSizeFractions']
+export type DockPanelSizeFractions = StudioSettings['display']['workspaceLayout']['panelSizeFractions']
 
 const DOCK_PANEL_IDS: readonly DockPanelId[] = [
   'console',
@@ -35,11 +36,11 @@ export function normalizeDockPanelSizeFractions(value: unknown): DockPanelSizeFr
   return normalized
 }
 
-export function normalizeWorkspaceLayout(value: unknown): TrainerSettings['display']['workspaceLayout'] {
+export function normalizeWorkspaceLayout(value: unknown): StudioSettings['display']['workspaceLayout'] {
   const source = value && typeof value === 'object'
-    ? value as Partial<TrainerSettings['display']['workspaceLayout']> & { order?: unknown }
+    ? value as Partial<StudioSettings['display']['workspaceLayout']> & { order?: unknown }
     : {}
-  const sourcePanels: Partial<TrainerSettings['display']['workspaceLayout']['analysisPanels']> = source.analysisPanels && typeof source.analysisPanels === 'object'
+  const sourcePanels: Partial<StudioSettings['display']['workspaceLayout']['analysisPanels']> = source.analysisPanels && typeof source.analysisPanels === 'object'
     ? source.analysisPanels
     : {}
   return {

@@ -1,6 +1,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, type Ref } from 'vue'
 import { normalizeDockPanelFraction, normalizeDockPanelSizeFractions, type DockPanelId, type DockPanelSizeFractions } from './workspaceSettings'
 import { moveDockItem, moveDockItemBesideNode, resizeDockSplit, visibleDockLayout, WORKSPACE_ITEM_IDS, type DockDirection, type DockEdge, type DockResizeRequest, type WorkspaceDockNode, type WorkspaceItemId } from './workspaceLayout'
+import type { StudioSettings } from './contracts/settings'
 
 type DockDropTarget = {
   edge: DockEdge
@@ -11,11 +12,11 @@ type DockDropTarget = {
 )
 
 interface WorkspaceDockOptions {
-  workspaceLayout: Readonly<Ref<TrainerSettings['display']['workspaceLayout']>>
+  workspaceLayout: Readonly<Ref<StudioSettings['display']['workspaceLayout']>>
   visiblePanels: Readonly<Ref<readonly DockPanelId[]>>
   uiScale: Readonly<Ref<number>>
-  applyWorkspaceLayoutLocally: (layout: TrainerSettings['display']['workspaceLayout']) => unknown
-  updateWorkspaceLayout: (layout: TrainerSettings['display']['workspaceLayout']) => void
+  applyWorkspaceLayoutLocally: (layout: StudioSettings['display']['workspaceLayout']) => unknown
+  updateWorkspaceLayout: (layout: StudioSettings['display']['workspaceLayout']) => void
   invalidateLayoutSave: () => void
 }
 

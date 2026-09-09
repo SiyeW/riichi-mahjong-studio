@@ -1,4 +1,5 @@
 import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import type { StudioSettings } from './contracts/settings'
 
 const ANKAN_CHOICE_TIMEOUT_MS = 6000
 
@@ -17,7 +18,7 @@ interface AutoAdvanceState {
 interface UseAutoAdvanceOptions {
   gameView: TrainerGameView
   status: TrainerStatusSnapshot
-  settings: TrainerSettings
+  settings: StudioSettings
   readOnlyRecord: Readonly<Ref<boolean>>
   prefetchReady: Readonly<Ref<boolean>>
   prefetchWaiting: Readonly<Ref<boolean>>

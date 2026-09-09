@@ -1,4 +1,5 @@
 import type { AnalysisCountLayout } from '../analysisCountSpacing'
+import type { StudioSettings } from '../contracts/settings'
 
 // Explicit fixture controls for the isolated renderer. This module is only
 // installed in Vite's ui-test mode, never in the desktop application.
@@ -9,8 +10,8 @@ export interface AnalysisTestApi {
   saveGameAs: () => Promise<void>
   status: TrainerStatusSnapshot
   gameView: TrainerGameView
-  settings: TrainerSettings
-  readonly workspaceLayout: TrainerSettings['display']['workspaceLayout']
+  settings: StudioSettings
+  readonly workspaceLayout: StudioSettings['display']['workspaceLayout']
   analysisCountLayout: AnalysisCountLayout
   readonly showPerceptualColorDebugger: boolean
   readonly bootstrapError: string

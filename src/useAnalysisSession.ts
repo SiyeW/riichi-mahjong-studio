@@ -2,17 +2,18 @@ import { computed, nextTick, ref, watch, type Ref } from 'vue'
 import { acceptsAnalysisEpoch } from './analysisEpoch.ts'
 import { decisionPositionKey } from './analysisPosition.ts'
 import type { TranslationParams } from './i18n'
+import type { StudioSettings } from './contracts/settings'
 
 type Translate = (key: string, params?: TranslationParams) => string
 type DecisionAnalysis = NonNullable<TrainerGameView['analysis']>
 
 interface UseAnalysisSessionOptions {
-  settings: TrainerSettings
+  settings: StudioSettings
   status: TrainerStatusSnapshot
   gameView: TrainerGameView
   showAnalysisDock: Readonly<Ref<boolean>>
   t: Translate
-  normalizeTrainingMode: (mode: string) => TrainerSettings['training']['mode']
+  normalizeTrainingMode: (mode: string) => StudioSettings['training']['mode']
   applyStatus: (status: TrainerStatusSnapshot) => void
   applyGameView: (view: TrainerGameView) => void
   scheduleTableZoomRecalc: () => void

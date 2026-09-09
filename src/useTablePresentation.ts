@@ -7,6 +7,7 @@ import {
 import { RON_WAIT_OPPONENT_KEYS, tile34Index } from './analysisTiles'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import type { MahjongPresentationLabels } from './useMahjongPresentationLabels'
+import type { StudioSettings } from './contracts/settings'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 type DiscardEntry = NonNullable<TrainerGameView['analysis']>['discardEntries'][number]
@@ -53,7 +54,7 @@ export interface TableSeatView {
 export function useTablePresentation(options: {
   gameView: TrainerGameView
   status: TrainerStatusSnapshot
-  currentTrainingMode: Readonly<Ref<TrainerSettings['training']['mode']>>
+  currentTrainingMode: Readonly<Ref<StudioSettings['training']['mode']>>
   ronWaitPredData: Readonly<Ref<Record<string, number[]>>>
   t: Translate
   labels: MahjongPresentationLabels

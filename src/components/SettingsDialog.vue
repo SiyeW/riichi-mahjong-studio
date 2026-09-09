@@ -96,9 +96,10 @@
 
 <script setup lang="ts">
 import { useI18n } from '../i18n'
+import type { StudioSettings } from '../contracts/settings'
 
-type SettingsDialogDraft = Pick<TrainerSettings, 'display' | 'audio' | 'records'>
-type SoundPack = NonNullable<TrainerSettings['runtime']>['soundPackCatalog']['packs'][number]
+type SettingsDialogDraft = Pick<StudioSettings, 'display' | 'audio' | 'records'>
+type SoundPack = NonNullable<StudioSettings['runtime']>['soundPackCatalog']['packs'][number]
 
 const props = defineProps<{
   draft: SettingsDialogDraft

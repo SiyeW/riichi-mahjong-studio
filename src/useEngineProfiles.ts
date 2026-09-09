@@ -5,6 +5,7 @@ import type { TranslationParams } from './i18n'
 import { buildEngineStatusItems, type EngineRuntimeKind } from './engineStatusItems'
 import { useEngineRuntimeProfiles } from './useEngineRuntimeProfiles'
 import type { EngineDescription, EngineOutputId, EngineProfile, EngineSettings } from './contracts/engines'
+import type { StudioSettings } from './contracts/settings'
 
 export type SupportedEngineOutputId = EngineOutputId
 
@@ -59,14 +60,14 @@ export interface EngineProfileDetailView {
 type Translate = (key: string, params?: TranslationParams) => string
 
 interface UseEngineProfilesOptions {
-  settings: TrainerSettings
-  settingsDraft: TrainerSettings
+  settings: StudioSettings
+  settingsDraft: StudioSettings
   status: TrainerStatusSnapshot
   locale: Readonly<Ref<string>>
   t: Translate
   closeSettingsPanel: () => void
   focus: () => void
-  applySettings: (settings: TrainerSettings) => void
+  applySettings: (settings: StudioSettings) => void
   applyStatus: (status: TrainerStatusSnapshot) => void
   afterOpponentUnload: () => void | Promise<void>
 }

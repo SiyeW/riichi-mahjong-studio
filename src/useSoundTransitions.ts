@@ -1,5 +1,6 @@
 import { onBeforeUnmount } from 'vue'
 import type { GameViewTransitionDirection } from './useDiscardFlight'
+import type { StudioSettings } from './contracts/settings'
 
 export type SoundTransitionView = Pick<TrainerGameView, 'table' | 'legalActions' | 'pendingReview'>
 
@@ -11,7 +12,7 @@ interface SoundTransitionContext {
 }
 
 interface UseSoundTransitionsOptions {
-  settings: TrainerSettings
+  settings: StudioSettings
   status: TrainerStatusSnapshot
   isBlocked: () => boolean
 }

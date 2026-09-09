@@ -10,6 +10,7 @@ import {
   type BranchTreeStaticLayout,
 } from './branchTreeLayout'
 import { useNextMoveHints } from './useNextMoveHints'
+import type { StudioSettings } from './contracts/settings'
 import { useRoundMapPresentation } from './useRoundMapPresentation'
 import { useVirtualizedTreeViewport } from './useVirtualizedTreeViewport'
 
@@ -45,7 +46,7 @@ export interface TreeRowLayout {
 export function useBranchTreePresentation(options: {
   gameView: TrainerGameView
   status: TrainerStatusSnapshot
-  settings: TrainerSettings
+  settings: StudioSettings
   uiScale: Readonly<Ref<number>>
   showTreeComparisons: Readonly<Ref<boolean>>
   t: Translate

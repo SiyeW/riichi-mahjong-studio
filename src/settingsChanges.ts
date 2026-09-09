@@ -1,6 +1,8 @@
+import type { SettingsPatch, StudioSettings } from './contracts/settings'
+
 const groups = ['training', 'modeDefaults', 'display', 'records', 'audio'] as const
 
-export function settingsChanges(before: TrainerSettings, after: TrainerSettings): TrainerSettingsPatch {
+export function settingsChanges(before: StudioSettings, after: StudioSettings): SettingsPatch {
   const patch: Record<string, Record<string, unknown>> = {}
   for (const group of groups) {
     const old = before[group] as Record<string, unknown>
@@ -9,11 +11,11 @@ export function settingsChanges(before: TrainerSettings, after: TrainerSettings)
       ;(patch[group] ||= {})[key] = JSON.parse(JSON.stringify(value))
     }
   }
-  return patch as TrainerSettingsPatch
+  return patch as SettingsPatch
 }
 
 // A reply is a complete snapshot, but it only owns the fields this request saved.
-export function mergeSettingsReply(current: TrainerSettings, saved: TrainerSettings, patch: TrainerSettingsPatch): TrainerSettings {
+export function mergeSettingsReply(current: StudioSettings, saved: StudioSettings, patch: SettingsPatch): StudioSettings {
   const next = { ...current }
   for (const group of groups) {
     if (!patch[group]) continue
