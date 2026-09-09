@@ -848,6 +848,16 @@ try {
   await checkWorkspaceDock(page)
   assert.deepEqual(errors, [])
   console.log('Analysis UI: events, hover, navigation, cache, geometry, artwork and workspace docking passed.')
+} catch (error) {
+  if (process.env.GITHUB_ACTIONS) {
+    const detail = error instanceof Error ? error.stack || error.message : String(error)
+    const annotation = detail
+      .replaceAll('%', '%25')
+      .replaceAll('\r', '%0D')
+      .replaceAll('\n', '%0A')
+    console.error(`::error title=Renderer interaction check failed::${annotation}`)
+  }
+  throw error
 } finally {
   await browser?.close()
   await server.close()
