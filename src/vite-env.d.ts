@@ -70,7 +70,7 @@ interface TrainerSettings {
     showTsumogiriInPlay: boolean
     tablePosition: 'left' | 'center' | 'right'
     workspaceLayout: {
-      layout: WorkspaceDockNode
+      layout: import('./workspaceLayout').WorkspaceDockNode
       analysisVisible: boolean
       analysisPanels: {
         opponents: boolean
@@ -772,23 +772,6 @@ interface Window {
     onBeforeClose: (callback: () => void | Promise<void>) => () => void
   }
 }
-
-type WorkspaceDockItemId =
-  | 'table'
-  | 'console'
-  | 'analysis-opponents'
-  | 'analysis-game'
-  | 'analysis-risk'
-  | 'analysis-counts'
-
-type WorkspaceDockNode =
-  | { type: 'item'; id: WorkspaceDockItemId }
-  | {
-      type: 'split'
-      direction: 'horizontal' | 'vertical'
-      children: WorkspaceDockNode[]
-      weights: number[]
-    }
 
 declare module '*.json' {
   const value: Record<string, string>
