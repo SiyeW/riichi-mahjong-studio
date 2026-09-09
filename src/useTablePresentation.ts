@@ -8,6 +8,7 @@ import { RON_WAIT_OPPONENT_KEYS, tile34Index } from './analysisTiles'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import type { MahjongPresentationLabels } from './useMahjongPresentationLabels'
 import type { StudioSettings } from './contracts/settings'
+import type { GameAction } from './contracts/game'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 type DiscardEntry = NonNullable<TrainerGameView['analysis']>['discardEntries'][number]
@@ -58,7 +59,7 @@ export function useTablePresentation(options: {
   ronWaitPredData: Readonly<Ref<Record<string, number[]>>>
   t: Translate
   labels: MahjongPresentationLabels
-  resolveDiscardEntry: (action: TrainerAction) => DiscardEntry | null
+  resolveDiscardEntry: (action: GameAction) => DiscardEntry | null
   analysisEntryIsBest: (entry: DiscardEntry | null) => boolean
   getNodeMapById: () => ReadonlyMap<string, TrainerTreeNode>
   jumpToNode: (nodeId: string) => Promise<void>
@@ -156,7 +157,7 @@ export function useTablePresentation(options: {
     none: Number.MAX_SAFE_INTEGER,
   }
 
-  function chiSequenceStart(action: TrainerAction): number {
+  function chiSequenceStart(action: GameAction): number {
     const numbers = [action.pai, ...(action.consumed || [])]
       .filter((tile): tile is string => Boolean(tile))
       .map((tile) => Number(normalizeTileFamily(tile)[0]))
@@ -164,7 +165,7 @@ export function useTablePresentation(options: {
     return numbers.length ? Math.min(...numbers) : Number.MAX_SAFE_INTEGER
   }
 
-  function compareSpecialActions(left: TrainerAction, right: TrainerAction): number {
+  function compareSpecialActions(left: GameAction, right: GameAction): number {
     const typeOrder = (SPECIAL_ACTION_ORDER[left.type] ?? 6) - (SPECIAL_ACTION_ORDER[right.type] ?? 6)
     if (typeOrder !== 0) return typeOrder
     if (left.type === 'chi' && right.type === 'chi') {

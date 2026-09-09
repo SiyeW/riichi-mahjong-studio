@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue'
+import type { GameAction } from './contracts/game'
 
 interface UseGameplayActionsOptions {
   gameView: TrainerGameView
@@ -47,7 +48,7 @@ export function useGameplayActions(options: UseGameplayActionsOptions) {
     }
   }
 
-  async function submitAction(action: TrainerAction) {
+  async function submitAction(action: GameAction) {
     if (!window.trainerAPI || actionRequestInFlight.value || options.readOnlyRecord.value || options.status.mode !== 'play') return
     if (action.type === 'dahai') {
       await discardTile(action.pai || '', Boolean(action.tsumogiri))

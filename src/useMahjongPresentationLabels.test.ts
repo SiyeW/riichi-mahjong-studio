@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { useMahjongPresentationLabels } from './useMahjongPresentationLabels.ts'
+import type { GameAction } from './contracts/game.ts'
 
 function translate(key: string, params?: Record<string, string | number>): string {
   if (!params) return key
@@ -33,7 +34,7 @@ test('mahjong presentation labels keep action, draw, and red-five conventions', 
   assert.equal(labels.reactionTypeLabel('pon'), 'action.pon')
   assert.equal(labels.ryukyokuActionLabel({ reason: 'suufon_renda' }), 'draw.suufon')
   assert.equal(labels.ryukyokuActionLabel({ reasonLabel: '荒牌流局' }), 'draw.exhaustive')
-  assert.equal(labels.specialActionLabel({ type: 'hora', variant: 'tsumo' } as TrainerAction), 'action.tsumo')
+  assert.equal(labels.specialActionLabel({ type: 'hora', variant: 'tsumo' } as GameAction), 'action.tsumo')
   assert.equal(labels.normalizeTileFamily('5mr'), '5m')
   assert.equal(labels.redFive('5p'), '0p')
 })

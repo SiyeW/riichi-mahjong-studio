@@ -1,4 +1,5 @@
 import { computed, type Ref } from 'vue'
+import type { GameAction } from './contracts/game'
 
 export interface NextMoveHint {
   type: 'dahai' | 'special'
@@ -88,7 +89,7 @@ export function useNextMoveHints(options: {
     )) || null
   }
 
-  function getSpecialNextMoveHint(action: TrainerAction): NextMoveHint | null {
+  function getSpecialNextMoveHint(action: GameAction): NextMoveHint | null {
     const consumed = [...(action.consumed || [])].sort().join(',')
     return nextMoveHints.value.find((hint) => (
       hint.type === 'special'
@@ -107,7 +108,7 @@ export function useNextMoveHints(options: {
     return hint.isMainBranch ? 'tile-next-main' : 'tile-next-side'
   }
 
-  function specialNextMoveClass(action: TrainerAction): string {
+  function specialNextMoveClass(action: GameAction): string {
     const hint = getSpecialNextMoveHint(action)
     if (!hint) return ''
     return hint.isMainBranch ? 'special-next-main' : 'special-next-side'

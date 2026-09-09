@@ -5,6 +5,7 @@ import {
   useDecisionActionPresentation,
   useDecisionEntryPresentation,
 } from './useDecisionPresentation.ts'
+import type { GameAction } from './contracts/game.ts'
 
 function createFixture() {
   const gameView = {
@@ -31,14 +32,14 @@ function createFixture() {
     redFive: (tile) => `red:${tile}`,
     reactionTypeLabel: (type) => `reaction:${type}`,
   })
-  const pass = { id: 'pass', candidateId: 'pass', type: 'none' } as TrainerAction
+  const pass = { id: 'pass', candidateId: 'pass', type: 'none' } as GameAction
   const discard = {
     id: 'discard',
     candidateId: 'discard',
     type: 'dahai',
     pai: '5m',
     tsumogiri: true,
-  } as TrainerAction
+  } as GameAction
   const action = useDecisionActionPresentation({
     gameView,
     showTrainingRecommendations,

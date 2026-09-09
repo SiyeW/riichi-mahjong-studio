@@ -66,22 +66,6 @@ interface TrainerRecordImportResult {
   recordDirty: boolean
 }
 
-interface TrainerAction {
-  id: string
-  candidateId?: string
-  type: string
-  actor: number
-  pai?: string
-  variant?: string
-  reasonLabel?: string
-  consumed?: string[]
-  label: string
-  value?: number
-  probability?: number
-  bar?: number
-  tsumogiri?: boolean
-}
-
 interface TrainerTreeNode {
   id: string
   parentId: string | null
@@ -298,7 +282,7 @@ interface TrainerGameView {
     } | null
     resultInfo?: TrainerResultInfo | null
   } | null
-  legalActions: TrainerAction[]
+  legalActions: import('./contracts/game').GameAction[]
   analysis: {
     model: string
     seat: number

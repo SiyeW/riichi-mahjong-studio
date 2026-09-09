@@ -1,4 +1,5 @@
 import type { TranslationParams } from './i18n'
+import type { GameAction } from './contracts/game'
 
 type Translate = (key: string, params?: TranslationParams) => string
 
@@ -91,7 +92,7 @@ export function useMahjongPresentationLabels(options: {
     return knownLabels[reasonLabel] || reasonLabel
   }
 
-  function specialActionLabel(action: TrainerAction): string {
+  function specialActionLabel(action: GameAction): string {
     if (action.type === 'hora') return action.variant === 'tsumo' ? t('action.tsumo') : t('action.ron')
     if (action.type === 'ryukyoku') return ryukyokuActionLabel(action as unknown as Record<string, unknown>)
     if (action.type === 'reach') return t('action.riichi')

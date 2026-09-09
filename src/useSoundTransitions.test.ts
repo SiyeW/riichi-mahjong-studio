@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { soundActionSignature, soundEventsForTransition, type SoundTransitionView } from './useSoundTransitions.ts'
+import type { GameAction } from './contracts/game.ts'
 
 function view(overrides: Partial<SoundTransitionView> = {}): SoundTransitionView {
   return {
@@ -46,7 +47,7 @@ test('sound transitions report newly required choices, reviews, and results', ()
   const previous = view()
   const next = view({
     table: { lastAction: null, resultInfo: { type: 'ryukyoku' } } as unknown as TrainerGameView['table'],
-    legalActions: [{ type: 'pon' } as TrainerAction],
+    legalActions: [{ type: 'pon' } as GameAction],
     pendingReview: {} as TrainerGameView['pendingReview'],
   })
   assert.deepEqual(soundEventsForTransition(previous, next, context), [

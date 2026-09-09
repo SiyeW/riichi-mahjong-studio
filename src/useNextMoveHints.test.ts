@@ -2,10 +2,11 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { buildNextMoveHints } from './useNextMoveHints.ts'
+import type { GameAction } from './contracts/game.ts'
 
 function node(
   id: string,
-  action: TrainerAction | null,
+  action: GameAction | null,
   children: string[] = [],
   mainChildId: string | null = null,
 ): TrainerTreeNode {
@@ -26,10 +27,10 @@ test('next move hints distinguish main and side discards', () => {
     ['current', node('current', null, ['main', 'side'], 'main')],
     ['main', node('main', {
       type: 'dahai', actor: 0, pai: '5pr', tsumogiri: true,
-    } as TrainerAction)],
+    } as GameAction)],
     ['side', node('side', {
       type: 'dahai', actor: 0, pai: '5p', tsumogiri: false,
-    } as TrainerAction)],
+    } as GameAction)],
   ])
 
   assert.deepEqual(buildNextMoveHints(nodes, 'current', 0), [
@@ -55,10 +56,10 @@ test('next move hints include only actions by the controlled seat', () => {
     ['current', node('current', null, ['own', 'other'], 'own')],
     ['own', node('own', {
       type: 'reach', actor: 2,
-    } as TrainerAction)],
+    } as GameAction)],
     ['other', node('other', {
       type: 'pon', actor: 1, consumed: ['1m', '1m'],
-    } as TrainerAction)],
+    } as GameAction)],
   ])
 
   assert.deepEqual(buildNextMoveHints(nodes, 'current', 2), [
