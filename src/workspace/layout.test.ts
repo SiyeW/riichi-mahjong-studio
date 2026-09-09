@@ -12,7 +12,7 @@ import {
   visibleDockLayout,
   type WorkspaceDockNode,
   type WorkspaceItemId,
-} from './workspaceLayout.ts'
+} from './layout.ts'
 
 function flattenItems(node: WorkspaceDockNode): WorkspaceItemId[] {
   return node.type === 'item' ? [node.id] : node.children.flatMap(flattenItems)

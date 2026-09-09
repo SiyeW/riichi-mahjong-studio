@@ -717,9 +717,8 @@ import type { StudioSettings } from './contracts/settings'
 import type { GameTreeNode, GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 import { flushBeforeClose } from './flushBeforeClose'
-import { mergeSettingsReply } from './settingsChanges'
 import { createPythonEventRouter } from './pythonEventRouter'
-import { useWorkspaceDock } from './useWorkspaceDock'
+import { ANALYSIS_PANEL_DEFINITIONS, useWorkspaceSession } from './workspace/useWorkspaceSession'
 import { useWallView } from './useWallView'
 import { useEngineProfiles } from './useEngineProfiles'
 import { useGameplayActions } from './useGameplayActions'
@@ -749,9 +748,6 @@ import {
   useAnalysisSession,
 } from './useAnalysisSession'
 import {
-  normalizeWorkspaceLayout,
-} from './workspaceSettings'
-import {
   DEFAULT_PROBABILITY_SCALE,
   probabilityScalePercent,
   probabilityScaleRatio,
@@ -763,7 +759,7 @@ import BranchTreePanel from './components/BranchTreePanel.vue'
 import ConsoleDock from './components/ConsoleDock.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DecisionEvaluationPanel from './components/DecisionEvaluationPanel.vue'
-import DockLayoutNode from './components/DockLayoutNode.vue'
+import DockLayoutNode from './workspace/DockLayoutNode.vue'
 import EngineManagerWindow from './components/EngineManagerWindow.vue'
 import MjaiDebugDialog from './components/MjaiDebugDialog.vue'
 import QuickSettingsPanel from './components/QuickSettingsPanel.vue'
@@ -778,10 +774,6 @@ import TableRivers from './components/TableRivers.vue'
 import WallViewWindow from './components/WallViewWindow.vue'
 import { useI18n } from './i18n'
 import { vPerceptualSurface } from './perceptualSurface'
-import {
-  type AnalysisPanelId,
-  type WorkspaceItemId,
-} from './workspaceLayout'
 
 const PerceptualColorDebugger = defineAsyncComponent(
   () => import('./components/PerceptualColorDebugger.vue'),
@@ -791,7 +783,6 @@ const { locale, numberLocale, t } = useI18n()
 
 const seats = [0, 1, 2, 3]
 const CONFIRMATION_TIMEOUT_MS = 3000
-type AnalysisPanelKey = keyof StudioSettings['display']['workspaceLayout']['analysisPanels']
 
 const {
   settings,
@@ -836,18 +827,6 @@ const {
   changeUiScale,
 } = useSettingsSession(t)
 
-const ANALYSIS_PANEL_DEFINITIONS: Array<{
-  id: AnalysisPanelId
-  key: AnalysisPanelKey
-  section: 'opponents' | 'game' | 'risk' | 'counts'
-  labelKey: string
-}> = [
-  { id: 'analysis-opponents', key: 'opponents', section: 'opponents', labelKey: 'analysis.opponents' },
-  { id: 'analysis-game', key: 'game', section: 'game', labelKey: 'analysis.players' },
-  { id: 'analysis-risk', key: 'risk', section: 'risk', labelKey: 'analysis.riskPrediction' },
-  { id: 'analysis-counts', key: 'counts', section: 'counts', labelKey: 'analysis.countPrediction' },
-]
-
 const showAboutPanel = ref(false)
 const showCustomTenhouExport = ref(false)
 const customTenhouExportRefreshKey = ref(0)
@@ -857,89 +836,35 @@ const mjaiDebugJson = computed(() => JSON.stringify(mjaiDebugData.value, null, 2
 const shantenMjaiData = ref<Record<string, unknown>>({})
 const shantenMjaiJson = computed(() => JSON.stringify(shantenMjaiData.value, null, 2))
 
-// --- 工作区与分析 ---
-const workspaceLayout = computed(() => normalizeWorkspaceLayout(settings.display.workspaceLayout))
-let workspaceLayoutSaveGeneration = 0
-
-function applyWorkspaceLayoutLocally(nextLayout: StudioSettings['display']['workspaceLayout']) {
-  const normalized = normalizeWorkspaceLayout(nextLayout)
-  settings.display.workspaceLayout = normalized
-  if (showSettingsPanel.value) settingsDraft.display.workspaceLayout = JSON.parse(JSON.stringify(normalized))
-  void nextTick(() => scheduleTableZoomRecalc())
-  return normalized
-}
-
-function updateWorkspaceLayout(nextLayout: StudioSettings['display']['workspaceLayout']) {
-  const normalized = applyWorkspaceLayoutLocally(nextLayout)
-  const generation = ++workspaceLayoutSaveGeneration
-  void window.studioAPI?.saveSettings({
-    display: {
-      workspaceLayout: JSON.parse(JSON.stringify(normalized)),
-    },
-  }).then((saved) => {
-    if (generation !== workspaceLayoutSaveGeneration) return
-    applySettings(mergeSettingsReply(settings, saved, { display: { workspaceLayout: normalized } }))
-  }).catch((error) => {
-    console.warn('Failed to save workspace layout:', error)
-  })
-}
-
-function analysisPanelDefinition(id: AnalysisPanelId) {
-  return ANALYSIS_PANEL_DEFINITIONS.find((definition) => definition.id === id)
-}
-
-function isAnalysisPanelId(id: WorkspaceItemId): id is AnalysisPanelId {
-  return id.startsWith('analysis-')
-}
-
-function analysisPanelSection(id: AnalysisPanelId): 'opponents' | 'game' | 'risk' | 'counts' {
-  return analysisPanelDefinition(id)?.section || 'opponents'
-}
-
-function analysisPanelTitle(id: AnalysisPanelId): string {
-  return t(analysisPanelDefinition(id)?.labelKey || 'analysis.opponents')
-}
-
-function analysisPanelIsSelected(id: AnalysisPanelId): boolean {
-  const definition = analysisPanelDefinition(id)
-  return definition ? workspaceLayout.value.analysisPanels[definition.key] : false
-}
-
-const hasSelectedAnalysisPanels = computed(() => (
-  ANALYSIS_PANEL_DEFINITIONS.some((definition) => workspaceLayout.value.analysisPanels[definition.key])
-))
-const showAnalysisDock = computed(() => (
-  workspaceLayout.value.analysisVisible
-  && hasSelectedAnalysisPanels.value
-  && Boolean(gameView.table)
-))
-const showConsoleDock = computed(() => workspaceLayout.value.consoleVisible)
-
-function showAnalysisPanel(id: AnalysisPanelId): boolean {
-  return showAnalysisDock.value && analysisPanelIsSelected(id)
-}
-
 const {
+  analysisPanelIsSelected,
+  analysisPanelSection,
+  analysisPanelTitle,
+  isAnalysisPanelId,
+  showAnalysisDock,
+  showConsoleDock,
+  toggleAnalysisDock,
+  toggleAnalysisPanel,
+  closeAnalysisPanel,
+  toggleConsoleDock,
+  closeConsoleDock,
+  workspaceLayout,
   draggingDockPanel, visibleWorkspaceLayout, workspaceRoot, activeDockDropTarget,
   dockResizeDrag, startDockResize, startDockPanelPointerDrag, dockDropIndicatorStyle,
-} = useWorkspaceDock({
-  workspaceLayout,
-  visiblePanels: computed(() => [
-    ...(showConsoleDock.value ? ['console' as const] : []),
-    ...ANALYSIS_PANEL_DEFINITIONS.filter(({ id }) => showAnalysisPanel(id)).map(({ id }) => id),
-  ]),
+  dockDropLabel,
+} = useWorkspaceSession({
+  settings,
+  settingsDraft,
+  showSettingsPanel,
+  hasGameTable: computed(() => Boolean(gameView.table)),
   uiScale,
-  applyWorkspaceLayoutLocally,
-  updateWorkspaceLayout,
-  invalidateLayoutSave: () => { workspaceLayoutSaveGeneration += 1 },
+  t,
+  applySettings,
+  scheduleTableZoomRecalc: () => scheduleTableZoomRecalc(),
+  saveWorkspaceLayout: (layout) => window.studioAPI?.saveSettings({
+    display: { workspaceLayout: layout },
+  }),
 })
-
-const dockDropLabel = computed(() => t({
-  left: 'workspace.dockLeft',
-  right: 'workspace.dockRight',
-  top: 'workspace.dockTop',
-  bottom: 'workspace.dockBottom',
-}[activeDockDropTarget.value?.edge || 'right']))
 
 type FloatingPanelName = 'wall' | 'engine' | 'roundMap' | 'customExport'
 const floatingPanelZ = reactive<Record<FloatingPanelName, number>>({
@@ -951,55 +876,6 @@ const floatingPanelZ = reactive<Record<FloatingPanelName, number>>({
 let floatingPanelZCounter = 1000
 function focusFloatingPanel(panel: FloatingPanelName) {
   floatingPanelZ[panel] = ++floatingPanelZCounter
-}
-function toggleAnalysisDock() {
-  const nextVisible = !showAnalysisDock.value
-  const analysisPanels = hasSelectedAnalysisPanels.value
-    ? workspaceLayout.value.analysisPanels
-    : { opponents: true, game: true, risk: false, counts: false }
-  updateWorkspaceLayout({
-    ...workspaceLayout.value,
-    analysisVisible: nextVisible,
-    analysisPanels,
-  })
-}
-function toggleAnalysisPanel(key: AnalysisPanelKey) {
-  const nextSelected = !workspaceLayout.value.analysisPanels[key]
-  const analysisPanels = {
-    ...workspaceLayout.value.analysisPanels,
-    [key]: nextSelected,
-  }
-  const anySelected = Object.values(analysisPanels).some(Boolean)
-  updateWorkspaceLayout({
-    ...workspaceLayout.value,
-    analysisVisible: anySelected && (workspaceLayout.value.analysisVisible || nextSelected),
-    analysisPanels,
-  })
-}
-function closeAnalysisPanel(id: AnalysisPanelId) {
-  const definition = analysisPanelDefinition(id)
-  if (!definition) return
-  const analysisPanels = {
-    ...workspaceLayout.value.analysisPanels,
-    [definition.key]: false,
-  }
-  updateWorkspaceLayout({
-    ...workspaceLayout.value,
-    analysisVisible: Object.values(analysisPanels).some(Boolean) && workspaceLayout.value.analysisVisible,
-    analysisPanels,
-  })
-}
-function toggleConsoleDock() {
-  updateWorkspaceLayout({
-    ...workspaceLayout.value,
-    consoleVisible: !showConsoleDock.value,
-  })
-}
-function closeConsoleDock() {
-  updateWorkspaceLayout({
-    ...workspaceLayout.value,
-    consoleVisible: false,
-  })
 }
 const RON_BAR_ADAPTIVE_MIN = DEFAULT_PROBABILITY_SCALE
 function southRonRiskBarHeight(prob: number): string {

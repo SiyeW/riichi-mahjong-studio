@@ -1,7 +1,7 @@
-import { computed, nextTick, onBeforeUnmount, ref, type Ref } from 'vue'
-import { normalizeDockPanelFraction, normalizeDockPanelSizeFractions, type DockPanelId, type DockPanelSizeFractions } from './workspaceSettings'
-import { moveDockItem, moveDockItemBesideNode, resizeDockSplit, visibleDockLayout, WORKSPACE_ITEM_IDS, type DockDirection, type DockEdge, type DockResizeRequest, type WorkspaceDockNode, type WorkspaceItemId } from './workspaceLayout'
-import type { StudioSettings } from './contracts/settings'
+import { computed, nextTick, onScopeDispose, ref, type Ref } from 'vue'
+import { normalizeDockPanelFraction, normalizeDockPanelSizeFractions } from './settings.ts'
+import { moveDockItem, moveDockItemBesideNode, resizeDockSplit, visibleDockLayout } from './layout.ts'
+import { WORKSPACE_ITEM_IDS, type DockDirection, type DockEdge, type DockPanelId, type DockPanelSizeFractions, type DockResizeRequest, type WorkspaceDockNode, type WorkspaceItemId, type WorkspaceLayoutSettings } from '../contracts/workspace.ts'
 
 type DockDropTarget = {
   edge: DockEdge
@@ -12,15 +12,15 @@ type DockDropTarget = {
 )
 
 interface WorkspaceDockOptions {
-  workspaceLayout: Readonly<Ref<StudioSettings['display']['workspaceLayout']>>
+  workspaceLayout: Readonly<Ref<WorkspaceLayoutSettings>>
   visiblePanels: Readonly<Ref<readonly DockPanelId[]>>
   uiScale: Readonly<Ref<number>>
-  applyWorkspaceLayoutLocally: (layout: StudioSettings['display']['workspaceLayout']) => unknown
-  updateWorkspaceLayout: (layout: StudioSettings['display']['workspaceLayout']) => void
+  applyWorkspaceLayoutLocally: (layout: WorkspaceLayoutSettings) => unknown
+  updateWorkspaceLayout: (layout: WorkspaceLayoutSettings) => void
   invalidateLayoutSave: () => void
 }
 
-interface DockResizeDragState {
+export interface DockResizeDragState {
   pointerId: number
   direction: DockDirection
   sourcePath: number[]
@@ -38,6 +38,7 @@ export function useWorkspaceDock({
   workspaceLayout, visiblePanels, uiScale,
   applyWorkspaceLayoutLocally, updateWorkspaceLayout, invalidateLayoutSave,
 }: WorkspaceDockOptions) {
+  const pointerEventTarget = typeof window === 'undefined' ? null : window
   const draggingDockPanel = ref<DockPanelId | null>(null)
 
   function visibleWorkspaceItemIds(excludedPanel: DockPanelId | null = null): Set<WorkspaceItemId> {
@@ -110,10 +111,10 @@ export function useWorkspaceDock({
   }
 
   function removeDockResizePointerListeners() {
-    window.removeEventListener('pointermove', handleDockResizePointerMove)
-    window.removeEventListener('pointerup', finishDockResize)
-    window.removeEventListener('pointercancel', cancelDockResize)
-    window.removeEventListener('keydown', handleDockResizeKeydown)
+    pointerEventTarget?.removeEventListener('pointermove', handleDockResizePointerMove)
+    pointerEventTarget?.removeEventListener('pointerup', finishDockResize)
+    pointerEventTarget?.removeEventListener('pointercancel', cancelDockResize)
+    pointerEventTarget?.removeEventListener('keydown', handleDockResizeKeydown)
   }
 
   function finishDockResize(event: PointerEvent) {
@@ -165,10 +166,10 @@ export function useWorkspaceDock({
       minAfterSize,
       initialLayout: workspaceLayout.value.layout,
     }
-    window.addEventListener('pointermove', handleDockResizePointerMove)
-    window.addEventListener('pointerup', finishDockResize)
-    window.addEventListener('pointercancel', cancelDockResize)
-    window.addEventListener('keydown', handleDockResizeKeydown)
+    pointerEventTarget?.addEventListener('pointermove', handleDockResizePointerMove)
+    pointerEventTarget?.addEventListener('pointerup', finishDockResize)
+    pointerEventTarget?.addEventListener('pointercancel', cancelDockResize)
+    pointerEventTarget?.addEventListener('keydown', handleDockResizeKeydown)
   }
 
   function dockDropTargetAt(clientX: number, clientY: number): DockDropTarget | null {
@@ -264,10 +265,10 @@ export function useWorkspaceDock({
   }
 
   function removeDockPanelPointerListeners() {
-    window.removeEventListener('pointermove', handleDockPanelPointerMove)
-    window.removeEventListener('pointerup', finishDockPanelPointerDrag)
-    window.removeEventListener('pointercancel', cancelDockPanelPointerDrag)
-    window.removeEventListener('keydown', handleDockPanelDragKeydown)
+    pointerEventTarget?.removeEventListener('pointermove', handleDockPanelPointerMove)
+    pointerEventTarget?.removeEventListener('pointerup', finishDockPanelPointerDrag)
+    pointerEventTarget?.removeEventListener('pointercancel', cancelDockPanelPointerDrag)
+    pointerEventTarget?.removeEventListener('keydown', handleDockPanelDragKeydown)
     dockDragPointerId = null
     dockPanelPointerCandidate = null
   }
@@ -339,10 +340,10 @@ export function useWorkspaceDock({
     }
     dockDragPanelSizeFractions = null
     activeDockDropTarget.value = null
-    window.addEventListener('pointermove', handleDockPanelPointerMove)
-    window.addEventListener('pointerup', finishDockPanelPointerDrag)
-    window.addEventListener('pointercancel', cancelDockPanelPointerDrag)
-    window.addEventListener('keydown', handleDockPanelDragKeydown)
+    pointerEventTarget?.addEventListener('pointermove', handleDockPanelPointerMove)
+    pointerEventTarget?.addEventListener('pointerup', finishDockPanelPointerDrag)
+    pointerEventTarget?.addEventListener('pointercancel', cancelDockPanelPointerDrag)
+    pointerEventTarget?.addEventListener('keydown', handleDockPanelDragKeydown)
   }
 
   function endDockPanelDrag() {
@@ -442,7 +443,7 @@ export function useWorkspaceDock({
     }
   })
 
-  onBeforeUnmount(() => {
+  onScopeDispose(() => {
     removeDockPanelPointerListeners()
     removeDockResizePointerListeners()
   })

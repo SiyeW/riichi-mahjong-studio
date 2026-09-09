@@ -1,5 +1,5 @@
 import type { EngineSettings } from './engines'
-import type { WorkspaceDockNode } from '../workspaceLayout'
+import type { WorkspaceLayoutSettings } from './workspace'
 
 export interface StudioSettings {
   configPath: string
@@ -66,22 +66,7 @@ export interface StudioSettings {
     uiScale: number
     showTsumogiriInPlay: boolean
     tablePosition: 'left' | 'center' | 'right'
-    workspaceLayout: {
-      layout: WorkspaceDockNode
-      analysisVisible: boolean
-      analysisPanels: {
-        opponents: boolean
-        game: boolean
-        risk: boolean
-        counts: boolean
-      }
-      consoleVisible: boolean
-      panelSizeFractionsVersion: 2
-      panelSizeFractions: Partial<Record<
-        'console' | 'analysis-opponents' | 'analysis-game' | 'analysis-risk' | 'analysis-counts',
-        { horizontal?: number; vertical?: number }
-      >>
-    }
+    workspaceLayout: WorkspaceLayoutSettings
   }
   records: {
     saveRecoveryOnExit: boolean

@@ -42,7 +42,7 @@ test('malformed workspace layouts are completed safely', () => {
 })
 
 test('main and renderer workspace normalizers remain equivalent', async () => {
-  const rendererLayout = await import('../../../src/workspaceLayout.ts')
+  const rendererLayout = await import('../../../src/workspace/layout.ts')
   assert.deepEqual(
     mainProcessLayout.WORKSPACE_ITEM_IDS,
     [...rendererLayout.WORKSPACE_ITEM_IDS],

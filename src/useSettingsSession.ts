@@ -1,7 +1,7 @@
 import { computed, reactive, ref, watchEffect } from 'vue'
 import { settingsChanges, mergeSettingsReply } from './settingsChanges'
 import { normalizeLanguagePreference, setLanguagePreference } from './i18n'
-import { normalizeWorkspaceLayout } from './workspaceSettings'
+import { normalizeWorkspaceLayout } from './workspace/settings'
 import { DEFAULT_ANALYSIS_COUNT_LAYOUT, type AnalysisCountLayout } from './analysisCountSpacing'
 import { mostDistinctOklabColor, parseCssColor, type RgbColor } from './perceptualColor'
 import type { StudioSettings } from './contracts/settings'

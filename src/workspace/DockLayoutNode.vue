@@ -43,7 +43,7 @@ import type {
   DockResizeRequest,
   WorkspaceDockViewNode,
   WorkspaceItemId,
-} from '../workspaceLayout'
+} from '../contracts/workspace'
 
 const props = defineProps<{ node: WorkspaceDockViewNode }>()
 defineSlots<{ default(props: { id: WorkspaceItemId }): unknown }>()

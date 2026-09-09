@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createDefaultDockLayout } from './workspaceLayout.ts'
-import { normalizeDockPanelFraction, normalizeDockPanelSizeFractions, normalizeWorkspaceLayout } from './workspaceSettings.ts'
+import { createDefaultDockLayout } from './layout.ts'
+import { normalizeDockPanelFraction, normalizeDockPanelSizeFractions, normalizeWorkspaceLayout } from './settings.ts'
 
 test('missing workspace settings retain the established defaults', () => {
   const expected = {

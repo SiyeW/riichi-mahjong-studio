@@ -1,48 +1,22 @@
-export const WORKSPACE_ITEM_IDS = [
-  'table',
-  'console',
-  'analysis-opponents',
-  'analysis-game',
-  'analysis-risk',
-  'analysis-counts',
-] as const
+import {
+  WORKSPACE_ITEM_IDS,
+  type DockDirection,
+  type DockEdge,
+  type WorkspaceDockNode,
+  type WorkspaceDockViewNode,
+  type WorkspaceItemId,
+} from '../contracts/workspace.ts'
 
-export type WorkspaceItemId = typeof WORKSPACE_ITEM_IDS[number]
-export type AnalysisPanelId = Extract<WorkspaceItemId, `analysis-${string}`>
-export type DockDirection = 'horizontal' | 'vertical'
-export type DockEdge = 'left' | 'right' | 'top' | 'bottom'
-
-export type WorkspaceDockNode =
-  | { type: 'item'; id: WorkspaceItemId }
-  | {
-      type: 'split'
-      direction: DockDirection
-      children: WorkspaceDockNode[]
-      weights: number[]
-    }
-
-export type WorkspaceDockViewNode =
-  | { type: 'item'; id: WorkspaceItemId }
-  | {
-      type: 'split'
-      direction: DockDirection
-      children: WorkspaceDockViewNode[]
-      weights: number[]
-      sourcePath: number[]
-      sourceChildIndexes: number[]
-    }
-
-export interface DockResizeRequest {
-  direction: DockDirection
-  sourcePath: number[]
-  beforeIndex: number
-  afterIndex: number
-  beforeItems: WorkspaceItemId[]
-  afterItems: WorkspaceItemId[]
-  beforeSize: number
-  afterSize: number
-  event: PointerEvent
-}
+export { WORKSPACE_ITEM_IDS }
+export type {
+  AnalysisPanelId,
+  DockDirection,
+  DockEdge,
+  DockResizeRequest,
+  WorkspaceDockNode,
+  WorkspaceDockViewNode,
+  WorkspaceItemId,
+} from '../contracts/workspace.ts'
 
 const item = (id: WorkspaceItemId): WorkspaceDockNode => ({ type: 'item', id })
 
