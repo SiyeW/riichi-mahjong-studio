@@ -51,9 +51,7 @@ jobs:
 
       - name: Run backend tests
         shell: pwsh
-        run: |
-          $env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-          .\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
+        run: .\.conda-backend\python.exe -m unittest discover -s python\tests -t python -p 'test_*.py'
 
       - name: Run Electron tests
         shell: pwsh

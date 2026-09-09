@@ -21,8 +21,8 @@ function resolveAppVersion(options = {}) {
 }
 
 function resolveBundledBackend(resourceDir) {
-  const exeName = process.platform === 'win32' ? 'environment-service.exe' : 'environment-service'
-  const exePath = path.join(resourceDir, 'backend', 'environment-service', exeName)
+  const exeName = process.platform === 'win32' ? 'rms-backend.exe' : 'rms-backend'
+  const exePath = path.join(resourceDir, 'backend', 'rms-backend', exeName)
   return exePath
 }
 
@@ -38,8 +38,9 @@ function createEnvironmentService(options = {}) {
     pythonExecutable: useBundledBackend
       ? bundledBackend
       : resolveDevelopmentPython(resourceRoot, options.env),
-    scriptPath: useBundledBackend ? null : path.join(resourceRoot, 'python', 'environment', 'service.py'),
-    cwd: useBundledBackend ? path.dirname(bundledBackend) : path.join(resourceRoot, 'python', 'environment'),
+    scriptPath: null,
+    args: useBundledBackend ? [] : ['-m', 'rms_backend'],
+    cwd: useBundledBackend ? path.dirname(bundledBackend) : path.join(resourceRoot, 'python'),
     formatStartError: (name, message) => options.t
       ? options.t('native.backend.startFailed', { name, message })
       : `${name} failed to start: ${message}`,

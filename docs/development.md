@@ -48,9 +48,7 @@ npm run build
 $tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
   Select-Object -ExpandProperty FullName
 node --test $tests
-$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
-Remove-Item Env:PYTHONPATH
+.\.conda-backend\python.exe -m unittest discover -s python\tests -t python -p 'test_*.py'
 ```
 
 ### 构建 Windows 应用程序
@@ -61,7 +59,7 @@ Remove-Item Env:PYTHONPATH
 npm run build:backend:win
 ```
 
-输出目录：`release/backend/environment-service/`
+输出目录：`release/backend/rms-backend/`
 
 构建完整的 Windows 免安装目录版：
 
@@ -127,9 +125,7 @@ npm run build
 $tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
   Select-Object -ExpandProperty FullName
 node --test $tests
-$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
-Remove-Item Env:PYTHONPATH
+.\.conda-backend\python.exe -m unittest discover -s python\tests -t python -p 'test_*.py'
 ```
 
 ### Windows アプリケーションのビルド
@@ -140,7 +136,7 @@ Python バックエンドだけをビルドする場合：
 npm run build:backend:win
 ```
 
-出力先：`release/backend/environment-service/`
+出力先：`release/backend/rms-backend/`
 
 展開済みの Windows アプリケーション全体をビルドする場合：
 
@@ -206,9 +202,7 @@ npm run build
 $tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
   Select-Object -ExpandProperty FullName
 node --test $tests
-$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
-Remove-Item Env:PYTHONPATH
+.\.conda-backend\python.exe -m unittest discover -s python\tests -t python -p 'test_*.py'
 ```
 
 ### Build the Windows application
@@ -219,7 +213,7 @@ Build the Python backend only:
 npm run build:backend:win
 ```
 
-Output: `release/backend/environment-service/`
+Output: `release/backend/rms-backend/`
 
 Build the complete unpacked Windows application:
 

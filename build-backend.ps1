@@ -35,14 +35,14 @@ foreach ($Path in @($BackendRoot, $WorkRoot, $SpecRoot)) {
     --clean `
     --noupx `
     --onedir `
-    --name environment-service `
+    --name rms-backend `
     --distpath $BackendRoot `
     --workpath $WorkRoot `
     --specpath $SpecRoot `
-    --paths (Join-Path $ProjectRoot 'python\environment') `
+    --paths (Join-Path $ProjectRoot 'python') `
     --paths (Join-Path $ProjectRoot 'python\vendor') `
-    --hidden-import engine_process_client `
-    --hidden-import rule_kernel `
+    --hidden-import rms_backend.engine_process_client `
+    --hidden-import rms_backend.rule_kernel `
     --hidden-import mahjong `
     --hidden-import mahjong.hand_calculating.hand `
     --hidden-import mahjong.meld `
@@ -50,13 +50,13 @@ foreach ($Path in @($BackendRoot, $WorkRoot, $SpecRoot)) {
     --exclude-module torch `
     --exclude-module tensorflow `
     --exclude-module pytest `
-    (Join-Path $ProjectRoot 'python\environment\service_bootstrap.py')
+    (Join-Path $ProjectRoot 'python\rms_backend\__main__.py')
 
 if ($LASTEXITCODE -ne 0) {
     throw "PyInstaller failed with exit code $LASTEXITCODE."
 }
 
-$Executable = Join-Path $BackendRoot 'environment-service\environment-service.exe'
+$Executable = Join-Path $BackendRoot 'rms-backend\rms-backend.exe'
 if (-not (Test-Path -LiteralPath $Executable -PathType Leaf)) {
     throw "Backend build did not produce the expected executable: $Executable"
 }

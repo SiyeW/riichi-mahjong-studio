@@ -60,8 +60,8 @@
     },
     "extraResources": [
       {
-        "from": "release/backend/environment-service",
-        "to": "backend/environment-service"
+        "from": "release/backend/rms-backend",
+        "to": "backend/rms-backend"
       },
       {
         "from": "THIRD_PARTY_NOTICES.md",
