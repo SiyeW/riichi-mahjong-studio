@@ -728,8 +728,7 @@ import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, p
 import { installAnalysisTestHarness } from './testing/analysisHarness'
 import { flushBeforeClose } from './flushBeforeClose'
 import { mergeSettingsReply } from './settingsChanges'
-import { backendStoppedState } from './backendStoppedState'
-import { applyModelActivityEvent } from './modelActivityEvent'
+import { createPythonEventRouter } from './pythonEventRouter'
 import { useWorkspaceDock } from './useWorkspaceDock'
 import { useWallView } from './useWallView'
 import { useEngineProfiles } from './useEngineProfiles'
@@ -1996,111 +1995,32 @@ function onSouthHandContextMenu(event: MouseEvent) {
   }
 }
 
-function handlePythonEvent(event: TrainerPythonEvent) {
-  if (event.type === 'service_recovery_failed') {
-    bootstrapError.value = t('recovery.failed', { message: event.error || '' })
-    return
-  }
-  if (event.type === 'service_restored') {
-    if (event.state && event.view) {
-      applyStatus(event.state)
-      applyGameView(event.view)
-      if (!event.state.gameLoaded) {
-        clearRecordMetadata()
-      }
-      backendRecoveryNeeded.value = false
-      bootstrapError.value = ''
-    }
-    return
-  }
-  if (event.type === 'service_ready' || event.type === 'service_stopped') {
-    resetForBackendLifecycle()
-    invalidateGameplayResponses()
-    invalidateNavigation()
-    if (event.type === 'service_stopped') {
-      backendRecoveryNeeded.value = true
-      backendHasCheckpoint.value = Boolean(event.hasCheckpoint)
-      applyStatus(backendStoppedState(status))
-      clearAutoAdvanceTimer()
-      resetPlayPrefetch()
-      bootstrapError.value = t('recovery.stopped')
-    }
-    return
-  }
-  if (event.type === 'opponent_analysis_ready') {
-    const context = event.opponentAnalysis?.context as Record<string, unknown> | undefined
-    if (!acceptsOpponentEventEpoch(context?.cacheEpoch)) return
-  }
-  if (event.type === 'analysis_ready' || event.type === 'auto_analysis_tree_updates') {
-    if (!acceptsDecisionEventEpoch(event.cacheEpoch)) return
-  }
-  if (event.type === 'auto_analysis_progress' && event.autoAnalysis) {
-    if (event.gameId && event.gameId !== gameView.gameId) return
-    status.autoAnalysis = { ...event.autoAnalysis }
-    return
-  }
-  if (event.type === 'play_prefetch_ready' && event.gameId && event.nodeId) {
-    markPlayPrefetchReady(event.gameId, event.nodeId)
-    return
-  }
-  if (event.gameId && event.gameId !== gameView.gameId) return
-  if (event.autoAnalysis) {
-    status.autoAnalysis = { ...event.autoAnalysis }
-  } else if (event.state?.autoAnalysis) {
-    status.autoAnalysis = { ...event.state.autoAnalysis }
-  }
-  if (event.type === 'auto_analysis_tree_updates') {
-    event.treeComparisons?.forEach((update) => {
-      const node = nodeMapById.value.get(update.id)
-      if (node) node.comparison = update.comparison
-    })
-    if (gameView.tree && typeof event.treeRevision === 'number') {
-      gameView.tree.revision = event.treeRevision
-    }
-    return
-  }
-  if (event.type === 'model_activity') {
-    const { opponentFailed } = applyModelActivityEvent(status, event, t('error.unknown'))
-    if (opponentFailed) {
-      if (!shantenResultHasRows(gameView.opponentAnalysis)) clearOpponentAnalysisWithoutMotion()
-      void fetchShantenOnce()
-    }
-    return
-  }
-  if (event.type === 'opponent_analysis_ready' && event.opponentAnalysis) {
-    if (event.gameId && event.gameId !== gameView.gameId) return
-    if (event.nodeId && event.nodeId !== gameView.currentNodeId) return
-    if (Number.isInteger(event.seat) && Number(event.seat) !== status.controlledSeat) return
-    applyOpponentAnalysisEvent(event.opponentAnalysis)
-    return
-  }
-  if (event.type === 'analysis_ready' && event.nodeId && event.analysis) {
-    if (clearingAnalysisCaches.value) return
-    if (!effectiveDecisionRecommendationsEnabled.value) return
-    if (event.gameId && event.gameId !== gameView.gameId) return
-    const analysisSeat = typeof (event.analysis as Record<string, unknown>).seat === 'number'
-      ? Number((event.analysis as Record<string, unknown>).seat)
-      : null
-    if (analysisSeat !== null && analysisSeat !== status.controlledSeat) return
-    if (event.state) {
-      applyStatus(event.state as TrainerStatusSnapshot)
-    }
-    if (event.treeComparisons?.length) {
-      event.treeComparisons.forEach((update) => {
-        const node = nodeMapById.value.get(update.id)
-        if (node) node.comparison = update.comparison
-      })
-    }
-    if (gameView.tree && typeof event.treeRevision === 'number') {
-      gameView.tree.revision = event.treeRevision
-    }
-    const analysis = event.analysis as NonNullable<TrainerGameView['analysis']>
-    cacheDecisionAnalysis(event.gameId || gameView.gameId, event.nodeId, analysis)
-    if (event.nodeId === gameView.currentNodeId) {
-      gameView.analysis = analysis
-    }
-  }
-}
+const handlePythonEvent = createPythonEventRouter({
+  status,
+  gameView,
+  bootstrapError,
+  backendRecoveryNeeded,
+  backendHasCheckpoint,
+  clearingAnalysisCaches,
+  effectiveDecisionRecommendationsEnabled,
+  nodeMapById,
+  t,
+  applyStatus,
+  applyGameView,
+  clearRecordMetadata,
+  resetForBackendLifecycle,
+  invalidateGameplayResponses,
+  invalidateNavigation,
+  clearAutoAdvanceTimer,
+  resetPlayPrefetch,
+  acceptsOpponentEventEpoch,
+  acceptsDecisionEventEpoch,
+  markPlayPrefetchReady,
+  clearOpponentAnalysisWithoutMotion,
+  fetchShantenOnce,
+  applyOpponentAnalysisEvent,
+  cacheDecisionAnalysis,
+})
 
 async function fetchAndShowMjaiDebug() {
   showMjaiDebug.value = true
