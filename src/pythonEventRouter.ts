@@ -2,6 +2,7 @@ import type { Ref } from 'vue'
 import { backendStoppedState } from './backendStoppedState.ts'
 import { applyModelActivityEvent } from './modelActivityEvent.ts'
 import { shantenResultHasRows } from './useAnalysisSession.ts'
+import type { GameTreeNode } from './contracts/game'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -13,7 +14,7 @@ export interface PythonEventRouterOptions {
   backendHasCheckpoint: Ref<boolean>
   clearingAnalysisCaches: Readonly<Ref<boolean>>
   effectiveDecisionRecommendationsEnabled: Readonly<Ref<boolean>>
-  nodeMapById: Readonly<Ref<ReadonlyMap<string, TrainerTreeNode>>>
+  nodeMapById: Readonly<Ref<ReadonlyMap<string, GameTreeNode>>>
   t: Translate
   applyStatus: (status: TrainerStatusSnapshot) => void
   applyGameView: (view: TrainerGameView) => void
@@ -53,7 +54,7 @@ function eventMatchesCurrentAnalysisView(
 function applyTreeUpdates(
   event: TrainerPythonEvent,
   gameView: TrainerGameView,
-  nodeMapById: ReadonlyMap<string, TrainerTreeNode>,
+  nodeMapById: ReadonlyMap<string, GameTreeNode>,
 ) {
   event.treeComparisons?.forEach((update) => {
     const node = nodeMapById.get(update.id)
@@ -148,8 +149,8 @@ export function createPythonEventRouter(options: PythonEventRouterOptions) {
     if (event.type !== 'analysis_ready' || !event.nodeId || !event.analysis) return
     if (options.clearingAnalysisCaches.value || !options.effectiveDecisionRecommendationsEnabled.value) return
 
-    const analysisSeat = typeof (event.analysis as Record<string, unknown>).seat === 'number'
-      ? Number((event.analysis as Record<string, unknown>).seat)
+    const analysisSeat = typeof event.analysis.seat === 'number'
+      ? Number(event.analysis.seat)
       : null
     if (analysisSeat !== null && analysisSeat !== options.status.controlledSeat) return
     if (event.state) options.applyStatus(event.state as TrainerStatusSnapshot)

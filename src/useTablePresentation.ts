@@ -8,7 +8,7 @@ import { RON_WAIT_OPPONENT_KEYS, tile34Index } from './analysisTiles'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import type { MahjongPresentationLabels } from './useMahjongPresentationLabels'
 import type { StudioSettings } from './contracts/settings'
-import type { GameAction } from './contracts/game'
+import type { GameAction, GameTreeNode } from './contracts/game'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 type DiscardEntry = NonNullable<TrainerGameView['analysis']>['discardEntries'][number]
@@ -61,7 +61,7 @@ export function useTablePresentation(options: {
   labels: MahjongPresentationLabels
   resolveDiscardEntry: (action: GameAction) => DiscardEntry | null
   analysisEntryIsBest: (entry: DiscardEntry | null) => boolean
-  getNodeMapById: () => ReadonlyMap<string, TrainerTreeNode>
+  getNodeMapById: () => ReadonlyMap<string, GameTreeNode>
   jumpToNode: (nodeId: string) => Promise<void>
 }) {
   const {
@@ -255,7 +255,7 @@ export function useTablePresentation(options: {
   })
 
   const currentTableHistoryNodes = computed(() => {
-    const nodes: TrainerTreeNode[] = []
+    const nodes: GameTreeNode[] = []
     let cursor = gameView.currentNodeId || ''
     while (cursor) {
       const node = getNodeMapById().get(cursor)

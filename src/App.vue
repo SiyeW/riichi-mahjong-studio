@@ -714,6 +714,7 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
 import type { StudioSettings } from './contracts/settings'
+import type { GameTreeNode } from './contracts/game'
 import { flushBeforeClose } from './flushBeforeClose'
 import { mergeSettingsReply } from './settingsChanges'
 import { createPythonEventRouter } from './pythonEventRouter'
@@ -1576,7 +1577,7 @@ function registerTreeScrollElement(element: Element | null) {
   if (treeScrollEl.value) void nextTick(updateTreeViewport)
 }
 
-function findTreeNodeById(nodeId: string): TrainerTreeNode | undefined {
+function findTreeNodeById(nodeId: string): GameTreeNode | undefined {
   return nodeMapById.value.get(nodeId)
 }
 const {

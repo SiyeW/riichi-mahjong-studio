@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { sameViewRequestContext } from './analysisPosition'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
+import type { GameTreeNode, RoundSummary } from './contracts/game'
 
 type GameViewTransitionDirection = 'forward' | 'backward'
 
@@ -8,9 +9,9 @@ export function useBranchNavigation(options: {
   gameView: TrainerGameView
   status: TrainerStatusSnapshot
   isReadOnlyRecord: Readonly<Ref<boolean>>
-  nodeMapById: Readonly<Ref<Map<string, TrainerTreeNode>>>
+  nodeMapById: Readonly<Ref<Map<string, GameTreeNode>>>
   activeRoundRootId: Readonly<Ref<string | null>>
-  roundRootById: Readonly<Ref<Map<string, TrainerRoundSummary>>>
+  roundRootById: Readonly<Ref<Map<string, RoundSummary>>>
   confirmationTimeoutMs: number
   getGameplayResponseGeneration: () => number
   markRecordDirty: () => void

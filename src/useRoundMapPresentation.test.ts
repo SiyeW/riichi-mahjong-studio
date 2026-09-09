@@ -3,13 +3,14 @@ import test from 'node:test'
 import { ref } from 'vue'
 
 import { useRoundMapPresentation } from './useRoundMapPresentation.ts'
+import type { RoundSummary } from './contracts/game.ts'
 
 function round(
   id: string,
   roundIndex: number,
   childRoundIds: string[],
   mainNextRoundId: string | null,
-): TrainerRoundSummary {
+): RoundSummary {
   return {
     id,
     parentRoundId: null,

@@ -1,5 +1,5 @@
 import { computed, type Ref } from 'vue'
-import type { GameAction } from './contracts/game'
+import type { GameAction, GameTreeNode } from './contracts/game'
 
 export interface NextMoveHint {
   type: 'dahai' | 'special'
@@ -21,7 +21,7 @@ function normalizeSpecialActionVariant(
 }
 
 export function buildNextMoveHints(
-  nodeMap: ReadonlyMap<string, TrainerTreeNode>,
+  nodeMap: ReadonlyMap<string, GameTreeNode>,
   currentNodeId: string | null,
   controlledSeat: number,
 ): NextMoveHint[] {
@@ -68,7 +68,7 @@ export function buildNextMoveHints(
 }
 
 export function useNextMoveHints(options: {
-  nodeMapById: Readonly<Ref<Map<string, TrainerTreeNode>>>
+  nodeMapById: Readonly<Ref<Map<string, GameTreeNode>>>
   currentNodeId: () => string | null
   controlledSeat: () => number
 }) {

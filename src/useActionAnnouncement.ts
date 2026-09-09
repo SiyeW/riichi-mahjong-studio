@@ -1,16 +1,17 @@
 import { onBeforeUnmount, reactive, ref, watch } from 'vue'
 import type { TranslationParams } from './i18n'
+import type { GameTreeNode } from './contracts/game'
 
 type Translate = (key: string, params?: TranslationParams) => string
 
 interface UseActionAnnouncementOptions {
   gameView: TrainerGameView
-  findNode: (nodeId: string) => TrainerTreeNode | undefined
+  findNode: (nodeId: string) => GameTreeNode | undefined
   positionForActor: (actor: number) => string
   t: Translate
 }
 
-export function resolveActionAnnouncementText(node: TrainerTreeNode | null | undefined, t: Translate): string | null {
+export function resolveActionAnnouncementText(node: GameTreeNode | null | undefined, t: Translate): string | null {
   if (!node?.action) return null
   const action = node.action
   const type = String(action.type || '')

@@ -6,6 +6,7 @@ import {
   computeBranchTreeLayout,
   type BranchTreeGeometry,
 } from './branchTreeLayout.ts'
+import type { GameTreeNode } from './contracts/game.ts'
 
 const geometry: BranchTreeGeometry = {
   baseX: 18,
@@ -20,7 +21,7 @@ function node(
   parentId: string | null,
   children: string[] = [],
   mainChildId: string | null = null,
-): TrainerTreeNode {
+): GameTreeNode {
   return {
     id,
     type: 'action',
@@ -30,7 +31,7 @@ function node(
     action: null,
     depth,
     roundDepth: depth,
-  } as TrainerTreeNode
+  } as GameTreeNode
 }
 
 test('branch tree layout keeps the main path in its base column and separates overlapping siblings', () => {
