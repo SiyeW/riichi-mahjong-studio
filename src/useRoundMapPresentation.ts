@@ -1,5 +1,7 @@
 import { computed, ref, type Ref } from 'vue'
 import { buildGraphHitRegions } from './graphHitRegions.ts'
+import type { GameTreeNode, RoundSummary } from './contracts/game.ts'
+import type { StudioStatus } from './contracts/runtime.ts'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -41,9 +43,9 @@ export interface RoundMapSettlementEntry {
 }
 
 export function useRoundMapPresentation(options: {
-  roundSummaryList: Readonly<Ref<TrainerRoundSummary[]>>
+  roundSummaryList: Readonly<Ref<RoundSummary[]>>
   activeRoundRootId: Readonly<Ref<string | null>>
-  status: TrainerStatusSnapshot
+  status: StudioStatus
   uiScale: Readonly<Ref<number>>
   t: Translate
   localizedResultTitle: (value: unknown) => string
@@ -100,11 +102,11 @@ export function useRoundMapPresentation(options: {
       ),
   )
 
-  function roundSlotKey(node: Pick<TrainerTreeNode, 'roundIndex' | 'honba'>) {
+  function roundSlotKey(node: Pick<GameTreeNode, 'roundIndex' | 'honba'>) {
     return `${node.roundIndex ?? -1}:${node.honba ?? 0}`
   }
 
-  function roundNodeLabel(node: Pick<TrainerTreeNode, 'bakaze' | 'kyoku' | 'honba'>) {
+  function roundNodeLabel(node: Pick<GameTreeNode, 'bakaze' | 'kyoku' | 'honba'>) {
     const bakaze = roundWindLabel(node.bakaze || 'E')
     const kyoku = node.kyoku ?? 0
     const honba = node.honba ?? 0

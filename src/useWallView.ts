@@ -1,5 +1,7 @@
 import { computed, onBeforeUnmount, ref, type Ref } from 'vue'
 import type { TranslationParams } from './i18n'
+import type { GameView } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 
 export interface WallTile {
   index: number
@@ -8,12 +10,12 @@ export interface WallTile {
 }
 
 interface WallViewOptions {
-  gameView: TrainerGameView
+  gameView: GameView
   readOnlyRecord: Readonly<Ref<boolean>>
   t: (key: string, params?: TranslationParams) => string
   focus: () => void
-  applyStatus: (status: TrainerStatusSnapshot) => void
-  applyGameView: (view: TrainerGameView) => void
+  applyStatus: (status: StudioStatus) => void
+  applyGameView: (view: GameView) => void
 }
 
 const TENHOU_HONOR_TO_TILE: Record<string, string> = {
@@ -106,7 +108,7 @@ export function useWallView({
   }
 
   async function refreshWallView(closeOnError = false, showLoading = false) {
-    if (!showWallView.value || !window.trainerAPI?.getWallView || !gameView.table) return
+    if (!showWallView.value || !window.studioAPI?.getWallView || !gameView.table) return
     const generation = ++refreshGeneration
     const expectedGameId = gameView.gameId
     const expectedNodeId = gameView.currentNodeId
@@ -115,7 +117,7 @@ export function useWallView({
       clearWallResult()
     }
     try {
-      const result = await window.trainerAPI.getWallView()
+      const result = await window.studioAPI.getWallView()
       if (
         generation !== refreshGeneration
         || !showWallView.value
@@ -136,7 +138,7 @@ export function useWallView({
   }
 
   async function openWallView() {
-    if (!window.trainerAPI?.getWallView) return
+    if (!window.studioAPI?.getWallView) return
     showWallView.value = true
     focus()
     wallClipboardMessage.value = ''
@@ -148,11 +150,11 @@ export function useWallView({
   }
 
   async function reconstructImportedWalls() {
-    if (!window.trainerAPI?.reconstructWalls || wallReconstructing.value) return
+    if (!window.studioAPI?.reconstructWalls || wallReconstructing.value) return
     wallReconstructing.value = true
     wallClipboardMessage.value = ''
     try {
-      const response = await window.trainerAPI.reconstructWalls(wallReconstructionSeed.value)
+      const response = await window.studioAPI.reconstructWalls(wallReconstructionSeed.value)
       applyStatus(response.state)
       applyGameView(response.view)
       wallReconstructionSeed.value = ''
@@ -166,10 +168,10 @@ export function useWallView({
   }
 
   async function copyWallToClipboard() {
-    if (!wallTiles.value.length || !window.trainerAPI?.writeClipboardText) return
+    if (!wallTiles.value.length || !window.studioAPI?.writeClipboardText) return
     const text = wallTiles.value.map((tile) => encodeWallClipboardTile(tile.tile)).join('')
     try {
-      await window.trainerAPI.writeClipboardText(text)
+      await window.studioAPI.writeClipboardText(text)
       wallClipboardMessage.value = t('wall.copied')
     } catch {
       wallClipboardMessage.value = t('wall.copyFailed')
@@ -177,9 +179,9 @@ export function useWallView({
   }
 
   async function importWallFromClipboard() {
-    if (!window.trainerAPI?.importWall || !window.trainerAPI?.readClipboardText || readOnlyRecord.value) return
+    if (!window.studioAPI?.importWall || !window.studioAPI?.readClipboardText || readOnlyRecord.value) return
     try {
-      const tiles = parseWallClipboardText(await window.trainerAPI.readClipboardText())
+      const tiles = parseWallClipboardText(await window.studioAPI.readClipboardText())
       if (tiles.length !== 136) {
         wallClipboardMessage.value = t('wall.invalidClipboard')
         return
@@ -188,7 +190,7 @@ export function useWallView({
         wallClipboardMessage.value = t('wall.importCanceled')
         return
       }
-      const response = await window.trainerAPI.importWall(tiles)
+      const response = await window.studioAPI.importWall(tiles)
       applyStatus(response.state)
       applyGameView(response.view)
       await refreshWallView()

@@ -11,12 +11,12 @@ const {
 const { registerApplicationIpc } = require('./ipc/application-ipc')
 const { registerAnalysisIpc } = require('./ipc/analysis-ipc')
 const { createEngineIpcController } = require('./ipc/engine-ipc')
-const { registerEnvironmentIpc } = require('./ipc/environment-ipc')
+const { registerBackendIpc } = require('./ipc/backend-ipc')
 const { registerGameIpc } = require('./ipc/game-ipc')
 const { registerRecordIpc } = require('./ipc/record-ipc')
 const { registerSettingsIpc } = require('./ipc/settings-ipc')
 const { registerSoundProtocol } = require('./protocol/sound-protocol')
-const { createEnvironmentService } = require('./services/environment-service')
+const { createBackendService } = require('./services/backend-service')
 const { createRecordWorkflow } = require('./services/record-workflow')
 const { createRuntimeMetricsCollector } = require('./services/runtime-metrics-collector')
 const { loadSettings } = require('./state/settings')
@@ -59,8 +59,8 @@ protocol.registerSchemesAsPrivileged([{
   },
 }])
 
-const environmentBackend = createEnvironmentService({ ...appOptions, t })
-const sessionStore = createSessionStore(environmentBackend.environmentGateway)
+const backend = createBackendService({ ...appOptions, t })
+const sessionStore = createSessionStore(backend.backendGateway)
 const gameFileStore = createGameFileStore(portableRoot)
 gameFileStore.ensureDefaultDirectory()
 let mainWindow = null
@@ -70,7 +70,7 @@ const engineIpcController = createEngineIpcController({
   ipcMain,
   appOptions,
   projectRoot,
-  environmentGateway: environmentBackend.environmentGateway,
+  backendGateway: backend.backendGateway,
   getMainWindow: () => mainWindow,
   t,
 })
@@ -88,7 +88,7 @@ const {
   app,
   appOptions,
   dialog,
-  environmentGateway: environmentBackend.environmentGateway,
+  backendGateway: backend.backendGateway,
   gameFileStore,
   getMainWindow: () => mainWindow,
   t,
@@ -96,7 +96,7 @@ const {
 
 const collectRuntimeMetrics = createRuntimeMetricsCollector({
   app,
-  environmentGateway: environmentBackend.environmentGateway,
+  backendGateway: backend.backendGateway,
 })
 
 function startStartupServices() {
@@ -104,7 +104,7 @@ function startStartupServices() {
     return
   }
   startupServicesStarted = true
-  environmentBackend.startAll()
+  backend.startAll()
   void engineIpcController.restoreLoadedProfiles()
 }
 
@@ -137,21 +137,21 @@ function registerIpcHandlers() {
   engineIpcController.register()
   registerAnalysisIpc({
     ipcMain,
-    environmentGateway: environmentBackend.environmentGateway,
+    backendGateway: backend.backendGateway,
     markRecordDirty,
   })
   registerGameIpc({
     ipcMain,
-    environmentGateway: environmentBackend.environmentGateway,
+    backendGateway: backend.backendGateway,
     sessionStore,
     gameFileStore,
     beginRecordTracking,
     markRecordDirty,
     publishRecordDirty,
   })
-  registerEnvironmentIpc({
+  registerBackendIpc({
     ipcMain,
-    environmentGateway: environmentBackend.environmentGateway,
+    backendGateway: backend.backendGateway,
     gameFileStore,
     getMainWindow: () => mainWindow,
     markRecordDirty,
@@ -161,7 +161,7 @@ function registerIpcHandlers() {
   registerRecordIpc({
     ipcMain,
     shell,
-    environmentGateway: environmentBackend.environmentGateway,
+    backendGateway: backend.backendGateway,
     gameFileStore,
     beginRecordTracking,
     openGame,
@@ -174,7 +174,7 @@ function registerIpcHandlers() {
 
 app.whenReady().then(() => {
   registerSoundProtocol({ protocol, net, appOptions })
-  environmentBackend.backendProcess.onEvent((event) => {
+  backend.backendProcess.onEvent((event) => {
     if (event.type === 'record_changed') {
       markRecordDirty()
     }
@@ -199,5 +199,5 @@ app.on('window-all-closed', () => {
 })
 
 app.on('before-quit', () => {
-  environmentBackend.stopAll()
+  backend.stopAll()
 })

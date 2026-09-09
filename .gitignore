@@ -24,8 +24,8 @@ __pycache__/
 venv/
 
 # Models, checkpoints, and packaged engines are separate projects/releases.
-engines/
-models/
+/engines/
+/models/
 *.onnx
 *.ort
 *.pth

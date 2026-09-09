@@ -94,18 +94,29 @@ function testMissingExecutableMakesPackageUnavailable() {
 
 function testExternalEngineRootsFromEnvironment() {
   const externalRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-external-engine-'))
+  const legacyRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-legacy-engine-'))
   try {
     createPackage(externalRoot)
+    createPackage(legacyRoot, { ...customEngine(), id: 'third-party.legacy-engine' })
     const catalog = discoverEnginePackages({
       appDir: projectRoot,
       portableDir: projectRoot,
       resourceDir: projectRoot,
-      env: { MJAI_ENGINE_ROOTS: externalRoot },
+      env: { RMS_ENGINE_ROOTS: externalRoot, MJAI_ENGINE_ROOTS: legacyRoot },
     })
     assert.equal(catalog.engines[0].id, 'third-party.test-engine')
     assert.equal(catalog.engines[0].builtIn, false)
+
+    const legacyCatalog = discoverEnginePackages({
+      appDir: projectRoot,
+      portableDir: projectRoot,
+      resourceDir: projectRoot,
+      env: { MJAI_ENGINE_ROOTS: legacyRoot },
+    })
+    assert.equal(legacyCatalog.engines[0].id, 'third-party.legacy-engine')
   } finally {
     fs.rmSync(externalRoot, { recursive: true, force: true })
+    fs.rmSync(legacyRoot, { recursive: true, force: true })
   }
 }
 

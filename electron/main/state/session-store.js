@@ -113,38 +113,38 @@ function normalizeSnapshot(payload = {}) {
   }
 }
 
-function createSessionStore(environmentGateway) {
+function createSessionStore(backendGateway) {
   let snapshot = createInitialSnapshot()
 
   function cloneSnapshot() {
     return { ...snapshot }
   }
 
-  async function syncFromEnvironment(methodName, ...args) {
-    if (!environmentGateway || typeof environmentGateway[methodName] !== 'function') {
+  async function syncFromBackend(methodName, ...args) {
+    if (!backendGateway || typeof backendGateway[methodName] !== 'function') {
       return cloneSnapshot()
     }
 
-    const response = await environmentGateway[methodName](...args)
+    const response = await backendGateway[methodName](...args)
     snapshot = normalizeSnapshot(response?.state || {})
     return cloneSnapshot()
   }
 
   return {
     async getSnapshot() {
-      return syncFromEnvironment('getStatus')
+      return syncFromBackend('getStatus')
     },
     async createGame() {
-      return syncFromEnvironment('createGame')
+      return syncFromBackend('createGame')
     },
     async setMode(mode) {
-      return syncFromEnvironment('setMode', mode)
+      return syncFromBackend('setMode', mode)
     },
     async requestSeatSwitch(seat) {
-      return syncFromEnvironment('requestSeatSwitch', seat)
+      return syncFromBackend('requestSeatSwitch', seat)
     },
     async toggleVisibleHands() {
-      return syncFromEnvironment('toggleVisibleHands')
+      return syncFromBackend('toggleVisibleHands')
     },
   }
 }

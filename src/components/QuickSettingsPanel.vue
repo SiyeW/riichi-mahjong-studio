@@ -96,14 +96,16 @@
 import { computed, ref } from 'vue'
 import { vAdaptiveButtonGrid } from '../adaptiveButtonGrid'
 import { useI18n } from '../i18n'
+import type { StudioSettings } from '../contracts/settings'
+import type { StudioStatus } from '../contracts/runtime'
 
 const props = defineProps<{
-  mode: TrainerStatusSnapshot['mode']
+  mode: StudioStatus['mode']
   gameLoaded: boolean
   controlledSeat: number
   seatSwitchInFlight: boolean
   pendingSeatSwitchLabel: string
-  currentTrainingMode: TrainerSettings['training']['mode']
+  currentTrainingMode: StudioSettings['training']['mode']
   audioVolumeLabel: string
   audioVolumePercent: number
   audioVolumeValue: number
@@ -120,7 +122,7 @@ const emit = defineEmits<{
   'audio-input': [event: Event]
   'audio-change': [event: Event]
   'seat-switch': [seat: number, label: string]
-  'training-mode-change': [mode: TrainerSettings['training']['mode']]
+  'training-mode-change': [mode: StudioSettings['training']['mode']]
   'thinking-input': [event: Event]
   'thinking-change': [event: Event]
 }>()

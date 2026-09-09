@@ -99,15 +99,14 @@
 import { ref } from 'vue'
 import { useI18n } from '../i18n'
 import { useDecisionEntryPresentation } from '../useDecisionPresentation'
+import type { GameView } from '../contracts/game'
 
 const props = defineProps<{
-  gameView: TrainerGameView
+  gameView: GameView
   effectiveRecommendationsEnabled: boolean
   showRecommendations: boolean
   localizedEngineText: (value: string | Record<string, string> | undefined, fallback: string) => string
-  normalizeTileFamily: (tile: string) => string
   reactionTypeLabel: (type: string) => string
-  redFive: (tile: string) => string
   tileFaceLabel: (tile: string) => string
   tileImageSrc: (tile: string) => string
 }>()
@@ -126,8 +125,6 @@ const {
 } = useDecisionEntryPresentation({
   gameView: props.gameView,
   t,
-  normalizeTileFamily: props.normalizeTileFamily,
-  redFive: props.redFive,
   reactionTypeLabel: props.reactionTypeLabel,
 })
 </script>

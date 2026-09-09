@@ -62,12 +62,12 @@ const fields = computed(() => [
 ])
 
 async function refresh(showLoading = false) {
-  if (!window.trainerAPI?.exportCustomTenhou) return
+  if (!window.studioAPI?.exportCustomTenhou) return
   const generation = ++requestGeneration
   if (showLoading) loading.value = true
   errorMessage.value = ''
   try {
-    const result = await window.trainerAPI.exportCustomTenhou()
+    const result = await window.studioAPI.exportCustomTenhou()
     if (generation !== requestGeneration) return
     values.tenhou = result.tenhou || ''
     values.mortal = result.mortal || ''
@@ -90,8 +90,8 @@ function scheduleRefresh() {
 
 async function copyField(key: ExportFieldKey) {
   const value = values[key]
-  if (!value || !window.trainerAPI?.writeClipboardText) return
-  await window.trainerAPI.writeClipboardText(value)
+  if (!value || !window.studioAPI?.writeClipboardText) return
+  await window.studioAPI.writeClipboardText(value)
   copiedKey.value = key
   if (copiedTimer !== null) window.clearTimeout(copiedTimer)
   copiedTimer = window.setTimeout(() => {

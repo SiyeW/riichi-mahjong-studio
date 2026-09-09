@@ -1,4 +1,6 @@
-export function backendStoppedState(status: TrainerStatusSnapshot): TrainerStatusSnapshot {
+import type { StudioStatus } from './contracts/runtime'
+
+export function backendStoppedState(status: StudioStatus): StudioStatus {
   return {
     ...status,
     gameLoaded: false,

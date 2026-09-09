@@ -13,7 +13,7 @@ export function useOpponentAnalysisData(
 ) {
   const { seatPrediction } = useAnalysisOutputs(() => props.analysis)
   const formatting = createAnalysisFormatting(t, numberLocale)
-  const opponentCards = computed(() => props.shantenOpponents.map((opponent) => {
+  const opponentCards = computed(() => props.analysisOpponents.map((opponent) => {
     const dora = seatPrediction('opponent-dora-count', opponent.seat)
     const score = seatPrediction('opponent-score', opponent.seat)
     return {

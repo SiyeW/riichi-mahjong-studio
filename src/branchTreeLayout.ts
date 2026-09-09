@@ -40,7 +40,7 @@ interface HorizontalReservation {
 }
 
 export function branchTreeLayoutCacheKey(
-  nodes: TrainerTreeNode[],
+  nodes: GameTreeNode[],
   roundRootId: string,
   geometry: BranchTreeGeometry,
 ): string {
@@ -58,7 +58,7 @@ export function branchTreeLayoutCacheKey(
 }
 
 export function computeBranchTreeLayout(
-  nodes: TrainerTreeNode[],
+  nodes: GameTreeNode[],
   roundRootId: string,
   geometry: BranchTreeGeometry,
 ): BranchTreeStaticLayout {
@@ -285,3 +285,4 @@ export function computeBranchTreeLayout(
 
   return { dots, edges }
 }
+import type { GameTreeNode } from './contracts/game'

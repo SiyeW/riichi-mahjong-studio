@@ -1,13 +1,15 @@
 import { ref, type Ref } from 'vue'
+import type { GameAction, GameView } from './contracts/game'
+import type { BackendResponse, StudioStatus } from './contracts/runtime'
 
 interface UseGameplayActionsOptions {
-  gameView: TrainerGameView
-  status: TrainerStatusSnapshot
+  gameView: GameView
+  status: StudioStatus
   readOnlyRecord: Readonly<Ref<boolean>>
   prefetchReady: Readonly<Ref<boolean>>
-  applyStatus: (status: TrainerStatusSnapshot) => void
-  applyGameView: (view: TrainerGameView) => void
-  applyPlayPrefetchStatus: (prefetch?: TrainerEnvironmentResponse['playPrefetch']) => void
+  applyStatus: (status: StudioStatus) => void
+  applyGameView: (view: GameView) => void
+  applyPlayPrefetchStatus: (prefetch?: BackendResponse['playPrefetch']) => void
   beginPlayPrefetchAdvance: () => void
   scheduleAutoAdvance: () => void
 }
@@ -32,12 +34,12 @@ export function useGameplayActions(options: UseGameplayActionsOptions) {
   }
 
   async function discardTile(tile: string, fromDrawn = false) {
-    if (!window.trainerAPI || actionRequestInFlight.value || !isUserDiscard(tile, options.status.controlledSeat)) return
+    if (!window.studioAPI || actionRequestInFlight.value || !isUserDiscard(tile, options.status.controlledSeat)) return
     if (options.readOnlyRecord.value || options.status.mode !== 'play') return
     const requestGeneration = responseGeneration
     actionRequestInFlight.value = true
     try {
-      const response = await window.trainerAPI.submitUserAction({ type: 'dahai', pai: tile, fromDrawn })
+      const response = await window.studioAPI.submitUserAction({ type: 'dahai', pai: tile, fromDrawn })
       if (requestGeneration !== responseGeneration) return
       options.applyStatus(response.state)
       options.applyGameView(response.view)
@@ -47,8 +49,8 @@ export function useGameplayActions(options: UseGameplayActionsOptions) {
     }
   }
 
-  async function submitAction(action: TrainerAction) {
-    if (!window.trainerAPI || actionRequestInFlight.value || options.readOnlyRecord.value || options.status.mode !== 'play') return
+  async function submitAction(action: GameAction) {
+    if (!window.studioAPI || actionRequestInFlight.value || options.readOnlyRecord.value || options.status.mode !== 'play') return
     if (action.type === 'dahai') {
       await discardTile(action.pai || '', Boolean(action.tsumogiri))
       return
@@ -56,7 +58,7 @@ export function useGameplayActions(options: UseGameplayActionsOptions) {
     const requestGeneration = responseGeneration
     actionRequestInFlight.value = true
     try {
-      const response = await window.trainerAPI.submitUserAction({
+      const response = await window.studioAPI.submitUserAction({
         type: action.type,
         variant: action.variant,
         candidateId: action.candidateId || action.id,
@@ -71,12 +73,12 @@ export function useGameplayActions(options: UseGameplayActionsOptions) {
   }
 
   async function advanceGame() {
-    if (!window.trainerAPI || options.readOnlyRecord.value || advanceRequestInFlight.value || options.status.mode !== 'play') return
+    if (!window.studioAPI || options.readOnlyRecord.value || advanceRequestInFlight.value || options.status.mode !== 'play') return
     const requestGeneration = responseGeneration
     advanceRequestInFlight.value = true
     options.beginPlayPrefetchAdvance()
     try {
-      const response = await window.trainerAPI.advanceGame()
+      const response = await window.studioAPI.advanceGame()
       if (requestGeneration !== responseGeneration) return
       options.applyStatus(response.state)
       if (response.playPrefetch?.committed !== false) options.applyGameView(response.view)
@@ -88,9 +90,9 @@ export function useGameplayActions(options: UseGameplayActionsOptions) {
   }
 
   async function confirmPendingReview() {
-    if (!window.trainerAPI || options.readOnlyRecord.value || options.status.mode !== 'play') return
+    if (!window.studioAPI || options.readOnlyRecord.value || options.status.mode !== 'play') return
     const requestGeneration = responseGeneration
-    const response = await window.trainerAPI.confirmPendingReview()
+    const response = await window.studioAPI.confirmPendingReview()
     if (requestGeneration !== responseGeneration) return
     options.applyStatus(response.state)
     options.applyGameView(response.view)

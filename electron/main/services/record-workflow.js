@@ -21,7 +21,7 @@ function createRecordWorkflow({
   app,
   appOptions,
   dialog,
-  environmentGateway,
+  backendGateway,
   gameFileStore,
   getMainWindow,
   t,
@@ -57,7 +57,7 @@ function createRecordWorkflow({
       rememberPath = true,
     } = options
     const exportedRevision = gameFileStore.getRevision()
-    const response = await withCurrentRecord(gameFileStore, () => environmentGateway.exportGameRecord())
+    const response = await withCurrentRecord(gameFileStore, () => backendGateway.exportGameRecord())
     const record = prepareGameRecordForWrite(response.record, {
       appVersion: app.getVersion(),
       recovery,
@@ -105,7 +105,7 @@ function createRecordWorkflow({
 
   async function importGameRecordFile(filePath) {
     const record = decodeGameRecord(fs.readFileSync(filePath))
-    const response = await environmentGateway.importGameRecord(record)
+    const response = await backendGateway.importGameRecord(record)
     const isNativeRecord = isNativeRecordPath(filePath)
     const managedRecoveryRecord = gameFileStore.isRecoveryPath(filePath)
     const recoveryRecord = managedRecoveryRecord || isRecoveryGameRecord(record)

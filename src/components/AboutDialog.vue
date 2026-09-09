@@ -68,13 +68,13 @@ const emit = defineEmits<{ close: [] }>()
 const appVersion = String(packageJson.version || '')
 
 function openExternalLink(url: string) {
-  void window.trainerAPI?.openExternal(url).catch((error) => {
+  void window.studioAPI?.openExternal(url).catch((error) => {
     console.error('Failed to open external link:', error)
   })
 }
 
 function openLegalDocument(documentId: 'license' | 'thirdPartyNotices') {
-  void window.trainerAPI?.openAppLegalDocument(documentId).catch((error) => {
+  void window.studioAPI?.openAppLegalDocument(documentId).catch((error) => {
     console.error('Failed to open application legal document:', error)
   })
 }

@@ -26,7 +26,7 @@ npm ci
 .\setup-environment.ps1
 ```
 
-开发启动器会自动使用 `.conda-backend`。如需使用其他兼容的 Python 可执行文件，请在 `.vscode/launch.local.env` 中设置 `MJAI_BACKEND_PYTHON`。
+开发启动器会自动使用 `.conda-backend`。如需使用其他兼容的 Python 可执行文件，请在 `.vscode/launch.local.env` 中设置 `RMS_BACKEND_PYTHON`。
 
 #### 启动程序
 
@@ -43,14 +43,8 @@ npm run dev
 #### 运行检查
 
 ```powershell
-npm run type-check
-npm run build
-$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-  Select-Object -ExpandProperty FullName
-node --test $tests
-$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
-Remove-Item Env:PYTHONPATH
+npx playwright install chromium
+npm run check
 ```
 
 ### 构建 Windows 应用程序
@@ -61,7 +55,7 @@ Remove-Item Env:PYTHONPATH
 npm run build:backend:win
 ```
 
-输出目录：`release/backend/environment-service/`
+输出目录：`release/backend/rms-backend/`
 
 构建完整的 Windows 免安装目录版：
 
@@ -105,7 +99,7 @@ npm ci
 .\setup-environment.ps1
 ```
 
-開発ランチャーは `.conda-backend` を自動的に使用します。別の互換 Python 実行ファイルを使用する場合は、`.vscode/launch.local.env` に `MJAI_BACKEND_PYTHON` を設定してください。
+開発ランチャーは `.conda-backend` を自動的に使用します。別の互換 Python 実行ファイルを使用する場合は、`.vscode/launch.local.env` に `RMS_BACKEND_PYTHON` を設定してください。
 
 #### アプリケーションの起動
 
@@ -122,14 +116,8 @@ Vite 開発サーバーと Electron アプリケーションが同時に起動�
 #### チェックの実行
 
 ```powershell
-npm run type-check
-npm run build
-$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-  Select-Object -ExpandProperty FullName
-node --test $tests
-$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
-Remove-Item Env:PYTHONPATH
+npx playwright install chromium
+npm run check
 ```
 
 ### Windows アプリケーションのビルド
@@ -140,7 +128,7 @@ Python バックエンドだけをビルドする場合：
 npm run build:backend:win
 ```
 
-出力先：`release/backend/environment-service/`
+出力先：`release/backend/rms-backend/`
 
 展開済みの Windows アプリケーション全体をビルドする場合：
 
@@ -184,7 +172,7 @@ Backend development and packaging use a project-local environment:
 .\setup-environment.ps1
 ```
 
-The development launcher uses `.conda-backend` automatically. To override it, set `MJAI_BACKEND_PYTHON` in `.vscode/launch.local.env`.
+The development launcher uses `.conda-backend` automatically. To override it, set `RMS_BACKEND_PYTHON` in `.vscode/launch.local.env`.
 
 #### Run the application
 
@@ -201,14 +189,8 @@ Copy `.vscode/launch.local.env.example` to `.vscode/launch.local.env`, select `R
 #### Run the checks
 
 ```powershell
-npm run type-check
-npm run build
-$tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-  Select-Object -ExpandProperty FullName
-node --test $tests
-$env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-.\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
-Remove-Item Env:PYTHONPATH
+npx playwright install chromium
+npm run check
 ```
 
 ### Build the Windows application
@@ -219,7 +201,7 @@ Build the Python backend only:
 npm run build:backend:win
 ```
 
-Output: `release/backend/environment-service/`
+Output: `release/backend/rms-backend/`
 
 Build the complete unpacked Windows application:
 

@@ -40,7 +40,7 @@ async function downloadMortalReport(rawInput, { fetchImpl = fetch, t, timeoutMs 
 function registerRecordIpc({
   ipcMain,
   shell,
-  environmentGateway,
+  backendGateway,
   gameFileStore,
   beginRecordTracking,
   openGame,
@@ -68,7 +68,7 @@ function registerRecordIpc({
       gameFileStore,
       () => downloadReport(originalInput),
     )
-    const response = await environmentGateway.importMortalReport(report, sourceUrl, {
+    const response = await backendGateway.importMortalReport(report, sourceUrl, {
       sourceImportUrl: originalInput,
       reconstructWalls: Boolean(request.reconstructWalls),
       seed: request.seed,
@@ -85,7 +85,7 @@ function registerRecordIpc({
   })
   ipcMain.handle('game:import-custom-tenhou', async (event, payload) => {
     const request = typeof payload === 'string' ? { input: payload } : (payload || {})
-    const response = await environmentGateway.importCustomTenhou(request.input, {
+    const response = await backendGateway.importCustomTenhou(request.input, {
       reconstructWalls: Boolean(request.reconstructWalls),
       seed: request.seed,
     })
@@ -99,7 +99,7 @@ function registerRecordIpc({
     }
   })
   ipcMain.handle('game:export-custom-tenhou', async () => {
-    const response = await environmentGateway.exportCustomTenhou()
+    const response = await backendGateway.exportCustomTenhou()
     return response.customTenhou
   })
 }

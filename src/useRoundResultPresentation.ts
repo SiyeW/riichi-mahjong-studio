@@ -1,4 +1,6 @@
 import { computed } from 'vue'
+import type { GameView } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -138,8 +140,8 @@ function ceilToHundred(value: number): number {
 }
 
 export function useRoundResultPresentation(options: {
-  gameView: TrainerGameView
-  status: TrainerStatusSnapshot
+  gameView: GameView
+  status: StudioStatus
   t: Translate
   relativeSeatLabel: (seat: number) => string
 }) {

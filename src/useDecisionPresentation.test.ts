@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import type { GameView } from './contracts/game.ts'
 import { ref } from 'vue'
 import {
   useDecisionActionPresentation,
   useDecisionEntryPresentation,
 } from './useDecisionPresentation.ts'
+import type { GameAction } from './contracts/game.ts'
 
 function createFixture() {
   const gameView = {
@@ -22,29 +24,25 @@ function createFixture() {
       metricDefinitions: [{ id: 'score', format: 'points', preferredDirection: 'higher' }],
       primaryMetricId: 'score',
     },
-  } as unknown as TrainerGameView
+  } as unknown as GameView
   const showTrainingRecommendations = ref(true)
   const entry = useDecisionEntryPresentation({
     gameView,
     t: (key) => key,
-    normalizeTileFamily: (tile) => tile.replace(/r$/, ''),
-    redFive: (tile) => `red:${tile}`,
     reactionTypeLabel: (type) => `reaction:${type}`,
   })
-  const pass = { id: 'pass', candidateId: 'pass', type: 'none' } as TrainerAction
+  const pass = { id: 'pass', candidateId: 'pass', type: 'none' } as GameAction
   const discard = {
     id: 'discard',
     candidateId: 'discard',
     type: 'dahai',
     pai: '5m',
     tsumogiri: true,
-  } as TrainerAction
+  } as GameAction
   const action = useDecisionActionPresentation({
     gameView,
     showTrainingRecommendations,
     t: (key) => key,
-    normalizeTileFamily: (tile) => tile.replace(/r$/, ''),
-    redFive: (tile) => `red:${tile}`,
     getSpecialActions: () => [pass],
     getDiscardActions: () => [discard],
     getSouthHandDisplay: () => ['1m', '5m'],

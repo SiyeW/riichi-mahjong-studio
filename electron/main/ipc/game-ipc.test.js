@@ -9,7 +9,7 @@ function createFixture(overrides = {}) {
     calls.push([name, ...args])
     return { view: { currentNodeId: `${name}-node` }, ...extra }
   }
-  const environmentGateway = {
+  const backendGateway = {
     advanceGame: response('advanceGame'),
     closeGame: response('closeGame'),
     confirmPendingReview: response('confirmPendingReview'),
@@ -22,7 +22,7 @@ function createFixture(overrides = {}) {
     setMainBranch: response('setMainBranch'),
     setNodeComment: response('setNodeComment', { changed: true }),
     submitUserAction: response('submitUserAction'),
-    ...overrides.environmentGateway,
+    ...overrides.backendGateway,
   }
   const gameFileStore = {
     closeRecord: () => calls.push(['closeRecord']),
@@ -32,7 +32,7 @@ function createFixture(overrides = {}) {
   }
   registerGameIpc({
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
-    environmentGateway,
+    backendGateway,
     sessionStore: {
       createGame: response('createGame'),
       getSnapshot: () => ({ ready: true }),
@@ -74,7 +74,7 @@ test('game IPC registers the complete game session channel boundary', () => {
 test('game IPC projects game changes into record tracking without dirtying uncommitted prefetch', async () => {
   let advanceCount = 0
   const { calls, handlers } = createFixture({
-    environmentGateway: {
+    backendGateway: {
       advanceGame: async () => ({
         view: { currentNodeId: `advance-${++advanceCount}` },
         playPrefetch: { committed: advanceCount > 1 },

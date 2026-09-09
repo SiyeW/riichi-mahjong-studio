@@ -1,4 +1,8 @@
 import { computed, type Ref } from 'vue'
+import type { DecisionMetricDefinition } from './contracts/engines'
+import type { GameAction } from './contracts/game'
+import type { GameView } from './contracts/game'
+import { normalizeTileFamily, toRedFiveDisplayTile } from './tileNotation.ts'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -24,21 +28,17 @@ export function formatDelta(delta: number): string {
 }
 
 export function useDecisionEntryPresentation(options: {
-  gameView: TrainerGameView
+  gameView: GameView
   t: Translate
-  normalizeTileFamily: (tile: string) => string
-  redFive: (tile: string) => string
   reactionTypeLabel: (type: string) => string
 }) {
   const {
     gameView,
     t,
-    normalizeTileFamily,
-    redFive,
     reactionTypeLabel,
   } = options
 
-  function resolveSpecialEntry(action: TrainerAction) {
+  function resolveSpecialEntry(action: GameAction) {
     if (!gameView.analysis?.specialEntries?.length) return null
     const candidateId = action.candidateId || action.id
     const exactCandidate = gameView.analysis.specialEntries.find((entry) => (
@@ -53,7 +53,7 @@ export function useDecisionEntryPresentation(options: {
     }) || null
   }
 
-  function resolveReactionEntry(action: TrainerAction) {
+  function resolveReactionEntry(action: GameAction) {
     const entries = gameView.analysis?.reactionEntries || []
     if (!entries.length) return null
     const candidateId = action.candidateId || action.id
@@ -69,7 +69,7 @@ export function useDecisionEntryPresentation(options: {
     return sameType.length === 1 ? sameType[0] : null
   }
 
-  function resolveDiscardEntry(action: TrainerAction) {
+  function resolveDiscardEntry(action: GameAction) {
     const entries = gameView.analysis?.discardEntries || []
     const candidateId = action.candidateId || action.id
     const exactCandidate = entries.find((entry) => entry.candidateId === candidateId)
@@ -147,7 +147,7 @@ export function useDecisionEntryPresentation(options: {
       if (!tile) return []
       const family = normalizeTileFamily(tile)
       return family === '5m' || family === '5p' || family === '5s'
-        ? [redFive(family)]
+        ? [toRedFiveDisplayTile(family)]
         : [tile]
     }
     if (type === 'daiminkan' || type === 'kakan') {
@@ -157,7 +157,7 @@ export function useDecisionEntryPresentation(options: {
     return []
   }
 
-  const decisionMetricDefinitions = computed<TrainerDecisionMetricDefinition[]>(() => (
+  const decisionMetricDefinitions = computed<DecisionMetricDefinition[]>(() => (
     gameView.analysis?.metricDefinitions || []
   ))
 
@@ -202,7 +202,7 @@ export function useDecisionEntryPresentation(options: {
 
   function formatDecisionMetric(
     value: number | null | undefined,
-    metric: TrainerDecisionMetricDefinition,
+    metric: DecisionMetricDefinition,
   ): string {
     if (value == null || !Number.isFinite(value)) return '—'
     const displayedValue = metric.format === 'percentage' ? value * 100 : value
@@ -259,13 +259,11 @@ export function useDecisionEntryPresentation(options: {
 }
 
 export function useDecisionActionPresentation(options: {
-  gameView: TrainerGameView
+  gameView: GameView
   showTrainingRecommendations: Readonly<Ref<boolean>>
   t: Translate
-  normalizeTileFamily: (tile: string) => string
-  redFive: (tile: string) => string
-  getSpecialActions: () => TrainerAction[]
-  getDiscardActions: () => TrainerAction[]
+  getSpecialActions: () => GameAction[]
+  getDiscardActions: () => GameAction[]
   getSouthHandDisplay: () => string[]
   hasRecommendationAnalysis: () => boolean
   resolveSpecialEntry: ReturnType<typeof useDecisionEntryPresentation>['resolveSpecialEntry']
@@ -278,8 +276,6 @@ export function useDecisionActionPresentation(options: {
     gameView,
     showTrainingRecommendations,
     t,
-    normalizeTileFamily,
-    redFive,
     getSpecialActions,
     getDiscardActions,
     getSouthHandDisplay,
@@ -291,7 +287,7 @@ export function useDecisionActionPresentation(options: {
     resolveAnalysisEntryBar,
   } = options
 
-  function actionDisplayTiles(action: TrainerAction): string[] {
+  function actionDisplayTiles(action: GameAction): string[] {
     const consumed = [...(action.consumed || [])]
     if (action.type === 'ankan') {
       const tile = consumed.find((candidate) => candidate.endsWith('r'))
@@ -300,7 +296,7 @@ export function useDecisionActionPresentation(options: {
         || ''
       const family = normalizeTileFamily(tile)
       return family === '5m' || family === '5p' || family === '5s'
-        ? [redFive(family)]
+        ? [toRedFiveDisplayTile(family)]
         : [tile]
     }
     if (action.type === 'daiminkan' || action.type === 'kakan') {
@@ -311,23 +307,23 @@ export function useDecisionActionPresentation(options: {
     return consumed
   }
 
-  function resolveActionBar(action: TrainerAction): number {
+  function resolveActionBar(action: GameAction): number {
     if (action.type === 'dahai') return resolveAnalysisEntryBar(resolveDiscardEntry(action) || {})
     return resolveAnalysisEntryBar(resolveReactionEntry(action) || resolveSpecialEntry(action) || {})
   }
 
-  function findQuickPassAction(): TrainerAction | null {
+  function findQuickPassAction(): GameAction | null {
     return getSpecialActions().find((action) => action.type === 'none') || null
   }
 
-  function findQuickTsumogiriAction(): TrainerAction | null {
+  function findQuickTsumogiriAction(): GameAction | null {
     const hand = getSouthHandDisplay()
     if (!hand.length) return null
     const lastTile = hand[hand.length - 1]
     return getDiscardActions().find((action) => action.pai === lastTile) || null
   }
 
-  function formatActionValue(action: TrainerAction): string {
+  function formatActionValue(action: GameAction): string {
     if (action.type !== 'dahai') {
       const special = resolveSpecialEntry(action)
       if (special) return special.value.toFixed(3)
@@ -341,7 +337,7 @@ export function useDecisionActionPresentation(options: {
     return entry ? entry.value.toFixed(3) : '-'
   }
 
-  function resolveDisplayedActionBar(action: TrainerAction): number {
+  function resolveDisplayedActionBar(action: GameAction): number {
     if (!showTrainingRecommendations.value || !hasRecommendationAnalysis()) return 0
     return resolveActionBar(action)
   }
@@ -364,7 +360,7 @@ export function useDecisionActionPresentation(options: {
     return { transform: `scaleY(${1 - clampBarScale(value)})` }
   }
 
-  function isBestAction(action?: TrainerAction): boolean {
+  function isBestAction(action?: GameAction): boolean {
     if (!action) return false
     if (action.type === 'dahai') return analysisEntryIsBest(resolveDiscardEntry(action))
     return analysisEntryIsBest(resolveReactionEntry(action) || resolveSpecialEntry(action))

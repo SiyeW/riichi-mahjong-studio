@@ -3,7 +3,13 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
-const { buildPortableDefaultSettings, loadSettings, saveSettings } = require('./settings')
+const {
+  buildPortableDefaultSettings,
+  buildSettings,
+  loadSettings,
+  normalizeTrainingMode,
+  saveSettings,
+} = require('./settings')
 const { createDefaultDockLayout } = require('./workspace-layout')
 
 function expectedWorkspaceLayout({ legacyOrder, ...overrides } = {}) {
@@ -34,6 +40,37 @@ function testPortableDefaultsHaveNoEngines() {
   assert.equal(settings.display.language, 'system')
   assert.deepEqual(settings.display.workspaceLayout, expectedWorkspaceLayout())
   assert.equal('voice' in settings.audio, false)
+}
+
+function testCurrentConfigPathTakesPriorityAndLegacyNameRemainsCompatible() {
+  const settings = buildPortableDefaultSettings()
+  assert.equal(
+    buildSettings(settings, {
+      env: { RMS_BACKEND_CONFIG: 'current.json', MJAI_TRAINER_CONFIG: 'legacy.json' },
+    }).configPath,
+    'current.json',
+  )
+  assert.equal(
+    buildSettings(settings, { env: { MJAI_TRAINER_CONFIG: 'legacy.json' } }).configPath,
+    'legacy.json',
+  )
+}
+
+function testTrainingModesUseCurrentValuesAndMigrateLegacyNames() {
+  const expectations = {
+    no_review: 'no_review',
+    preview_before_click: 'preview_before_click',
+    threshold_review: 'threshold_review',
+    always_review: 'always_review',
+    free_play: 'preview_before_click',
+    guided: 'threshold_review',
+    strict: 'always_review',
+    unknown: 'threshold_review',
+  }
+  for (const [value, expected] of Object.entries(expectations)) {
+    assert.equal(normalizeTrainingMode(value), expected)
+  }
+  assert.equal(normalizeTrainingMode(undefined), 'threshold_review')
 }
 
 function testUserProfilePersists() {
@@ -195,6 +232,8 @@ function testSoundPackSelectionPersistsOnlyWhileAvailable() {
 }
 
 testPortableDefaultsHaveNoEngines()
+testCurrentConfigPathTakesPriorityAndLegacyNameRemainsCompatible()
+testTrainingModesUseCurrentValuesAndMigrateLegacyNames()
 testUserProfilePersists()
 testSoundPackSelectionPersistsOnlyWhileAvailable()
 testInvalidTablePositionUsesCenter()

@@ -5,17 +5,17 @@ const { registerAnalysisIpc } = require('./analysis-ipc')
 function fixture(cleared = {}) {
   const handlers = new Map()
   let dirtyCalls = 0
-  const environmentGateway = {
+  const backendGateway = {
     setAnalysisVisibility: async (value) => ({ value }),
-    getShanten: async () => 'shanten',
-    getShantenMjai: async () => 'mjai',
+    getAnalysis: async () => 'analysis',
+    getAnalysisDebug: async () => 'debug',
     clearAnalysisCaches: async () => ({ cleared }),
     startAutoAnalysis: async () => 'started',
     cancelAutoAnalysis: async () => 'canceled',
   }
   registerAnalysisIpc({
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
-    environmentGateway,
+    backendGateway,
     markRecordDirty: () => { dirtyCalls += 1 },
   })
   return { dirtyCalls: () => dirtyCalls, handlers }
@@ -26,10 +26,10 @@ test('analysis IPC registers the complete analysis channel boundary', () => {
   assert.deepEqual([...handlers.keys()].sort(), [
     'analysis:auto-cancel',
     'analysis:auto-start',
+    'analysis:get',
     'analysis:visibility',
+    'debug:analysis',
     'debug:clear-analysis-caches',
-    'debug:shanten-mjai',
-    'game:shanten',
   ])
 })
 

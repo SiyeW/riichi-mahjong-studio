@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { resolveActionAnnouncementText } from './useActionAnnouncement.ts'
+import type { GameTreeNode } from './contracts/game.ts'
 
 const t = (key: string) => key
-const node = (action: Record<string, unknown> | null) => ({ action }) as TrainerTreeNode
+const node = (action: Record<string, unknown> | null) => ({ action }) as GameTreeNode
 
 test('action announcement labels calls and riichi', () => {
   assert.equal(resolveActionAnnouncementText(node({ type: 'reach' }), t), 'action.riichi')

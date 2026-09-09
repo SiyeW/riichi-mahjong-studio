@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { playPrefetchPositionKey, usePlayPrefetch } from './usePlayPrefetch.ts'
+import type { BackendResponse } from './contracts/runtime.ts'
 
 test('prefetch position keys require both game and node identity', () => {
   assert.equal(playPrefetchPositionKey('game', 'node'), 'game\u0000node')
@@ -19,7 +20,7 @@ test('an early ready event is retained for its position and consumed by the matc
   prefetch.markPlayPrefetchReady('game', 'next')
   assert.equal(prefetch.playPrefetchReady.value, false)
   current.nodeId = 'next'
-  prefetch.applyPlayPrefetchStatus({ ready: false, waiting: true } as TrainerEnvironmentResponse['playPrefetch'])
+  prefetch.applyPlayPrefetchStatus({ ready: false, waiting: true } as BackendResponse['playPrefetch'])
   assert.equal(prefetch.playPrefetchReady.value, true)
   assert.equal(prefetch.playPrefetchWaiting.value, false)
   assert.equal(changes, 1)
@@ -38,7 +39,7 @@ test('the current ready event updates immediately and advancement consumes it', 
   assert.equal(changes, 1)
   prefetch.beginPlayPrefetchAdvance()
   assert.equal(prefetch.playPrefetchReady.value, false)
-  prefetch.applyPlayPrefetchStatus({ ready: false, waiting: true } as TrainerEnvironmentResponse['playPrefetch'])
+  prefetch.applyPlayPrefetchStatus({ ready: false, waiting: true } as BackendResponse['playPrefetch'])
   assert.equal(prefetch.playPrefetchReady.value, false)
   assert.equal(prefetch.playPrefetchWaiting.value, true)
 })
@@ -50,7 +51,7 @@ test('reset discards queued readiness and clears the current status', () => {
     onCurrentStatusChanged: () => {},
   })
   prefetch.markPlayPrefetchReady('game', 'next')
-  prefetch.applyPlayPrefetchStatus({ ready: true, waiting: false } as TrainerEnvironmentResponse['playPrefetch'])
+  prefetch.applyPlayPrefetchStatus({ ready: true, waiting: false } as BackendResponse['playPrefetch'])
   prefetch.resetPlayPrefetch()
   current.nodeId = 'next'
   prefetch.activatePlayPrefetchPosition('game', 'next')

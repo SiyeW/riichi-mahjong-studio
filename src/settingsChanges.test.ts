@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { settingsChanges, mergeSettingsReply } from './settingsChanges.ts'
-import { normalizeWorkspaceLayout } from './workspaceSettings.ts'
+import { normalizeWorkspaceLayout } from './workspace/settings.ts'
+import type { StudioSettings } from './contracts/settings.ts'
 
-function fixture(): TrainerSettings {
+function fixture(): StudioSettings {
   return {
     configPath: '',
     training: { mode: 'threshold_review', mistakeThreshold: 0.25, thinkingTimeMinS: 0.25, thinkingTimeMaxS: 1 },

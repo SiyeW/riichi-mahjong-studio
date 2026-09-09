@@ -1,9 +1,11 @@
 import { computed, reactive, ref, watchEffect } from 'vue'
 import { settingsChanges, mergeSettingsReply } from './settingsChanges'
 import { normalizeLanguagePreference, setLanguagePreference } from './i18n'
-import { normalizeWorkspaceLayout } from './workspaceSettings'
+import { normalizeWorkspaceLayout } from './workspace/settings'
 import { DEFAULT_ANALYSIS_COUNT_LAYOUT, type AnalysisCountLayout } from './analysisCountSpacing'
 import { mostDistinctOklabColor, parseCssColor, type RgbColor } from './perceptualColor'
+import type { StudioSettings } from './contracts/settings'
+import { normalizeTrainingMode } from './trainingSettings.ts'
 import {
   DEFAULT_PERCEPTUAL_SURFACE_TUNING,
   PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
@@ -14,8 +16,8 @@ import {
 } from './perceptualSurface'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
-type ColorSchemeId = TrainerSettings['display']['colorScheme']
-type TablePosition = TrainerSettings['display']['tablePosition']
+type ColorSchemeId = StudioSettings['display']['colorScheme']
+type TablePosition = StudioSettings['display']['tablePosition']
 
 export function useSettingsSession(t: Translate) {
   const DEFAULT_SHANTEN_COLORS = [
@@ -60,7 +62,7 @@ export function useSettingsSession(t: Translate) {
     return value === 'left' || value === 'right' ? value : 'center'
   }
 
-  const settings = reactive<TrainerSettings>({
+  const settings = reactive<StudioSettings>({
     configPath: '',
     runtime: {
       releaseMode: false,
@@ -190,7 +192,7 @@ export function useSettingsSession(t: Translate) {
     document.documentElement.classList.toggle('reduce-motion', reduceMotionEnabled.value)
   })
 
-  const settingsDraft = reactive<TrainerSettings>(JSON.parse(JSON.stringify(settings)))
+  const settingsDraft = reactive<StudioSettings>(JSON.parse(JSON.stringify(settings)))
   const mistakeThresholdDisplay = computed({
     get: () => Math.round(Math.max(0, Math.min(1, settingsDraft.training.mistakeThreshold)) * 100),
     set: (value: number) => {
@@ -226,20 +228,7 @@ export function useSettingsSession(t: Translate) {
   const quickMinThinkingLabel = computed(() => `${settings.training.thinkingTimeMinS.toFixed(2)}s`)
   const quickAutoAdvanceLabel = computed(() => `${(settings.modeDefaults.autoAdvanceDelayMs / 1000).toFixed(2)}s`)
 
-  function normalizeTrainingMode(mode: string): TrainerSettings['training']['mode'] {
-    const MAP: Record<string, TrainerSettings['training']['mode']> = {
-      no_review: 'no_review',
-      free_play: 'preview_before_click',
-      guided: 'threshold_review',
-      strict: 'always_review',
-      preview_before_click: 'preview_before_click',
-      threshold_review: 'threshold_review',
-      always_review: 'always_review',
-    }
-    return MAP[String(mode || '')] || 'threshold_review'
-  }
-
-  function applySettings(nextSettings: TrainerSettings) {
+  function applySettings(nextSettings: StudioSettings) {
     Object.assign(settings, nextSettings)
     Object.assign(settings.training, nextSettings.training, {
       mode: normalizeTrainingMode(nextSettings.training.mode),
@@ -264,11 +253,11 @@ export function useSettingsSession(t: Translate) {
   }
 
 
-  let settingsPanelBaseline: TrainerSettings | null = null
+  let settingsPanelBaseline: StudioSettings | null = null
 
   function openSettingsPanel() {
     cloneSettingsDraftFromCurrent()
-    settingsPanelBaseline = JSON.parse(JSON.stringify(settings)) as TrainerSettings
+    settingsPanelBaseline = JSON.parse(JSON.stringify(settings)) as StudioSettings
     showSettingsPanel.value = true
   }
 
@@ -277,7 +266,7 @@ export function useSettingsSession(t: Translate) {
   }
 
   async function saveSettingsPanel() {
-    if (!window.trainerAPI) return
+    if (!window.studioAPI) return
     settingsDraft.display.language = normalizeLanguagePreference(settingsDraft.display.language)
     settingsDraft.display.colorScheme = normalizeColorScheme(settingsDraft.display.colorScheme)
     settingsDraft.display.uiScale = normalizeUiScale(settingsDraft.display.uiScale)
@@ -288,9 +277,9 @@ export function useSettingsSession(t: Translate) {
       Math.min(1, Number(settingsDraft.training.mistakeThreshold) || 0),
     )
     const baseline = settingsPanelBaseline
-    const submitted = JSON.parse(JSON.stringify(settingsDraft)) as TrainerSettings
+    const submitted = JSON.parse(JSON.stringify(settingsDraft)) as StudioSettings
     const patch = settingsChanges(baseline || settings, submitted)
-    const saved = await window.trainerAPI.saveSettings(patch)
+    const saved = await window.studioAPI.saveSettings(patch)
     applySettings(mergeSettingsReply(settings, saved, patch))
     if (settingsPanelBaseline === baseline) {
       settingsPanelBaseline = submitted
@@ -298,17 +287,17 @@ export function useSettingsSession(t: Translate) {
     }
   }
 
-  async function saveQuickSettings(mutator: (draft: TrainerSettings) => void) {
-    if (!window.trainerAPI) return
-    const next = JSON.parse(JSON.stringify(settings)) as TrainerSettings
+  async function saveQuickSettings(mutator: (draft: StudioSettings) => void) {
+    if (!window.studioAPI) return
+    const next = JSON.parse(JSON.stringify(settings)) as StudioSettings
     mutator(next)
     next.training.mode = normalizeTrainingMode(next.training.mode)
     const patch = settingsChanges(settings, next)
-    const saved = await window.trainerAPI.saveSettings(patch)
+    const saved = await window.studioAPI.saveSettings(patch)
     applySettings(mergeSettingsReply(settings, saved, patch))
   }
 
-  async function setQuickTrainingMode(mode: TrainerSettings['training']['mode']) {
+  async function setQuickTrainingMode(mode: StudioSettings['training']['mode']) {
     if (currentTrainingMode.value === mode) return
     await saveQuickSettings((next) => {
       next.training.mode = mode
@@ -366,7 +355,7 @@ export function useSettingsSession(t: Translate) {
     settings.display.uiScale = next
     if (showSettingsPanel.value) settingsDraft.display.uiScale = next
     try {
-      await window.trainerAPI?.saveSettings({
+      await window.studioAPI?.saveSettings({
         display: { uiScale: next },
       })
     } catch (error) {
@@ -404,7 +393,6 @@ export function useSettingsSession(t: Translate) {
     quickAudioVolumeLabel,
     quickMinThinkingLabel,
     quickAutoAdvanceLabel,
-    normalizeTrainingMode,
     applySettings,
     cloneSettingsDraftFromCurrent,
     openSettingsPanel,

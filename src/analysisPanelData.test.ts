@@ -13,7 +13,7 @@ function fixture(analysis: AnalysisRecord | null = null) {
     analysis,
     controlledSeat: 0,
     dealer: 0,
-    shantenOpponents: [
+    analysisOpponents: [
       { key: 'kamicha', seat: 3, label: 'Upper', probabilities: [] },
       { key: 'toimen', seat: 2, label: 'Across', probabilities: [] },
       { key: 'shimocha', seat: 1, label: 'Lower', probabilities: [] },

@@ -3,7 +3,7 @@
   "version": "1.0.0-dev.0",
   "private": true,
   "author": "SiyeWu",
-  "description": "Local desktop Riichi Mahjong practice trainer with branching game records.",
+  "description": "Desktop application for reviewing riichi mahjong game records and practicing against engines.",
   "main": "electron/main/index.js",
   "engines": {
     "node": ">=22"
@@ -19,7 +19,12 @@
     "package:win": "npm run build:backend:win && npm run build && npm run collect:licenses && electron-builder --win dir",
     "package:release:win": "npm run package:win && powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/prepare-release.ps1",
     "type-check": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
+    "test": "npm run test:node && npm run test:python",
+    "test:node": "node scripts/test-node.mjs",
+    "test:python": "node scripts/test-python.mjs",
     "test:ui": "node scripts/check-analysis-ui.mjs",
+    "check:dependencies": "node scripts/check-dependency-cycles.mjs",
+    "check": "npm run check:dependencies && npm test && npm run build && npm run test:ui",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -60,8 +65,8 @@
     },
     "extraResources": [
       {
-        "from": "release/backend/environment-service",
-        "to": "backend/environment-service"
+        "from": "release/backend/rms-backend",
+        "to": "backend/rms-backend"
       },
       {
         "from": "THIRD_PARTY_NOTICES.md",

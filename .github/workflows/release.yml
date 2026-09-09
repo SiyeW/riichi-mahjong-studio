@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   windows:
+    name: Release build (Windows)
     runs-on: windows-latest
 
     steps:
@@ -49,24 +50,14 @@ jobs:
       - name: Install Node.js dependencies
         run: npm ci
 
-      - name: Run backend tests
-        shell: pwsh
-        run: |
-          $env:PYTHONPATH = (Resolve-Path 'python\environment').Path
-          .\.conda-backend\python.exe -m unittest discover -s python\environment -p 'test_*.py'
+      - name: Install Chromium for renderer tests
+        run: npx playwright install chromium
 
-      - name: Run Electron tests
-        shell: pwsh
-        run: |
-          $tests = Get-ChildItem -LiteralPath electron -Filter '*.test.js' -Recurse |
-            Select-Object -ExpandProperty FullName
-          node --test $tests
+      - name: Run project checks
+        run: npm run check
 
       - name: Build backend
         run: npm run build:backend:win
-
-      - name: Build renderer
-        run: npm run build
 
       - name: Collect third-party licenses
         run: npm run collect:licenses

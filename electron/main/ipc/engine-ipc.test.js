@@ -44,7 +44,7 @@ function createFixture(reloadEngine) {
     ipcMain: { handle: (name, handler) => handlers.set(name, handler) },
     appOptions,
     projectRoot: root,
-    environmentGateway: {
+    backendGateway: {
       reloadEngine,
       unloadEngine: async () => ({ state: null }),
       describeEngine: async () => ({ description: {} }),

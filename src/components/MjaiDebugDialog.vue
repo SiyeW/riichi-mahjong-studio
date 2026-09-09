@@ -26,7 +26,7 @@
       </div>
       <pre class="mjai-debug-pre">{{ debugJson }}</pre>
       <div class="mjai-debug-section-label">{{ t('debug.shantenModel') }}</div>
-      <pre class="mjai-debug-pre">{{ shantenJson }}</pre>
+      <pre class="mjai-debug-pre">{{ analysisJson }}</pre>
       <div class="mjai-debug-status">{{ shantenStatus }}</div>
       <pre v-if="hasShantenRawData" class="mjai-debug-pre">{{ shantenRawJson }}</pre>
     </section>
@@ -43,7 +43,7 @@ defineProps<{
   debugJson: string
   gameLoaded: boolean
   hasShantenRawData: boolean
-  shantenJson: string
+  analysisJson: string
   shantenRawJson: string
   shantenStatus: string
 }>()

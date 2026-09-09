@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { soundActionSignature, soundEventsForTransition, type SoundTransitionView } from './useSoundTransitions.ts'
+import type { GameAction, GameView } from './contracts/game.ts'
 
 function view(overrides: Partial<SoundTransitionView> = {}): SoundTransitionView {
   return {
-    table: { lastAction: null } as TrainerGameView['table'],
+    table: { lastAction: null } as GameView['table'],
     legalActions: [],
     pendingReview: null,
     ...overrides,
@@ -26,18 +27,18 @@ test('sound action signatures distinguish the action fields used by playback', (
 
 test('sound transitions report confirmations and new table actions in order', () => {
   const previous = view({
-    table: { pendingDiscard: { actor: 0 }, lastAction: null } as TrainerGameView['table'],
+    table: { pendingDiscard: { actor: 0 }, lastAction: null } as GameView['table'],
   })
   const next = view({
-    table: { pendingDiscard: null, lastAction: { type: 'pon', actor: 1 } } as TrainerGameView['table'],
+    table: { pendingDiscard: null, lastAction: { type: 'pon', actor: 1 } } as GameView['table'],
   })
   assert.deepEqual(soundEventsForTransition(previous, next, context), ['action.confirmed', 'call.pon'])
 })
 
 test('sound transitions classify ron and tsumo from the action target', () => {
   const previous = view()
-  const ron = view({ table: { lastAction: { type: 'hora', actor: 1, target: 2 } } as TrainerGameView['table'] })
-  const tsumo = view({ table: { lastAction: { type: 'hora', actor: 1, target: 1 } } as TrainerGameView['table'] })
+  const ron = view({ table: { lastAction: { type: 'hora', actor: 1, target: 2 } } as GameView['table'] })
+  const tsumo = view({ table: { lastAction: { type: 'hora', actor: 1, target: 1 } } as GameView['table'] })
   assert.deepEqual(soundEventsForTransition(previous, ron, context), ['win.ron'])
   assert.deepEqual(soundEventsForTransition(previous, tsumo, context), ['win.tsumo'])
 })
@@ -45,9 +46,9 @@ test('sound transitions classify ron and tsumo from the action target', () => {
 test('sound transitions report newly required choices, reviews, and results', () => {
   const previous = view()
   const next = view({
-    table: { lastAction: null, resultInfo: { type: 'ryukyoku' } } as unknown as TrainerGameView['table'],
-    legalActions: [{ type: 'pon' } as TrainerAction],
-    pendingReview: {} as TrainerGameView['pendingReview'],
+    table: { lastAction: null, resultInfo: { type: 'ryukyoku' } } as unknown as GameView['table'],
+    legalActions: [{ type: 'pon' } as GameAction],
+    pendingReview: {} as GameView['pendingReview'],
   })
   assert.deepEqual(soundEventsForTransition(previous, next, context), [
     'action.required',
@@ -58,7 +59,7 @@ test('sound transitions report newly required choices, reviews, and results', ()
 
 test('sound transitions remain silent while blocked, booting a new game, or missing table state', () => {
   const previous = view()
-  const next = view({ table: { lastAction: { type: 'dahai', actor: 0, pai: '1m' } } as TrainerGameView['table'] })
+  const next = view({ table: { lastAction: { type: 'dahai', actor: 0, pai: '1m' } } as GameView['table'] })
   assert.deepEqual(soundEventsForTransition(previous, next, { ...context, blocked: true }), [])
   assert.deepEqual(soundEventsForTransition(previous, next, { ...context, isNewGame: true }), [])
   assert.deepEqual(soundEventsForTransition({ ...previous, table: null }, next, context), [])

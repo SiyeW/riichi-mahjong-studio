@@ -1,4 +1,4 @@
-.unified-analysis {
+.analysis-panel-content {
   --analysis-border: rgba(140, 195, 188, 0.16);
   position: relative;
   width: 100%;
@@ -7,13 +7,13 @@
   font-size: var(--ui-text-body);
 }
 
-.unified-analysis.is-opponent-section,
-.unified-analysis.is-risk-section,
-.unified-analysis.is-count-section {
+.analysis-panel-content.is-opponent-section,
+.analysis-panel-content.is-risk-section,
+.analysis-panel-content.is-count-section {
   height: 100%;
 }
 
-.unified-analysis button {
+.analysis-panel-content button {
   font: inherit;
 }
 

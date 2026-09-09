@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { applyModelActivityEvent } from './modelActivityEvent.ts'
+import type { StudioStatus } from './contracts/runtime.ts'
 
-function statusFixture(): TrainerStatusSnapshot {
+function statusFixture(): StudioStatus {
   return {
     modelActivity: {
       decision: ['idle', 'idle', 'idle', 'idle'],
@@ -14,7 +15,7 @@ function statusFixture(): TrainerStatusSnapshot {
       decision: { profileId: '', ready: false, unloaded: true },
       opponentAnalysis: { profileId: '', ready: false, unloaded: true },
     },
-  } as TrainerStatusSnapshot
+  } as StudioStatus
 }
 
 test('decision activity updates only the addressed seat and preserves opponent state', () => {

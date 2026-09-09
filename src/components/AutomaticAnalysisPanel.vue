@@ -27,10 +27,11 @@
 <script setup lang="ts">
 import { useAutomaticAnalysis } from '../useAutomaticAnalysis'
 import { useI18n } from '../i18n'
+import type { StudioStatus } from '../contracts/runtime'
 
 const props = defineProps<{
-  status: TrainerStatusSnapshot
-  applyStatus: (status: TrainerStatusSnapshot) => void
+  status: StudioStatus
+  applyStatus: (status: StudioStatus) => void
 }>()
 
 const { t } = useI18n()

@@ -1,10 +1,12 @@
 import type { TranslationParams } from './i18n'
+import type { GameAction, GameView } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 
 type Translate = (key: string, params?: TranslationParams) => string
 
 export function useMahjongPresentationLabels(options: {
-  gameView: TrainerGameView
-  status: TrainerStatusSnapshot
+  gameView: GameView
+  status: StudioStatus
   t: Translate
 }) {
   const { gameView, status, t } = options
@@ -91,7 +93,7 @@ export function useMahjongPresentationLabels(options: {
     return knownLabels[reasonLabel] || reasonLabel
   }
 
-  function specialActionLabel(action: TrainerAction): string {
+  function specialActionLabel(action: GameAction): string {
     if (action.type === 'hora') return action.variant === 'tsumo' ? t('action.tsumo') : t('action.ron')
     if (action.type === 'ryukyoku') return ryukyokuActionLabel(action as unknown as Record<string, unknown>)
     if (action.type === 'reach') return t('action.riichi')
@@ -100,17 +102,6 @@ export function useMahjongPresentationLabels(options: {
     if (action.type === 'pon') return t('action.pon')
     if (action.type === 'daiminkan' || action.type === 'ankan' || action.type === 'kakan') return t('action.kan')
     return reactionTypeLabel(action.type)
-  }
-
-  function normalizeTileFamily(tile: string): string {
-    return String(tile).replace('5mr', '5m').replace('5pr', '5p').replace('5sr', '5s').replace(/r$/, '')
-  }
-
-  function redFive(tile: string): string {
-    if (tile === '5m') return '0m'
-    if (tile === '5p') return '0p'
-    if (tile === '5s') return '0s'
-    return tile
   }
 
   return {
@@ -122,8 +113,6 @@ export function useMahjongPresentationLabels(options: {
     reactionTypeLabel,
     ryukyokuActionLabel,
     specialActionLabel,
-    normalizeTileFamily,
-    redFive,
   }
 }
 

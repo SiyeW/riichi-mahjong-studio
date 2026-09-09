@@ -15,7 +15,7 @@ function registerFixture(overrides = {}) {
   registerRecordIpc({
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
     shell: { showItemInFolder: (filePath) => calls.push(['showItemInFolder', filePath]) },
-    environmentGateway: {
+    backendGateway: {
       exportCustomTenhou: async () => ({ customTenhou: 'exported' }),
       importCustomTenhou: async (...args) => {
         calls.push(['importCustomTenhou', ...args])

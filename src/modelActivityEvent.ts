@@ -1,12 +1,13 @@
-import { normalizeModelActivityState } from './engineStatusItems.ts'
+import { normalizeModelActivityState } from './engines/engineStatusItems.ts'
+import type { PythonEvent, StudioStatus } from './contracts/runtime'
 
 export interface ModelActivityEventResult {
   opponentFailed: boolean
 }
 
 export function applyModelActivityEvent(
-  status: TrainerStatusSnapshot,
-  event: TrainerPythonEvent,
+  status: StudioStatus,
+  event: PythonEvent,
   unknownError: string,
 ): ModelActivityEventResult {
   const activityState = normalizeModelActivityState(event.activityState ?? event.active)

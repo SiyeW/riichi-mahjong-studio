@@ -1,9 +1,10 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
+import type { RuntimeMetrics } from './contracts/runtime'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
 export function useRuntimeMetrics(t: Translate) {
-  const runtimeMetrics = ref<TrainerRuntimeMetrics | null>(null)
+  const runtimeMetrics = ref<RuntimeMetrics | null>(null)
   let runtimeMetricsTimer: number | null = null
   let runtimeMetricsRequestInFlight = false
 
@@ -36,10 +37,10 @@ export function useRuntimeMetrics(t: Translate) {
   ))
 
   async function refreshRuntimeMetrics() {
-    if (!window.trainerAPI?.getRuntimeMetrics || runtimeMetricsRequestInFlight) return
+    if (!window.studioAPI?.getRuntimeMetrics || runtimeMetricsRequestInFlight) return
     runtimeMetricsRequestInFlight = true
     try {
-      runtimeMetrics.value = await window.trainerAPI.getRuntimeMetrics()
+      runtimeMetrics.value = await window.studioAPI.getRuntimeMetrics()
     } catch {
       // Keep the last successful sample while the backend or application is restarting.
     } finally {

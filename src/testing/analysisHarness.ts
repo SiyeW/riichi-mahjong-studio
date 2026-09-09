@@ -1,4 +1,7 @@
 import type { AnalysisCountLayout } from '../analysisCountSpacing'
+import type { StudioSettings } from '../contracts/settings'
+import type { GameView } from '../contracts/game'
+import type { PythonEvent, StudioStatus } from '../contracts/runtime'
 
 // Explicit fixture controls for the isolated renderer. This module is only
 // installed in Vite's ui-test mode, never in the desktop application.
@@ -7,10 +10,10 @@ export interface AnalysisTestApi {
   readonly recordPath: string
   saveGame: () => Promise<void>
   saveGameAs: () => Promise<void>
-  status: TrainerStatusSnapshot
-  gameView: TrainerGameView
-  settings: TrainerSettings
-  readonly workspaceLayout: TrainerSettings['display']['workspaceLayout']
+  status: StudioStatus
+  gameView: GameView
+  settings: StudioSettings
+  readonly workspaceLayout: StudioSettings['display']['workspaceLayout']
   analysisCountLayout: AnalysisCountLayout
   readonly showPerceptualColorDebugger: boolean
   readonly bootstrapError: string
@@ -20,8 +23,8 @@ export interface AnalysisTestApi {
   readonly wallTiles: Array<{ index: number; tile: string; status: string }>
   readonly showEngineWindow: boolean
   showMjaiDebug: boolean
-  handlePythonEvent: (event: TrainerPythonEvent) => void
-  fetchShantenOnce: () => Promise<void>
+  handlePythonEvent: (event: PythonEvent) => void
+  fetchAnalysisOnce: () => Promise<void>
   jumpToNode: (nodeId: string) => Promise<void>
   toggleAnalysisDock: () => void
   clearLoadedAnalysisCaches: () => Promise<void>

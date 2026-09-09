@@ -1,12 +1,13 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { TranslationParams } from './i18n'
+import type { StudioStatus } from './contracts/runtime'
 
 type Translate = (key: string, params?: TranslationParams) => string
 
 interface UseAutomaticAnalysisOptions {
-  status: TrainerStatusSnapshot
+  status: StudioStatus
   t: Translate
-  applyStatus: (status: TrainerStatusSnapshot) => void
+  applyStatus: (status: StudioStatus) => void
 }
 
 export function autoAnalysisLineColor(state: string): string | null {
@@ -108,12 +109,12 @@ export function useAutomaticAnalysis(options: UseAutomaticAnalysisOptions) {
 
   watch(autoAnalysisTimeline, scheduleAutoAnalysisCanvasDraw)
   async function toggleAutoAnalysis() {
-    if (!window.trainerAPI || !status.gameLoaded || autoAnalysisRequestInFlight.value) return
+    if (!window.studioAPI || !status.gameLoaded || autoAnalysisRequestInFlight.value) return
     autoAnalysisRequestInFlight.value = true
     try {
       const response = autoAnalysisRunning.value
-        ? await window.trainerAPI.cancelAutoAnalysis()
-        : await window.trainerAPI.startAutoAnalysis()
+        ? await window.studioAPI.cancelAutoAnalysis()
+        : await window.studioAPI.startAutoAnalysis()
       applyStatus(response.state)
     } catch (error) {
       status.autoAnalysis = {

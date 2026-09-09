@@ -7,9 +7,13 @@ import {
 import { RON_WAIT_OPPONENT_KEYS, tile34Index } from './analysisTiles'
 import { buildTableActionNodeIndex } from './tableHistoryNavigation'
 import type { MahjongPresentationLabels } from './useMahjongPresentationLabels'
+import type { StudioSettings } from './contracts/settings'
+import type { GameAction, GameTreeNode, GameView } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
+import { normalizeTileFamily, toRedFiveDisplayTile } from './tileNotation.ts'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
-type DiscardEntry = NonNullable<TrainerGameView['analysis']>['discardEntries'][number]
+type DiscardEntry = NonNullable<GameView['analysis']>['discardEntries'][number]
 
 export interface DiscardBarSlot {
   tile: string
@@ -51,15 +55,15 @@ export interface TableSeatView {
 }
 
 export function useTablePresentation(options: {
-  gameView: TrainerGameView
-  status: TrainerStatusSnapshot
-  currentTrainingMode: Readonly<Ref<TrainerSettings['training']['mode']>>
+  gameView: GameView
+  status: StudioStatus
+  currentTrainingMode: Readonly<Ref<StudioSettings['training']['mode']>>
   ronWaitPredData: Readonly<Ref<Record<string, number[]>>>
   t: Translate
   labels: MahjongPresentationLabels
-  resolveDiscardEntry: (action: TrainerAction) => DiscardEntry | null
+  resolveDiscardEntry: (action: GameAction) => DiscardEntry | null
   analysisEntryIsBest: (entry: DiscardEntry | null) => boolean
-  getNodeMapById: () => ReadonlyMap<string, TrainerTreeNode>
+  getNodeMapById: () => ReadonlyMap<string, GameTreeNode>
   jumpToNode: (nodeId: string) => Promise<void>
 }) {
   const {
@@ -84,8 +88,6 @@ export function useTablePresentation(options: {
     reactionTypeLabel,
     ryukyokuActionLabel,
     specialActionLabel,
-    normalizeTileFamily,
-    redFive,
   } = labels
 
 
@@ -155,7 +157,7 @@ export function useTablePresentation(options: {
     none: Number.MAX_SAFE_INTEGER,
   }
 
-  function chiSequenceStart(action: TrainerAction): number {
+  function chiSequenceStart(action: GameAction): number {
     const numbers = [action.pai, ...(action.consumed || [])]
       .filter((tile): tile is string => Boolean(tile))
       .map((tile) => Number(normalizeTileFamily(tile)[0]))
@@ -163,7 +165,7 @@ export function useTablePresentation(options: {
     return numbers.length ? Math.min(...numbers) : Number.MAX_SAFE_INTEGER
   }
 
-  function compareSpecialActions(left: TrainerAction, right: TrainerAction): number {
+  function compareSpecialActions(left: GameAction, right: GameAction): number {
     const typeOrder = (SPECIAL_ACTION_ORDER[left.type] ?? 6) - (SPECIAL_ACTION_ORDER[right.type] ?? 6)
     if (typeOrder !== 0) return typeOrder
     if (left.type === 'chi' && right.type === 'chi') {
@@ -253,7 +255,7 @@ export function useTablePresentation(options: {
   })
 
   const currentTableHistoryNodes = computed(() => {
-    const nodes: TrainerTreeNode[] = []
+    const nodes: GameTreeNode[] = []
     let cursor = gameView.currentNodeId || ''
     while (cursor) {
       const node = getNodeMapById().get(cursor)
@@ -296,7 +298,7 @@ export function useTablePresentation(options: {
         const isOuter = i === 0 || i === 3
         let displayTile = tile
         if (!isOuter && (tile === '5m' || tile === '5p' || tile === '5s')) {
-          displayTile = redFive(tile)
+          displayTile = toRedFiveDisplayTile(tile)
         }
         return { tile: displayTile, isBack: isOuter, tileClass: '' }
       })

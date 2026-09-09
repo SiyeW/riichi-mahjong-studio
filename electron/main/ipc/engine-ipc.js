@@ -8,7 +8,7 @@ function createEngineIpcController({
   ipcMain,
   appOptions,
   projectRoot,
-  environmentGateway,
+  backendGateway,
   getMainWindow,
   t,
 }) {
@@ -53,7 +53,7 @@ function createEngineIpcController({
       try {
         const assignedOutputs = assignedOutputsFor(settings.engines, profileId)
         if (!assignedOutputs.length) throw new Error(t('native.engine.noOutput'))
-        const response = await environmentGateway.reloadEngine(profileId)
+        const response = await backendGateway.reloadEngine(profileId)
         assertReloadSucceeded(assignedOutputs, response)
       } catch (error) {
         saveLoadedProfileState(profileId, false)
@@ -72,7 +72,7 @@ function createEngineIpcController({
           : (enginePath ? [enginePath] : []),
         engineCwd: String(profile?.engineCwd || '') || (enginePath ? path.dirname(enginePath) : ''),
       }
-      const response = await environmentGateway.describeEngine(request)
+      const response = await backendGateway.describeEngine(request)
       return response.description
     })
 
@@ -136,7 +136,7 @@ function createEngineIpcController({
       ]
       saveSettings({ ...previous, engines }, appOptions)
       try {
-        const response = await environmentGateway.reloadEngine(profileId)
+        const response = await backendGateway.reloadEngine(profileId)
         assertReloadSucceeded(assignedOutputs, response)
         return buildSettings(saveLoadedProfileState(profileId, true), appOptions)
       } catch (error) {
@@ -153,10 +153,10 @@ function createEngineIpcController({
         .map(([outputId]) => outputId)
       let state = null
       if (assignedOutputs.includes('action-recommendation')) {
-        state = (await environmentGateway.unloadEngine('decision', profileId)).state
+        state = (await backendGateway.unloadEngine('decision', profileId)).state
       }
       if (assignedOutputs.some((outputId) => outputId !== 'action-recommendation')) {
-        state = (await environmentGateway.unloadEngine('opponent-analysis', profileId)).state
+        state = (await backendGateway.unloadEngine('opponent-analysis', profileId)).state
       }
       const settings = saveLoadedProfileState(profileId, false)
       return {

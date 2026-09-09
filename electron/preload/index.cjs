@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
-contextBridge.exposeInMainWorld('trainerAPI', {
+contextBridge.exposeInMainWorld('studioAPI', {
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   describeEngine: (profile) => ipcRenderer.invoke('engine:describe', profile),
@@ -38,8 +38,8 @@ contextBridge.exposeInMainWorld('trainerAPI', {
   reconstructWalls: (seed) => ipcRenderer.invoke('game:reconstruct-walls', seed),
   importWall: (tiles) => ipcRenderer.invoke('game:import-wall', tiles),
   getLatestMjaiDebug: () => ipcRenderer.invoke('debug:latest-mjai'),
-  getShanten: () => ipcRenderer.invoke('game:shanten'),
-  getShantenMjai: () => ipcRenderer.invoke('debug:shanten-mjai'),
+  getAnalysis: () => ipcRenderer.invoke('analysis:get'),
+  getAnalysisDebug: () => ipcRenderer.invoke('debug:analysis'),
   clearAnalysisCaches: () => ipcRenderer.invoke('debug:clear-analysis-caches'),
   startAutoAnalysis: () => ipcRenderer.invoke('analysis:auto-start'),
   cancelAutoAnalysis: () => ipcRenderer.invoke('analysis:auto-cancel'),

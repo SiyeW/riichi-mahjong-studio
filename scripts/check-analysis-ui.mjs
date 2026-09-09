@@ -70,13 +70,13 @@ try {
       // Keep copy assertions independent of the host operating-system locale.
       // Dedicated responsive checks below still exercise every supported language.
       vm.settings.display.language = 'zh-CN'
-      window.trainerAPI = {
+      window.studioAPI = {
         getSettings: async () => JSON.parse(JSON.stringify(vm.settings)),
         getStatus: async () => JSON.parse(JSON.stringify(vm.status)),
         restoreStartupRecovery: async () => null,
         getRecordDirty: async () => false,
         onRecordDirtyChanged: callback => { check.notifyDirty = callback; return () => {} },
-        getShanten: async () => { check.reads++; return check.result() },
+        getAnalysis: async () => { check.reads++; return check.result() },
         getWallView: async () => {
           check.wallReads++
           return {
@@ -209,10 +209,10 @@ try {
       const originalState = JSON.parse(JSON.stringify(vm.status))
       vm.recordDirty = true
       let finish
-      window.trainerAPI[operation] = () => new Promise(resolve => { finish = resolve })
+      window.studioAPI[operation] = () => new Promise(resolve => { finish = resolve })
       const saving = vm[operation]()
       while (!finish) await new Promise(resolve => setTimeout(resolve, 0))
-      window.trainerAPI.jumpToNode = async nodeId => ({ state: originalState, view: { ...originalView, currentNodeId: nodeId } })
+      window.studioAPI.jumpToNode = async nodeId => ({ state: originalState, view: { ...originalView, currentNodeId: nodeId } })
       await vm.jumpToNode('saved-during-navigation')
       check.notifyDirty(false)
       check.notifyDirty(true)
@@ -222,7 +222,7 @@ try {
       if (!vm.recordDirty) throw new Error(`${operation} cleared a newer dirty notification`)
       if (vm.recordPath !== 'test-save.mjstudio') throw new Error(`${operation} failed to update its path`)
       await vm.jumpToNode(originalView.currentNodeId)
-      window.trainerAPI[operation] = async () => {
+      window.studioAPI[operation] = async () => {
         check.notifyDirty(false)
         return { state: originalState, view: originalView, path: 'test-save.mjstudio', recordDirty: false, recoveryRecord: false }
       }
@@ -260,10 +260,10 @@ try {
   // An older one-shot reply cannot replace a result delivered while it waits.
   await page.evaluate(() => {
     const check = window.analysisCheck
-    const read = window.trainerAPI.getShanten
-    window.trainerAPI.getShanten = () => new Promise(resolve => { check.resolveRead = resolve })
-    check.pendingRead = check.vm.fetchShantenOnce()
-    window.trainerAPI.getShanten = read
+    const read = window.studioAPI.getAnalysis
+    window.studioAPI.getAnalysis = () => new Promise(resolve => { check.resolveRead = resolve })
+    check.pendingRead = check.vm.fetchAnalysisOnce()
+    window.studioAPI.getAnalysis = read
     check.publish(check.result(3.5))
     check.resolveRead(check.result(0.5))
   })
@@ -304,11 +304,11 @@ try {
   // Clear both the renderer data and hover; an outstanding reply stays discarded.
   await page.evaluate(() => {
     const check = window.analysisCheck
-    const read = window.trainerAPI.getShanten
-    window.trainerAPI.getShanten = () => new Promise(resolve => { check.resolveRead = resolve })
-    check.pendingRead = check.vm.fetchShantenOnce()
+    const read = window.studioAPI.getAnalysis
+    window.studioAPI.getAnalysis = () => new Promise(resolve => { check.resolveRead = resolve })
+    check.pendingRead = check.vm.fetchAnalysisOnce()
     check.oldResult = check.result()
-    window.trainerAPI.getShanten = read
+    window.studioAPI.getAnalysis = read
   })
   await page.evaluate(() => window.analysisCheck.vm.clearLoadedAnalysisCaches())
   await page.evaluate(async () => { const check = window.analysisCheck; check.resolveRead(check.oldResult); await check.pendingRead })
@@ -367,7 +367,7 @@ try {
       check.recoverySavedState = JSON.parse(JSON.stringify(check.vm.status))
       check.recoverySavedView = JSON.parse(JSON.stringify(check.vm.gameView))
       check.restartCalls = 0
-      window.trainerAPI.restartBackend = () => {
+      window.studioAPI.restartBackend = () => {
         check.restartCalls++
         return new Promise((resolve, reject) => { check.finishRestart = resolve; check.failRestart = reject })
       }
@@ -789,12 +789,12 @@ try {
   // A delayed navigation reply cannot restore a previous game, seat, or mode.
   await page.evaluate(async () => {
     const { vm } = window.analysisCheck
-    const originalJump = window.trainerAPI.jumpToNode
+    const originalJump = window.studioAPI.jumpToNode
     for (const field of ['gameId', 'controlledSeat', 'mode']) {
       const state = JSON.parse(JSON.stringify(vm.status))
       const view = JSON.parse(JSON.stringify(vm.gameView))
       let resolve
-      window.trainerAPI.jumpToNode = () => new Promise(done => { resolve = done })
+      window.studioAPI.jumpToNode = () => new Promise(done => { resolve = done })
       const pending = vm.jumpToNode('delayed-node')
       if (field === 'gameId') vm.gameView.gameId = 'replacement-game'
       if (field === 'controlledSeat') vm.status.controlledSeat = (state.controlledSeat + 1) % 4
@@ -809,7 +809,7 @@ try {
       vm.status.controlledSeat = state.controlledSeat
       vm.status.mode = state.mode
     }
-    window.trainerAPI.jumpToNode = originalJump
+    window.studioAPI.jumpToNode = originalJump
   })
 
   // Label measurements must survive mounting, resizing, and new probabilities.

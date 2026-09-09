@@ -10,6 +10,9 @@ import {
   type BranchTreeStaticLayout,
 } from './branchTreeLayout'
 import { useNextMoveHints } from './useNextMoveHints'
+import type { StudioSettings } from './contracts/settings'
+import type { GameTreeNode, GameView, RoundSummary } from './contracts/game'
+import type { StudioStatus } from './contracts/runtime'
 import { useRoundMapPresentation } from './useRoundMapPresentation'
 import { useVirtualizedTreeViewport } from './useVirtualizedTreeViewport'
 
@@ -43,9 +46,9 @@ export interface TreeRowLayout {
 }
 
 export function useBranchTreePresentation(options: {
-  gameView: TrainerGameView
-  status: TrainerStatusSnapshot
-  settings: TrainerSettings
+  gameView: GameView
+  status: StudioStatus
+  settings: StudioSettings
   uiScale: Readonly<Ref<number>>
   showTreeComparisons: Readonly<Ref<boolean>>
   t: Translate
@@ -69,7 +72,7 @@ export function useBranchTreePresentation(options: {
     focusRoundMap,
   } = options
 
-function isControlledDecisionNode(node: TrainerTreeNode): boolean {
+function isControlledDecisionNode(node: GameTreeNode): boolean {
   return node.isDecision === true
     && Number(node.action?.actor ?? -1) === status.controlledSeat
 }
@@ -84,7 +87,7 @@ const treeBaseX = computed(() => TREE_BASE_X.value)
 
 const treeNodeList = computed(() => {
   const rawNodes = gameView.tree?.nodes
-  if (!rawNodes) return [] as TrainerTreeNode[]
+  if (!rawNodes) return [] as GameTreeNode[]
   if (Array.isArray(rawNodes)) return rawNodes
   return Object.values(rawNodes)
 })
@@ -100,7 +103,7 @@ const {
   controlledSeat: () => status.controlledSeat,
 })
 
-const roundSummaryList = computed(() => gameView.tree?.rounds || [] as TrainerRoundSummary[])
+const roundSummaryList = computed(() => gameView.tree?.rounds || [] as RoundSummary[])
 const activeRoundRootId = computed(() => gameView.tree?.currentRoundRootId || null)
 const roundTreeNodeList = computed(() => {
   const allowedIds = new Set(treeNodeList.value.map((node) => node.id))

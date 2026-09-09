@@ -13,7 +13,7 @@ export function useCountAnalysisData(props: AnalysisPanelDataProps, wallLabel: (
   ))
   const countTileRows = computed(() => analysisCountTileRows(hasRedFivePredictions.value))
   const countSourceTiles = computed(() => analysisCountSourceTiles(hasRedFivePredictions.value))
-  const opponentSources = computed<TileSource[]>(() => props.shantenOpponents.map((opponent) => ({
+  const opponentSources = computed<TileSource[]>(() => props.analysisOpponents.map((opponent) => ({
     key: opponent.key,
     label: opponent.label,
     seat: opponent.seat,

@@ -2,7 +2,7 @@ const { buildRuntimeMetrics } = require('../runtime-metrics')
 
 function createRuntimeMetricsCollector({
   app,
-  environmentGateway,
+  backendGateway,
   logger = console,
   getSystemMemoryInfo = () => process.getSystemMemoryInfo(),
 }) {
@@ -11,7 +11,7 @@ function createRuntimeMetricsCollector({
   return async function collectRuntimeMetrics() {
     let backendMetrics = null
     try {
-      const response = await environmentGateway.getRuntimeMetrics()
+      const response = await backendGateway.getRuntimeMetrics()
       backendMetrics = response?.metrics || null
       previousBackendError = ''
     } catch (error) {
