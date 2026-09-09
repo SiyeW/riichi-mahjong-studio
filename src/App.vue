@@ -647,52 +647,39 @@
       @start-drag="startDragFloatingPanel"
     />
 
-    <section
+    <EngineManagerWindow
       v-if="showEngineWindow"
-      class="analysis-float-panel engine-window"
-      :style="{ '--floating-panel-scale': uiScale, zIndex: floatingPanelZ.engine }"
-      @mousedown="focusFloatingPanel('engine')"
-      @focusin="focusFloatingPanel('engine')"
-    >
-      <div class="floating-panel-header" @mousedown="startDragFloatingPanel">
-        <span>{{ t('engine.title') }}</span>
-        <div class="floating-panel-header-actions">
-          <button class="floating-panel-close" :aria-label="t('engine.close')" @click="closeEngineWindow">&times;</button>
-        </div>
-      </div>
-      <div class="engine-manager-body">
-        <EngineProfileList
-          :busy="Boolean(loadingEngineProfileId || unloadingEngineProfileId)"
-          :can-delete="engineListCanDelete"
-          :can-duplicate="engineListCanDuplicate"
-          :can-move-down="engineListCanMoveDown"
-          :can-move-up="engineListCanMoveUp"
-          :delete-confirmation="engineListDeleteConfirmation"
-          :outputs="engineOutputFilterItems"
-          :profiles="engineProfileListItems"
-          @action="handleEngineProfileAction"
-          @add="addEngineProfile"
-          @delete="deleteEngineProfile"
-          @duplicate="duplicateEngineProfile"
-          @move="moveEngineProfile"
-          @select="selectEngineProfile"
-          @toggle-output="toggleEngineOutputFilter"
-        />
-        <EngineProfileDetail
-          v-if="activeEngineProfileDetail"
-          :detail="activeEngineProfileDetail"
-          @choose-engine="chooseEngineFile"
-          @choose-weight="chooseEngineWeight"
-          @device="setEngineDeviceValue"
-          @legal="openEngineLegalDocument"
-          @name="setEngineProfileNameValue"
-          @option="setEngineOptionValue"
-          @output="setEngineOutputAssignmentValue"
-          @source="openExternalLink"
-        />
-      </div>
-      <p class="engine-save-message">{{ engineFooterMessage }}</p>
-    </section>
+      :scale="uiScale"
+      :z-index="floatingPanelZ.engine"
+      :footer-message="engineFooterMessage"
+      :busy="Boolean(loadingEngineProfileId || unloadingEngineProfileId)"
+      :can-delete="engineListCanDelete"
+      :can-duplicate="engineListCanDuplicate"
+      :can-move-down="engineListCanMoveDown"
+      :can-move-up="engineListCanMoveUp"
+      :delete-confirmation="engineListDeleteConfirmation"
+      :outputs="engineOutputFilterItems"
+      :profiles="engineProfileListItems"
+      :detail="activeEngineProfileDetail"
+      @close="closeEngineWindow"
+      @focus="focusFloatingPanel('engine')"
+      @start-drag="startDragFloatingPanel"
+      @action="handleEngineProfileAction"
+      @add="addEngineProfile"
+      @delete="deleteEngineProfile"
+      @duplicate="duplicateEngineProfile"
+      @move="moveEngineProfile"
+      @select="selectEngineProfile"
+      @toggle-output="toggleEngineOutputFilter"
+      @choose-engine="chooseEngineFile"
+      @choose-weight="chooseEngineWeight"
+      @device="setEngineDeviceValue"
+      @legal="openEngineLegalDocument"
+      @name="setEngineProfileNameValue"
+      @option="setEngineOptionValue"
+      @output="setEngineOutputAssignmentValue"
+      @source="openExternalLink"
+    />
 
     <MjaiDebugDialog
       v-if="showMjaiDebug"
@@ -774,8 +761,7 @@ import ConsoleDock from './components/ConsoleDock.vue'
 import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DecisionEvaluationPanel from './components/DecisionEvaluationPanel.vue'
 import DockLayoutNode from './components/DockLayoutNode.vue'
-import EngineProfileList from './components/EngineProfileList.vue'
-import EngineProfileDetail from './components/EngineProfileDetail.vue'
+import EngineManagerWindow from './components/EngineManagerWindow.vue'
 import MjaiDebugDialog from './components/MjaiDebugDialog.vue'
 import QuickSettingsPanel from './components/QuickSettingsPanel.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
