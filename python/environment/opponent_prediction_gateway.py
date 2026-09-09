@@ -226,9 +226,6 @@ class OpponentPredictionGateway:
     def last_response_ms(self) -> float:
         return self._activity.last_response_ms()
 
-    def _record_response_ms(self, elapsed_ms: float) -> None:
-        self._activity.record_response_ms(elapsed_ms)
-
     @staticmethod
     def _format_error(prefix: str, error: Exception) -> str:
         detail = " ".join(str(error).split())
