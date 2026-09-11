@@ -127,16 +127,22 @@ export function useEngineActivation(
   }
 
   function profileSubtitle(profile: EngineProfile): string {
-    if (profile.id === state.loadingProfileId.value) return options.t('engine.status.loading')
-    if (state.loadErrors[profile.id]) return options.t('engine.status.failed')
+    // The state alone cannot tell two builds of one engine apart, which is the
+    // first thing to know when a profile stops loading after a rebuild.
+    const version = String(profile.engineVersion || '').trim()
+    const withVersion = (state: string) => (version ? `${state} · ${version}` : state)
+    if (profile.id === state.loadingProfileId.value) return withVersion(options.t('engine.status.loading'))
+    if (state.loadErrors[profile.id]) return withVersion(options.t('engine.status.failed'))
     const runtimeGroups = runtime.profileRuntimeKinds(profile)
-    if (!runtimeGroups.some((kind) => runtime.profileMatchesRuntime(profile, kind))) return ''
-    if (runtimeGroups.some((kind) => runtime.runtimeEngineError(kind, profile))) return options.t('engine.status.failed')
-    if (runtimeGroups.every((kind) => runtime.profileRuntimeState(profile, kind)?.unloaded === true)) {
-      return options.t('engine.status.notLoaded')
+    if (!runtimeGroups.some((kind) => runtime.profileMatchesRuntime(profile, kind))) return version
+    if (runtimeGroups.some((kind) => runtime.runtimeEngineError(kind, profile))) {
+      return withVersion(options.t('engine.status.failed'))
     }
-    if (!profileIsLoaded(profile)) return options.t('engine.status.loading')
-    return options.t('engine.status.loaded')
+    if (runtimeGroups.every((kind) => runtime.profileRuntimeState(profile, kind)?.unloaded === true)) {
+      return withVersion(options.t('engine.status.notLoaded'))
+    }
+    if (!profileIsLoaded(profile)) return withVersion(options.t('engine.status.loading'))
+    return withVersion(options.t('engine.status.loaded'))
   }
 
   function profileError(profile: EngineProfile | null): string {
