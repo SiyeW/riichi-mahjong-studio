@@ -180,9 +180,13 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
 
   async function describeEngineProfile(profile: EngineProfile | null, options: { force?: boolean } = {}) {
     const description = await engineCatalog.describe(profile, options)
-    if (!profile || !description || profileConfigurationLocked(profile)) return
+    if (!profile || !description) return
+    // Which engine this is, and which build of it answered, are facts rather
+    // than configuration: a loaded profile still learns that the binary it is
+    // running has moved on. Only the defaults below are held back while locked.
     profile.engineId = description.engine.id
     profile.engineVersion = description.engine.version
+    if (profileConfigurationLocked(profile)) return
     if (!profile.device || !description.devices.some((device) => device.type === profile.device)) {
       profile.device = description.devices[0]?.type || ''
     }
