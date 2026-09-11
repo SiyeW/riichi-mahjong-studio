@@ -134,8 +134,10 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     if (!settingsDraft.engines.profiles.some((profile) => profile.id === editingEngineProfileId.value)) {
       editingEngineProfileId.value = settingsDraft.engines.profiles[0]?.id || ''
     }
+    // The dialog describes live: a cached description would keep showing the
+    // engine build that was current the last time this session asked.
     for (const profile of activeEngineProfiles.value) {
-      void describeEngineProfile(profile)
+      void describeEngineProfile(profile, { force: true })
     }
     focus()
   }
@@ -176,8 +178,8 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     return supportedOutputsForProfile(profile).some(({ id }) => id === outputId)
   }
 
-  async function describeEngineProfile(profile: EngineProfile | null) {
-    const description = await engineCatalog.describe(profile)
+  async function describeEngineProfile(profile: EngineProfile | null, options: { force?: boolean } = {}) {
+    const description = await engineCatalog.describe(profile, options)
     if (!profile || !description || profileConfigurationLocked(profile)) return
     profile.engineId = description.engine.id
     profile.engineVersion = description.engine.version
@@ -323,7 +325,9 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     profile.available = false
     delete engineLoadErrors[profile.id]
     refreshAutomaticEngineName(profile)
-    await describeEngineProfile(profile)
+    // Picking a file means "read this engine again", so the cached description
+    // of that path must not answer for it.
+    await describeEngineProfile(profile, { force: true })
     refreshAutomaticEngineName(profile)
   }
 

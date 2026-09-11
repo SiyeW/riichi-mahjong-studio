@@ -114,9 +114,19 @@ export function useEngineCatalog(options: EngineCatalogOptions) {
       || fallback
   }
 
-  async function describe(profile: EngineProfile | null): Promise<EngineDescription | null> {
+  function invalidate(profile: EngineProfile | null): void {
+    const key = descriptionKey(profile)
+    delete descriptions[key]
+    delete describeErrors[key]
+  }
+
+  async function describe(
+    profile: EngineProfile | null,
+    describeOptions: { force?: boolean } = {},
+  ): Promise<EngineDescription | null> {
     const key = descriptionKey(profile)
     if (!profile?.enginePath) return null
+    if (describeOptions.force) invalidate(profile)
     if (descriptions[key]) return descriptions[key]
     const bridge = options.bridge()
     if (describingKeys.has(key) || !bridge?.describeEngine) return null
@@ -147,6 +157,7 @@ export function useEngineCatalog(options: EngineCatalogOptions) {
     describe,
     describeErrors,
     describingKeys,
+    invalidate,
     descriptionForProfile,
     descriptionKey,
     diagnostics,
