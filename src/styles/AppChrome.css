@@ -4,7 +4,7 @@
   justify-content: space-between;
   min-height: var(--topbar-min-h);
   padding: 0 calc(0.90rem * var(--chrome-scale));
-  background: #094855;
+  background: var(--surface-chrome);
   border-bottom: 1px solid rgba(0, 0, 0, 0.30);
 }
 
@@ -108,19 +108,19 @@
 .seat-buttons button,
 .settings-modal button,
 .settings-modal-actions button {
-  border: 1px solid rgba(0, 0, 0, 0.25);
-  background: rgba(8, 80, 94, 0.9);
+  border: 1px solid var(--border-dark);
+  background: var(--surface-control);
   color: var(--text-main);
   font-size: var(--ui-text-control);
-  padding: calc(0.375rem * var(--ui-scale)) calc(0.75rem * var(--ui-scale));
-  border-radius: calc(0.1875rem * var(--ui-scale));
+  padding: var(--ui-space-3) var(--ui-space-5);
+  border-radius: var(--ui-radius-control);
   cursor: pointer;
   transition: background var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .settings-modal button:hover:not(:disabled),
 .settings-modal-actions button:hover:not(:disabled) {
-  background: rgba(12, 105, 120, 0.95);
+  background: var(--surface-control-hover);
 }
 
 .toolbar button:disabled,
@@ -137,7 +137,7 @@
 .seat-buttons button.is-pending,
 .seat-buttons button.is-pending:hover,
 .seat-buttons button.is-pending:disabled {
-  background: rgba(4, 55, 66, 0.96);
+  background: var(--surface-control-pending);
   border-color: rgba(0, 0, 0, 0.42);
   box-shadow: inset 0 calc(0.125rem * var(--ui-scale)) calc(0.25rem * var(--ui-scale)) rgba(0, 0, 0, 0.34);
   opacity: 1;
@@ -148,13 +148,13 @@
 .toolbar button.active,
 .toolbar button.active:hover:not(:disabled) {
   border-color: rgba(61, 157, 99, 0.58);
-  background: rgba(23, 122, 70, 0.9);
+  background: var(--surface-control-active);
 }
 
 .toolbar button.confirm-discard,
 .toolbar button.confirm-discard:hover {
   border-color: rgba(214, 117, 103, 0.58);
-  background: rgba(145, 55, 45, 0.92);
+  background: var(--surface-control-danger);
 }
 
 .toolbar-button-hint {
@@ -175,9 +175,9 @@
   gap: calc(0.18rem * var(--chrome-scale));
   min-width: max-content;
   padding: calc(0.3rem * var(--chrome-scale));
-  border: 1px solid rgba(140, 195, 188, 0.26);
+  border: 1px solid var(--border-default);
   border-radius: calc(0.2rem * var(--chrome-scale));
-  background: rgba(2, 43, 51, 0.98);
+  background: var(--surface-overlay);
   box-shadow: 0 calc(0.4rem * var(--chrome-scale)) calc(1.1rem * var(--chrome-scale)) rgba(0, 0, 0, 0.38);
   opacity: 0;
   visibility: hidden;
@@ -210,8 +210,8 @@
   justify-content: space-between;
   gap: calc(0.75rem * var(--chrome-scale));
   padding: calc(0.45rem * var(--chrome-scale)) calc(0.9rem * var(--chrome-scale));
-  background: linear-gradient(180deg, rgba(120, 47, 35, 0.96) 0%, rgba(88, 30, 24, 0.96) 100%);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.28);
+  background: var(--surface-danger);
+  border-bottom: 1px solid var(--border-dark);
   color: rgba(255, 240, 236, 0.94);
   font-size: var(--ui-text-body);
 }
@@ -222,8 +222,8 @@
   background: rgba(255, 255, 255, 0.12);
   color: inherit;
   font-size: var(--ui-text-control);
-  padding: calc(0.375rem * var(--ui-scale)) calc(0.75rem * var(--ui-scale));
-  border-radius: calc(0.1875rem * var(--ui-scale));
+  padding: var(--ui-space-3) var(--ui-space-5);
+  border-radius: var(--ui-radius-control);
   cursor: pointer;
   transition: background var(--ui-motion-duration) var(--ui-motion-easing);
 }

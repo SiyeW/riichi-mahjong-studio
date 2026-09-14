@@ -58,7 +58,7 @@
   position: relative;
   z-index: 30;
   flex: 0 0 1px;
-  background: rgba(140, 195, 188, 0.16);
+  background: var(--border-subtle);
   touch-action: none;
 }
 
@@ -87,7 +87,7 @@
 
 .dock-layout-resizer:hover,
 .workspace.is-dock-resizing .dock-layout-resizer {
-  background: #59da91;
+  background: var(--interaction-highlight);
 }
 
 .workspace.is-dock-resizing,
@@ -115,8 +115,8 @@
 
 .dock-module {
   --dock-module-scale: var(--floating-panel-scale, var(--chrome-scale));
-  --dock-module-background: #073e48;
-  --dock-module-surface: #0a4a55;
+  --dock-module-background: var(--surface-panel);
+  --dock-module-surface: var(--surface-panel-raised);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -141,7 +141,7 @@
   min-height: calc(1.7rem * var(--dock-module-scale));
   padding: 0 calc(0.45rem * var(--dock-module-scale));
   background: none;
-  border-top: 1px solid rgba(140, 195, 188, 0.18);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .dock-module-drag-handle {
@@ -188,7 +188,7 @@
 .dock-drop-indicator {
   position: absolute;
   border-radius: 2px;
-  background: #59da91;
+  background: var(--interaction-highlight);
 }
 
 .visually-hidden {

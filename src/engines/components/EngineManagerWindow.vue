@@ -109,7 +109,7 @@ const { t } = useI18n()
   --engine-state-loaded-selected-bg: rgba(23, 122, 70, 0.88);
   --engine-state-loading-selected-bg: rgba(117, 75, 18, 0.82);
   --engine-state-error-selected-bg: rgba(105, 26, 24, 0.82);
-  --engine-state-border: rgba(0, 0, 0, 0.28);
+  --engine-state-border: var(--border-dark);
   --engine-state-idle-border: rgba(112, 136, 136, 0.22);
   display: flex;
   flex-direction: column;

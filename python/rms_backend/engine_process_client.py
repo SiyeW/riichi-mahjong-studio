@@ -48,6 +48,7 @@ class EngineProcessClient:
         self._custom_cwd = str(cwd) if cwd else None
         self._expected_engine_id = str(expected_engine_id or "")
         self._expected_engine_version = str(expected_engine_version or "")
+        self._engine_version_changed = ""
         self._lock = threading.RLock()
         self._request_lock = threading.Lock()
         self._write_lock = threading.Lock()
@@ -62,6 +63,12 @@ class EngineProcessClient:
         self._stopping = False
         self._process_generation = 0
         atexit.register(self.shutdown)
+
+    @property
+    def engine_version_changed(self) -> str:
+        """The engine's version when it differs from the one the profile recorded."""
+
+        return self._engine_version_changed
 
     def _command(self) -> list[str]:
         if not self._custom_command:
@@ -194,13 +201,12 @@ class EngineProcessClient:
                 "engine identity mismatch: "
                 f"expected {self._expected_engine_id}, received {actual_engine_id or '(missing)'}"
             )
+        # A different build of the same engine is an update, not a mistake. What
+        # a profile depends on is the identity above and the protocol that the
+        # handshake already agreed on, so the new version is reported back for
+        # the profile to record instead of refusing to start.
         if self._expected_engine_version and actual_engine_version != self._expected_engine_version:
-            self._stop_process()
-            raise EngineProcessError(
-                "engine version mismatch: "
-                f"expected {self._expected_engine_version}, "
-                f"received {actual_engine_version or '(missing)'}"
-            )
+            self._engine_version_changed = actual_engine_version
         with self._lock:
             self._require_current_process(process)
             self._hello = hello

@@ -199,7 +199,7 @@ const trainingModes = computed(() => [
 }
 
 .quick-mode-btn {
-  border: 1px solid rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border-dark);
   background: rgba(8, 80, 94, 0.72);
   color: var(--text-main);
   font-size: var(--ui-text-control);
@@ -213,8 +213,8 @@ const trainingModes = computed(() => [
 }
 
 .quick-mode-btn.active {
-  border-color: rgba(0, 0, 0, 0.28);
-  background: rgba(23, 122, 70, 0.9);
+  border-color: var(--border-dark);
+  background: var(--surface-control-active);
   box-shadow: none;
 }
 
@@ -300,7 +300,7 @@ const trainingModes = computed(() => [
   width: calc(1rem * var(--ui-scale));
   height: calc(1rem * var(--ui-scale));
   background: #ebf8ee;
-  border: 1px solid rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border-dark);
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.22);
 }
 
@@ -331,8 +331,8 @@ const trainingModes = computed(() => [
 }
 
 .seat-buttons button.active {
-  border-color: rgba(0, 0, 0, 0.28);
-  background: rgba(23, 122, 70, 0.9);
+  border-color: var(--border-dark);
+  background: var(--surface-control-active);
   box-shadow: none;
 }
 

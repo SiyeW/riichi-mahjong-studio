@@ -47,6 +47,35 @@ test('catalog descriptions are cached and projected into supported outputs and s
   assert.deepEqual(catalog.optionEntriesForProfile(profile).map(({ key }) => key), ['temperature'])
 })
 
+test('a forced describe asks the engine again instead of answering from the cache', async () => {
+  let describeCalls = 0
+  const versions = ['1.0.0', '1.1.0']
+  const bridge = {
+    describeEngine: async () => {
+      const version = versions[Math.min(describeCalls, versions.length - 1)]
+      describeCalls++
+      return { ...description, engine: { ...description.engine, version } } as EngineDescription
+    },
+  } as unknown as DesktopBridge
+  const settings = reactive({ runtime: { engineCatalog: { engines: [], diagnostics: [] } } } as unknown as StudioSettings)
+  const catalog = useEngineCatalog({
+    bridge: () => bridge,
+    settings,
+    locale: ref('zh-CN'),
+    t: (key) => key,
+  })
+
+  // An engine that was rebuilt at the same path must not keep answering with
+  // the build that was current when this session first asked.
+  assert.equal((await catalog.describe(profile))?.engine.version, '1.0.0')
+  assert.equal((await catalog.describe(profile))?.engine.version, '1.0.0')
+  assert.equal(describeCalls, 1)
+  assert.equal((await catalog.describe(profile, { force: true }))?.engine.version, '1.1.0')
+  assert.equal(describeCalls, 2)
+  assert.equal((await catalog.describe(profile))?.engine.version, '1.1.0')
+  assert.equal(describeCalls, 2)
+})
+
 test('catalog description errors remain attached to the requested engine', async () => {
   const bridge = {
     describeEngine: async () => { throw new Error('broken engine') },

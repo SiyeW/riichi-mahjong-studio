@@ -254,8 +254,8 @@ onBeforeUnmount(() => {
   z-index: 1200;
   width: min(21rem, calc(100vw - 1rem));
   color: #d7e5e8;
-  background: #073e48;
-  border: 1px solid #2b6975;
+  background: var(--surface-panel);
+  border: 1px solid var(--border-accent);
 }
 
 .perceptual-color-debugger-header {
@@ -264,8 +264,8 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   min-height: 2rem;
   padding-left: 0.65rem;
-  background: #094855;
-  border-bottom: 1px solid #2b6975;
+  background: var(--surface-chrome);
+  border-bottom: 1px solid var(--border-accent);
   cursor: move;
   user-select: none;
 }
@@ -329,7 +329,7 @@ onBeforeUnmount(() => {
   padding: 0.2rem 0.3rem;
   color: #e5f0f2;
   background: #053942;
-  border: 1px solid #2b6975;
+  border: 1px solid var(--border-accent);
   font: inherit;
   font-variant-numeric: tabular-nums;
 }
@@ -352,7 +352,7 @@ onBeforeUnmount(() => {
   padding: 0.28rem 0.5rem;
   color: #d7e5e8;
   background: #0b5260;
-  border: 1px solid #2b6975;
+  border: 1px solid var(--border-accent);
   font: inherit;
 }
 
@@ -364,7 +364,7 @@ onBeforeUnmount(() => {
   display: grid;
   gap: 1px;
   background: #174f59;
-  border: 1px solid #2b6975;
+  border: 1px solid var(--border-accent);
 }
 
 .perceptual-color-debugger-surface-heading,
@@ -375,11 +375,11 @@ onBeforeUnmount(() => {
   gap: 0.28rem;
   min-height: 1.55rem;
   padding: 0 0.4rem;
-  background: #073e48;
+  background: var(--surface-panel);
 }
 
 .perceptual-color-debugger-surface-heading {
-  background: #094855;
+  background: var(--surface-chrome);
 }
 
 .perceptual-color-debugger-surface-heading small {
@@ -402,7 +402,7 @@ onBeforeUnmount(() => {
 .perceptual-color-debugger-surfaces p {
   margin: 0;
   padding: 0.45rem;
-  background: #073e48;
+  background: var(--surface-panel);
   color: #9ebbc1;
 }
 

@@ -1,5 +1,5 @@
 .analysis-panel-content {
-  --analysis-border: rgba(140, 195, 188, 0.16);
+  --analysis-border: var(--border-subtle);
   position: relative;
   width: 100%;
   max-width: none;

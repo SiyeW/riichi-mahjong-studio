@@ -98,8 +98,8 @@ async function emitOption(key: string, event: Event) {
   min-height: 0;
   padding: calc(0.62rem * var(--floating-panel-scale));
   overflow-y: auto;
-  border: 1px solid rgba(140, 195, 188, 0.12);
-  background: rgba(0, 27, 32, 0.24);
+  border: 1px solid var(--border-subtle);
+  background: var(--surface-inset);
   scrollbar-gutter: stable;
 }
 
@@ -136,10 +136,10 @@ async function emitOption(key: string, event: Event) {
   width: 100%;
   height: var(--engine-control-height);
   padding: calc(0.38rem * var(--floating-panel-scale)) calc(0.48rem * var(--floating-panel-scale));
-  border: 1px solid rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--border-dark);
   border-radius: calc(2px * var(--floating-panel-scale));
-  color: #153237;
-  background: rgba(255, 255, 255, 0.95);
+  color: var(--field-text);
+  background: var(--surface-field);
   font-size: var(--ui-text-body);
 }
 

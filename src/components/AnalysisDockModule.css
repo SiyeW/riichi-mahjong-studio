@@ -21,18 +21,18 @@
 
 .analysis-dock-mode {
   padding: calc(0.2rem * var(--floating-panel-scale)) calc(0.52rem * var(--floating-panel-scale));
-  border: 1px solid rgba(140, 195, 188, 0.2);
-  border-radius: calc(3px * var(--floating-panel-scale));
-  color: rgba(218, 234, 230, 0.8);
-  background: rgba(4, 55, 66, 0.78);
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius-control);
+  color: var(--text-soft);
+  background: var(--surface-control-quiet);
   font: inherit;
   font-size: var(--ui-text-caption);
   cursor: pointer;
 }
 
 .analysis-dock-mode:hover {
-  color: rgba(244, 250, 248, 0.96);
-  background: rgba(9, 74, 84, 0.9);
+  color: var(--text-main);
+  background: var(--surface-control-hover);
 }
 
 .analysis-dock-body {

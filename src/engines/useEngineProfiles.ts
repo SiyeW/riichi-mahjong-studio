@@ -134,8 +134,10 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     if (!settingsDraft.engines.profiles.some((profile) => profile.id === editingEngineProfileId.value)) {
       editingEngineProfileId.value = settingsDraft.engines.profiles[0]?.id || ''
     }
+    // The dialog describes live: a cached description would keep showing the
+    // engine build that was current the last time this session asked.
     for (const profile of activeEngineProfiles.value) {
-      void describeEngineProfile(profile)
+      void describeEngineProfile(profile, { force: true })
     }
     focus()
   }
@@ -176,11 +178,15 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     return supportedOutputsForProfile(profile).some(({ id }) => id === outputId)
   }
 
-  async function describeEngineProfile(profile: EngineProfile | null) {
-    const description = await engineCatalog.describe(profile)
-    if (!profile || !description || profileConfigurationLocked(profile)) return
+  async function describeEngineProfile(profile: EngineProfile | null, options: { force?: boolean } = {}) {
+    const description = await engineCatalog.describe(profile, options)
+    if (!profile || !description) return
+    // Which engine this is, and which build of it answered, are facts rather
+    // than configuration: a loaded profile still learns that the binary it is
+    // running has moved on. Only the defaults below are held back while locked.
     profile.engineId = description.engine.id
     profile.engineVersion = description.engine.version
+    if (profileConfigurationLocked(profile)) return
     if (!profile.device || !description.devices.some((device) => device.type === profile.device)) {
       profile.device = description.devices[0]?.type || ''
     }
@@ -323,7 +329,9 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     profile.available = false
     delete engineLoadErrors[profile.id]
     refreshAutomaticEngineName(profile)
-    await describeEngineProfile(profile)
+    // Picking a file means "read this engine again", so the cached description
+    // of that path must not answer for it.
+    await describeEngineProfile(profile, { force: true })
     refreshAutomaticEngineName(profile)
   }
 
