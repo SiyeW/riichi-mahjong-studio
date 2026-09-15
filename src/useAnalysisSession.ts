@@ -230,7 +230,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
       const result = await window.studioAPI.getAnalysis()
       if (generation !== analysisReadGeneration || !opponentAnalysisNeeded.value) return
       applyAnalysisResult(result, {
-        withoutMotion: true,
         clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value,
       })
     } catch (error) {
@@ -318,7 +317,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   function applyOpponentAnalysisEvent(result: Record<string, unknown>): boolean {
     if (clearingAnalysisCaches.value || !analysisResultMatchesCurrentPosition(result)) return false
     invalidateOpponentRead()
-    return applyAnalysisResult(result, { withoutMotion: true })
+    return applyAnalysisResult(result)
   }
 
   async function clearLoadedAnalysisCaches() {
@@ -410,7 +409,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     shantenStatus,
     shantenViewMode,
     showTrainingRecommendations,
-    suppressAnalysisMotion,
     suppressAnalysisTransitions,
     syncAnalysisVisibilityToBackend,
     toggleDecisionRecommendations,

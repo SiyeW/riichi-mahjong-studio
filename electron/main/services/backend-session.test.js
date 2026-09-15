@@ -157,3 +157,36 @@ test('reimporting a record with the same game ID cannot recover its predecessor'
   backend.loaded = false
   await session.restart()
 })
+
+test('navigation and transient analysis controls do not schedule full-record checkpoints', async () => {
+  const scheduled = []
+  const { session } = fixture(true, {
+    schedule(callback, delay) { scheduled.push({ callback, delay }); return scheduled.length },
+    cancel() {},
+  })
+
+  await session.sendRequest('jump_to_node')
+  await session.sendRequest('set_analysis_visibility')
+  await session.sendRequest('start_auto_analysis')
+  await session.sendRequest('cancel_auto_analysis')
+  assert.equal(scheduled.length, 0)
+
+  await session.sendRequest('set_mode')
+  assert.equal(scheduled.length, 1)
+})
+
+test('derived analysis cache events do not repeatedly export the recovery record', async () => {
+  const scheduled = []
+  const { session } = fixture(true, {
+    schedule(callback, delay) { scheduled.push({ callback, delay }); return scheduled.length },
+    cancel() {},
+  })
+
+  await session.sendRequest('jump_to_node')
+  session.handleEvent({ type: 'record_changed', change: 'decision_analysis_cache' })
+  session.handleEvent({ type: 'record_changed', change: 'opponent_analysis_cache' })
+  assert.equal(scheduled.length, 0)
+
+  session.handleEvent({ type: 'record_changed', change: 'user_authored_change' })
+  assert.equal(scheduled.length, 1)
+})

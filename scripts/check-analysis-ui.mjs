@@ -880,9 +880,9 @@ try {
     })
   }
 
-  // Moving through record nodes is state inspection, not a request to replay
-  // every prediction animation. Cached and late analysis updates must settle in
-  // one paint while ordinary pointer feedback remains animated.
+  // A node change keeps visible feedback without starting an animation for
+  // every individual chart primitive. Each visible analysis panel owns one
+  // compositor-only update animation and its data geometry settles immediately.
   await page.setViewportSize({ width: 1400, height: 1000 })
   await page.evaluate(() => {
     const check = window.analysisCheck
@@ -938,30 +938,36 @@ try {
         panelsSuppressed: [...document.querySelectorAll('.analysis-panel-content')]
           .every(element => element.classList.contains('reduce-motion')),
         animatedTargetCount: animatedTargets.length,
+        animationsArePanelOwned: animatedTargets.every(target => target.classList.contains('analysis-panel-content')),
         transitionDurations,
         piePath: document.querySelector('.shanten-chart path')?.getAttribute('d') || '',
       })
     }))
-    const after = await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+    const after = await new Promise(resolve => setTimeout(() => {
       resolve({
-        tableSuppressed: document.querySelector('.grid-main')?.classList.contains('reset-without-motion') || false,
+        activePanelAnimations: document.getAnimations().filter(animation => (
+          animation.playState !== 'finished'
+          && animation.effect?.target instanceof Element
+          && animation.effect.target.classList.contains('analysis-panel-content')
+        )).length,
         piePath: document.querySelector('.shanten-chart path')?.getAttribute('d') || '',
       })
-    }))))
+    }, 200))
     window.studioAPI.jumpToNode = originalJump
     window.studioAPI.getAnalysis = originalRead
     return { during, after }
   })
-  assert.equal(navigationMotion.during.tableSuppressed, true, 'table prediction transitions are suppressed during a node paint')
-  assert.equal(navigationMotion.during.panelsSuppressed, true, 'analysis charts are suppressed during a node paint')
-  assert.equal(navigationMotion.during.animatedTargetCount, 0, 'node changes do not start prediction animations')
+  assert.equal(navigationMotion.during.tableSuppressed, false, 'ordinary table motion remains available during navigation')
+  assert.equal(navigationMotion.during.panelsSuppressed, false, 'ordinary analysis feedback remains available during navigation')
+  assert.equal(navigationMotion.during.animatedTargetCount, 2, 'each visible analysis panel owns one update animation')
+  assert.equal(navigationMotion.during.animationsArePanelOwned, true, 'chart primitives do not each start their own animation')
   assert.ok(
     navigationMotion.during.transitionDurations.length > 0
       && navigationMotion.during.transitionDurations.every(duration => duration === '0s'),
-    'prediction bars publish their new geometry without transition work',
+    'prediction primitives publish their new geometry without layout or compositor fan-out',
   )
-  assert.equal(navigationMotion.after.tableSuppressed, false, 'ordinary interaction motion resumes after the node paint')
-  assert.equal(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart does not continue a JavaScript animation after navigation')
+  assert.equal(navigationMotion.after.activePanelAnimations, 0, 'panel feedback finishes within the shared motion duration')
+  assert.equal(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart does not perform per-frame JavaScript interpolation')
 
   await checkWorkspaceDock(page)
   assert.deepEqual(errors, [])

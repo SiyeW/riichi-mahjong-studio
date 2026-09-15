@@ -1026,7 +1026,6 @@ const {
   shantenStatus,
   shantenViewMode,
   showTrainingRecommendations,
-  suppressAnalysisMotion,
   suppressAnalysisTransitions,
   syncAnalysisVisibilityToBackend,
   toggleDecisionRecommendations,
@@ -1590,8 +1589,6 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
     pendingReview: gameView.pendingReview,
   }
   const isNewGame = nextView.gameId !== gameView.gameId
-  const positionChanged = isNewGame || nextView.currentNodeId !== gameView.currentNodeId
-  if (positionChanged) suppressAnalysisMotion()
   const previousRoundKey = opponentAnalysisRoundKey(gameView)
   const nextRoundKey = opponentAnalysisRoundKey(nextView)
   const roundChanged = isNewGame || (nextRoundKey !== null && nextRoundKey !== previousRoundKey)
@@ -1638,7 +1635,7 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   if (gameView.opponentAnalysis) {
     const analysisUnavailable = opponentAnalysisPermanentlyUnavailable.value
     applyAnalysisResult(gameView.opponentAnalysis, {
-      withoutMotion: positionChanged || analysisUnavailable,
+      withoutMotion: analysisUnavailable,
       clearWhenEmpty: analysisUnavailable,
     })
   }
@@ -1882,7 +1879,6 @@ const handlePythonEvent = createPythonEventRouter({
   fetchAnalysisOnce,
   applyOpponentAnalysisEvent,
   cacheDecisionAnalysis,
-  suppressAnalysisMotion,
 })
 
 async function fetchAndShowMjaiDebug() {

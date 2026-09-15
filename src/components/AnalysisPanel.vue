@@ -60,9 +60,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { AnalysisCountLayout } from '../analysisCountSpacing'
 import type { AnalysisPanelProps } from '../analysisPanelTypes'
+import { getUiMotionDurationMs, getUiMotionEasing } from '../uiMotion'
 import { useAnalysisHoverTooltip } from '../useAnalysisHoverTooltip'
 import AnalysisHoverTooltip from './AnalysisHoverTooltip.vue'
 import DealInRiskSection from './DealInRiskSection.vue'
@@ -70,10 +71,39 @@ import GameAnalysisSection from './GameAnalysisSection.vue'
 import OpponentAnalysisSection from './OpponentAnalysisSection.vue'
 import TileCountAnalysisSection from './TileCountAnalysisSection.vue'
 
-defineProps<AnalysisPanelProps>()
+const props = defineProps<AnalysisPanelProps>()
 const emit = defineEmits<{ 'update:countLayout': [value: AnalysisCountLayout] }>()
 const analysisRootElement = ref<HTMLElement | null>(null)
 const { tooltip, tooltipElement } = useAnalysisHoverTooltip(analysisRootElement)
+let updateAnimation: Animation | null = null
+
+function cancelUpdateAnimation() {
+  updateAnimation?.cancel()
+  updateAnimation = null
+}
+
+watch(() => props.analysis, () => {
+  cancelUpdateAnimation()
+  if (props.reduceMotion) return
+  void nextTick(() => {
+    const element = analysisRootElement.value
+    if (!element || props.reduceMotion) return
+    const animation = element.animate(
+      [{ opacity: 0.88 }, { opacity: 1 }],
+      { duration: getUiMotionDurationMs(), easing: getUiMotionEasing() },
+    )
+    updateAnimation = animation
+    animation.addEventListener('finish', () => {
+      if (updateAnimation === animation) updateAnimation = null
+    }, { once: true })
+  })
+})
+
+watch(() => props.reduceMotion, (reduced) => {
+  if (reduced) cancelUpdateAnimation()
+})
+
+onBeforeUnmount(cancelUpdateAnimation)
 </script>
 
 <style src="./AnalysisPanel.css"></style>

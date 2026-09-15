@@ -56,7 +56,7 @@
               @focus="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.dora')}`, `${entry.value}${t('unit.tile')}`, entry.probability)"
               @blur="tooltip.clear"
             >
-              <i><em :style="{ height: distributionBarHeight(entry.probability, doraDistributionScale) }" /></i>
+              <i><em :style="{ transform: `scaleY(${distributionBarScale(entry.probability, doraDistributionScale)})` }" /></i>
               <small>{{ entry.value }}</small>
             </span>
           </div>
@@ -86,7 +86,7 @@
               @mouseleave="tooltip.clear"
               @focus="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.score')}`, formatDistributionPoints(entry.value), entry.probability)"
               @blur="tooltip.clear"
-            ><span :style="{ height: distributionBarHeight(entry.probability, scoreDistributionScale) }" /></i>
+            ><span :style="{ transform: `scaleY(${distributionBarScale(entry.probability, scoreDistributionScale)})` }" /></i>
           </div>
           <div v-if="opponent.scoreModes.length" class="analysis-score-modes">
             <span
@@ -145,7 +145,7 @@ const {
   hasOpponentScoreDistributions,
   doraDistributionScale,
   scoreDistributionScale,
-  distributionBarHeight,
+  distributionBarScale,
   formatDistributionPoints,
   formatProbability,
 } = useOpponentAnalysisData(props, t, numberLocale)

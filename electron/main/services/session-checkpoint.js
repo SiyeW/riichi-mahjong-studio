@@ -75,7 +75,21 @@ function createSessionCheckpoint({ exportRecord, isRunning, delayMs = 750,
     if (value.record?.game?.gameId === gameId) checkpoint = value
   }
 
-  return { observe, changed, stop, reset, remember, get: () => checkpoint }
+  function moveCursor(nodeId) {
+    const game = checkpoint?.record?.game
+    if (!nodeId || !game?.nodes?.[nodeId]) return false
+    game.currentNodeId = nodeId
+    game.pendingReview = null
+    return true
+  }
+
+  function updateVisibility(visibility) {
+    if (!checkpoint || !visibility || typeof visibility !== 'object') return false
+    checkpoint.visibility = { ...visibility }
+    return true
+  }
+
+  return { observe, changed, stop, reset, remember, moveCursor, updateVisibility, get: () => checkpoint }
 }
 
 module.exports = { createSessionCheckpoint }

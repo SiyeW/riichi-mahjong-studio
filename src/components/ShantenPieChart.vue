@@ -40,9 +40,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { useI18n } from '../i18n'
-import { getUiMotionDurationMs } from '../uiMotion'
 
 const { t } = useI18n()
 
@@ -67,53 +66,16 @@ function normalizeProbabilities(values: number[]): number[] {
   return props.sliceLabels.map(() => 0)
 }
 
-const isEmpty = computed(() => normalizeProbabilities(props.probabilities).every((value) => value === 0))
+const normalizedProbabilities = computed(() => normalizeProbabilities(props.probabilities))
+const isEmpty = computed(() => normalizedProbabilities.value.every((value) => value === 0))
 const chartAriaLabel = computed(() => (
   isEmpty.value
     ? t('shanten.emptyAria', { opponent: props.label })
     : t('shanten.chartAria', { opponent: props.label })
 ))
-const animatedProbabilities = ref(normalizeProbabilities(props.probabilities))
-let animationFrame = 0
-
-function stopAnimation() {
-  if (!animationFrame) return
-  cancelAnimationFrame(animationFrame)
-  animationFrame = 0
-}
-
-function animateTo(values: number[]) {
-  stopAnimation()
-  const source = normalizeProbabilities(animatedProbabilities.value)
-  const target = normalizeProbabilities(values)
-  const changed = target.some((value, index) => Math.abs(value - source[index]) > 1e-6)
-  if (!changed || props.reduceMotion) {
-    animatedProbabilities.value = target
-    return
-  }
-
-  const startedAt = performance.now()
-  const duration = getUiMotionDurationMs()
-  const step = (now: number) => {
-    const progress = Math.min(1, (now - startedAt) / duration)
-    const eased = 1 - ((1 - progress) ** 3)
-    animatedProbabilities.value = source.map(
-      (value, index) => value + ((target[index] - value) * eased),
-    )
-    if (progress < 1) animationFrame = requestAnimationFrame(step)
-    else animationFrame = 0
-  }
-  animationFrame = requestAnimationFrame(step)
-}
-
-watch(() => props.probabilities, animateTo)
-watch(() => props.reduceMotion, (reduced) => {
-  if (reduced) animateTo(props.probabilities)
-})
-
 const slices = computed(() => {
   let cumulative = 0
-  return animatedProbabilities.value.map((probability, index) => {
+  return normalizedProbabilities.value.map((probability, index) => {
     const startAngle = (cumulative * 2 * Math.PI) - (Math.PI / 2)
     cumulative += probability
     const endAngle = (cumulative * 2 * Math.PI) - (Math.PI / 2)
@@ -140,8 +102,6 @@ const slices = computed(() => {
 })
 
 const labeledSlices = computed(() => slices.value.filter((slice) => slice.probability > 0.05))
-
-onBeforeUnmount(stopAnimation)
 </script>
 
 <style scoped>

@@ -165,7 +165,6 @@
   bottom: 0;
   min-width: 0;
   outline: none;
-  transition: width var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .analysis-offense-segment.is-win {
@@ -197,7 +196,6 @@
 
 .analysis-offense-track.labels-measured .analysis-offense-value {
   opacity: 1;
-  transition: left var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .analysis-offense-segment:focus-visible {

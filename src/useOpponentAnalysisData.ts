@@ -44,8 +44,8 @@ export function useOpponentAnalysisData(
   const scoreDistributionScale = computed(() => maximumDistributionProbability(
     opponentCards.value.map((opponent) => opponent.scorePrediction),
   ))
-  function distributionBarHeight(value: number, scale: number): string {
-    return `${Math.min(1, clampProbability(value) / Math.max(0.01, scale)) * 100}%`
+  function distributionBarScale(value: number, scale: number): number {
+    return Math.min(1, clampProbability(value) / Math.max(0.01, scale))
   }
   return {
     ...formatting,
@@ -54,6 +54,6 @@ export function useOpponentAnalysisData(
     hasOpponentScoreDistributions,
     doraDistributionScale,
     scoreDistributionScale,
-    distributionBarHeight,
+    distributionBarScale,
   }
 }

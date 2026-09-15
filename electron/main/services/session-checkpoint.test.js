@@ -57,6 +57,25 @@ test('many changes share one timer and exports never overlap', async () => {
   f.checkpoint.stop()
 })
 
+test('cursor and visibility changes patch the completed snapshot without another export', async () => {
+  const f = fixture()
+  f.checkpoint.changed()
+  f.fire()
+  f.requests[0].resolve({
+    state: { gameLoaded: true },
+    view: { gameId: 'a' },
+    record: { game: { gameId: 'a', currentNodeId: 'n1', pendingReview: { nodeId: 'n1' }, nodes: { n1: {}, n2: {} } } },
+  })
+  await turn()
+
+  assert.equal(f.checkpoint.moveCursor('n2'), true)
+  assert.equal(f.checkpoint.updateVisibility({ opponentAnalysis: true }), true)
+  assert.equal(f.checkpoint.get().record.game.currentNodeId, 'n2')
+  assert.equal(f.checkpoint.get().record.game.pendingReview, null)
+  assert.deepEqual(f.checkpoint.get().visibility, { opponentAnalysis: true })
+  assert.equal(f.timers.size, 0)
+})
+
 test('switching games clears the old checkpoint and ignores its delayed export', async () => {
   const f = fixture()
   f.checkpoint.changed(); f.fire()
