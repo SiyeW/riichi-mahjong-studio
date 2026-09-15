@@ -19,6 +19,7 @@
         "RMS_BACKEND_CONFIG": "${workspaceFolder}/.mjai-runtime/debug/config.json"
       },
       "preLaunchTask": "RMS: Ensure Renderer",
+      "postDebugTask": "RMS: Stop Renderer",
       "serverReadyAction": {
         "pattern": "DevTools listening on (ws://\\S+)",
         "action": "startDebugging",
