@@ -36,6 +36,7 @@ export interface PythonEventRouterOptions {
     nodeId: string | null | undefined,
     analysis: NonNullable<GameView['analysis']>,
   ) => void
+  suppressAnalysisMotion: () => void
 }
 
 function eventMatchesGame(event: PythonEvent, gameId: string | null | undefined): boolean {
@@ -159,6 +160,9 @@ export function createPythonEventRouter(options: PythonEventRouterOptions) {
 
     const analysis = event.analysis as NonNullable<GameView['analysis']>
     options.cacheDecisionAnalysis(event.gameId || options.gameView.gameId, event.nodeId, analysis)
-    if (event.nodeId === options.gameView.currentNodeId) options.gameView.analysis = analysis
+    if (event.nodeId === options.gameView.currentNodeId) {
+      options.suppressAnalysisMotion()
+      options.gameView.analysis = analysis
+    }
   }
 }

@@ -12,6 +12,7 @@ function createHarness() {
     opponent: [] as unknown[],
     cached: [] as Array<{ gameId: unknown; nodeId: unknown; analysis: unknown }>,
     prefetch: [] as Array<[string, string]>,
+    motionSuppressions: 0,
   }
   const status = {
     controlledSeat: 1,
@@ -53,6 +54,7 @@ function createHarness() {
     fetchAnalysisOnce: async () => {},
     applyOpponentAnalysisEvent: (analysis) => calls.opponent.push(analysis),
     cacheDecisionAnalysis: (gameId, nodeId, analysis) => calls.cached.push({ gameId, nodeId, analysis }),
+    suppressAnalysisMotion: () => { calls.motionSuppressions += 1 },
   }
   return { calls, gameView, options, status, route: createPythonEventRouter(options) }
 }
@@ -108,4 +110,21 @@ test('decision analysis is cached for its event node without replacing another c
 
   assert.deepEqual(calls.cached, [{ gameId: 'game-current', nodeId: 'node-prefetched', analysis }])
   assert.equal(gameView.analysis, null)
+  assert.equal(calls.motionSuppressions, 0)
+})
+
+test('decision analysis for the visible node suppresses chart motion before publication', () => {
+  const { calls, gameView, route } = createHarness()
+  const analysis = { seat: 1, discardEntries: [] } as unknown as NonNullable<GameView['analysis']>
+
+  route({
+    type: 'analysis_ready',
+    gameId: 'game-current',
+    nodeId: 'node-current',
+    analysis,
+    cacheEpoch: 1,
+  } as PythonEvent)
+
+  assert.equal(calls.motionSuppressions, 1)
+  assert.equal(gameView.analysis, analysis)
 })

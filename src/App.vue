@@ -165,7 +165,11 @@
             role="status"
             aria-live="polite"
           >{{ tileArtworkLoadingLabel }}</div>
-          <div v-perceptual-surface="activePerceptualSurfaceBinding" class="grid-main">
+          <div
+            v-perceptual-surface="activePerceptualSurfaceBinding"
+            class="grid-main"
+            :class="{ 'reset-without-motion': suppressAnalysisTransitions }"
+          >
             <!-- 用户手牌（屏幕下方，south 方位） -->
             <div class="grid-hand-p0-container" :style="southLaneStyle">
               <div class="south-command-stack">
@@ -295,7 +299,6 @@
                     class="discard-bars ron-risk-bars"
                     :class="{
                       'recommendation-toggle': canToggleDecisionRecommendations,
-                      'reset-without-motion': suppressOpponentAnalysisTransitions,
                     }"
                     :role="canToggleDecisionRecommendations ? 'button' : undefined"
                     :tabindex="canToggleDecisionRecommendations ? 0 : undefined"
@@ -402,7 +405,7 @@
         :section="analysisPanelSection(workspaceItemId)"
         :title="analysisPanelTitle(workspaceItemId)"
         :dragging="draggingDockPanel === workspaceItemId"
-        :suppress-transitions="suppressOpponentAnalysisTransitions"
+        :suppress-transitions="suppressAnalysisTransitions"
         :ui-scale="uiScale"
         :perceptual-surface="activePerceptualSurfaceBinding"
         :loading="opponentAnalysisIsLoading"
@@ -412,7 +415,7 @@
         :shanten-colors="shantenColors"
         :shanten-labels="SHANTEN_LABELS"
         :shanten-short-labels="SHANTEN_SHORT_LABELS"
-        :reduce-motion="reduceMotionEnabled || suppressOpponentAnalysisTransitions"
+        :reduce-motion="reduceMotionEnabled || suppressAnalysisTransitions"
         :controlled-seat="status.controlledSeat"
         :dealer="gameView.table?.dealer ?? 0"
         :tile-image-src="tileImageSrc"
@@ -1023,7 +1026,8 @@ const {
   shantenStatus,
   shantenViewMode,
   showTrainingRecommendations,
-  suppressOpponentAnalysisTransitions,
+  suppressAnalysisMotion,
+  suppressAnalysisTransitions,
   syncAnalysisVisibilityToBackend,
   toggleDecisionRecommendations,
 } = useAnalysisSession({
@@ -1586,6 +1590,8 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
     pendingReview: gameView.pendingReview,
   }
   const isNewGame = nextView.gameId !== gameView.gameId
+  const positionChanged = isNewGame || nextView.currentNodeId !== gameView.currentNodeId
+  if (positionChanged) suppressAnalysisMotion()
   const previousRoundKey = opponentAnalysisRoundKey(gameView)
   const nextRoundKey = opponentAnalysisRoundKey(nextView)
   const roundChanged = isNewGame || (nextRoundKey !== null && nextRoundKey !== previousRoundKey)
@@ -1632,7 +1638,7 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   if (gameView.opponentAnalysis) {
     const analysisUnavailable = opponentAnalysisPermanentlyUnavailable.value
     applyAnalysisResult(gameView.opponentAnalysis, {
-      withoutMotion: analysisUnavailable,
+      withoutMotion: positionChanged || analysisUnavailable,
       clearWhenEmpty: analysisUnavailable,
     })
   }
@@ -1876,6 +1882,7 @@ const handlePythonEvent = createPythonEventRouter({
   fetchAnalysisOnce,
   applyOpponentAnalysisEvent,
   cacheDecisionAnalysis,
+  suppressAnalysisMotion,
 })
 
 async function fetchAndShowMjaiDebug() {

@@ -469,8 +469,14 @@
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.ron-risk-bars.reset-without-motion .ron-risk-slot.has-adaptive-threshold::before,
-.ron-risk-bars.reset-without-motion .ron-risk-fill {
+.grid-main.reset-without-motion .special-action-bar-track::after,
+.grid-main.reset-without-motion .special-action-bar-upper,
+.grid-main.reset-without-motion .special-action-bar-fill,
+.grid-main.reset-without-motion .choice-bar-lane::after,
+.grid-main.reset-without-motion .choice-bar-upper,
+.grid-main.reset-without-motion .choice-bar-fill,
+.grid-main.reset-without-motion .ron-risk-slot.has-adaptive-threshold::before,
+.grid-main.reset-without-motion .ron-risk-fill {
   transition: none;
 }
 

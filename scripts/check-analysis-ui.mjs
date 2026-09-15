@@ -54,12 +54,33 @@ try {
                   seat,
                   tiles: Object.fromEntries(
                     ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p', '9p', '1s', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s', '1z', '2z', '3z', '4z', '5z', '6z', '7z']
-                      .map((tile, tileIndex) => [tile, ((tileIndex + sourceIndex) % 5 + 1) * 0.025]),
+                      .map((tile, tileIndex) => [
+                        tile,
+                        Math.min(0.95, (((tileIndex + sourceIndex) % 5) + 1) * 0.025 * expectedValue),
+                      ]),
                   ),
                 })),
               },
             },
           }
+        },
+        resultForNode(nodeId, expectedValue = 1) {
+          const result = this.result(expectedValue)
+          result.context.nodeId = nodeId
+          const distributions = [
+            [0.52, 0.24, 0.12, 0.06, 0.03, 0.02, 0.01, 0],
+            [0.18, 0.42, 0.2, 0.1, 0.05, 0.03, 0.01, 0.01],
+            [0.08, 0.2, 0.4, 0.16, 0.08, 0.04, 0.02, 0.02],
+          ]
+          const shift = Math.max(0, Math.min(2, Math.round(expectedValue) - 1))
+          result.predictions = {
+            opponents: {
+              kamicha: distributions[(0 + shift) % distributions.length],
+              toimen: distributions[(1 + shift) % distributions.length],
+              shimocha: distributions[(2 + shift) % distributions.length],
+            },
+          }
+          return result
         },
         publish(result = this.result()) {
           vm.handlePythonEvent({ type: 'opponent_analysis_ready', opponentAnalysis: result, gameId: result.context.gameId, nodeId: result.context.nodeId, seat: result.context.seat })
@@ -858,9 +879,93 @@ try {
       })
     })
   }
+
+  // Moving through record nodes is state inspection, not a request to replay
+  // every prediction animation. Cached and late analysis updates must settle in
+  // one paint while ordinary pointer feedback remains animated.
+  await page.setViewportSize({ width: 1400, height: 1000 })
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    const { vm } = check
+    const initial = check.resultForNode(vm.gameView.currentNodeId, 1)
+    check.publish(initial)
+    vm.settings.display.workspaceLayout = {
+      ...vm.workspaceLayout,
+      analysisVisible: true,
+      consoleVisible: false,
+      layout: {
+        type: 'split', direction: 'horizontal', weights: [2, 1],
+        children: [
+          { type: 'item', id: 'table' },
+          { type: 'split', direction: 'vertical', weights: [1, 1], children: [
+            { type: 'item', id: 'analysis-opponents' },
+            { type: 'item', id: 'analysis-risk' },
+          ] },
+        ],
+      },
+      analysisPanels: { opponents: true, game: false, risk: true, counts: false },
+    }
+  })
+  await page.locator('.shanten-chart path').first().waitFor()
+  await page.locator('.analysis-risk-bars > i > span').first().waitFor()
+  await page.waitForTimeout(200)
+  const navigationMotion = await page.evaluate(async () => {
+    const check = window.analysisCheck
+    const { vm } = check
+    const originalJump = window.studioAPI.jumpToNode
+    const originalRead = window.studioAPI.getAnalysis
+    const nextNodeId = `${vm.gameView.currentNodeId}-performance`
+    const nextResult = check.resultForNode(nextNodeId, 2)
+    window.studioAPI.getAnalysis = async () => nextResult
+    window.studioAPI.jumpToNode = async () => {
+      const view = JSON.parse(JSON.stringify(vm.gameView))
+      view.currentNodeId = nextNodeId
+      view.opponentAnalysis = nextResult
+      return { state: JSON.parse(JSON.stringify(vm.status)), view }
+    }
+    await vm.jumpToNode(nextNodeId)
+    await Promise.resolve()
+    const during = await new Promise(resolve => requestAnimationFrame(() => {
+      const animatedTargets = document.getAnimations()
+        .filter(animation => animation.playState !== 'finished')
+        .map(animation => animation.effect?.target)
+        .filter(target => target instanceof Element && target.closest('.grid-main, .analysis-panel-content'))
+      const transitionDurations = [
+        ...document.querySelectorAll('.analysis-risk-bars > i > span, .analysis-dora-distribution em, .analysis-score-distribution i > span'),
+      ].map(element => getComputedStyle(element).transitionDuration)
+      resolve({
+        tableSuppressed: document.querySelector('.grid-main')?.classList.contains('reset-without-motion') || false,
+        panelsSuppressed: [...document.querySelectorAll('.analysis-panel-content')]
+          .every(element => element.classList.contains('reduce-motion')),
+        animatedTargetCount: animatedTargets.length,
+        transitionDurations,
+        piePath: document.querySelector('.shanten-chart path')?.getAttribute('d') || '',
+      })
+    }))
+    const after = await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+      resolve({
+        tableSuppressed: document.querySelector('.grid-main')?.classList.contains('reset-without-motion') || false,
+        piePath: document.querySelector('.shanten-chart path')?.getAttribute('d') || '',
+      })
+    }))))
+    window.studioAPI.jumpToNode = originalJump
+    window.studioAPI.getAnalysis = originalRead
+    return { during, after }
+  })
+  assert.equal(navigationMotion.during.tableSuppressed, true, 'table prediction transitions are suppressed during a node paint')
+  assert.equal(navigationMotion.during.panelsSuppressed, true, 'analysis charts are suppressed during a node paint')
+  assert.equal(navigationMotion.during.animatedTargetCount, 0, 'node changes do not start prediction animations')
+  assert.ok(
+    navigationMotion.during.transitionDurations.length > 0
+      && navigationMotion.during.transitionDurations.every(duration => duration === '0s'),
+    'prediction bars publish their new geometry without transition work',
+  )
+  assert.equal(navigationMotion.after.tableSuppressed, false, 'ordinary interaction motion resumes after the node paint')
+  assert.equal(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart does not continue a JavaScript animation after navigation')
+
   await checkWorkspaceDock(page)
   assert.deepEqual(errors, [])
-  console.log('Analysis UI: events, hover, navigation, cache, geometry, artwork and workspace docking passed.')
+  console.log('Analysis UI: events, hover, navigation motion, cache, geometry, artwork and workspace docking passed.')
 } catch (error) {
   if (process.env.GITHUB_ACTIONS) {
     const detail = error instanceof Error ? error.stack || error.message : String(error)

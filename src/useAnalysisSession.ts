@@ -1,4 +1,4 @@
-import { computed, nextTick, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { acceptsAnalysisEpoch } from './analysisEpoch.ts'
 import { decisionPositionKey } from './analysisPosition.ts'
 import type { TranslationParams } from './i18n'
@@ -59,16 +59,17 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   const shantenPredData = ref<Record<string, number[]>>({})
   const shantenGTData = ref<Record<string, number[]>>({})
   const shantenViewMode = ref<'predictions' | 'ground_truth'>('predictions')
-  const suppressOpponentAnalysisTransitions = ref(false)
+  const suppressAnalysisTransitions = ref(false)
   const shantenRawData = ref<Record<string, Record<string, unknown>>>({})
   const shantenRawJson = computed(() => JSON.stringify(shantenRawData.value, null, 2))
   const shantenStatus = ref('—')
   const clearingAnalysisCaches = ref(false)
   const analysisCacheClearMessage = ref('')
-  let opponentAnalysisResetGeneration = 0
+  let analysisTransitionResetGeneration = 0
+  let analysisTransitionStartFrame = 0
+  let analysisTransitionEndFrame = 0
   let minimumDecisionCacheEpoch: number | null = null
   let minimumOpponentCacheEpoch: number | null = null
-  let deferredAnalysisResult: Record<string, unknown> | null = null
   let analysisReadGeneration = 0
   let analysisVisibilityGeneration = 0
 
@@ -150,25 +151,32 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
       && Number(context.seat) === status.controlledSeat
   }
 
-  function suppressOpponentAnalysisMotion() {
-    const resetGeneration = ++opponentAnalysisResetGeneration
-    suppressOpponentAnalysisTransitions.value = true
-    deferredAnalysisResult = null
+  function cancelAnalysisTransitionReset() {
+    window.cancelAnimationFrame(analysisTransitionStartFrame)
+    window.cancelAnimationFrame(analysisTransitionEndFrame)
+    analysisTransitionStartFrame = 0
+    analysisTransitionEndFrame = 0
+  }
+
+  function suppressAnalysisMotion() {
+    const resetGeneration = ++analysisTransitionResetGeneration
+    suppressAnalysisTransitions.value = true
+    cancelAnalysisTransitionReset()
     void nextTick(() => {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          if (resetGeneration !== opponentAnalysisResetGeneration) return
-          suppressOpponentAnalysisTransitions.value = false
-          const deferredResult = deferredAnalysisResult
-          deferredAnalysisResult = null
-          if (deferredResult) applyAnalysisResult(deferredResult)
+      if (resetGeneration !== analysisTransitionResetGeneration) return
+      analysisTransitionStartFrame = window.requestAnimationFrame(() => {
+        analysisTransitionStartFrame = 0
+        analysisTransitionEndFrame = window.requestAnimationFrame(() => {
+          analysisTransitionEndFrame = 0
+          if (resetGeneration !== analysisTransitionResetGeneration) return
+          suppressAnalysisTransitions.value = false
         })
       })
     })
   }
 
   function clearOpponentAnalysisWithoutMotion() {
-    suppressOpponentAnalysisMotion()
+    suppressAnalysisMotion()
     shantenPredData.value = {}
     shantenGTData.value = {}
     ronWaitPredData.value = {}
@@ -183,11 +191,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   ): boolean {
     if (!analysisResultMatchesCurrentPosition(result)) return false
     gameView.opponentAnalysis = result
-    if (suppressOpponentAnalysisTransitions.value && !applyOptions.withoutMotion) {
-      deferredAnalysisResult = result
-      return true
-    }
-
     const raw = result.raw as Record<string, unknown> | undefined
     shantenStatus.value = String(result.status || '?')
     shantenRawData.value = raw ? raw as Record<string, Record<string, unknown>> : {}
@@ -208,7 +211,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
       if (applyOptions.clearWhenEmpty) clearOpponentAnalysisWithoutMotion()
       return true
     }
-    if (applyOptions.withoutMotion) suppressOpponentAnalysisMotion()
+    if (applyOptions.withoutMotion && !suppressAnalysisTransitions.value) suppressAnalysisMotion()
     shantenPredData.value = hasPredOpponents ? { ...predOpponents } : {}
     ronWaitPredData.value = hasPredRonWait ? { ...predRonWait } : {}
     shantenGTData.value = hasGtOpponents ? { ...gtOpponents } : {}
@@ -226,7 +229,10 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     try {
       const result = await window.studioAPI.getAnalysis()
       if (generation !== analysisReadGeneration || !opponentAnalysisNeeded.value) return
-      applyAnalysisResult(result, { clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value })
+      applyAnalysisResult(result, {
+        withoutMotion: true,
+        clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value,
+      })
     } catch (error) {
       if (generation !== analysisReadGeneration) return
       shantenStatus.value = `err: ${String(error)}`
@@ -312,7 +318,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   function applyOpponentAnalysisEvent(result: Record<string, unknown>): boolean {
     if (clearingAnalysisCaches.value || !analysisResultMatchesCurrentPosition(result)) return false
     invalidateOpponentRead()
-    return applyAnalysisResult(result)
+    return applyAnalysisResult(result, { withoutMotion: true })
   }
 
   async function clearLoadedAnalysisCaches() {
@@ -368,6 +374,11 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     },
   )
 
+  onBeforeUnmount(() => {
+    analysisTransitionResetGeneration += 1
+    cancelAnalysisTransitionReset()
+  })
+
   return {
     SHANTEN_LABELS,
     acceptsDecisionEventEpoch,
@@ -399,7 +410,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     shantenStatus,
     shantenViewMode,
     showTrainingRecommendations,
-    suppressOpponentAnalysisTransitions,
+    suppressAnalysisMotion,
+    suppressAnalysisTransitions,
     syncAnalysisVisibilityToBackend,
     toggleDecisionRecommendations,
   }
