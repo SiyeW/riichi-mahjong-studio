@@ -32,27 +32,28 @@
       </div>
     </div>
     <div class="analysis-dock-body">
-      <p v-if="loading" class="analysis-panel-state">{{ t('common.loading') }}</p>
-      <template v-else>
-        <p v-if="loadError" class="analysis-panel-state is-error">{{ loadError }}</p>
-        <AnalysisPanel
-          v-else
-          :section="section"
-          :analysis="analysis"
-          :analysis-opponents="analysisOpponents"
-          :shanten-colors="shantenColors"
-          :shanten-labels="shantenLabels"
-          :shanten-short-labels="shantenShortLabels"
-          :reduce-motion="reduceMotion"
-          :controlled-seat="controlledSeat"
-          :dealer="dealer"
-          :tile-image-src="tileImageSrc"
-          :tile-face-label="tileFaceLabel"
-          :perceptual-surface="perceptualSurface"
-          :count-layout="countLayout"
-          @update:count-layout="emit('update:countLayout', $event)"
-        />
-      </template>
+      <AnalysisPanel
+        v-if="analysis || (!loading && !loadError)"
+        :section="section"
+        :analysis="analysis"
+        :analysis-opponents="analysisOpponents"
+        :shanten-colors="shantenColors"
+        :shanten-labels="shantenLabels"
+        :shanten-short-labels="shantenShortLabels"
+        :reduce-motion="reduceMotion"
+        :controlled-seat="controlledSeat"
+        :dealer="dealer"
+        :tile-image-src="tileImageSrc"
+        :tile-face-label="tileFaceLabel"
+        :perceptual-surface="perceptualSurface"
+        :count-layout="countLayout"
+        @update:count-layout="emit('update:countLayout', $event)"
+      />
+      <p v-else-if="loadError" class="analysis-panel-state is-error">{{ loadError }}</p>
+      <p v-else class="analysis-panel-state">{{ t('common.loading') }}</p>
+      <div v-if="loading && analysis" class="analysis-loading-overlay" role="status">
+        <span>{{ t('common.loading') }}</span>
+      </div>
     </div>
   </section>
 </template>

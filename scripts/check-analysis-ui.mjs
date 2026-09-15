@@ -490,7 +490,7 @@ try {
       analysisPanels: { opponents: true, game: false, risk: false, counts: false },
     }
   })
-  const opponentGeometry = async () => page.locator('.analysis-opponent-section').evaluate(section => {
+  const opponentGeometry = async () => page.locator('.analysis-panel-live:not(.analysis-panel-snapshot) > .analysis-opponent-section').evaluate(section => {
     const dora = section.querySelector('.analysis-dora-distribution')
     const score = section.querySelector('.analysis-score-distribution')
     const grid = section.querySelector('.analysis-opponent-prediction-grid')
@@ -880,9 +880,8 @@ try {
     })
   }
 
-  // A node change keeps visible feedback without starting an animation for
-  // every individual chart primitive. Each visible analysis panel owns one
-  // compositor-only update animation and its data geometry settles immediately.
+  // A cached node change lets table motion finish first, then replaces each
+  // visible analysis panel through one compositor-owned snapshot transition.
   await page.setViewportSize({ width: 1400, height: 1000 })
   await page.evaluate(() => {
     const check = window.analysisCheck
@@ -909,6 +908,10 @@ try {
   await page.locator('.shanten-chart path').first().waitFor()
   await page.locator('.analysis-risk-bars > i > span').first().waitFor()
   await page.waitForTimeout(200)
+  const permanentLayerHints = await page.evaluate(() => [
+    ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back), .grid-main .choice-bar-upper, .grid-main .choice-bar-fill, .grid-main .ron-risk-fill'),
+  ].filter(element => getComputedStyle(element).willChange.includes('transform')).length)
+  assert.equal(permanentLayerHints, 0, 'repeated table primitives do not reserve permanent compositor layers')
   const navigationMotion = await page.evaluate(async () => {
     const check = window.analysisCheck
     const { vm } = check
@@ -923,40 +926,42 @@ try {
       view.opponentAnalysis = nextResult
       return { state: JSON.parse(JSON.stringify(vm.status)), view }
     }
+    const oldPiePath = document.querySelector('.analysis-panel-live:not(.analysis-panel-snapshot) .shanten-chart path')?.getAttribute('d') || ''
     await vm.jumpToNode(nextNodeId)
-    await Promise.resolve()
-    const during = await new Promise(resolve => requestAnimationFrame(() => {
+    const immediatePiePath = document.querySelector('.analysis-panel-live:not(.analysis-panel-snapshot) .shanten-chart path')?.getAttribute('d') || ''
+    const during = await new Promise(resolve => setTimeout(() => {
       const animatedTargets = document.getAnimations()
         .filter(animation => animation.playState !== 'finished')
         .map(animation => animation.effect?.target)
         .filter(target => target instanceof Element && target.closest('.grid-main, .analysis-panel-content'))
       const transitionDurations = [
-        ...document.querySelectorAll('.analysis-risk-bars > i > span, .analysis-dora-distribution em, .analysis-score-distribution i > span'),
+        ...document.querySelectorAll('.analysis-panel-live:not(.analysis-panel-snapshot) .analysis-risk-bars > i > span, .analysis-panel-live:not(.analysis-panel-snapshot) .analysis-dora-distribution em, .analysis-panel-live:not(.analysis-panel-snapshot) .analysis-score-distribution i > span'),
       ].map(element => getComputedStyle(element).transitionDuration)
       resolve({
         tableSuppressed: document.querySelector('.grid-main')?.classList.contains('reset-without-motion') || false,
         panelsSuppressed: [...document.querySelectorAll('.analysis-panel-content')]
           .every(element => element.classList.contains('reduce-motion')),
         animatedTargetCount: animatedTargets.length,
-        animationsArePanelOwned: animatedTargets.every(target => target.classList.contains('analysis-panel-content')),
+        animationsArePanelOwned: animatedTargets.every(target => target.classList.contains('analysis-panel-snapshot')),
         transitionDurations,
-        piePath: document.querySelector('.shanten-chart path')?.getAttribute('d') || '',
+        piePath: document.querySelector('.analysis-panel-live:not(.analysis-panel-snapshot) .shanten-chart path')?.getAttribute('d') || '',
       })
-    }))
+    }, 135))
     const after = await new Promise(resolve => setTimeout(() => {
       resolve({
         activePanelAnimations: document.getAnimations().filter(animation => (
           animation.playState !== 'finished'
           && animation.effect?.target instanceof Element
-          && animation.effect.target.classList.contains('analysis-panel-content')
+          && animation.effect.target.classList.contains('analysis-panel-snapshot')
         )).length,
-        piePath: document.querySelector('.shanten-chart path')?.getAttribute('d') || '',
+        piePath: document.querySelector('.analysis-panel-live:not(.analysis-panel-snapshot) .shanten-chart path')?.getAttribute('d') || '',
       })
-    }, 200))
+    }, 140))
     window.studioAPI.jumpToNode = originalJump
     window.studioAPI.getAnalysis = originalRead
-    return { during, after }
+    return { oldPiePath, immediatePiePath, during, after }
   })
+  assert.equal(navigationMotion.immediatePiePath, navigationMotion.oldPiePath, 'cached analysis waits until table motion has finished')
   assert.equal(navigationMotion.during.tableSuppressed, false, 'ordinary table motion remains available during navigation')
   assert.equal(navigationMotion.during.panelsSuppressed, false, 'ordinary analysis feedback remains available during navigation')
   assert.equal(navigationMotion.during.animatedTargetCount, 2, 'each visible analysis panel owns one update animation')
@@ -964,10 +969,56 @@ try {
   assert.ok(
     navigationMotion.during.transitionDurations.length > 0
       && navigationMotion.during.transitionDurations.every(duration => duration === '0s'),
-    'prediction primitives publish their new geometry without layout or compositor fan-out',
+    'prediction primitives do not start their own transitions',
   )
   assert.equal(navigationMotion.after.activePanelAnimations, 0, 'panel feedback finishes within the shared motion duration')
   assert.equal(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart does not perform per-frame JavaScript interpolation')
+
+  // A slow result retains the previous analysis. Loading feedback appears only
+  // after the delay and disappears when the complete next result is presented.
+  await page.evaluate(async () => {
+    const check = window.analysisCheck
+    const { vm } = check
+    check.originalJumpForSlowAnalysis = window.studioAPI.jumpToNode
+    check.originalReadForSlowAnalysis = window.studioAPI.getAnalysis
+    check.slowNodeId = `${vm.gameView.currentNodeId}-slow`
+    check.slowResult = check.resultForNode(check.slowNodeId, 3)
+    window.studioAPI.getAnalysis = () => new Promise(resolve => { check.resolveSlowRead = resolve })
+    window.studioAPI.jumpToNode = async () => {
+      const view = JSON.parse(JSON.stringify(vm.gameView))
+      view.currentNodeId = check.slowNodeId
+      view.opponentAnalysis = null
+      return { state: JSON.parse(JSON.stringify(vm.status)), view }
+    }
+    check.oldSlowPiePath = document.querySelector('.analysis-panel-live:not(.analysis-panel-snapshot) .shanten-chart path')?.getAttribute('d') || ''
+    await vm.jumpToNode(check.slowNodeId)
+  })
+  await page.waitForFunction(() => typeof window.analysisCheck.resolveSlowRead === 'function')
+  await page.waitForTimeout(350)
+  assert.equal(await page.locator('.analysis-loading-overlay').count(), 0, 'short waits do not flash a loading layer')
+  assert.equal(
+    await page.locator('.analysis-panel-live:not(.analysis-panel-snapshot) .shanten-chart path').first().getAttribute('d'),
+    await page.evaluate(() => window.analysisCheck.oldSlowPiePath),
+    'slow analysis keeps the previous result visible',
+  )
+  await page.waitForTimeout(200)
+  assert.equal(await page.locator('.analysis-loading-overlay').count(), 2, 'each visible analysis panel shows delayed loading feedback')
+  if (process.env.RMS_ANALYSIS_LOADING_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_ANALYSIS_LOADING_SCREENSHOT })
+  }
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    check.resolveSlowRead(check.slowResult)
+  })
+  await page.waitForFunction(() => document.querySelectorAll('.analysis-loading-overlay').length === 0)
+  await page.waitForFunction(() => document.querySelectorAll('.analysis-panel-snapshot').length === 2)
+  await page.waitForTimeout(140)
+  assert.equal(await page.locator('.analysis-panel-snapshot').count(), 0, 'slow-result handoff also cleans up its snapshots')
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    window.studioAPI.jumpToNode = check.originalJumpForSlowAnalysis
+    window.studioAPI.getAnalysis = check.originalReadForSlowAnalysis
+  })
 
   await checkWorkspaceDock(page)
   assert.deepEqual(errors, [])

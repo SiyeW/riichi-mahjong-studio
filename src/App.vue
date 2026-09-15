@@ -408,9 +408,9 @@
         :suppress-transitions="suppressAnalysisTransitions"
         :ui-scale="uiScale"
         :perceptual-surface="activePerceptualSurfaceBinding"
-        :loading="opponentAnalysisIsLoading"
+        :loading="opponentAnalysisLoadingVisible"
         :load-error="opponentAnalysisLoadError"
-        :analysis="gameView.opponentAnalysis"
+        :analysis="displayedOpponentAnalysis"
         :analysis-opponents="analysisOpponents"
         :shanten-colors="shantenColors"
         :shanten-labels="SHANTEN_LABELS"
@@ -1001,24 +1001,26 @@ const {
   acceptsOpponentEventEpoch,
   analysisCacheClearMessage,
   applyOpponentAnalysisEvent,
-  applyAnalysisResult,
   cacheDecisionAnalysis,
   canToggleDecisionRecommendations,
   clearLoadedAnalysisCaches,
   clearOpponentAnalysisWithoutMotion,
   clearingAnalysisCaches,
   decisionRecommendationsEnabled,
+  displayedOpponentAnalysis,
   effectiveDecisionRecommendationsEnabled,
   fetchAnalysisOnce,
   hasOpponentGroundTruth,
   invalidateOpponentRead,
   opponentAnalysisIsLoading,
+  opponentAnalysisLoadingVisible,
   opponentAnalysisLoadError,
   opponentAnalysisNeeded,
   opponentAnalysisPermanentlyUnavailable,
   resetForBackendLifecycle,
   resetForNewGame,
   resolveNextDecisionAnalysis,
+  stageOpponentAnalysisForView,
   ronWaitPredData,
   analysisOpponents,
   shantenRawData,
@@ -1561,13 +1563,6 @@ const {
   tileImageSrc,
   scheduleAutoAdvance,
 })
-function opponentAnalysisRoundKey(view: GameView): string | null {
-  if (!view.gameId || !view.table) return null
-  const roundRootId = view.tree?.currentRoundRootId
-  if (roundRootId) return `${view.gameId}\u0000${roundRootId}`
-  return `${view.gameId}\u0000${view.table.roundIndex}\u0000${view.table.honba}`
-}
-
 function treeNodeCount(tree: GameView['tree']): number {
   const nodes = tree?.nodes
   if (Array.isArray(nodes)) return nodes.length
@@ -1589,12 +1584,6 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
     pendingReview: gameView.pendingReview,
   }
   const isNewGame = nextView.gameId !== gameView.gameId
-  const previousRoundKey = opponentAnalysisRoundKey(gameView)
-  const nextRoundKey = opponentAnalysisRoundKey(nextView)
-  const roundChanged = isNewGame || (nextRoundKey !== null && nextRoundKey !== previousRoundKey)
-  if (roundChanged) {
-    clearOpponentAnalysisWithoutMotion()
-  }
   const nextAnalysis = resolveNextDecisionAnalysis(nextView, isNewGame)
   const previousPendingDiscard = pendingDiscardFromTable(gameView.table)
   const previousPendingSignature = pendingDiscardSignature(previousPendingDiscard)
@@ -1624,7 +1613,6 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   gameView.currentNodeId = nextView.currentNodeId
   gameView.nodeComment = nextView.nodeComment || ''
   syncBranchNavigationFromGameView(nextView)
-  gameView.opponentAnalysis = nextView.opponentAnalysis || null
   activatePlayPrefetchPosition(nextView.gameId, nextView.currentNodeId)
   gameView.matchSummary = nextView.matchSummary
   gameView.table = nextView.table
@@ -1632,13 +1620,10 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   gameView.analysis = nextAnalysis
   gameView.comparison = nextView.comparison
   gameView.pendingReview = nextView.pendingReview
-  if (gameView.opponentAnalysis) {
-    const analysisUnavailable = opponentAnalysisPermanentlyUnavailable.value
-    applyAnalysisResult(gameView.opponentAnalysis, {
-      withoutMotion: analysisUnavailable,
-      clearWhenEmpty: analysisUnavailable,
-    })
-  }
+  stageOpponentAnalysisForView(nextView.opponentAnalysis, {
+    resetDisplay: isNewGame,
+    withoutMotion: reduceMotionEnabled.value || opponentAnalysisPermanentlyUnavailable.value,
+  })
   const nextTree = nextView.tree
   const currentTree = gameView.tree
   const currentTreeHasCursor = treeContainsNode(currentTree, nextTree?.currentNodeId)

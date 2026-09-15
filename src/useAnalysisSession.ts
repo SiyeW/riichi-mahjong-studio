@@ -6,6 +6,7 @@ import type { StudioSettings } from './contracts/settings'
 import type { GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 import { normalizeTrainingMode } from './trainingSettings.ts'
+import { getUiMotionDurationMs } from './uiMotion.ts'
 
 type Translate = (key: string, params?: TranslationParams) => string
 type DecisionAnalysis = NonNullable<GameView['analysis']>
@@ -63,6 +64,9 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   const shantenRawData = ref<Record<string, Record<string, unknown>>>({})
   const shantenRawJson = computed(() => JSON.stringify(shantenRawData.value, null, 2))
   const shantenStatus = ref('—')
+  const displayedOpponentAnalysis = ref<Record<string, unknown> | null>(null)
+  const opponentAnalysisPending = ref(false)
+  const opponentAnalysisLoadingVisible = ref(false)
   const clearingAnalysisCaches = ref(false)
   const analysisCacheClearMessage = ref('')
   let analysisTransitionResetGeneration = 0
@@ -72,6 +76,15 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   let minimumOpponentCacheEpoch: number | null = null
   let analysisReadGeneration = 0
   let analysisVisibilityGeneration = 0
+  let analysisLoadingTimer: number | null = null
+  let analysisPresentationTimer: number | null = null
+  let analysisPresentationStartFrame = 0
+  let analysisPresentationNotBefore: number | null = 0
+  let pendingAnalysisPresentation: {
+    result: Record<string, unknown>
+    withoutMotion: boolean
+    clearWhenEmpty: boolean
+  } | null = null
 
   const shantenData = computed(() => (
     shantenViewMode.value === 'ground_truth' ? shantenGTData.value : shantenPredData.value
@@ -101,8 +114,9 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   const opponentAnalysisNeeded = computed(() => (
     showTrainingRecommendations.value || showAnalysisDock.value
   ))
-  const hasOpponentAnalysisResult = computed(() => (
-    analysisResultHasRows(gameView.opponentAnalysis)
+  const hasOpponentAnalysisResult = computed(() => analysisResultHasRows(gameView.opponentAnalysis))
+  const hasDisplayedOpponentAnalysis = computed(() => (
+    analysisResultHasRows(displayedOpponentAnalysis.value)
     || hasShantenRows(shantenPredData.value)
     || hasShantenRows(ronWaitPredData.value)
     || hasShantenRows(shantenGTData.value)
@@ -126,6 +140,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     if (status.modelRuntime.opponentAnalysis.unloaded) return false
     if (activity === 'loading') return true
     if (activity === 'error' || opponentAnalysisLoadError.value) return false
+    if (opponentAnalysisPending.value) return true
     return !hasOpponentAnalysisResult.value
       && (activity === 'running' || gameView.opponentAnalysis?.status === 'loading')
   })
@@ -177,12 +192,57 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
 
   function clearOpponentAnalysisWithoutMotion() {
     suppressAnalysisMotion()
+    cancelScheduledAnalysisPresentation()
+    analysisPresentationNotBefore = 0
     shantenPredData.value = {}
     shantenGTData.value = {}
     ronWaitPredData.value = {}
     ronWaitGTData.value = {}
     shantenRawData.value = {}
     shantenStatus.value = '—'
+    displayedOpponentAnalysis.value = null
+    finishOpponentAnalysisPending()
+  }
+
+  function cancelAnalysisLoadingTimer() {
+    if (analysisLoadingTimer !== null) window.clearTimeout(analysisLoadingTimer)
+    analysisLoadingTimer = null
+  }
+
+  function cancelScheduledAnalysisPresentation() {
+    if (analysisPresentationTimer !== null) window.clearTimeout(analysisPresentationTimer)
+    window.cancelAnimationFrame(analysisPresentationStartFrame)
+    analysisPresentationTimer = null
+    analysisPresentationStartFrame = 0
+    pendingAnalysisPresentation = null
+  }
+
+  function finishOpponentAnalysisPending() {
+    opponentAnalysisPending.value = false
+    opponentAnalysisLoadingVisible.value = false
+    cancelAnalysisLoadingTimer()
+  }
+
+  function beginOpponentAnalysisPending() {
+    opponentAnalysisPending.value = true
+    restartAnalysisLoadingFeedback()
+  }
+
+  function restartAnalysisLoadingFeedback() {
+    cancelAnalysisLoadingTimer()
+    if (!opponentAnalysisIsLoading.value) {
+      opponentAnalysisLoadingVisible.value = false
+      return
+    }
+    if (!hasDisplayedOpponentAnalysis.value) {
+      opponentAnalysisLoadingVisible.value = true
+      return
+    }
+    opponentAnalysisLoadingVisible.value = false
+    analysisLoadingTimer = window.setTimeout(() => {
+      analysisLoadingTimer = null
+      if (opponentAnalysisIsLoading.value) opponentAnalysisLoadingVisible.value = true
+    }, 500)
   }
 
   function applyAnalysisResult(
@@ -209,6 +269,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
       || Boolean(protocolOutputs && Object.keys(protocolOutputs).length)
     if (!hasResult) {
       if (applyOptions.clearWhenEmpty) clearOpponentAnalysisWithoutMotion()
+      else if (result.status !== 'loading') finishOpponentAnalysisPending()
       return true
     }
     if (applyOptions.withoutMotion && !suppressAnalysisTransitions.value) suppressAnalysisMotion()
@@ -216,7 +277,80 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     ronWaitPredData.value = hasPredRonWait ? { ...predRonWait } : {}
     shantenGTData.value = hasGtOpponents ? { ...gtOpponents } : {}
     ronWaitGTData.value = hasGtRonWait ? { ...gtRonWait } : {}
+    displayedOpponentAnalysis.value = result
+    finishOpponentAnalysisPending()
     return true
+  }
+
+  function presentScheduledAnalysis() {
+    analysisPresentationTimer = null
+    const pending = pendingAnalysisPresentation
+    pendingAnalysisPresentation = null
+    if (!pending) return
+    applyAnalysisResult(pending.result, {
+      withoutMotion: pending.withoutMotion,
+      clearWhenEmpty: pending.clearWhenEmpty,
+    })
+  }
+
+  function armScheduledAnalysisPresentation() {
+    if (!pendingAnalysisPresentation || analysisPresentationNotBefore === null) return
+    if (analysisPresentationTimer !== null) window.clearTimeout(analysisPresentationTimer)
+    const delay = pendingAnalysisPresentation.withoutMotion
+      ? 0
+      : Math.max(0, analysisPresentationNotBefore - performance.now())
+    if (delay <= 0) presentScheduledAnalysis()
+    else analysisPresentationTimer = window.setTimeout(presentScheduledAnalysis, delay)
+  }
+
+  function beginAnalysisPresentationWindow() {
+    analysisPresentationNotBefore = null
+    void nextTick(() => {
+      analysisPresentationStartFrame = window.requestAnimationFrame((frameTime) => {
+        analysisPresentationStartFrame = 0
+        analysisPresentationNotBefore = frameTime + getUiMotionDurationMs()
+        armScheduledAnalysisPresentation()
+      })
+    })
+  }
+
+  function scheduleAnalysisPresentation(
+    result: Record<string, unknown>,
+    presentationOptions: { withoutMotion?: boolean; clearWhenEmpty?: boolean } = {},
+  ): boolean {
+    if (!analysisResultMatchesCurrentPosition(result)) return false
+    gameView.opponentAnalysis = result
+    const withoutMotion = Boolean(presentationOptions.withoutMotion)
+    pendingAnalysisPresentation = {
+      result,
+      withoutMotion,
+      clearWhenEmpty: Boolean(presentationOptions.clearWhenEmpty),
+    }
+    armScheduledAnalysisPresentation()
+    return true
+  }
+
+  function stageOpponentAnalysisForView(
+    result: Record<string, unknown> | null | undefined,
+    stageOptions: { resetDisplay?: boolean; withoutMotion?: boolean } = {},
+  ) {
+    cancelScheduledAnalysisPresentation()
+    if (stageOptions.resetDisplay) clearOpponentAnalysisWithoutMotion()
+    if (stageOptions.withoutMotion || stageOptions.resetDisplay) analysisPresentationNotBefore = 0
+    else beginAnalysisPresentationWindow()
+    gameView.opponentAnalysis = result || null
+    if (!result) {
+      if (opponentAnalysisNeeded.value && gameView.table && !opponentAnalysisPermanentlyUnavailable.value) {
+        beginOpponentAnalysisPending()
+      }
+      else finishOpponentAnalysisPending()
+      return
+    }
+
+    // Let the table commit and start its compositor animations before the
+    // comparatively large analysis DOM is replaced.
+    beginOpponentAnalysisPending()
+    scheduleAnalysisPresentation(result, { withoutMotion: stageOptions.withoutMotion })
   }
 
   function invalidateOpponentRead() {
@@ -229,12 +363,14 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     try {
       const result = await window.studioAPI.getAnalysis()
       if (generation !== analysisReadGeneration || !opponentAnalysisNeeded.value) return
-      applyAnalysisResult(result, {
+      if (!scheduleAnalysisPresentation(result, {
+        withoutMotion: opponentAnalysisPermanentlyUnavailable.value,
         clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value,
-      })
+      })) return
     } catch (error) {
       if (generation !== analysisReadGeneration) return
       shantenStatus.value = `err: ${String(error)}`
+      finishOpponentAnalysisPending()
     }
   }
 
@@ -317,7 +453,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   function applyOpponentAnalysisEvent(result: Record<string, unknown>): boolean {
     if (clearingAnalysisCaches.value || !analysisResultMatchesCurrentPosition(result)) return false
     invalidateOpponentRead()
-    return applyAnalysisResult(result)
+    return scheduleAnalysisPresentation(result)
   }
 
   async function clearLoadedAnalysisCaches() {
@@ -373,9 +509,16 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     },
   )
 
+  watch(opponentAnalysisIsLoading, (loading) => {
+    if (loading) restartAnalysisLoadingFeedback()
+    else finishOpponentAnalysisPending()
+  }, { immediate: true })
+
   onBeforeUnmount(() => {
     analysisTransitionResetGeneration += 1
     cancelAnalysisTransitionReset()
+    cancelAnalysisLoadingTimer()
+    cancelScheduledAnalysisPresentation()
   })
 
   return {
@@ -391,17 +534,20 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     clearOpponentAnalysisWithoutMotion,
     clearingAnalysisCaches,
     decisionRecommendationsEnabled,
+    displayedOpponentAnalysis,
     effectiveDecisionRecommendationsEnabled,
     fetchAnalysisOnce,
     hasOpponentGroundTruth,
     invalidateOpponentRead,
     opponentAnalysisIsLoading,
+    opponentAnalysisLoadingVisible,
     opponentAnalysisLoadError,
     opponentAnalysisNeeded,
     opponentAnalysisPermanentlyUnavailable,
     resetForBackendLifecycle,
     resetForNewGame,
     resolveNextDecisionAnalysis,
+    stageOpponentAnalysisForView,
     ronWaitPredData,
     analysisOpponents,
     shantenRawData,
