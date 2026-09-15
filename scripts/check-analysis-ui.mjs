@@ -886,6 +886,29 @@ try {
   await page.evaluate(() => {
     const check = window.analysisCheck
     const { vm } = check
+    const hand = ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p']
+    vm.gameView.table.hands[vm.status.controlledSeat] = hand
+    vm.gameView.legalActions = hand.map((pai, index) => ({
+      id: `discard-${index}`,
+      type: 'dahai',
+      actor: vm.status.controlledSeat,
+      pai,
+      tsumogiri: index === hand.length - 1,
+      label: pai,
+    }))
+    vm.gameView.analysis = {
+      model: 'ui-test-decision',
+      seat: vm.status.controlledSeat,
+      discardEntries: hand.map((pai, index) => ({
+        candidateId: `discard-${index}`,
+        pai,
+        tsumogiri: index === hand.length - 1,
+        value: index / hand.length,
+        probability: (index + 1) / hand.length,
+        bar: (index + 1) / hand.length,
+        isBest: index === hand.length - 1,
+      })),
+    }
     const initial = check.resultForNode(vm.gameView.currentNodeId, 1)
     check.publish(initial)
     vm.settings.display.workspaceLayout = {
@@ -907,6 +930,7 @@ try {
   })
   await page.locator('.shanten-chart path').first().waitFor()
   await page.locator('.analysis-risk-bars > i > span').first().waitFor()
+  await page.locator('.grid-main .choice-bar-fill').first().waitFor()
   await page.waitForTimeout(200)
   const permanentLayerHints = await page.evaluate(() => [
     ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back), .grid-main .choice-bar-upper, .grid-main .choice-bar-fill, .grid-main .ron-risk-fill'),
@@ -924,8 +948,35 @@ try {
       const view = JSON.parse(JSON.stringify(vm.gameView))
       view.currentNodeId = nextNodeId
       view.opponentAnalysis = nextResult
+      view.analysis.discardEntries = view.analysis.discardEntries.map((entry, index, entries) => ({
+        ...entry,
+        value: (entries.length - index) / entries.length,
+        probability: (entries.length - index) / entries.length,
+        bar: (entries.length - index) / entries.length,
+        isBest: index === 0,
+      }))
       return { state: JSON.parse(JSON.stringify(vm.status)), view }
     }
+    const frameTimes = []
+    const longTasks = []
+    const frameSample = new Promise(resolve => {
+      const startedAt = performance.now()
+      const observer = typeof PerformanceObserver === 'function'
+        ? new PerformanceObserver(list => {
+            longTasks.push(...list.getEntries().map(entry => ({ startTime: entry.startTime, duration: entry.duration })))
+          })
+        : null
+      try { observer?.observe({ type: 'longtask' }) } catch { /* unsupported */ }
+      const sample = timestamp => {
+        frameTimes.push(timestamp)
+        if (timestamp - startedAt < 300) requestAnimationFrame(sample)
+        else {
+          observer?.disconnect()
+          resolve({ startedAt, frameTimes, longTasks })
+        }
+      }
+      requestAnimationFrame(sample)
+    })
     const oldPiePath = document.querySelector('.analysis-panel-live:not(.analysis-panel-snapshot) .shanten-chart path')?.getAttribute('d') || ''
     await vm.jumpToNode(nextNodeId)
     const immediatePiePath = document.querySelector('.analysis-panel-live:not(.analysis-panel-snapshot) .shanten-chart path')?.getAttribute('d') || ''
@@ -959,7 +1010,29 @@ try {
     }, 140))
     window.studioAPI.jumpToNode = originalJump
     window.studioAPI.getAnalysis = originalRead
-    return { oldPiePath, immediatePiePath, during, after }
+    const samples = await frameSample
+    const sampleEndedAt = samples.frameTimes.at(-1) || performance.now()
+    const frameIntervals = samples.frameTimes.slice(1).map((time, index) => time - samples.frameTimes[index])
+    const motionFrameIntervals = samples.frameTimes
+      .slice(1)
+      .filter(time => time - samples.startedAt <= 110)
+      .map((time, index) => time - samples.frameTimes[index])
+    return {
+      oldPiePath,
+      immediatePiePath,
+      during,
+      after,
+      performance: {
+        frameCount: samples.frameTimes.length,
+        motionFrameCount: motionFrameIntervals.length,
+        medianFrameInterval: frameIntervals.slice().sort((a, b) => a - b)[Math.floor(frameIntervals.length / 2)] || null,
+        worstFrameInterval: frameIntervals.length ? Math.max(...frameIntervals) : null,
+        worstMotionFrameInterval: motionFrameIntervals.length ? Math.max(...motionFrameIntervals) : null,
+        longTasks: samples.longTasks.filter(task => (
+          task.startTime >= samples.startedAt && task.startTime <= sampleEndedAt
+        )),
+      },
+    }
   })
   assert.equal(navigationMotion.immediatePiePath, navigationMotion.oldPiePath, 'cached analysis waits until table motion has finished')
   assert.equal(navigationMotion.during.tableSuppressed, false, 'ordinary table motion remains available during navigation')
@@ -973,6 +1046,14 @@ try {
   )
   assert.equal(navigationMotion.after.activePanelAnimations, 0, 'panel feedback finishes within the shared motion duration')
   assert.equal(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart does not perform per-frame JavaScript interpolation')
+  assert.equal(
+    await page.locator('.grid-main .choice-bar-fill').first().evaluate(element => getComputedStyle(element).transitionDuration),
+    '0.11s',
+    'table recommendation bars use the established 110ms motion duration',
+  )
+  if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) {
+    console.log(`Frame-switch performance: ${JSON.stringify(navigationMotion.performance)}`)
+  }
 
   // A slow result retains the previous analysis. Loading feedback appears only
   // after the delay and disappears when the complete next result is presented.
