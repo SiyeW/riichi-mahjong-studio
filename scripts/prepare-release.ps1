@@ -13,7 +13,7 @@ $BundleRoot = Join-Path $ArtifactsRoot $BundleName
 $ArchivePath = Join-Path $ArtifactsRoot "$BundleName.zip"
 $ChecksumPath = Join-Path $ArtifactsRoot 'SHA256SUMS.txt'
 $ReleaseNotesPath = Join-Path $ArtifactsRoot 'RELEASE_NOTES.md'
-$ExampleRecordRelativePath = 'records\示例牌谱.mjstudio'
+$ExampleRecordRelativePath = 'records\example-record.mjstudio'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $BuildDescription = if ($Version.Contains('-')) {
     'Windows x64 portable preview build. This build is not code-signed.'

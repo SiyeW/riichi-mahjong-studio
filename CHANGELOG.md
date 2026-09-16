@@ -16,7 +16,6 @@ incompatible changes.
 - 重新设计分析结果的图表和悬浮信息。枚数预测可以按来源或按牌张排列，图表会随板块大小自动调整。
 - 存档格式改为 `.mjstudio`，仍可打开旧 `.mjtrain` 存档。
 - 界面支持简体中文、日文和英文，可以在设置中切换；默认跟随系统语言。
-- 发布包附带示例牌谱，无需配置引擎即可查看完整分析界面。
 
 </div>
 
@@ -29,7 +28,6 @@ incompatible changes.
 - 解析結果のグラフと詳細表示を刷新しました。枚数予測は予測元別または牌別に並べられ、パネルの大きさに合わせて表示が調整されます。
 - 牌譜の保存形式を `.mjstudio` に変更しました。旧 `.mjtrain` 形式のファイルも引き続き開けます。
 - 中国語（簡体字）、日本語、英語の表示に対応しました。設定から切り替えられ、初期設定ではシステムの言語に合わせます。
-- 配布パッケージにサンプル牌譜を収録しました。エンジンを設定しなくても、一通りの解析画面を確認できます。
 
 </div>
 
@@ -42,7 +40,6 @@ incompatible changes.
 - Redesign the analysis charts and hover details. Tile count predictions can be arranged by source or by tile, and charts adapt to the available panel size.
 - Change the record format to `.mjstudio`. Legacy `.mjtrain` records can still be opened.
 - Add Simplified Chinese, Japanese, and English interface languages. The app follows the system language by default and can be changed in Settings.
-- Include an example record in the release package so the complete analysis workspace can be viewed without configuring an engine.
 
 </div>
 

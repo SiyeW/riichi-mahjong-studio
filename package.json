@@ -66,8 +66,8 @@
     },
     "extraFiles": [
       {
-        "from": "examples/示例牌谱.mjstudio",
-        "to": "records/示例牌谱.mjstudio"
+        "from": "examples/example-record.mjstudio",
+        "to": "records/example-record.mjstudio"
       }
     ],
     "extraResources": [
