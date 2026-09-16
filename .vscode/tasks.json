@@ -28,6 +28,24 @@
         "reveal": "silent",
         "panel": "dedicated"
       }
+    },
+    {
+      "label": "RMS: Stop Renderer",
+      "type": "process",
+      "command": "node",
+      "args": [
+        "${workspaceFolder}/scripts/ensure-debug-renderer.mjs",
+        "--stop"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent",
+        "panel": "dedicated",
+        "close": true
+      }
     }
   ]
 }

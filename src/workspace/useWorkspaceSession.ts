@@ -126,7 +126,7 @@ export function useWorkspaceSession(options: WorkspaceSessionOptions) {
     const nextVisible = !showAnalysisDock.value
     const analysisPanels = hasSelectedAnalysisPanels.value
       ? workspaceLayout.value.analysisPanels
-      : { opponents: true, game: true, risk: false, counts: false }
+      : { opponents: true, game: true, risk: true, counts: true }
     update({ ...workspaceLayout.value, analysisVisible: nextVisible, analysisPanels })
   }
 

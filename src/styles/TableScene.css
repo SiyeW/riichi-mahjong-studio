@@ -269,8 +269,6 @@
   height: 100%;
   width: 100%;
   display: block;
-  will-change: transform;
-  backface-visibility: hidden;
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
@@ -379,8 +377,6 @@
   width: 100%;
   height: 100%;
   display: block;
-  will-change: transform;
-  backface-visibility: hidden;
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
@@ -465,12 +461,17 @@
   height: 100%;
   margin-left: -0.5px;
   transform-origin: top center;
-  will-change: transform;
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.ron-risk-bars.reset-without-motion .ron-risk-slot.has-adaptive-threshold::before,
-.ron-risk-bars.reset-without-motion .ron-risk-fill {
+.grid-main.reset-without-motion .special-action-bar-track::after,
+.grid-main.reset-without-motion .special-action-bar-upper,
+.grid-main.reset-without-motion .special-action-bar-fill,
+.grid-main.reset-without-motion .choice-bar-lane::after,
+.grid-main.reset-without-motion .choice-bar-upper,
+.grid-main.reset-without-motion .choice-bar-fill,
+.grid-main.reset-without-motion .ron-risk-slot.has-adaptive-threshold::before,
+.grid-main.reset-without-motion .ron-risk-fill {
   transition: none;
 }
 
@@ -610,8 +611,6 @@
 .tileImg {
   width: var(--tile-img-w);
   height: var(--tile-img-h);
-  will-change: transform;
-  backface-visibility: hidden;
   transition:
     filter var(--ui-motion-duration) var(--ui-motion-easing),
     box-shadow var(--ui-motion-duration) var(--ui-motion-easing);

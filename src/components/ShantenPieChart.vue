@@ -67,12 +67,6 @@ function normalizeProbabilities(values: number[]): number[] {
   return props.sliceLabels.map(() => 0)
 }
 
-const isEmpty = computed(() => normalizeProbabilities(props.probabilities).every((value) => value === 0))
-const chartAriaLabel = computed(() => (
-  isEmpty.value
-    ? t('shanten.emptyAria', { opponent: props.label })
-    : t('shanten.chartAria', { opponent: props.label })
-))
 const animatedProbabilities = ref(normalizeProbabilities(props.probabilities))
 let animationFrame = 0
 
@@ -86,12 +80,10 @@ function animateTo(values: number[]) {
   stopAnimation()
   const source = normalizeProbabilities(animatedProbabilities.value)
   const target = normalizeProbabilities(values)
-  const changed = target.some((value, index) => Math.abs(value - source[index]) > 1e-6)
-  if (!changed || props.reduceMotion) {
+  if (props.reduceMotion || target.every((value, index) => Math.abs(value - source[index]) <= 1e-6)) {
     animatedProbabilities.value = target
     return
   }
-
   const startedAt = performance.now()
   const duration = getUiMotionDurationMs()
   const step = (now: number) => {
@@ -111,6 +103,12 @@ watch(() => props.reduceMotion, (reduced) => {
   if (reduced) animateTo(props.probabilities)
 })
 
+const isEmpty = computed(() => animatedProbabilities.value.every((value) => value === 0))
+const chartAriaLabel = computed(() => (
+  isEmpty.value
+    ? t('shanten.emptyAria', { opponent: props.label })
+    : t('shanten.chartAria', { opponent: props.label })
+))
 const slices = computed(() => {
   let cumulative = 0
   return animatedProbabilities.value.map((probability, index) => {

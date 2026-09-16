@@ -39,7 +39,7 @@
             <div
               class="analysis-offense-segment is-win"
               tabindex="0"
-              :style="{ width: `${player.winProbability * 100}%` }"
+              :style="{ transform: `scaleX(${player.winProbability})` }"
               @mouseenter="showWinTooltip($event, player)"
               @mouseleave="tooltip.clear"
               @focus="showWinTooltip($event, player)"
@@ -48,7 +48,7 @@
             <div
               class="analysis-offense-segment is-deal-in"
               tabindex="0"
-              :style="{ width: `${player.dealInProbability * 100}%` }"
+              :style="{ transform: `scaleX(${player.dealInProbability})` }"
               @mouseenter="showDealInTooltip($event, player)"
               @mouseleave="tooltip.clear"
               @focus="showDealInTooltip($event, player)"
@@ -153,8 +153,10 @@ const { offenseLabelPositions, offenseLabelStyle, setOffenseTrackElement } = use
 )
 
 function deltaBarStyle(value: number | null) {
-  const width = `${deltaHalfWidthPercent(value, maxAbsoluteDelta.value)}%`
-  return value !== null && value < 0 ? { right: '50%', width } : { left: '50%', width }
+  const scale = deltaHalfWidthPercent(value, maxAbsoluteDelta.value) / 50
+  return value !== null && value < 0
+    ? { right: '50%', transform: `scaleX(${scale})` }
+    : { left: '50%', transform: `scaleX(${scale})` }
 }
 
 function showProbabilityTooltip(event: Event, title: string, label: string, value: number) {

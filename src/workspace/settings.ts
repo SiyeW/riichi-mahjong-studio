@@ -16,6 +16,14 @@ const DOCK_PANEL_IDS: readonly DockPanelId[] = [
   'analysis-counts',
 ]
 
+const DEFAULT_DOCK_PANEL_SIZE_FRACTIONS: DockPanelSizeFractions = {
+  console: { horizontal: 0.185, vertical: 0.32 },
+  'analysis-opponents': { horizontal: 0.212, vertical: 0.32 },
+  'analysis-game': { horizontal: 0.254, vertical: 0.32 },
+  'analysis-risk': { horizontal: 0.167, vertical: 0.32 },
+  'analysis-counts': { horizontal: 0.29, vertical: 0.32 },
+}
+
 export function normalizeDockPanelFraction(value: unknown): number | null {
   const numeric = Number(value)
   return Number.isFinite(numeric) && numeric > 0 && numeric < 1
@@ -47,19 +55,24 @@ export function normalizeWorkspaceLayout(value: unknown): WorkspaceLayoutSetting
   const sourcePanels: Partial<WorkspaceLayoutSettings['analysisPanels']> = source.analysisPanels && typeof source.analysisPanels === 'object'
     ? source.analysisPanels
     : {}
+  const usesLegacyDefaults = source.layout === undefined && source.order !== undefined
   return {
     layout: normalizeWorkspaceDockLayout(source.layout, source.order),
-    analysisVisible: source.analysisVisible === true,
+    analysisVisible: source.analysisVisible === undefined
+      ? !usesLegacyDefaults
+      : source.analysisVisible === true,
     analysisPanels: {
-      opponents: sourcePanels.opponents !== false,
-      game: sourcePanels.game !== false,
-      risk: sourcePanels.risk === true,
-      counts: sourcePanels.counts === true,
+      opponents: sourcePanels.opponents === undefined ? true : sourcePanels.opponents === true,
+      game: sourcePanels.game === undefined ? true : sourcePanels.game === true,
+      risk: sourcePanels.risk === undefined ? !usesLegacyDefaults : sourcePanels.risk === true,
+      counts: sourcePanels.counts === undefined ? !usesLegacyDefaults : sourcePanels.counts === true,
     },
     consoleVisible: source.consoleVisible !== false,
     panelSizeFractionsVersion: 2,
     panelSizeFractions: source.panelSizeFractionsVersion === 2
       ? normalizeDockPanelSizeFractions(source.panelSizeFractions)
-      : {},
+      : source.layout === undefined && source.order === undefined
+        ? normalizeDockPanelSizeFractions(DEFAULT_DOCK_PANEL_SIZE_FRACTIONS)
+        : {},
   }
 }

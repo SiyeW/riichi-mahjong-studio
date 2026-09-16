@@ -10,7 +10,12 @@ const server = await createServer({ root, mode: 'ui-test', server: { host: '127.
 let browser
 try {
   await server.listen()
-  browser = await chromium.launch({ headless: true })
+  browser = await chromium.launch({
+    headless: true,
+    args: process.env.RMS_UI_UNTHROTTLED
+      ? ['--disable-frame-rate-limit', '--disable-gpu-vsync']
+      : [],
+  })
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } })
   page.setDefaultTimeout(10000)
   const errors = []
@@ -54,12 +59,33 @@ try {
                   seat,
                   tiles: Object.fromEntries(
                     ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p', '6p', '7p', '8p', '9p', '1s', '2s', '3s', '4s', '5s', '6s', '7s', '8s', '9s', '1z', '2z', '3z', '4z', '5z', '6z', '7z']
-                      .map((tile, tileIndex) => [tile, ((tileIndex + sourceIndex) % 5 + 1) * 0.025]),
+                      .map((tile, tileIndex) => [
+                        tile,
+                        Math.min(0.95, (((tileIndex + sourceIndex) % 5) + 1) * 0.025 * expectedValue),
+                      ]),
                   ),
                 })),
               },
             },
           }
+        },
+        resultForNode(nodeId, expectedValue = 1) {
+          const result = this.result(expectedValue)
+          result.context.nodeId = nodeId
+          const distributions = [
+            [0.52, 0.24, 0.12, 0.06, 0.03, 0.02, 0.01, 0],
+            [0.18, 0.42, 0.2, 0.1, 0.05, 0.03, 0.01, 0.01],
+            [0.08, 0.2, 0.4, 0.16, 0.08, 0.04, 0.02, 0.02],
+          ]
+          const shift = Math.max(0, Math.min(2, Math.round(expectedValue) - 1))
+          result.predictions = {
+            opponents: {
+              kamicha: distributions[(0 + shift) % distributions.length],
+              toimen: distributions[(1 + shift) % distributions.length],
+              shimocha: distributions[(2 + shift) % distributions.length],
+            },
+          }
+          return result
         },
         publish(result = this.result()) {
           vm.handlePythonEvent({ type: 'opponent_analysis_ready', opponentAnalysis: result, gameId: result.context.gameId, nodeId: result.context.nodeId, seat: result.context.seat })
@@ -469,7 +495,7 @@ try {
       analysisPanels: { opponents: true, game: false, risk: false, counts: false },
     }
   })
-  const opponentGeometry = async () => page.locator('.analysis-opponent-section').evaluate(section => {
+  const opponentGeometry = async () => page.locator('.analysis-panel-live:not(.analysis-panel-snapshot) > .analysis-opponent-section').evaluate(section => {
     const dora = section.querySelector('.analysis-dora-distribution')
     const score = section.querySelector('.analysis-score-distribution')
     const grid = section.querySelector('.analysis-opponent-prediction-grid')
@@ -858,9 +884,262 @@ try {
       })
     })
   }
+
+  // A cached node change lets table motion finish first, then replaces each
+  // visible analysis panel through compositor-owned view snapshots.
+  await page.setViewportSize({ width: 1400, height: 1000 })
+  await page.keyboard.press('Escape')
+  await page.waitForFunction(() => !document.querySelector('.count-prediction-tooltip, .analysis-floating-tooltip'))
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    const { vm } = check
+    const hand = ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p']
+    vm.gameView.table.hands[vm.status.controlledSeat] = hand
+    vm.gameView.legalActions = hand.map((pai, index) => ({
+      id: `discard-${index}`,
+      type: 'dahai',
+      actor: vm.status.controlledSeat,
+      pai,
+      tsumogiri: index === hand.length - 1,
+      label: pai,
+    }))
+    vm.gameView.analysis = {
+      model: 'ui-test-decision',
+      seat: vm.status.controlledSeat,
+      discardEntries: hand.map((pai, index) => ({
+        candidateId: `discard-${index}`,
+        pai,
+        tsumogiri: index === hand.length - 1,
+        value: index / hand.length,
+        probability: (index + 1) / hand.length,
+        bar: (index + 1) / hand.length,
+        isBest: index === hand.length - 1,
+      })),
+    }
+    const initial = check.resultForNode(vm.gameView.currentNodeId, 1)
+    check.publish(initial)
+    vm.settings.display.workspaceLayout = {
+      ...vm.workspaceLayout,
+      analysisVisible: true,
+      consoleVisible: false,
+      layout: {
+        type: 'split', direction: 'horizontal', weights: [2, 1],
+        children: [
+          { type: 'item', id: 'table' },
+          { type: 'split', direction: 'vertical', weights: [1, 1], children: [
+            { type: 'item', id: 'analysis-opponents' },
+            { type: 'item', id: 'analysis-risk' },
+          ] },
+        ],
+      },
+      analysisPanels: { opponents: true, game: false, risk: true, counts: false },
+    }
+  })
+  await page.locator('.shanten-chart path').first().waitFor()
+  await page.locator('.analysis-risk-bars > i > span').first().waitFor()
+  await page.locator('.grid-main .choice-bar-fill').first().waitFor()
+  await page.waitForTimeout(200)
+  const permanentLayerHints = await page.evaluate(() => [
+    ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back), .grid-main .choice-bar-upper, .grid-main .choice-bar-fill, .grid-main .ron-risk-fill'),
+  ].filter(element => getComputedStyle(element).willChange.includes('transform')).length)
+  assert.equal(permanentLayerHints, 0, 'repeated table primitives do not reserve permanent compositor layers')
+  const navigationMotion = await page.evaluate(async () => {
+    const check = window.analysisCheck
+    const { vm } = check
+    const originalJump = window.studioAPI.jumpToNode
+    const originalRead = window.studioAPI.getAnalysis
+    const nextNodeId = `${vm.gameView.currentNodeId}-performance`
+    const nextResult = check.resultForNode(nextNodeId, 2)
+    window.studioAPI.getAnalysis = async () => nextResult
+    window.studioAPI.jumpToNode = async () => {
+      const view = JSON.parse(JSON.stringify(vm.gameView))
+      view.currentNodeId = nextNodeId
+      view.opponentAnalysis = nextResult
+      const actor = vm.status.controlledSeat
+      const pai = view.table.hands[actor].at(-1)
+      view.table.hands[actor] = view.table.hands[actor].slice(0, -1)
+      view.table.rivers[actor] = [...view.table.rivers[actor], pai]
+      view.table.pendingDiscard = { actor, pai, tsumogiri: true, targetActor: actor }
+      view.analysis.discardEntries = view.analysis.discardEntries.map((entry, index, entries) => ({
+        ...entry,
+        value: (entries.length - index) / entries.length,
+        probability: (entries.length - index) / entries.length,
+        bar: (entries.length - index) / entries.length,
+        isBest: index === 0,
+      }))
+      return { state: JSON.parse(JSON.stringify(vm.status)), view }
+    }
+    const frameTimes = []
+    const longTasks = []
+    const frameSample = new Promise(resolve => {
+      const startedAt = performance.now()
+      const observer = typeof PerformanceObserver === 'function'
+        ? new PerformanceObserver(list => {
+            longTasks.push(...list.getEntries().map(entry => ({ startTime: entry.startTime, duration: entry.duration })))
+          })
+        : null
+      try { observer?.observe({ type: 'longtask' }) } catch { /* unsupported */ }
+      const sample = timestamp => {
+        frameTimes.push(timestamp)
+        if (timestamp - startedAt < 300) requestAnimationFrame(sample)
+        else {
+          observer?.disconnect()
+          resolve({ startedAt, frameTimes, longTasks })
+        }
+      }
+      requestAnimationFrame(sample)
+    })
+    const oldPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
+    await vm.jumpToNode(nextNodeId)
+    const immediatePiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
+    const tablePhasePromise = new Promise(resolve => setTimeout(() => {
+      const activeAnimations = document.getAnimations().filter(animation => animation.playState !== 'finished')
+      resolve({
+        tableAnimations: activeAnimations.filter(animation => (
+          animation.effect?.target instanceof Element
+          && Boolean(animation.effect.target.closest('.grid-main'))
+        )).length,
+        analysisAnimations: activeAnimations.filter(animation => (
+          animation.effect?.target instanceof Element
+          && Boolean(animation.effect.target.closest('.analysis-panel-live'))
+        )).length,
+      })
+    }, 70))
+    const duringPromise = new Promise(resolve => setTimeout(() => {
+      const animatedTargets = document.getAnimations()
+        .filter(animation => animation.playState !== 'finished')
+        .map(animation => animation.effect?.target)
+      const analysisDataAnimations = animatedTargets
+        .filter(target => target instanceof Element && Boolean(target.closest('.analysis-panel-live')))
+      const transitionDurations = [
+        ...document.querySelectorAll('.analysis-panel-live .analysis-risk-bars > i > span, .analysis-panel-live .analysis-dora-distribution em, .analysis-panel-live .analysis-score-distribution i > span'),
+      ].map(element => getComputedStyle(element).transitionDuration)
+      resolve({
+        tableSuppressed: document.querySelector('.grid-main')?.classList.contains('reset-without-motion') || false,
+        panelsSuppressed: [...document.querySelectorAll('.analysis-panel-content')]
+          .every(element => element.classList.contains('reduce-motion')),
+        analysisDataAnimationCount: analysisDataAnimations.length,
+        transitionDurations,
+        piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
+      })
+    }, 175))
+    const [tablePhase, during] = await Promise.all([tablePhasePromise, duringPromise])
+    const after = await new Promise(resolve => setTimeout(() => {
+      resolve({
+        activeDataAnimations: document.getAnimations().filter(animation => (
+          animation.playState !== 'finished'
+          && animation.effect?.target instanceof Element
+          && Boolean(animation.effect.target.closest('.analysis-panel-live'))
+        )).length,
+        piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
+      })
+    }, 140))
+    window.studioAPI.jumpToNode = originalJump
+    window.studioAPI.getAnalysis = originalRead
+    const samples = await frameSample
+    const sampleEndedAt = samples.frameTimes.at(-1) || performance.now()
+    const frameIntervals = samples.frameTimes.slice(1).map((time, index) => time - samples.frameTimes[index])
+    const motionFrameIntervals = samples.frameTimes
+      .slice(1)
+      .filter(time => time - samples.startedAt <= 110)
+      .map((time, index) => time - samples.frameTimes[index])
+    return {
+      oldPiePath,
+      immediatePiePath,
+      tablePhase,
+      during,
+      after,
+      performance: {
+        frameCount: samples.frameTimes.length,
+        motionFrameCount: motionFrameIntervals.length,
+        medianFrameInterval: frameIntervals.slice().sort((a, b) => a - b)[Math.floor(frameIntervals.length / 2)] || null,
+        worstFrameInterval: frameIntervals.length ? Math.max(...frameIntervals) : null,
+        worstMotionFrameInterval: motionFrameIntervals.length ? Math.max(...motionFrameIntervals) : null,
+        longTasks: samples.longTasks.filter(task => (
+          task.startTime >= samples.startedAt && task.startTime <= sampleEndedAt
+        )),
+      },
+    }
+  })
+  assert.equal(navigationMotion.immediatePiePath, navigationMotion.oldPiePath, 'cached analysis waits until table motion has finished')
+  assert.ok(navigationMotion.tablePhase.tableAnimations > 0, 'the representative navigation runs real table motion')
+  assert.equal(navigationMotion.tablePhase.analysisAnimations, 0, 'analysis feedback does not overlap the table motion window')
+  assert.equal(navigationMotion.during.tableSuppressed, false, 'ordinary table motion remains available during navigation')
+  assert.equal(navigationMotion.during.panelsSuppressed, false, 'ordinary analysis feedback remains available during navigation')
+  if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) console.log('Navigation motion:', JSON.stringify(navigationMotion.during))
+  assert.ok(navigationMotion.during.analysisDataAnimationCount > 0, 'analysis values animate after the table motion window')
+  assert.ok(
+    navigationMotion.during.transitionDurations.length > 0
+      && navigationMotion.during.transitionDurations.every(duration => duration === '0.11s'),
+    'prediction primitives use the established 110ms motion duration',
+  )
+  assert.equal(navigationMotion.after.activeDataAnimations, 0, 'analysis value motion finishes within the shared motion duration')
+  assert.notEqual(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart interpolates its values instead of replacing the pie at once')
+  assert.equal(
+    await page.locator('.grid-main .choice-bar-fill').first().evaluate(element => getComputedStyle(element).transitionDuration),
+    '0.11s',
+    'table recommendation bars use the established 110ms motion duration',
+  )
+  if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) {
+    console.log(`Frame-switch performance: ${JSON.stringify(navigationMotion.performance)}`)
+  }
+
+  // A slow result retains the previous analysis. Loading feedback appears only
+  // after the delay and disappears when the complete next result is presented.
+  await page.evaluate(async () => {
+    const check = window.analysisCheck
+    const { vm } = check
+    check.originalJumpForSlowAnalysis = window.studioAPI.jumpToNode
+    check.originalReadForSlowAnalysis = window.studioAPI.getAnalysis
+    check.slowNodeId = `${vm.gameView.currentNodeId}-slow`
+    check.slowResult = check.resultForNode(check.slowNodeId, 3)
+    window.studioAPI.getAnalysis = () => new Promise(resolve => { check.resolveSlowRead = resolve })
+    window.studioAPI.jumpToNode = async () => {
+      const view = JSON.parse(JSON.stringify(vm.gameView))
+      view.currentNodeId = check.slowNodeId
+      view.opponentAnalysis = null
+      return { state: JSON.parse(JSON.stringify(vm.status)), view }
+    }
+    check.oldSlowPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
+    await vm.jumpToNode(check.slowNodeId)
+  })
+  await page.waitForFunction(() => typeof window.analysisCheck.resolveSlowRead === 'function')
+  await page.waitForTimeout(350)
+  assert.equal(await page.locator('.analysis-loading-overlay').count(), 0, 'short waits do not flash a loading layer')
+  assert.equal(
+    await page.locator('.analysis-panel-live .shanten-chart path').first().getAttribute('d'),
+    await page.evaluate(() => window.analysisCheck.oldSlowPiePath),
+    'slow analysis keeps the previous result visible',
+  )
+  await page.waitForTimeout(200)
+  assert.equal(await page.locator('.analysis-loading-overlay').count(), 2, 'each visible analysis panel shows delayed loading feedback')
+  if (process.env.RMS_ANALYSIS_LOADING_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_ANALYSIS_LOADING_SCREENSHOT })
+  }
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    check.resolveSlowRead(check.slowResult)
+  })
+  await page.waitForFunction(() => document.querySelectorAll('.analysis-loading-overlay').length === 0)
+  await page.waitForFunction(() => document.getAnimations().some(animation => (
+    animation.effect?.target instanceof Element
+    && Boolean(animation.effect.target.closest('.analysis-panel-live'))
+  )))
+  await page.waitForTimeout(140)
+  assert.equal(await page.evaluate(() => document.getAnimations().filter(animation => (
+    animation.playState !== 'finished'
+    && animation.effect?.target instanceof Element
+    && Boolean(animation.effect.target.closest('.analysis-panel-live'))
+  )).length), 0, 'slow-result handoff also finishes its value animations')
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    window.studioAPI.jumpToNode = check.originalJumpForSlowAnalysis
+    window.studioAPI.getAnalysis = check.originalReadForSlowAnalysis
+  })
+
   await checkWorkspaceDock(page)
   assert.deepEqual(errors, [])
-  console.log('Analysis UI: events, hover, navigation, cache, geometry, artwork and workspace docking passed.')
+  console.log('Analysis UI: events, hover, navigation motion, cache, geometry, artwork and workspace docking passed.')
 } catch (error) {
   if (process.env.GITHUB_ACTIONS) {
     const detail = error instanceof Error ? error.stack || error.message : String(error)

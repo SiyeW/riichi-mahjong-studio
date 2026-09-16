@@ -17,6 +17,17 @@
   font: inherit;
 }
 
+.analysis-panel-live {
+  width: 100%;
+  min-height: 100%;
+}
+
+.analysis-panel-content.is-opponent-section > .analysis-panel-live,
+.analysis-panel-content.is-risk-section > .analysis-panel-live,
+.analysis-panel-content.is-count-section > .analysis-panel-live {
+  height: 100%;
+}
+
 .reduce-motion *,
 .reduce-motion *::before,
 .reduce-motion *::after {

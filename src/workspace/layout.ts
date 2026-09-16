@@ -84,7 +84,23 @@ function legacyWorkspaceOrder(value: unknown): Array<'table' | 'analysis' | 'con
   return order
 }
 
+function createFirstRunDockLayout(): WorkspaceDockNode {
+  return split('horizontal', [
+    item('console'),
+    item('table'),
+    split('vertical', [
+      item('analysis-opponents'),
+      item('analysis-risk'),
+    ], [0.33, 0.67]),
+    split('vertical', [
+      item('analysis-counts'),
+      item('analysis-game'),
+    ], [0.59, 0.41]),
+  ], [0.72, 2.74, 1, 1.48])
+}
+
 export function createDefaultDockLayout(legacyOrder?: unknown): WorkspaceDockNode {
+  if (legacyOrder === undefined) return createFirstRunDockLayout()
   const mainChildren: WorkspaceDockNode[] = []
   const mainWeights: number[] = []
   for (const id of legacyWorkspaceOrder(legacyOrder)) {

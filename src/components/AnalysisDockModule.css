@@ -36,6 +36,7 @@
 }
 
 .analysis-dock-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   overflow: auto;
@@ -45,6 +46,25 @@
     calc(0.7rem * var(--floating-panel-scale))
     calc(0.48rem * var(--floating-panel-scale));
   scrollbar-gutter: stable;
+}
+
+.analysis-loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: rgba(3, 35, 42, 0.56);
+}
+
+.analysis-loading-overlay > span {
+  padding: calc(0.35rem * var(--floating-panel-scale)) calc(0.7rem * var(--floating-panel-scale));
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius-control);
+  color: var(--text-main);
+  background: var(--surface-control-quiet);
+  font-size: var(--ui-text-body);
 }
 
 .analysis-panel-state {

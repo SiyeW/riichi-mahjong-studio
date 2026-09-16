@@ -6,6 +6,12 @@ import type { WorkspaceLayoutSettings } from '../contracts/workspace.ts'
 import { normalizeWorkspaceLayout } from './settings.ts'
 import { useWorkspaceSession } from './useWorkspaceSession.ts'
 
+function flattenItems(node: { type: string; id?: string; children?: unknown[] }): string[] {
+  return node.type === 'item'
+    ? [String(node.id)]
+    : (node.children || []).flatMap((child) => flattenItems(child as typeof node))
+}
+
 function settingsWith(layout = normalizeWorkspaceLayout(null)): StudioSettings {
   return reactive({
     display: { workspaceLayout: structuredClone(layout) },
@@ -33,22 +39,55 @@ test('workspace session owns panel visibility and preserves prior selections', (
     saveWorkspaceLayout: () => undefined,
   }))!
 
+  assert.equal(session.showAnalysisDock.value, true)
+  session.toggleAnalysisDock()
   assert.equal(session.showAnalysisDock.value, false)
   session.toggleAnalysisDock()
   assert.equal(session.showAnalysisDock.value, true)
   assert.deepEqual(settings.display.workspaceLayout.analysisPanels, {
     opponents: true,
     game: true,
-    risk: false,
-    counts: false,
+    risk: true,
+    counts: true,
   })
 
   session.toggleAnalysisPanel('risk')
-  session.toggleAnalysisDock()
-  session.toggleAnalysisDock()
-  assert.equal(settings.display.workspaceLayout.analysisPanels.risk, true)
-  session.closeAnalysisPanel('analysis-risk')
   assert.equal(settings.display.workspaceLayout.analysisPanels.risk, false)
+  session.toggleAnalysisDock()
+  session.toggleAnalysisDock()
+  assert.equal(settings.display.workspaceLayout.analysisPanels.risk, false)
+  scope.stop()
+})
+
+test('the first-run workspace expands from the empty table to every analysis panel after opening a record', async () => {
+  const settings = settingsWith()
+  const hasGameTable = ref(false)
+  const scope = effectScope()
+  const session = scope.run(() => useWorkspaceSession({
+    settings,
+    settingsDraft: settingsWith(),
+    showSettingsPanel: ref(false),
+    hasGameTable,
+    uiScale: ref(1),
+    t: (key) => key,
+    applySettings: () => {},
+    scheduleTableZoomRecalc: () => {},
+    saveWorkspaceLayout: () => undefined,
+  }))!
+
+  assert.equal(session.showAnalysisDock.value, false)
+  assert.deepEqual(flattenItems(session.visibleWorkspaceLayout.value), ['console', 'table'])
+  hasGameTable.value = true
+  await nextTick()
+  assert.equal(session.showAnalysisDock.value, true)
+  assert.deepEqual(flattenItems(session.visibleWorkspaceLayout.value), [
+    'console',
+    'table',
+    'analysis-opponents',
+    'analysis-risk',
+    'analysis-counts',
+    'analysis-game',
+  ])
   scope.stop()
 })
 

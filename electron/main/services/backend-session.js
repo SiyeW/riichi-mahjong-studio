@@ -1,5 +1,16 @@
 const { createSessionCheckpoint } = require('./session-checkpoint')
 
+const CHECKPOINT_STATE_ONLY_COMMANDS = new Set([
+  'jump_to_node',
+  'set_analysis_visibility',
+  'start_auto_analysis',
+  'cancel_auto_analysis',
+])
+const DERIVED_RECORD_CHANGES = new Set([
+  'decision_analysis_cache',
+  'opponent_analysis_cache',
+])
+
 function createBackendSession(backend, checkpointOptions = {}) {
   const pending = new Set()
   let restarting = null
@@ -17,7 +28,9 @@ function createBackendSession(backend, checkpointOptions = {}) {
       stopped = true
       generation += 1
       checkpoint.stop()
-    } else if (event.type === 'record_changed' && !restarting && !stopped) {
+    } else if (event.type === 'record_changed'
+      && !DERIVED_RECORD_CHANGES.has(event.change)
+      && !restarting && !stopped) {
       checkpoint.changed()
     }
   }
@@ -27,12 +40,19 @@ function createBackendSession(backend, checkpointOptions = {}) {
     const startedGeneration = generation
     const request = backend.sendRequest(...args).then(response => {
       if (generation !== startedGeneration) throw new Error('Backend stopped before the response was applied.')
-      if (['create_game', 'close_game', 'import_game_record', 'import_mortal_report', 'import_custom_tenhou'].includes(args[0])) {
+      const command = args[0]
+      if (['create_game', 'close_game', 'import_game_record', 'import_mortal_report', 'import_custom_tenhou'].includes(command)) {
         checkpoint.reset()
       }
       // Status/metrics have independent Python executors and can arrive after
       // a newer game command. They must not invalidate a current checkpoint.
-      if (!/^(get_|export_|describe_|reload_|unload_)/.test(args[0])) {
+      if (command === 'jump_to_node') {
+        checkpoint.observe(response)
+        checkpoint.moveCursor(response.view?.currentNodeId)
+      } else if (command === 'set_analysis_visibility') {
+        checkpoint.updateVisibility(response.state?.analysisVisibility)
+      } else if (!CHECKPOINT_STATE_ONLY_COMMANDS.has(command)
+        && !/^(get_|export_|describe_|reload_|unload_)/.test(command)) {
         checkpoint.observe(response)
         checkpoint.changed()
       }

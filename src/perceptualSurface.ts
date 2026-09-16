@@ -230,6 +230,7 @@ export const vPerceptualSurface: Directive<HTMLElement, PerceptualSurfaceBinding
   updated(element, binding) {
     const state = surfaceStates.get(element)
     if (!state) return
+    if (binding.value === binding.oldValue) return
     state.binding = binding.value
     observeSurfaceAncestors(element, state)
     schedulePerceptualSurface(element, state)

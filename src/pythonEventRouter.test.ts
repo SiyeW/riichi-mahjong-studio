@@ -109,3 +109,18 @@ test('decision analysis is cached for its event node without replacing another c
   assert.deepEqual(calls.cached, [{ gameId: 'game-current', nodeId: 'node-prefetched', analysis }])
   assert.equal(gameView.analysis, null)
 })
+
+test('decision analysis for the visible node is published immediately', () => {
+  const { gameView, route } = createHarness()
+  const analysis = { seat: 1, discardEntries: [] } as unknown as NonNullable<GameView['analysis']>
+
+  route({
+    type: 'analysis_ready',
+    gameId: 'game-current',
+    nodeId: 'node-current',
+    analysis,
+    cacheEpoch: 1,
+  } as PythonEvent)
+
+  assert.equal(gameView.analysis, analysis)
+})

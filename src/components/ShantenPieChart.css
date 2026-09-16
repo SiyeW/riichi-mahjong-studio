@@ -11,7 +11,6 @@
   width: 100%;
   height: auto;
   aspect-ratio: 1;
-  animation: shanten-pie-reveal var(--ui-motion-duration) var(--ui-motion-easing);
 }
 .shanten-chart path {
   cursor: default;
@@ -29,15 +28,4 @@
 .shanten-opp-label {
   font-size: var(--ui-text-control);
   color: var(--text-dim);
-}
-
-@keyframes shanten-pie-reveal {
-  from {
-    opacity: 0.7;
-    transform: scale(0.96);
-  }
-}
-
-:global(html.reduce-motion) .shanten-chart svg {
-  animation: none;
 }

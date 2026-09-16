@@ -13,18 +13,25 @@ const {
 const { createDefaultDockLayout } = require('./workspace-layout')
 
 function expectedWorkspaceLayout({ legacyOrder, ...overrides } = {}) {
+  const firstRun = legacyOrder === undefined
   return {
     layout: createDefaultDockLayout(legacyOrder),
-    analysisVisible: false,
+    analysisVisible: firstRun,
     analysisPanels: {
       opponents: true,
       game: true,
-      risk: false,
-      counts: false,
+      risk: firstRun,
+      counts: firstRun,
     },
     consoleVisible: true,
     panelSizeFractionsVersion: 2,
-    panelSizeFractions: {},
+    panelSizeFractions: firstRun ? {
+      console: { horizontal: 0.185, vertical: 0.32 },
+      'analysis-opponents': { horizontal: 0.212, vertical: 0.32 },
+      'analysis-game': { horizontal: 0.254, vertical: 0.32 },
+      'analysis-risk': { horizontal: 0.167, vertical: 0.32 },
+      'analysis-counts': { horizontal: 0.29, vertical: 0.32 },
+    } : {},
     ...overrides,
   }
 }

@@ -46,7 +46,23 @@ function normalizeLegacyOrder(value) {
   return order
 }
 
+function createFirstRunDockLayout() {
+  return split('horizontal', [
+    item('console'),
+    item('table'),
+    split('vertical', [
+      item('analysis-opponents'),
+      item('analysis-risk'),
+    ], [0.33, 0.67]),
+    split('vertical', [
+      item('analysis-counts'),
+      item('analysis-game'),
+    ], [0.59, 0.41]),
+  ], [0.72, 2.74, 1, 1.48])
+}
+
 function createDefaultDockLayout(legacyOrder) {
+  if (legacyOrder === undefined) return createFirstRunDockLayout()
   const mainChildren = []
   const mainWeights = []
   for (const id of normalizeLegacyOrder(legacyOrder)) {

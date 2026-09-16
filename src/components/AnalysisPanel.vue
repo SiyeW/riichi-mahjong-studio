@@ -9,48 +9,50 @@
       'is-count-section': section === 'counts',
     }"
   >
-    <OpponentAnalysisSection
-      v-if="section === 'opponents'"
-      :analysis="analysis"
-      :analysis-opponents="analysisOpponents"
-      :shanten-colors="shantenColors"
-      :shanten-labels="shantenLabels"
-      :shanten-short-labels="shantenShortLabels"
-      :reduce-motion="reduceMotion"
-      :controlled-seat="controlledSeat"
-      :dealer="dealer"
-      :perceptual-surface="perceptualSurface"
-    />
-    <GameAnalysisSection
-      v-else-if="section === 'game'"
-      :analysis="analysis"
-      :analysis-opponents="analysisOpponents"
-      :controlled-seat="controlledSeat"
-      :dealer="dealer"
-      :perceptual-surface="perceptualSurface"
-    />
-    <DealInRiskSection
-      v-else-if="section === 'risk'"
-      :analysis="analysis"
-      :analysis-opponents="analysisOpponents"
-      :controlled-seat="controlledSeat"
-      :dealer="dealer"
-      :tile-image-src="tileImageSrc"
-      :tile-face-label="tileFaceLabel"
-      :perceptual-surface="perceptualSurface"
-    />
-    <TileCountAnalysisSection
-      v-else
-      :analysis="analysis"
-      :analysis-opponents="analysisOpponents"
-      :controlled-seat="controlledSeat"
-      :dealer="dealer"
-      :tile-image-src="tileImageSrc"
-      :tile-face-label="tileFaceLabel"
-      :perceptual-surface="perceptualSurface"
-      :count-layout="countLayout"
-      @update:count-layout="emit('update:countLayout', $event)"
-    />
+    <div class="analysis-panel-live">
+      <OpponentAnalysisSection
+        v-if="section === 'opponents'"
+        :analysis="analysis"
+        :analysis-opponents="analysisOpponents"
+        :shanten-colors="shantenColors"
+        :shanten-labels="shantenLabels"
+        :shanten-short-labels="shantenShortLabels"
+        :reduce-motion="reduceMotion"
+        :controlled-seat="controlledSeat"
+        :dealer="dealer"
+        :perceptual-surface="perceptualSurface"
+      />
+      <GameAnalysisSection
+        v-else-if="section === 'game'"
+        :analysis="analysis"
+        :analysis-opponents="analysisOpponents"
+        :controlled-seat="controlledSeat"
+        :dealer="dealer"
+        :perceptual-surface="perceptualSurface"
+      />
+      <DealInRiskSection
+        v-else-if="section === 'risk'"
+        :analysis="analysis"
+        :analysis-opponents="analysisOpponents"
+        :controlled-seat="controlledSeat"
+        :dealer="dealer"
+        :tile-image-src="tileImageSrc"
+        :tile-face-label="tileFaceLabel"
+        :perceptual-surface="perceptualSurface"
+      />
+      <TileCountAnalysisSection
+        v-else
+        :analysis="analysis"
+        :analysis-opponents="analysisOpponents"
+        :controlled-seat="controlledSeat"
+        :dealer="dealer"
+        :tile-image-src="tileImageSrc"
+        :tile-face-label="tileFaceLabel"
+        :perceptual-surface="perceptualSurface"
+        :count-layout="countLayout"
+        @update:count-layout="emit('update:countLayout', $event)"
+      />
+    </div>
     <AnalysisHoverTooltip
       v-if="tooltip"
       v-model:element="tooltipElement"

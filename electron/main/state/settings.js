@@ -22,16 +22,22 @@ const DEFAULT_TRAINING_SETTINGS = Object.freeze({
 const DEFAULT_MODE_SETTINGS = Object.freeze({ autoAdvanceDelayMs: 250 })
 const DEFAULT_WORKSPACE_LAYOUT = Object.freeze({
   layout: createDefaultDockLayout(),
-  analysisVisible: false,
+  analysisVisible: true,
   analysisPanels: Object.freeze({
     opponents: true,
     game: true,
-    risk: false,
-    counts: false,
+    risk: true,
+    counts: true,
   }),
   consoleVisible: true,
   panelSizeFractionsVersion: 2,
-  panelSizeFractions: Object.freeze({}),
+  panelSizeFractions: Object.freeze({
+    console: Object.freeze({ horizontal: 0.185, vertical: 0.32 }),
+    'analysis-opponents': Object.freeze({ horizontal: 0.212, vertical: 0.32 }),
+    'analysis-game': Object.freeze({ horizontal: 0.254, vertical: 0.32 }),
+    'analysis-risk': Object.freeze({ horizontal: 0.167, vertical: 0.32 }),
+    'analysis-counts': Object.freeze({ horizontal: 0.29, vertical: 0.32 }),
+  }),
 })
 const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
   language: 'system',
@@ -78,20 +84,25 @@ function normalizeWorkspaceLayout(workspaceLayout = {}) {
   const sourcePanels = source.analysisPanels && typeof source.analysisPanels === 'object'
     ? source.analysisPanels
     : {}
+  const usesLegacyDefaults = source.layout === undefined && source.order !== undefined
   return {
     layout: normalizeWorkspaceDockLayout(source.layout, source.order),
-    analysisVisible: source.analysisVisible === true,
+    analysisVisible: source.analysisVisible === undefined
+      ? !usesLegacyDefaults
+      : source.analysisVisible === true,
     analysisPanels: {
-      opponents: sourcePanels.opponents !== false,
-      game: sourcePanels.game !== false,
-      risk: sourcePanels.risk === true,
-      counts: sourcePanels.counts === true,
+      opponents: sourcePanels.opponents === undefined ? true : sourcePanels.opponents === true,
+      game: sourcePanels.game === undefined ? true : sourcePanels.game === true,
+      risk: sourcePanels.risk === undefined ? !usesLegacyDefaults : sourcePanels.risk === true,
+      counts: sourcePanels.counts === undefined ? !usesLegacyDefaults : sourcePanels.counts === true,
     },
     consoleVisible: source.consoleVisible !== false,
     panelSizeFractionsVersion: 2,
     panelSizeFractions: source.panelSizeFractionsVersion === 2
       ? normalizeDockPanelSizeFractions(source.panelSizeFractions)
-      : {},
+      : source.layout === undefined && source.order === undefined
+        ? normalizeDockPanelSizeFractions(DEFAULT_WORKSPACE_LAYOUT.panelSizeFractions)
+        : {},
   }
 }
 

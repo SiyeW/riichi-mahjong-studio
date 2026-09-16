@@ -8,9 +8,18 @@ function flattenItems(node) {
 }
 
 test('default workspace layout contains every panel once', () => {
-  const items = flattenItems(mainProcessLayout.createDefaultDockLayout())
+  const layout = mainProcessLayout.createDefaultDockLayout()
+  const items = flattenItems(layout)
   assert.deepEqual([...items].sort(), [...mainProcessLayout.WORKSPACE_ITEM_IDS].sort())
   assert.equal(new Set(items).size, mainProcessLayout.WORKSPACE_ITEM_IDS.length)
+  assert.equal(layout.type, 'split')
+  assert.equal(layout.direction, 'horizontal')
+  assert.deepEqual(layout.children.map(flattenItems), [
+    ['console'],
+    ['table'],
+    ['analysis-opponents', 'analysis-risk'],
+    ['analysis-counts', 'analysis-game'],
+  ])
 })
 
 test('legacy order controls the main workspace row', () => {

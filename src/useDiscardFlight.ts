@@ -61,6 +61,7 @@ function cancelPendingDiscardFlight() {
   pendingDiscardFlightBackOverlay = null
   pendingDiscardFlightRegularPose?.remove()
   pendingDiscardFlightRegularPose = null
+  pendingDiscardFlightTarget?.style.removeProperty('will-change')
   pendingDiscardFlightTarget?.style.removeProperty('visibility')
   pendingDiscardFlightTarget = null
 }
@@ -332,6 +333,10 @@ function schedulePendingDiscardFlight(seat: number) {
     pendingDiscardFlightBackOverlay = backOverlay
     pendingDiscardFlightRegularPose = regularPose
     pendingDiscardFlightTarget = target
+    // Promote only the tile that is actually in flight. Reserving layers for
+    // every table tile is expensive, but promoting this one before its first
+    // keyframe avoids spending the short 110 ms motion window on layer setup.
+    target.style.willChange = 'transform'
     // The controlled seat has no back overlay, but must remain hidden until
     // its start keyframe is ready just like the other three seats.
     target.style.visibility = 'hidden'
@@ -386,6 +391,7 @@ function schedulePendingDiscardFlight(seat: number) {
           pendingDiscardFlightRegularPose = null
         }
         if (pendingDiscardFlightTarget === target) {
+          target.style.removeProperty('will-change')
           pendingDiscardFlightTarget = null
         }
         scheduleAutoAdvance()
@@ -402,6 +408,7 @@ function schedulePendingDiscardFlight(seat: number) {
         }
         target.style.removeProperty('visibility')
         if (pendingDiscardFlightTarget === target) {
+          target.style.removeProperty('will-change')
           pendingDiscardFlightTarget = null
         }
       }

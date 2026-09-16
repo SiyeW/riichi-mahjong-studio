@@ -13,6 +13,7 @@ $BundleRoot = Join-Path $ArtifactsRoot $BundleName
 $ArchivePath = Join-Path $ArtifactsRoot "$BundleName.zip"
 $ChecksumPath = Join-Path $ArtifactsRoot 'SHA256SUMS.txt'
 $ReleaseNotesPath = Join-Path $ArtifactsRoot 'RELEASE_NOTES.md'
+$ExampleRecordRelativePath = 'records\示例牌谱.mjstudio'
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $BuildDescription = if ($Version.Contains('-')) {
     'Windows x64 portable preview build. This build is not code-signed.'
@@ -40,6 +41,11 @@ if (Test-Path -LiteralPath $ArtifactsRoot) {
 }
 New-Item -ItemType Directory -Path $BundleRoot -Force | Out-Null
 Copy-Item -Path (Join-Path $UnpackedRoot '*') -Destination $BundleRoot -Recurse
+
+$PackagedExamplePath = Join-Path $BundleRoot $ExampleRecordRelativePath
+if (-not (Test-Path -LiteralPath $PackagedExamplePath -PathType Leaf)) {
+    throw "Missing packaged example record: $PackagedExamplePath"
+}
 
 Compress-Archive -LiteralPath $BundleRoot -DestinationPath $ArchivePath -CompressionLevel Optimal
 $Sha256 = [System.Security.Cryptography.SHA256]::Create()
