@@ -5,6 +5,8 @@ incompatible changes.
 
 ## [Unreleased]
 
+## [1.0.0-dev.1] - 2026-09-16
+
 <div lang="zh-CN">
 
 ### 中文

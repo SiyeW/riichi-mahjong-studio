@@ -1,6 +1,6 @@
 {
   "name": "riichi-mahjong-studio",
-  "version": "1.0.0-dev.0",
+  "version": "1.0.0-dev.1",
   "private": true,
   "author": "SiyeWu",
   "description": "Desktop application for reviewing riichi mahjong game records and practicing against engines.",
