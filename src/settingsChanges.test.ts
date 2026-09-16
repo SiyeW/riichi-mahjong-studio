@@ -73,8 +73,8 @@ test('engine replies preserve newer general settings', () => {
 test('patch values are detached from later draft edits', () => {
   const before = fixture()
   const after = structuredClone(before)
-  after.display.workspaceLayout.analysisVisible = true
-  const patch = settingsChanges(before, after)
   after.display.workspaceLayout.analysisVisible = false
-  assert.equal(patch.display?.workspaceLayout?.analysisVisible, true)
+  const patch = settingsChanges(before, after)
+  after.display.workspaceLayout.analysisVisible = true
+  assert.equal(patch.display?.workspaceLayout?.analysisVisible, false)
 })

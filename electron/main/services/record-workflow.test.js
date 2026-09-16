@@ -85,3 +85,29 @@ test('saving owns record export, encoding, path tracking, and dirty publication'
     nodes: [{ id: 'node-1' }],
   })
 })
+
+test('opening a record starts in the portable records folder', async (context) => {
+  const portableDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-open-record-'))
+  context.after(() => fs.rmSync(portableDirectory, { recursive: true, force: true }))
+  const gameFileStore = createGameFileStore(portableDirectory)
+  gameFileStore.ensureDefaultDirectory()
+  let openOptions = null
+  const workflow = createRecordWorkflow({
+    app: { getVersion: () => '1.0.0' },
+    appOptions: {},
+    dialog: {
+      showOpenDialog: async (_window, options) => {
+        openOptions = options
+        return { canceled: true, filePaths: [] }
+      },
+    },
+    backendGateway: {},
+    gameFileStore,
+    getMainWindow: () => null,
+    t: (key) => key,
+  })
+
+  assert.equal(await workflow.openGame(), null)
+  assert.equal(openOptions.defaultPath, path.join(portableDirectory, 'records'))
+  assert.equal(fs.existsSync(openOptions.defaultPath), true)
+})

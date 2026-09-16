@@ -16,7 +16,8 @@
     "build": "npm run type-check && vite build",
     "build:backend:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ./build-backend.ps1",
     "collect:licenses": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/collect-third-party-licenses.ps1",
-    "package:win": "npm run build:backend:win && npm run build && npm run collect:licenses && electron-builder --win dir",
+    "check:release-inputs": "node scripts/check-release-inputs.mjs",
+    "package:win": "npm run check:release-inputs && npm run build:backend:win && npm run build && npm run collect:licenses && electron-builder --win dir",
     "package:release:win": "npm run package:win && powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/prepare-release.ps1",
     "type-check": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.node.json",
     "test": "npm run test:node && npm run test:python",
@@ -63,6 +64,12 @@
       "buildResources": "build",
       "output": "release/electron"
     },
+    "extraFiles": [
+      {
+        "from": "examples/示例牌谱.mjstudio",
+        "to": "records/示例牌谱.mjstudio"
+      }
+    ],
     "extraResources": [
       {
         "from": "release/backend/rms-backend",

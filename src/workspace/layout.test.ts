@@ -65,7 +65,7 @@ test('a panel can dock relative to another panel', () => {
   const parent = findParent(moved, 'analysis-game')
   assert.ok(parent && parent.type === 'split')
   assert.equal(parent.direction, 'vertical')
-  assert.deepEqual(flattenItems(parent), ['analysis-opponents', 'analysis-game', 'console'])
+  assert.deepEqual(flattenItems(parent), ['analysis-counts', 'analysis-game', 'console'])
 })
 
 test('a panel can dock beside an entire sibling column', () => {
@@ -168,14 +168,10 @@ test('a remembered width is restored when a panel returns to a side', () => {
   let layout = createDefaultDockLayout()
   layout = moveDockItem(layout, 'analysis-counts', 'table', 'bottom', 0.31)
   layout = moveDockItem(layout, 'analysis-counts', 'table', 'right', 0.22)
-  assert.equal(layout.type, 'split')
-  const row = layout.children.find((child) => (
-    child.type === 'split'
-      && child.direction === 'horizontal'
-      && dockLayoutContains(child, 'table')
-      && dockLayoutContains(child, 'analysis-counts')
-  ))
+  const row = findParent(layout, 'analysis-counts')
   assert.ok(row && row.type === 'split')
+  assert.equal(row.direction, 'horizontal')
+  assert.equal(dockLayoutContains(row, 'table'), true)
   const totalWeight = row.weights.reduce((total, weight) => total + weight, 0)
   const panelIndex = row.children.findIndex((child) => dockLayoutContains(child, 'analysis-counts'))
   assert.ok(panelIndex >= 0)
@@ -185,17 +181,13 @@ test('a remembered width is restored when a panel returns to a side', () => {
 test('split resizing preserves the pair total and changes only the selected weights', () => {
   const layout = createDefaultDockLayout()
   assert.equal(layout.type, 'split')
-  const top = layout.children[0]
-  assert.equal(top.type, 'split')
-  const untouchedMiddleWeight = top.weights[1]
-  const pairTotal = top.weights[0] + top.weights[2]
-  const resized = resizeDockSplit(layout, [0], 0, 2, 0.7)
+  const untouchedWeight = layout.weights[2]
+  const pairTotal = layout.weights[0] + layout.weights[1]
+  const resized = resizeDockSplit(layout, [], 0, 1, 0.7)
   assert.equal(resized.type, 'split')
-  const resizedTop = resized.children[0]
-  assert.equal(resizedTop.type, 'split')
-  assert.ok(Math.abs(resizedTop.weights[0] - pairTotal * 0.7) < 0.0001)
-  assert.ok(Math.abs(resizedTop.weights[2] - pairTotal * 0.3) < 0.0001)
-  assert.equal(resizedTop.weights[1], untouchedMiddleWeight)
+  assert.ok(Math.abs(resized.weights[0] - pairTotal * 0.7) < 0.0001)
+  assert.ok(Math.abs(resized.weights[1] - pairTotal * 0.3) < 0.0001)
+  assert.equal(resized.weights[2], untouchedWeight)
 })
 
 test('hidden panels collapse visually but keep their saved position', () => {
@@ -207,7 +199,7 @@ test('hidden panels collapse visually but keep their saved position', () => {
   )
   const visible = visibleDockLayout(saved, new Set<WorkspaceItemId>(['table', 'console']))
   assert.ok(visible)
-  assert.deepEqual(flattenItems(visible), ['table', 'console'])
+  assert.deepEqual(flattenItems(visible), ['console', 'table'])
   assert.equal(dockLayoutContains(saved, 'analysis-risk'), true)
 })
 
