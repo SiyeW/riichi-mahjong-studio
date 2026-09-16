@@ -28,18 +28,6 @@
   height: 100%;
 }
 
-.analysis-panel-snapshot {
-  position: absolute;
-  inset: 0;
-  z-index: 4;
-  width: 100%;
-  min-height: 100%;
-  overflow: hidden;
-  pointer-events: none;
-  background: var(--dock-module-background);
-  will-change: opacity;
-}
-
 .reduce-motion *,
 .reduce-motion *::before,
 .reduce-motion *::after {
