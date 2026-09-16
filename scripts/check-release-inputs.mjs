@@ -5,7 +5,7 @@ import zlib from 'node:zlib'
 
 const projectRoot = path.resolve(import.meta.dirname, '..')
 const packageJson = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
-const examplePath = path.join(projectRoot, 'examples', '示例牌谱.mjstudio')
+const examplePath = path.join(projectRoot, 'examples', 'example-record.mjstudio')
 
 assert.ok(fs.existsSync(examplePath), 'the public example record is missing')
 const encoded = fs.readFileSync(examplePath)
@@ -28,8 +28,8 @@ for (const forbidden of ['Mortal', 'Akagi', 'New All', '凤桌', 'Users\\\\', 'P
 }
 
 const packagedExample = packageJson.build?.extraFiles?.find((entry) => (
-  entry.from === 'examples/示例牌谱.mjstudio'
-  && entry.to === 'records/示例牌谱.mjstudio'
+  entry.from === 'examples/example-record.mjstudio'
+  && entry.to === 'records/example-record.mjstudio'
 ))
 assert.ok(packagedExample, 'the Windows package does not place the example in its default records folder')
 

@@ -3,7 +3,7 @@ import path from 'node:path'
 import process from 'node:process'
 import zlib from 'node:zlib'
 
-const [, , sourceArgument = 'records/示例牌谱.mjstudio', destinationArgument = 'examples/示例牌谱.mjstudio'] = process.argv
+const [, , sourceArgument = 'records/示例牌谱.mjstudio', destinationArgument = 'examples/example-record.mjstudio'] = process.argv
 const projectRoot = path.resolve(import.meta.dirname, '..')
 const sourcePath = path.resolve(projectRoot, sourceArgument)
 const destinationPath = path.resolve(projectRoot, destinationArgument)
@@ -85,7 +85,7 @@ for (const node of Object.values(record.game.nodes)) {
 record.game.analysisSources = sources
 record.game.metadata = {
   ...(record.game.metadata && typeof record.game.metadata === 'object' ? record.game.metadata : {}),
-  label: '示例牌谱',
+  label: 'Example Record',
   source: 'example-record',
 }
 record.metadata = {
