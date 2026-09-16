@@ -153,6 +153,7 @@
   height: 100%;
   transform-origin: bottom center;
   background: var(--analysis-dora-color);
+  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .analysis-dora-distribution small {

@@ -1001,7 +1001,7 @@ try {
         )).length,
         analysisAnimations: activeAnimations.filter(animation => (
           animation.effect?.target instanceof Element
-          && animation.effect.target.classList.contains('analysis-panel-live')
+          && Boolean(animation.effect.target.closest('.analysis-panel-live'))
         )).length,
       })
     }, 70))
@@ -1009,8 +1009,8 @@ try {
       const animatedTargets = document.getAnimations()
         .filter(animation => animation.playState !== 'finished')
         .map(animation => animation.effect?.target)
-      const analysisPanelAnimations = animatedTargets
-        .filter(target => target instanceof Element && target.classList.contains('analysis-panel-live'))
+      const analysisDataAnimations = animatedTargets
+        .filter(target => target instanceof Element && Boolean(target.closest('.analysis-panel-live')))
       const transitionDurations = [
         ...document.querySelectorAll('.analysis-panel-live .analysis-risk-bars > i > span, .analysis-panel-live .analysis-dora-distribution em, .analysis-panel-live .analysis-score-distribution i > span'),
       ].map(element => getComputedStyle(element).transitionDuration)
@@ -1018,7 +1018,7 @@ try {
         tableSuppressed: document.querySelector('.grid-main')?.classList.contains('reset-without-motion') || false,
         panelsSuppressed: [...document.querySelectorAll('.analysis-panel-content')]
           .every(element => element.classList.contains('reduce-motion')),
-        analysisPanelAnimationCount: analysisPanelAnimations.length,
+        analysisDataAnimationCount: analysisDataAnimations.length,
         transitionDurations,
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
       })
@@ -1026,10 +1026,10 @@ try {
     const [tablePhase, during] = await Promise.all([tablePhasePromise, duringPromise])
     const after = await new Promise(resolve => setTimeout(() => {
       resolve({
-        activePanelAnimations: document.getAnimations().filter(animation => (
+        activeDataAnimations: document.getAnimations().filter(animation => (
           animation.playState !== 'finished'
           && animation.effect?.target instanceof Element
-          && animation.effect.target.classList.contains('analysis-panel-live')
+          && Boolean(animation.effect.target.closest('.analysis-panel-live'))
         )).length,
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
       })
@@ -1067,14 +1067,14 @@ try {
   assert.equal(navigationMotion.during.tableSuppressed, false, 'ordinary table motion remains available during navigation')
   assert.equal(navigationMotion.during.panelsSuppressed, false, 'ordinary analysis feedback remains available during navigation')
   if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) console.log('Navigation motion:', JSON.stringify(navigationMotion.during))
-  assert.equal(navigationMotion.during.analysisPanelAnimationCount, 2, 'each visible analysis panel owns one compositor animation')
+  assert.ok(navigationMotion.during.analysisDataAnimationCount > 0, 'analysis values animate after the table motion window')
   assert.ok(
     navigationMotion.during.transitionDurations.length > 0
-      && navigationMotion.during.transitionDurations.every(duration => duration === '0s'),
-    'prediction primitives do not start their own transitions',
+      && navigationMotion.during.transitionDurations.every(duration => duration === '0.11s'),
+    'prediction primitives use the established 110ms motion duration',
   )
-  assert.equal(navigationMotion.after.activePanelAnimations, 0, 'panel feedback finishes within the shared motion duration')
-  assert.equal(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart does not perform per-frame JavaScript interpolation')
+  assert.equal(navigationMotion.after.activeDataAnimations, 0, 'analysis value motion finishes within the shared motion duration')
+  assert.notEqual(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart interpolates its values instead of replacing the pie at once')
   assert.equal(
     await page.locator('.grid-main .choice-bar-fill').first().evaluate(element => getComputedStyle(element).transitionDuration),
     '0.11s',
@@ -1123,14 +1123,14 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.analysis-loading-overlay').length === 0)
   await page.waitForFunction(() => document.getAnimations().some(animation => (
     animation.effect?.target instanceof Element
-    && animation.effect.target.classList.contains('analysis-panel-live')
+    && Boolean(animation.effect.target.closest('.analysis-panel-live'))
   )))
   await page.waitForTimeout(140)
   assert.equal(await page.evaluate(() => document.getAnimations().filter(animation => (
     animation.playState !== 'finished'
     && animation.effect?.target instanceof Element
-    && animation.effect.target.classList.contains('analysis-panel-live')
-  )).length), 0, 'slow-result handoff also releases its compositor snapshots')
+    && Boolean(animation.effect.target.closest('.analysis-panel-live'))
+  )).length), 0, 'slow-result handoff also finishes its value animations')
   await page.evaluate(() => {
     const check = window.analysisCheck
     window.studioAPI.jumpToNode = check.originalJumpForSlowAnalysis

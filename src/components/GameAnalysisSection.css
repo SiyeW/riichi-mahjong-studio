@@ -25,6 +25,7 @@
   justify-content: center;
   height: 100%;
   min-width: 0;
+  transition: width var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .analysis-outcome-bar small {
@@ -164,17 +165,21 @@
   top: 0;
   bottom: 0;
   min-width: 0;
+  width: 100%;
   outline: none;
+  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .analysis-offense-segment.is-win {
   right: 0;
   background: var(--analysis-self-win-color);
+  transform-origin: right center;
 }
 
 .analysis-offense-segment.is-deal-in {
   left: 0;
   background: var(--analysis-self-deal-in-color);
+  transform-origin: left center;
 }
 
 .analysis-offense-value {
@@ -196,6 +201,7 @@
 
 .analysis-offense-track.labels-measured .analysis-offense-value {
   opacity: 1;
+  transition: left var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .analysis-offense-segment:focus-visible {
@@ -223,10 +229,18 @@
   z-index: 1;
   top: 0;
   bottom: 0;
+  width: 50%;
+  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.analysis-delta-cell > span.positive { background: var(--analysis-self-win-color); }
-.analysis-delta-cell > span.negative { background: var(--analysis-self-deal-in-color); }
+.analysis-delta-cell > span.positive {
+  background: var(--analysis-self-win-color);
+  transform-origin: left center;
+}
+.analysis-delta-cell > span.negative {
+  background: var(--analysis-self-deal-in-color);
+  transform-origin: right center;
+}
 
 .analysis-delta-value {
   position: absolute;
@@ -266,7 +280,10 @@
   background: rgba(255, 255, 255, 0.045);
 }
 
-.analysis-placement-bar span { height: 100%; }
+.analysis-placement-bar span {
+  height: 100%;
+  transition: width var(--ui-motion-duration) var(--ui-motion-easing);
+}
 .rank-1 { background: var(--analysis-rank-1-color); }
 .rank-2 { background: var(--analysis-rank-2-color); }
 .rank-3 { background: var(--analysis-rank-3-color); }

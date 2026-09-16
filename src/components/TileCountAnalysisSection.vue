@@ -323,8 +323,8 @@ watch(() => [props.analysis, props.controlledSeat], () => {
     || !countHoverTooltip.value
     || !hasCountPrediction(countHoverTooltip.value.prediction)
   )) clearCountTooltip()
-  void nextTick(scheduleCountBarGeometry)
-}, { deep: true, flush: 'post' })
+  if (props.countLayout === 'tile-groups') void nextTick(scheduleCountBarGeometry)
+}, { flush: 'post' })
 watch(() => props.countLayout, () => {
   clearCountTooltip()
   void nextTick(scheduleCountBarGeometry)

@@ -6,7 +6,7 @@ import type { StudioSettings } from './contracts/settings'
 import type { GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 import { normalizeTrainingMode } from './trainingSettings.ts'
-import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion.ts'
+import { getUiMotionDurationMs } from './uiMotion.ts'
 
 type Translate = (key: string, params?: TranslationParams) => string
 type DecisionAnalysis = NonNullable<GameView['analysis']>
@@ -81,8 +81,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   let analysisPresentationStartFrame = 0
   let analysisPresentationCommitFrame = 0
   let analysisPresentationNotBefore: number | null = 0
-  let analysisFeedbackGeneration = 0
-  let activeAnalysisFeedback: Animation[] = []
   let pendingAnalysisPresentation: {
     result: Record<string, unknown>
     withoutMotion: boolean
@@ -220,9 +218,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     analysisPresentationStartFrame = 0
     analysisPresentationCommitFrame = 0
     pendingAnalysisPresentation = null
-    analysisFeedbackGeneration += 1
-    activeAnalysisFeedback.forEach((animation) => animation.cancel())
-    activeAnalysisFeedback = []
   }
 
   function finishOpponentAnalysisPending() {
@@ -298,28 +293,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     applyAnalysisResult(pending.result, {
       withoutMotion: pending.withoutMotion,
       clearWhenEmpty: pending.clearWhenEmpty,
-    })
-    if (pending.withoutMotion || suppressAnalysisTransitions.value) return
-    const feedbackGeneration = ++analysisFeedbackGeneration
-    void nextTick(() => {
-      if (feedbackGeneration !== analysisFeedbackGeneration) return
-      const duration = getUiMotionDurationMs()
-      const easing = getUiMotionEasing()
-      activeAnalysisFeedback = [...document.querySelectorAll<HTMLElement>('.analysis-panel-live')]
-        .filter((element) => (
-          element.getClientRects().length > 0
-          && !element.querySelector('[aria-describedby]')
-        ))
-        .map((element) => element.animate(
-          [
-            { transform: 'translateX(0.35rem)' },
-            { transform: 'translateX(0)' },
-          ],
-          { duration, easing },
-        ))
-      Promise.allSettled(activeAnalysisFeedback.map((animation) => animation.finished)).then(() => {
-        if (feedbackGeneration === analysisFeedbackGeneration) activeAnalysisFeedback = []
-      })
     })
   }
 
