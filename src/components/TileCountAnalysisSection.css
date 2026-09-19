@@ -104,6 +104,7 @@
   border: 0;
   background: transparent;
   cursor: default;
+  outline: none;
 }
 
 .analysis-count-source-tile.is-group-start {
@@ -111,11 +112,30 @@
 }
 
 .analysis-count-source-bar {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: var(--analysis-count-bar-min-height, 0px);
   overflow: hidden;
   background: transparent;
+}
+
+.analysis-count-source-bar::after,
+.analysis-count-bars > button::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  content: '';
+  pointer-events: none;
+}
+
+.analysis-count-source-tile:hover .analysis-count-source-bar::after,
+.analysis-count-source-tile:focus-visible .analysis-count-source-bar::after,
+.analysis-count-bars > button:hover::after,
+.analysis-count-bars > button:focus-visible::after {
+  border-color: rgba(228, 241, 237, 0.72);
+  background: rgba(228, 241, 237, 0.1);
 }
 
 .analysis-count-source-tile > img {
@@ -205,6 +225,7 @@
   border: 0;
   background: transparent;
   cursor: default;
+  outline: none;
 }
 
 .analysis-count-legends {

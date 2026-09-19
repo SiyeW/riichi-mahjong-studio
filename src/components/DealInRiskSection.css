@@ -67,6 +67,28 @@
   overflow: hidden;
   background: var(--analysis-risk-track-surface);
   cursor: default;
+  outline: none;
+}
+
+.analysis-risk-bars > i::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  content: '';
+  pointer-events: none;
+}
+
+.analysis-risk-bars > i:hover,
+.analysis-risk-bars > i:focus-visible {
+  z-index: 3;
+  background: transparent;
+}
+
+.analysis-risk-bars > i:hover::after,
+.analysis-risk-bars > i:focus-visible::after {
+  border-color: rgba(228, 241, 237, 0.72);
+  background: rgba(228, 241, 237, 0.1);
 }
 
 .analysis-risk-row-canvas {

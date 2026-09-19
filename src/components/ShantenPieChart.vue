@@ -23,8 +23,11 @@
           :stroke="slice.color"
           :stroke-width="slice.probability > 0 ? 0.012 : 0"
           stroke-linejoin="round"
+          :tabindex="slice.probability > 0 ? 0 : -1"
           @mouseenter="emit('slice-enter', $event, slice.label, slice.probability)"
           @mouseleave="emit('slice-leave')"
+          @focus="emit('slice-enter', $event, slice.label, slice.probability)"
+          @blur="emit('slice-leave')"
         />
         <text
           v-for="slice in labeledSlices"
@@ -56,7 +59,7 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  'slice-enter': [event: MouseEvent, label: string, probability: number]
+  'slice-enter': [event: Event, label: string, probability: number]
   'slice-leave': []
 }>()
 

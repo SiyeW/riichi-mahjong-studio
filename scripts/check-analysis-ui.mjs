@@ -706,7 +706,7 @@ try {
   await page.setViewportSize({ width: 1400, height: 1000 })
   await page.evaluate(() => {
     const vm = window.analysisCheck.vm
-    window.analysisCheck.publish(window.analysisCheck.result())
+    window.analysisCheck.publish(window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1))
     vm.settings.display.workspaceLayout = {
       ...vm.workspaceLayout,
       analysisVisible: true,
@@ -752,6 +752,10 @@ try {
   }
   await page.mouse.move(0, 0)
   await page.waitForFunction(() => !document.querySelector('.analysis-floating-tooltip'))
+  const shantenSlice = page.locator('.shanten-chart path').first()
+  await shantenSlice.hover()
+  assert.ok(await shantenSlice.evaluate(element => Number.parseFloat(getComputedStyle(element).strokeWidth) >= 0.03), 'the hovered shanten slice receives a crisp outline')
+  await page.mouse.move(0, 0)
   if (process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT })
   }
@@ -837,6 +841,10 @@ try {
   assert.ok(roomyRisk.barsHeight > roomyRisk.faceHeight * 1.15, 'bars expand into height not used by capped tiles')
   assert.ok(roomyRisk.scaleHeight > 0 && roomyRisk.scaleRight <= roomyRisk.gridRight + 0.6, 'the scale stays alongside the bars')
   assert.ok(roomyRisk.rowBorders.every(width => width === '0px'), 'risk rows have no divider rules')
+  const riskLane = page.locator('.analysis-risk-bars > i').first()
+  await riskLane.hover()
+  assert.notEqual(await riskLane.evaluate(element => getComputedStyle(element, '::after').borderTopColor), 'rgba(0, 0, 0, 0)', 'the hovered deal-in lane receives the shared analysis highlight')
+  await page.mouse.move(0, 0)
 
   await page.setViewportSize({ width: 1100, height: 1000 })
   await page.waitForTimeout(100)
@@ -915,6 +923,10 @@ try {
   assert.ok(splitMetrics.risk.tileWidth <= splitMetrics.risk.fontSize * 3 + 0.6, 'risk tiles stay within the 3em interface limit')
   assert.ok(splitMetrics.counts.tileWidth <= splitMetrics.counts.fontSize * 3 + 0.6, 'grouped count tiles stay within the 3em interface limit')
   assert.ok(splitMetrics.counts.tileWidth < 60, 'grouped count tiles are height-limited in a wide, short panel')
+  const groupedCountLane = page.locator('.analysis-count-bars > button').first()
+  await groupedCountLane.hover()
+  assert.notEqual(await groupedCountLane.evaluate(element => getComputedStyle(element, '::after').borderTopColor), 'rgba(0, 0, 0, 0)', 'grouped count lanes receive the shared analysis highlight')
+  await page.mouse.move(0, 0)
   if (process.env.RMS_SPLIT_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_SPLIT_UI_CHECK_SCREENSHOT })
   }
@@ -941,6 +953,7 @@ try {
   }
   await target().hover()
   await tooltip.waitFor({ state: 'visible' })
+  assert.notEqual(await target().locator('.analysis-count-source-bar').evaluate(element => getComputedStyle(element, '::after').borderTopColor), 'rgba(0, 0, 0, 0)', 'the hovered count lane receives the shared analysis highlight')
   const tileArtwork = await page.evaluate(() => {
     const read = selector => {
       const element = document.querySelector(selector)
@@ -1155,6 +1168,20 @@ try {
         { type: 'ron', winners: [2, 3], target: 0, probability: 0.03 },
       ],
     }
+    result.outputs['match-placement'] = {
+      players: [0, 1, 2, 3].map(seat => ({
+        seat,
+        prediction: {
+          expectedValue: 2.1,
+          distribution: [
+            { value: 4, probability: 0.05 },
+            { value: 3, probability: 0.15 },
+            { value: 2, probability: 0.30 },
+            { value: 1, probability: 0.50 },
+          ],
+        },
+      })),
+    }
     window.analysisCheck.publish(result)
   })
   const selfDealInSegment = page.locator('.analysis-offense-row').first().locator('.analysis-offense-segment.is-deal-in')
@@ -1191,6 +1218,38 @@ try {
   }
   await page.mouse.move(0, 0)
   await page.waitForFunction(() => !document.querySelector('.analysis-floating-tooltip'))
+
+  const placementBar = page.locator('.analysis-placement-bar').first()
+  const placementSegments = placementBar.locator(':scope > span')
+  assert.equal(await placementSegments.count(), 4)
+  assert.equal(await placementSegments.nth(0).locator('small').count(), 0, 'a placement segment without enough probability share omits its label')
+  assert.equal(await placementBar.locator('small').count(), 3, 'roomy placement segments display their percentages directly')
+  const placementLabelGeometry = await placementBar.locator('small').evaluateAll(labels => labels.map(label => {
+    const labelBounds = label.getBoundingClientRect()
+    const segmentBounds = label.parentElement.getBoundingClientRect()
+    return {
+      left: labelBounds.left,
+      right: labelBounds.right,
+      segmentLeft: segmentBounds.left,
+      segmentRight: segmentBounds.right,
+    }
+  }))
+  assert.ok(placementLabelGeometry.every(item => item.left >= item.segmentLeft - 0.6 && item.right <= item.segmentRight + 0.6), 'placement percentages stay inside their segments')
+
+  const highlightChecks = [
+    { hover: page.locator('.analysis-outcome-bar > span').first(), surface: page.locator('.analysis-outcome-bar > span').first() },
+    { hover: page.locator('.analysis-offense-row').first().locator('.analysis-offense-segment.is-deal-in'), surface: page.locator('.analysis-offense-row').first().locator('.analysis-offense-track') },
+    { hover: page.locator('.analysis-delta-cell').first(), surface: page.locator('.analysis-delta-cell').first() },
+    { hover: placementBar, surface: placementBar },
+  ]
+  for (const { hover, surface } of highlightChecks) {
+    await hover.hover()
+    assert.notEqual(await surface.evaluate(element => getComputedStyle(element, '::after').borderTopColor), 'rgba(0, 0, 0, 0)', 'interactive game-analysis bars share the same hover feedback')
+  }
+  if (process.env.RMS_ANALYSIS_HOVER_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_ANALYSIS_HOVER_SCREENSHOT })
+  }
+  await page.mouse.move(0, 0)
   }
 
   // A cached node change lets table motion finish before the complete next

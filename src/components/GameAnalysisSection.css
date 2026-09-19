@@ -20,12 +20,49 @@
 }
 
 .analysis-outcome-bar span {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
   min-width: 0;
+  outline: none;
   transition: width var(--ui-motion-duration) var(--ui-motion-easing);
+}
+
+.analysis-outcome-bar span::after,
+.analysis-delta-cell::after,
+.analysis-placement-bar::after,
+.analysis-offense-track::after {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  content: '';
+  pointer-events: none;
+}
+
+.analysis-outcome-bar span:hover::after,
+.analysis-outcome-bar span:focus-visible::after,
+.analysis-delta-cell:hover::after,
+.analysis-delta-cell:focus-visible::after,
+.analysis-placement-bar:hover::after,
+.analysis-placement-bar:focus-visible::after,
+.analysis-offense-track:has(.analysis-offense-segment:hover)::after,
+.analysis-offense-track:has(.analysis-offense-segment:focus-visible)::after {
+  border-color: rgba(228, 241, 237, 0.72);
+  background: rgba(228, 241, 237, 0.1);
+}
+
+.analysis-offense-track:has(.analysis-offense-segment.is-deal-in:hover)::after,
+.analysis-offense-track:has(.analysis-offense-segment.is-deal-in:focus-visible)::after {
+  right: 50%;
+}
+
+.analysis-offense-track:has(.analysis-offense-segment.is-win:hover)::after,
+.analysis-offense-track:has(.analysis-offense-segment.is-win:focus-visible)::after {
+  left: 50%;
 }
 
 .analysis-outcome-bar small {
@@ -204,13 +241,10 @@
   transition: left var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.analysis-offense-segment:focus-visible {
-  box-shadow: inset 0 0 0 1px rgba(224, 241, 236, 0.58);
-}
-
 .analysis-delta-cell {
   position: relative;
   height: calc(1rem * var(--ui-scale));
+  outline: none;
   background: rgba(255, 255, 255, 0.045);
 }
 
@@ -274,15 +308,37 @@
 .analysis-match-heading span:last-child { text-align: right; }
 
 .analysis-placement-bar {
+  position: relative;
   display: flex;
   height: calc(1rem * var(--ui-scale));
   overflow: hidden;
+  outline: none;
   background: rgba(255, 255, 255, 0.045);
 }
 
 .analysis-placement-bar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   height: 100%;
+  min-width: 0;
   transition: width var(--ui-motion-duration) var(--ui-motion-easing);
+}
+
+.analysis-placement-bar small {
+  overflow: hidden;
+  color: rgba(20, 43, 48, 0.9);
+  font-size: var(--ui-text-caption);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.22);
+  white-space: nowrap;
+}
+
+.analysis-placement-bar .rank-3 small,
+.analysis-placement-bar .rank-4 small {
+  color: rgba(248, 252, 250, 0.9);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
 }
 .rank-1 { background: var(--analysis-rank-1-color); }
 .rank-2 { background: var(--analysis-rank-2-color); }

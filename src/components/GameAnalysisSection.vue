@@ -97,7 +97,9 @@
             @focus="showDistributionTooltip($event, player.label, t('analysis.matchPlacement'), player.placement, t('unit.place'))"
             @blur="tooltip.clear"
           >
-            <span v-for="segment in player.placement" :key="segment.value" :class="`rank-${segment.value}`" :style="{ width: `${segment.probability * 100}%` }" />
+            <span v-for="segment in player.placement" :key="segment.value" :class="`rank-${segment.value}`" :style="{ width: `${segment.probability * 100}%` }">
+              <small v-if="segment.probability >= 0.08">{{ formatProbability(segment.probability) }}</small>
+            </span>
           </div>
           <small class="analysis-placement-value">{{ player.expectedPlacement }}</small>
           <span

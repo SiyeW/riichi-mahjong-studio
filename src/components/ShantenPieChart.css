@@ -14,6 +14,12 @@
 }
 .shanten-chart path {
   cursor: default;
+  outline: none;
+}
+.shanten-chart path:hover,
+.shanten-chart path:focus-visible {
+  stroke: rgba(228, 241, 237, 0.82);
+  stroke-width: 0.035;
 }
 .shanten-slice-label {
   fill: rgb(248 252 250 / 75%);
