@@ -58,17 +58,25 @@
                 @mouseleave="emit('update:hoveredRoundId', null)"
                 @click="emit('jump', region.dot.id)"
               />
-              <circle
-                v-for="dot in dots"
-                :key="dot.id"
-                :cx="dot.x"
-                :cy="dot.y"
-                :r="6 * scale"
-                :class="['round-map-dot', dot.isCurrent ? 'is-current' : '', dot.isMainline ? 'is-mainline' : '', hoveredRoundId === dot.id ? 'is-hovered' : '']"
-                :fill="dot.fill"
-                :stroke="dot.isCurrent ? 'white' : (dot.isMainline ? 'rgba(220,244,240,0.4)' : 'none')"
-                :stroke-width="(dot.isCurrent ? 1.5 : (dot.isMainline ? 0.8 : 0)) * scale"
-              />
+              <template v-for="dot in dots" :key="dot.id">
+                <circle
+                  v-if="hoveredRoundId === dot.id"
+                  :cx="dot.x"
+                  :cy="dot.y"
+                  :r="6 * scale * 1.45"
+                  :stroke-width="6 * scale * 0.2"
+                  class="round-map-hover-indicator"
+                />
+                <circle
+                  :cx="dot.x"
+                  :cy="dot.y"
+                  :r="6 * scale"
+                  :class="['round-map-dot', dot.isCurrent ? 'is-current' : '', dot.isMainline ? 'is-mainline' : '']"
+                  :fill="dot.fill"
+                  :stroke="dot.isCurrent ? 'white' : (dot.isMainline ? 'rgba(220,244,240,0.4)' : 'none')"
+                  :stroke-width="(dot.isCurrent ? 1.5 : (dot.isMainline ? 0.8 : 0)) * scale"
+                />
+              </template>
             </svg>
           </div>
         </div>
@@ -222,17 +230,16 @@ const { t } = useI18n()
 
 .round-map-dot {
   pointer-events: none;
-  transition:
-    filter var(--ui-motion-duration) var(--ui-motion-easing),
-    transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .round-map-dot.is-current {
   filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.42));
 }
 
-.round-map-dot.is-hovered {
-  filter: brightness(1.25);
+.round-map-hover-indicator {
+  fill: rgba(228, 241, 237, 0.1);
+  stroke: rgba(228, 241, 237, 0.72);
+  pointer-events: none;
 }
 
 .round-map-hit-region {

@@ -485,6 +485,56 @@ try {
     await page.screenshot({ path: process.env.RMS_BRANCH_HOVER_SCREENSHOT })
   }
   await page.mouse.move(0, 0)
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    vm.gameView.tree.currentRoundRootId = 'round-1'
+    vm.gameView.tree.rounds = [
+      {
+        id: 'round-1', parentRoundId: null, childRoundIds: ['round-2'], mainNextRoundId: 'round-2',
+        depth: 0, roundIndex: 0, bakaze: 'E', kyoku: 1, honba: 0, kyotaku: 0,
+        scores: [25000, 25000, 25000, 25000], tailScores: [25000, 25000, 25000, 25000],
+        phase: 'draw', tailPhase: 'draw', resultInfo: null, matchEndInfo: null, isCurrent: true,
+      },
+      {
+        id: 'round-2', parentRoundId: 'round-1', childRoundIds: [], mainNextRoundId: null,
+        depth: 1, roundIndex: 1, bakaze: 'E', kyoku: 2, honba: 0, kyotaku: 0,
+        scores: [27000, 24000, 25000, 24000], tailScores: [27000, 24000, 25000, 24000],
+        phase: 'draw', tailPhase: 'draw', resultInfo: null, matchEndInfo: null, isCurrent: false,
+      },
+    ]
+  })
+  await page.locator('.info-round').click()
+  const roundMapHitRegion = page.locator('.round-map-hit-region').last()
+  await roundMapHitRegion.hover()
+  assert.equal(await page.locator('.round-map-hover-indicator').count(), 1, 'the hovered round-map node receives one crisp indicator')
+  const roundMapHoverGeometry = await page.locator('.round-map-svg').evaluate(svg => {
+    const indicator = svg.querySelector('.round-map-hover-indicator')
+    const dots = [...svg.querySelectorAll('.round-map-dot')]
+    const hoveredDot = dots.find(dot => (
+      dot.getAttribute('cx') === indicator?.getAttribute('cx')
+      && dot.getAttribute('cy') === indicator?.getAttribute('cy')
+    ))
+    if (!indicator || !hoveredDot) throw new Error('round-map hover indicator is not aligned to a node')
+    const style = getComputedStyle(indicator)
+    return {
+      dotRadius: Number(hoveredDot.getAttribute('r')),
+      indicatorRadius: Number(indicator.getAttribute('r')),
+      fill: style.fill,
+      stroke: style.stroke,
+    }
+  })
+  assert.ok(roundMapHoverGeometry.indicatorRadius > roundMapHoverGeometry.dotRadius, 'the round-map hover outline surrounds the node instead of recoloring it')
+  assert.notEqual(roundMapHoverGeometry.fill, 'none', 'the round-map hover indicator keeps the branch-tree pale fill')
+  assert.notEqual(roundMapHoverGeometry.stroke, 'none', 'the round-map hover indicator keeps the branch-tree crisp outline')
+  if (process.env.RMS_ROUND_MAP_HOVER_SCREENSHOT) {
+    await page.locator('.round-map-window').screenshot({ path: process.env.RMS_ROUND_MAP_HOVER_SCREENSHOT })
+  }
+  await page.locator('.round-map-window .floating-panel-close').click()
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    vm.gameView.tree.currentRoundRootId = 'node-1'
+    vm.gameView.tree.rounds = []
+  })
   for (const operation of ['saveGame', 'saveGameAs']) {
     await page.evaluate(async operation => {
       const check = window.analysisCheck
