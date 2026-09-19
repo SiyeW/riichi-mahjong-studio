@@ -291,6 +291,29 @@ try {
   }
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
   if (!performanceOnly) {
+  await page.locator('.toolbar-panel-menu > button').hover()
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.toolbar-panel-menu-items')).visibility === 'visible')
+  const analysisMenuStyles = await page.locator('.toolbar-panel-menu-items').evaluate(menu => {
+    const items = [...menu.querySelectorAll('button')]
+    const activeItem = items.find(item => item.classList.contains('active'))
+    const inactiveItem = items.find(item => !item.classList.contains('active'))
+    if (!activeItem || !inactiveItem) throw new Error('analysis menu fixture requires active and inactive items')
+    return {
+      backgroundImage: getComputedStyle(menu).backgroundImage,
+      itemBorders: items.map(item => getComputedStyle(item).borderTopWidth),
+      itemBackgrounds: items.map(item => getComputedStyle(item).backgroundColor),
+      activeMarker: getComputedStyle(activeItem, '::before').backgroundColor,
+      inactiveMarker: getComputedStyle(inactiveItem, '::before').backgroundColor,
+    }
+  })
+  assert.equal(analysisMenuStyles.backgroundImage, 'none', 'the analysis menu keeps a solid floating surface')
+  assert.ok(analysisMenuStyles.itemBorders.every(width => width === '0px'), 'analysis menu choices do not repeat the toolbar button border')
+  assert.equal(new Set(analysisMenuStyles.itemBackgrounds).size, 1, 'selection does not turn analysis menu choices into competing green buttons')
+  assert.notEqual(analysisMenuStyles.activeMarker, analysisMenuStyles.inactiveMarker, 'one compact indicator carries each analysis panel selection state')
+  if (process.env.RMS_ANALYSIS_MENU_SCREENSHOT) {
+    await page.locator('.toolbar-panel-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_SCREENSHOT })
+  }
+  await page.mouse.move(0, 0)
   await page.evaluate(() => { window.analysisCheck.vm.showMjaiDebug = true })
   assert.deepEqual(
     await page.locator('.mjai-debug-panel').evaluate(panel => ({
@@ -507,6 +530,12 @@ try {
   const roundMapHitRegion = page.locator('.round-map-hit-region').last()
   await roundMapHitRegion.hover()
   assert.equal(await page.locator('.round-map-hover-indicator').count(), 1, 'the hovered round-map node receives one crisp indicator')
+  assert.equal(await page.locator('.round-map-axis-label.is-hovered').count(), 1, 'the round label shares its node hover feedback')
+  assert.notEqual(
+    await page.locator('.round-map-axis-label.is-hovered').evaluate(element => getComputedStyle(element).boxShadow),
+    'none',
+    'the hovered round label uses the same clear outline as the branch tree',
+  )
   const roundMapHoverGeometry = await page.locator('.round-map-svg').evaluate(svg => {
     const indicator = svg.querySelector('.round-map-hover-indicator')
     const dots = [...svg.querySelectorAll('.round-map-dot')]

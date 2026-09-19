@@ -22,6 +22,7 @@
                 v-for="row in rows"
                 :key="row.key"
                 class="round-map-axis-label"
+                :class="{ 'is-hovered': dots.some((dot) => dot.id === hoveredRoundId && dot.rowKey === row.key) }"
                 :style="{ top: `${row.y}px` }"
               >
                 {{ row.label }}
@@ -197,11 +198,22 @@ const { t } = useI18n()
 
 .round-map-axis-label {
   position: absolute;
-  right: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 100%;
   transform: translateY(-50%);
+  padding: 0 calc(0.16rem * var(--chrome-scale));
   font-size: var(--ui-text-body);
+  line-height: calc(1.125rem * var(--ui-scale));
   color: var(--text-dim);
+  text-align: right;
   white-space: nowrap;
+}
+
+.round-map-axis-label.is-hovered {
+  background: rgba(228, 241, 237, 0.1);
+  color: var(--text-main);
+  box-shadow: inset 0 0 0 1px rgba(228, 241, 237, 0.72);
 }
 
 .round-map-scroll {

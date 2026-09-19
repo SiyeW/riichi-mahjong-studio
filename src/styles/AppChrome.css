@@ -172,13 +172,13 @@
   top: 100%;
   right: 0;
   display: grid;
-  gap: calc(0.18rem * var(--chrome-scale));
+  gap: calc(0.06rem * var(--chrome-scale));
   min-width: max-content;
-  padding: calc(0.3rem * var(--chrome-scale));
+  padding: calc(0.22rem * var(--chrome-scale));
   border: 1px solid var(--border-default);
   border-radius: calc(0.2rem * var(--chrome-scale));
-  background: var(--surface-overlay);
-  box-shadow: 0 calc(0.4rem * var(--chrome-scale)) calc(1.1rem * var(--chrome-scale)) rgba(0, 0, 0, 0.38);
+  background: var(--surface-floating);
+  box-shadow: 0 calc(0.2rem * var(--chrome-scale)) calc(0.5rem * var(--chrome-scale)) rgba(0, 0, 0, 0.32);
   opacity: 0;
   visibility: hidden;
   transform: translateY(calc(-0.2rem * var(--chrome-scale)));
@@ -196,11 +196,55 @@
   transition-delay: 0s;
 }
 
-.toolbar .toolbar-panel-menu-items button {
+.toolbar .toolbar-panel-menu-items button,
+.toolbar .toolbar-panel-menu-items button.active,
+.toolbar .toolbar-panel-menu-items button.active:hover:not(:disabled) {
+  display: grid;
+  grid-template-columns: calc(0.66rem * var(--ui-scale)) minmax(max-content, 1fr);
+  align-items: center;
+  gap: calc(0.42rem * var(--ui-scale));
   width: 100%;
-  padding: calc(0.3rem * var(--ui-scale)) calc(0.72rem * var(--ui-scale));
+  padding: calc(0.28rem * var(--ui-scale)) calc(0.48rem * var(--ui-scale));
+  border: 0;
+  border-radius: calc(0.12rem * var(--ui-scale));
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-dim);
   text-align: left;
   white-space: nowrap;
+}
+
+.toolbar .toolbar-panel-menu-items button::before {
+  content: '✓';
+  display: grid;
+  box-sizing: border-box;
+  place-items: center;
+  width: calc(0.66rem * var(--ui-scale));
+  height: calc(0.66rem * var(--ui-scale));
+  border: 1px solid var(--border-strong);
+  background: var(--surface-inset);
+  color: transparent;
+  font-size: calc(0.54rem * var(--ui-scale));
+  font-weight: 700;
+  line-height: 1;
+}
+
+.toolbar .toolbar-panel-menu-items button.active {
+  color: var(--text-main);
+}
+
+.toolbar .toolbar-panel-menu-items button.active::before {
+  border-color: rgba(76, 175, 80, 0.82);
+  background: var(--surface-control-active);
+  color: var(--text-main);
+}
+
+.toolbar .toolbar-panel-menu-items button:hover:not(:disabled),
+.toolbar .toolbar-panel-menu-items button.active:hover:not(:disabled),
+.toolbar .toolbar-panel-menu-items button:focus-visible {
+  background: rgba(228, 241, 237, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(228, 241, 237, 0.28);
+  color: var(--text-main);
 }
 
 .startup-banner {
