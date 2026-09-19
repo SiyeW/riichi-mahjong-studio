@@ -356,10 +356,6 @@ export function useDecisionActionPresentation(options: {
     return { transform: `scaleY(${clampBarScale(value)})` }
   }
 
-  function barUpperStyle(value: number) {
-    return { transform: `scaleY(${1 - clampBarScale(value)})` }
-  }
-
   function isBestAction(action?: GameAction): boolean {
     if (!action) return false
     if (action.type === 'dahai') return analysisEntryIsBest(resolveDiscardEntry(action))
@@ -369,7 +365,6 @@ export function useDecisionActionPresentation(options: {
   return {
     actionDisplayTiles,
     barFillStyle,
-    barUpperStyle,
     findQuickPassAction,
     findQuickTsumogiriAction,
     formatActionValue,

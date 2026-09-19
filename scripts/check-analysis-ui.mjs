@@ -1072,7 +1072,7 @@ try {
   await page.locator('.grid-main .choice-bar-fill').first().waitFor()
   await page.waitForTimeout(200)
   const permanentLayerHints = await page.evaluate(() => [
-    ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back), .grid-main .choice-bar-upper, .grid-main .choice-bar-fill, .grid-main .ron-risk-fill'),
+    ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back), .grid-main .choice-bar-fill, .grid-main .ron-risk-fill'),
   ].filter(element => getComputedStyle(element).willChange.includes('transform')).length)
   assert.equal(permanentLayerHints, 0, 'repeated table primitives do not reserve permanent compositor layers')
   const analysisCssMotionDisabled = Boolean(process.env.RMS_UI_EXPERIMENT_NO_ANALYSIS_CSS_MOTION)
@@ -1099,7 +1099,7 @@ try {
     })
   }
   const performanceBefore = await cdpSession.send('Performance.getMetrics')
-  const navigationMotion = await page.evaluate(async () => {
+  const navigationMotion = await page.evaluate(async (collectMotionSamples) => {
     const check = window.analysisCheck
     const { vm } = check
     const originalJump = window.studioAPI.jumpToNode
@@ -1127,6 +1127,8 @@ try {
     }
     const frameTimes = []
     const longTasks = []
+    const tableMotionSamples = []
+    const analysisMotionSamples = []
     const captureDistributionGeometry = () => {
       const distributions = [...document.querySelectorAll(
         '.analysis-panel-live .analysis-dora-distribution, .analysis-panel-live .analysis-score-distribution',
@@ -1154,6 +1156,26 @@ try {
       try { observer?.observe({ type: 'longtask' }) } catch { /* unsupported */ }
       const sample = timestamp => {
         frameTimes.push(timestamp)
+        if (collectMotionSamples) {
+          const activeAnimations = document.getAnimations().filter(animation => animation.playState !== 'finished')
+          const tableAnimation = activeAnimations.find(animation => (
+            animation.effect?.target instanceof Element
+            && Boolean(animation.effect.target.closest('.grid-main'))
+          ))
+          if (tableAnimation && typeof tableAnimation.currentTime === 'number') {
+            tableMotionSamples.push({ timestamp, currentTime: tableAnimation.currentTime })
+          }
+          const analysisAnimation = activeAnimations.find(animation => (
+            animation.effect?.target instanceof Element
+            && Boolean(animation.effect.target.closest('.analysis-panel-live'))
+          ))
+          const riskSignature = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
+          if (analysisAnimation && typeof analysisAnimation.currentTime === 'number') {
+            analysisMotionSamples.push({ timestamp, currentTime: analysisAnimation.currentTime, riskSignature })
+          } else if (riskSignature && riskSignature !== oldRiskCanvas) {
+            analysisMotionSamples.push({ timestamp, currentTime: null, riskSignature })
+          }
+        }
         if (timestamp - startedAt < 300) requestAnimationFrame(sample)
         else {
           observer?.disconnect()
@@ -1186,11 +1208,14 @@ try {
         .map(animation => animation.effect?.target)
       const analysisDataAnimations = animatedTargets
         .filter(target => target instanceof Element && Boolean(target.closest('.analysis-panel-live')))
-      const animationTargets = Object.entries(analysisDataAnimations.reduce((counts, target) => {
+      const tableDataAnimations = animatedTargets
+        .filter(target => target instanceof Element && Boolean(target.closest('.grid-main')))
+      const describeAnimationTargets = targets => Object.entries(targets.reduce((counts, target) => {
         const key = target.classList.length ? [...target.classList].join('.') : target.tagName.toLowerCase()
         counts[key] = (counts[key] || 0) + 1
         return counts
       }, {})).sort((left, right) => right[1] - left[1])
+      const animationTargets = describeAnimationTargets(analysisDataAnimations)
       const transitionDurations = [
         ...document.querySelectorAll(
           '.analysis-panel-live .analysis-outcome-bar > span, '
@@ -1206,6 +1231,8 @@ try {
           .every(element => element.classList.contains('reduce-motion')),
         analysisDataAnimationCount: analysisDataAnimations.length,
         animationTargets,
+        tableDataAnimationCount: tableDataAnimations.length,
+        tableAnimationTargets: describeAnimationTargets(tableDataAnimations),
         transitionDurations,
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
         riskCanvas: document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '',
@@ -1255,9 +1282,11 @@ try {
         longTasks: samples.longTasks.filter(task => (
           task.startTime >= samples.startedAt && task.startTime <= sampleEndedAt
         )),
+        tableMotionSamples,
+        analysisMotionSamples,
       },
     }
-  })
+  }, Boolean(process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC))
   const performanceAfter = await cdpSession.send('Performance.getMetrics')
   let traceSummary = null
   if (traceEnabled) {

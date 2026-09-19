@@ -185,10 +185,6 @@
                     >
                       <span class="special-action-bar-track" :class="{ 'recommendation-hidden': !showTrainingRecommendations }">
                         <span
-                          class="special-action-bar-upper"
-                          :style="barUpperStyle(resolveDisplayedActionBar(action))"
-                        />
-                        <span
                           class="special-action-bar-fill"
                           :style="barFillStyle(resolveDisplayedActionBar(action))"
                         />
@@ -232,7 +228,6 @@
                       :class="{ best: showTrainingRecommendations && slot.isBest, 'discard-bar-next-main': !slot.isGap && tileNextMoveClass(slot.tile, slot.isDrawn) === 'tile-next-main', 'discard-bar-next-side': !slot.isGap && tileNextMoveClass(slot.tile, slot.isDrawn) === 'tile-next-side', 'is-drawn': slot.isDrawn }"
                     >
                       <span v-if="!slot.isGap" class="choice-bar-lane">
-                        <span class="choice-bar-upper" :style="barUpperStyle(resolveDisplayedDiscardSlotBar(slot))" />
                         <span class="choice-bar-fill" :style="barFillStyle(resolveDisplayedDiscardSlotBar(slot))" />
                       </span>
                     </div>
@@ -1319,7 +1314,6 @@ const {
 const {
   actionDisplayTiles,
   barFillStyle,
-  barUpperStyle,
   findQuickPassAction,
   findQuickTsumogiriAction,
   formatActionValue,

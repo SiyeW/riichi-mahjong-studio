@@ -262,7 +262,6 @@
   opacity: 1;
 }
 
-.special-action-bar-upper,
 .special-action-bar-fill {
   position: absolute;
   left: 0;
@@ -270,12 +269,6 @@
   width: 100%;
   display: block;
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.special-action-bar-upper {
-  top: 0;
-  background: var(--bar-empty-bg);
-  transform-origin: top center;
 }
 
 .special-action-bar-fill {
@@ -352,6 +345,7 @@
   width: var(--decision-bar-width);
   height: var(--discard-bar-lane-height);
   display: block;
+  background: var(--bar-empty-bg);
 }
 
 .choice-bar-lane::after {
@@ -370,7 +364,6 @@
     background-color var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.choice-bar-upper,
 .choice-bar-fill {
   position: absolute;
   left: 0;
@@ -380,12 +373,6 @@
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.choice-bar-upper {
-  top: 0;
-  background: var(--bar-empty-bg);
-  transform-origin: top center;
-}
-
 .choice-bar-fill {
   bottom: 0;
   background: var(--decision-recommendation-color);
@@ -393,10 +380,6 @@
 }
 
 @starting-style {
-  .discard-bars:not(.recommendation-hidden) .choice-bar-upper {
-    transform: scaleY(1) !important;
-  }
-
   .discard-bars:not(.recommendation-hidden) .choice-bar-fill {
     transform: scaleY(0) !important;
   }
@@ -465,10 +448,8 @@
 }
 
 .grid-main.reset-without-motion .special-action-bar-track::after,
-.grid-main.reset-without-motion .special-action-bar-upper,
 .grid-main.reset-without-motion .special-action-bar-fill,
 .grid-main.reset-without-motion .choice-bar-lane::after,
-.grid-main.reset-without-motion .choice-bar-upper,
 .grid-main.reset-without-motion .choice-bar-fill,
 .grid-main.reset-without-motion .ron-risk-slot.has-adaptive-threshold::before,
 .grid-main.reset-without-motion .ron-risk-fill {
