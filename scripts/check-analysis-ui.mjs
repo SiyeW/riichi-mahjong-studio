@@ -751,7 +751,8 @@ try {
         { value: 3900, probability: 0.17 },
         { value: 7700, probability: 0.16 },
         { value: 8000, probability: 0.14 },
-        { value: 12000, probability: 0.12 },
+        { value: 12000, probability: 0.11 },
+        { value: 128000, probability: 0.01 },
       ]
     }
     window.analysisCheck.publish(result)
@@ -770,15 +771,24 @@ try {
     const dora = section.querySelector('.analysis-dora-distribution')
     const score = section.querySelector('.analysis-score-distribution')
     const grid = section.querySelector('.analysis-opponent-prediction-grid')
-    const doraStyle = dora ? getComputedStyle(dora) : null
-    const scoreStyle = score ? getComputedStyle(score) : null
+    const predictions = [...section.querySelectorAll('.analysis-opponent-prediction')]
+    const sectionBounds = section.getBoundingClientRect()
+    const gridBounds = grid?.getBoundingClientRect()
     return {
-      sectionHeight: section.getBoundingClientRect().height,
-      gridHeight: grid?.getBoundingClientRect().height || 0,
+      sectionHeight: sectionBounds.height,
+      gridHeight: gridBounds?.height || 0,
+      unusedBottomHeight: gridBounds ? sectionBounds.bottom - gridBounds.bottom : 0,
       doraHeight: dora?.getBoundingClientRect().height || 0,
       scoreHeight: score?.getBoundingClientRect().height || 0,
-      doraMaximum: Number.parseFloat(doraStyle?.maxHeight || '0'),
-      scoreMaximum: Number.parseFloat(scoreStyle?.maxHeight || '0'),
+      chartsStayInsideRows: [dora, score].every((chart) => {
+        if (!chart) return true
+        const chartBounds = chart.getBoundingClientRect()
+        const row = predictions.find((prediction) => prediction.contains(chart))
+        const rowBounds = row?.getBoundingClientRect()
+        return Boolean(rowBounds)
+          && chartBounds.top >= rowBounds.top - 0.5
+          && chartBounds.bottom <= rowBounds.bottom + 0.5
+      }),
     }
   })
   await page.locator('.analysis-dora-distribution').first().waitFor()
@@ -793,14 +803,29 @@ try {
   ))
   assert.equal(new Set(scoreModeCounts).size, 1, 'all opponents show the same width-derived number of score nominations')
   assert.ok(scoreModeCounts[0] > 3, 'a roomy panel shows more than the former fixed three score nominations')
+  const scoreModePixelGeometry = await page.locator('.analysis-score-modes').evaluateAll((groups) => {
+    const ratio = window.devicePixelRatio
+    return groups.map((group) => {
+      const cells = [...group.children].map(cell => cell.getBoundingClientRect())
+      return {
+        widths: cells.map(bounds => bounds.width * ratio),
+        gaps: cells.slice(1).map((bounds, index) => (bounds.left - cells[index].right) * ratio),
+      }
+    })
+  })
+  const physicalScoreModeWidths = scoreModePixelGeometry.flatMap(group => group.widths)
+  const physicalScoreModeGaps = scoreModePixelGeometry.flatMap(group => group.gaps)
+  assert.ok(physicalScoreModeWidths.every(width => Math.abs(width - Math.round(width)) < 0.01), 'score nomination widths align to physical pixels')
+  assert.ok(physicalScoreModeGaps.every(gap => Math.abs(gap - Math.round(gap)) < 0.01), 'score nomination gaps align to physical pixels')
+  assert.equal(new Set(physicalScoreModeGaps.map(gap => Math.round(gap))).size, 1, 'every score nomination gap renders at the same physical width')
   const scoreModeLabels = await page.locator('.analysis-score-modes span').allTextContents()
   assert.ok(!scoreModeLabels.includes('116'), 'non-dealer score modes exclude dealer-only 11,600 points')
   assert.ok(!scoreModeLabels.includes('117'), 'non-dealer score modes exclude dealer-only 11,700 points')
   const roomyOpponent = await opponentGeometry()
-  assert.ok(roomyOpponent.doraHeight > 36, 'roomy opponent panel grows the dora distribution beyond its former fixed height')
-  assert.ok(roomyOpponent.scoreHeight > 26.4, 'roomy opponent panel grows the score distribution beyond its former fixed height')
-  assert.ok(roomyOpponent.doraHeight <= roomyOpponent.doraMaximum + 0.6, 'dora distribution respects its visual maximum')
-  assert.ok(roomyOpponent.scoreHeight <= roomyOpponent.scoreMaximum + 0.6, 'score distribution respects its visual maximum')
+  assert.ok(roomyOpponent.doraHeight > 68, 'roomy opponent panel lets the dora distribution grow beyond its former cap')
+  assert.ok(roomyOpponent.scoreHeight > 50, 'roomy opponent panel lets the score distribution grow beyond its former cap')
+  assert.ok(Math.abs(roomyOpponent.unusedBottomHeight) < 1, 'opponent predictions consume the full remaining panel height')
+  assert.equal(roomyOpponent.chartsStayInsideRows, true, 'expanded distributions stay inside their fixed prediction rows')
   assert.equal(
     await page.locator('.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line').count(),
     0,

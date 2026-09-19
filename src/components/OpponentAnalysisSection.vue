@@ -3,7 +3,7 @@
     ref="sectionElement"
     v-perceptual-surface="opponentSurface"
     class="analysis-opponent-section"
-    :style="{ '--analysis-score-mode-count': String(scoreModeCount) }"
+    :style="scoreModeLayoutStyle"
   >
     <div class="analysis-opponent-grid">
       <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-card">
@@ -105,6 +105,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { analysisSurface } from '../analysisSurface'
 import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
+import { scoreModeGeometry } from '../analysisScoreModeGeometry'
 import type { AnalysisRecord } from '../useAnalysisOutputs'
 import { useAnalysisHoverTooltipController } from '../useAnalysisHoverTooltip'
 import { useOpponentAnalysisData } from '../useOpponentAnalysisData'
@@ -131,7 +132,8 @@ const { t, numberLocale } = useI18n()
 const tooltip = useAnalysisHoverTooltipController()
 const sectionElement = ref<HTMLElement | null>(null)
 const scoreModeCount = ref(3)
-let scoreModeMeasureCanvas: HTMLCanvasElement | null = null
+const scoreModeLayoutStyle = ref<Record<string, string>>({})
+const scoreModeGapRem = 0.12
 const opponentSurface = analysisSurface(() => props.perceptualSurface, 'opponent-panel')
 const distributionTrackSurface = analysisSurface(
   () => props.perceptualSurface,
@@ -166,6 +168,29 @@ function finitePixels(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+function scoreModeIntrinsicWidths(sample: HTMLElement, labels: readonly string[]): ReadonlyMap<string, number> {
+  const measurer = sample.cloneNode(false) as HTMLElement
+  measurer.removeAttribute('tabindex')
+  measurer.setAttribute('aria-hidden', 'true')
+  Object.assign(measurer.style, {
+    position: 'fixed',
+    visibility: 'hidden',
+    width: 'max-content',
+    maxWidth: 'none',
+    overflow: 'visible',
+    textOverflow: 'clip',
+    pointerEvents: 'none',
+  })
+  sample.parentElement?.appendChild(measurer)
+  const widths = new Map<string, number>()
+  for (const label of new Set(labels)) {
+    measurer.textContent = label
+    widths.set(label, measurer.getBoundingClientRect().width)
+  }
+  measurer.remove()
+  return widths
+}
+
 function updateScoreModeCount() {
   const section = sectionElement.value
   if (!section) return
@@ -181,25 +206,43 @@ function updateScoreModeCount() {
   const availableWidth = Math.min(...containers.map((container) => container.getBoundingClientRect().width))
   if (!(availableWidth > 0)) return
 
-  const sampleStyle = getComputedStyle(sample)
-  scoreModeMeasureCanvas ??= document.createElement('canvas')
-  const context = scoreModeMeasureCanvas.getContext('2d')
-  if (!context) return
-  context.font = sampleStyle.font || `${sampleStyle.fontSize} ${sampleStyle.fontFamily}`
-  const letterSpacing = finitePixels(sampleStyle.letterSpacing)
-  const labels = opponentCards.value.flatMap((opponent) => (
+  const labelsByOpponent = opponentCards.value.map((opponent) => (
     opponent.scoreModes.map((entry) => formatMahjongScore(entry.value))
   ))
-  const widestLabel = labels.reduce((widest, label) => {
-    const width = context.measureText(label).width + (Math.max(0, label.length - 1) * letterSpacing)
-    return Math.max(widest, width)
-  }, 0)
-  const horizontalPadding = finitePixels(sampleStyle.paddingLeft) + finitePixels(sampleStyle.paddingRight)
-  const containerStyle = getComputedStyle(containers[0])
-  const gap = finitePixels(containerStyle.columnGap)
-  const minimumCellWidth = Math.ceil(widestLabel + horizontalPadding + 2)
-  const fittingCount = Math.max(1, Math.floor((availableWidth + gap) / (minimumCellWidth + gap)))
-  scoreModeCount.value = Math.min(commonMaximum, fittingCount)
+  const labelWidths = scoreModeIntrinsicWidths(sample, labelsByOpponent.flat())
+  const sectionStyle = getComputedStyle(section)
+  const rootFontSize = finitePixels(getComputedStyle(document.documentElement).fontSize)
+  const panelScale = finitePixels(sectionStyle.getPropertyValue('--floating-panel-scale')) || 1
+  const desiredGap = scoreModeGapRem * rootFontSize * panelScale
+  const pixelRatio = window.devicePixelRatio
+  let geometry = scoreModeGeometry({
+    availableWidth,
+    minimumItemWidth: 1,
+    desiredGap,
+    maximumCount: 1,
+    pixelRatio,
+  })
+  for (let candidateCount = commonMaximum; candidateCount >= 1; candidateCount -= 1) {
+    const visibleLabels = labelsByOpponent.flatMap((labels) => labels.slice(0, candidateCount))
+    const minimumItemWidth = visibleLabels.reduce((widest, label) => (
+      Math.max(widest, labelWidths.get(label) || 0)
+    ), 0)
+    const candidate = scoreModeGeometry({
+      availableWidth,
+      minimumItemWidth,
+      desiredGap,
+      maximumCount: candidateCount,
+      pixelRatio,
+    })
+    if (candidate.count !== candidateCount) continue
+    geometry = candidate
+    break
+  }
+  scoreModeCount.value = geometry.count
+  scoreModeLayoutStyle.value = {
+    '--analysis-score-mode-columns': geometry.columns.map((width) => `${width.toFixed(6)}px`).join(' '),
+    '--analysis-score-mode-gap': `${geometry.gap.toFixed(6)}px`,
+  }
 }
 
 const scheduleScoreModeCount = useResponsiveGeometry(sectionElement, updateScoreModeCount, {

@@ -1,9 +1,7 @@
 .analysis-opponent-section {
   --analysis-distribution-track-surface: rgba(255, 255, 255, 0.045);
   --analysis-dora-distribution-min-height: calc(2.25rem * var(--floating-panel-scale));
-  --analysis-dora-distribution-max-height: calc(4.25rem * var(--floating-panel-scale));
   --analysis-score-distribution-min-height: calc(1.65rem * var(--floating-panel-scale));
-  --analysis-score-distribution-max-height: calc(3.15rem * var(--floating-panel-scale));
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -50,17 +48,14 @@
 
 .analysis-opponent-prediction-grid.has-dora-distributions:not(.has-score-distributions) {
   min-height: calc(5.5rem * var(--floating-panel-scale));
-  max-height: calc(7.5rem * var(--floating-panel-scale));
 }
 
 .analysis-opponent-prediction-grid.has-score-distributions:not(.has-dora-distributions) {
   min-height: calc(5.55rem * var(--floating-panel-scale));
-  max-height: calc(7.05rem * var(--floating-panel-scale));
 }
 
 .analysis-opponent-prediction-grid.has-dora-distributions.has-score-distributions {
   min-height: calc(8.2rem * var(--floating-panel-scale));
-  max-height: calc(11.7rem * var(--floating-panel-scale));
 }
 
 .analysis-opponent-predictions {
@@ -122,7 +117,6 @@
   grid-auto-flow: column;
   gap: 0;
   min-height: var(--analysis-dora-distribution-min-height);
-  max-height: var(--analysis-dora-distribution-max-height);
 }
 
 .analysis-score-distribution {
@@ -131,14 +125,14 @@
   align-items: stretch;
   gap: 0;
   min-height: var(--analysis-score-distribution-min-height);
-  max-height: var(--analysis-score-distribution-max-height);
   overflow: hidden;
 }
 
 .analysis-score-modes {
   display: grid;
-  grid-template-columns: repeat(var(--analysis-score-mode-count, 3), minmax(0, 1fr));
-  gap: calc(0.12rem * var(--floating-panel-scale));
+  grid-template-columns: var(--analysis-score-mode-columns, repeat(3, minmax(0, 1fr)));
+  justify-content: center;
+  gap: var(--analysis-score-mode-gap, calc(0.12rem * var(--floating-panel-scale)));
   margin-top: calc(0.12rem * var(--floating-panel-scale));
 }
 
