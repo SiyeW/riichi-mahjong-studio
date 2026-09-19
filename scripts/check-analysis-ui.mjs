@@ -103,7 +103,7 @@ try {
                   seat,
                   prediction: {
                     expectedValue: 6800 + (index * 450),
-                    distribution: [1000, 2000, 3900, 5800, 7700, 8000, 12000, 16000, 24000, 32000, 48000, 64000, 96000].map((value, valueIndex) => ({
+                    distribution: [1000, 2000, 3900, 5800, 7700, 11600, 11700, 8000, 12000, 16000, 24000, 32000, 48000, 64000, 96000].map((value, valueIndex) => ({
                       value,
                       probability: Math.max(0.01, 0.16 - Math.abs(valueIndex - 5 - index) * 0.018),
                     })),
@@ -735,6 +735,9 @@ try {
   })
   await page.locator('.analysis-dora-distribution').first().waitFor()
   await page.waitForTimeout(100)
+  const scoreModeLabels = await page.locator('.analysis-score-modes span').allTextContents()
+  assert.ok(!scoreModeLabels.includes('116'), 'non-dealer score modes exclude dealer-only 11,600 points')
+  assert.ok(!scoreModeLabels.includes('117'), 'non-dealer score modes exclude dealer-only 11,700 points')
   const roomyOpponent = await opponentGeometry()
   assert.ok(roomyOpponent.doraHeight > 36, 'roomy opponent panel grows the dora distribution beyond its former fixed height')
   assert.ok(roomyOpponent.scoreHeight > 26.4, 'roomy opponent panel grows the score distribution beyond its former fixed height')

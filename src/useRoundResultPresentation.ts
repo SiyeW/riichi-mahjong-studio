@@ -1,4 +1,5 @@
 import { computed } from 'vue'
+import { ceilRiichiPoints, riichiBasePoints } from './riichiScoring.ts'
 import type { GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 
@@ -125,20 +126,6 @@ function yakuMeta(name: string): YakuDisplayMeta | undefined {
   return base ? { ...base, closedHan: han, openHan: han } : undefined
 }
 
-function resultBasePoints(han: number, fu: number): number {
-  if (han >= 13) return 8000 * Math.max(1, Math.floor(han / 13))
-  if (han >= 11) return 6000
-  if (han >= 8) return 4000
-  if (han >= 6) return 3000
-  if (han >= 5) return 2000
-  const calculated = fu * (2 ** (han + 2))
-  return Math.min(2000, calculated)
-}
-
-function ceilToHundred(value: number): number {
-  return Math.ceil(value / 100) * 100
-}
-
 export function useRoundResultPresentation(options: {
   gameView: GameView
   status: StudioStatus
@@ -255,11 +242,11 @@ export function useRoundResultPresentation(options: {
     const han = Number(info.han || 0)
     const fu = Number(info.fu || 0)
     if (!Number.isInteger(actor) || actor < 0 || actor > 3 || han <= 0) return ''
-    const basePoints = resultBasePoints(han, fu)
+    const basePoints = riichiBasePoints(han, fu)
     const isDealer = actor === gameView.table?.dealer
-    if (actor !== target) return String(ceilToHundred(basePoints * (isDealer ? 6 : 4)))
-    const dealerPayment = ceilToHundred(basePoints * 2)
-    const nonDealerPayment = ceilToHundred(basePoints)
+    if (actor !== target) return String(ceilRiichiPoints(basePoints * (isDealer ? 6 : 4)))
+    const dealerPayment = ceilRiichiPoints(basePoints * 2)
+    const nonDealerPayment = ceilRiichiPoints(basePoints)
     return String(isDealer ? dealerPayment * 3 : dealerPayment + nonDealerPayment * 2)
   })
 
@@ -274,7 +261,7 @@ export function useRoundResultPresentation(options: {
     if (han >= 11) return t('result.limit.sanbaiman')
     if (han >= 8) return t('result.limit.baiman')
     if (han >= 6) return t('result.limit.haneman')
-    if (resultBasePoints(han, fu) >= 2000) return t('result.limit.mangan')
+    if (riichiBasePoints(han, fu) >= 2000) return t('result.limit.mangan')
     return ''
   })
 

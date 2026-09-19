@@ -102,3 +102,40 @@ test('risk, score scale and seat order update after replacing analysis and viewp
   props.controlledSeat = 2
   assert.deepEqual(game.playerRows.value.map(player => player.seat), [2, 1, 0, 3])
 })
+
+test('opponent score display excludes impossible dealer values and renormalizes derived data', () => {
+  const { props, opponent } = fixture({ outputs: {
+    'opponent-score': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 1000, probability: 0.4 },
+      { value: 11600, probability: 0.3 },
+      { value: 11700, probability: 0.2 },
+      { value: 12000, probability: 0.1 },
+    ] } }] },
+  } })
+  props.dealer = 3
+  const dealer = opponent.opponentCards.value.find((player) => player.seat === 3)!
+  assert.deepEqual(dealer.scorePrediction.distribution.map((entry) => entry.value), [11600, 11700, 12000])
+  assert.deepEqual(
+    dealer.scorePrediction.distribution.map((entry) => Number(entry.probability.toFixed(6))),
+    [0.5, 0.333333, 0.166667],
+  )
+  assert.equal(Number(dealer.scorePrediction.scalarValue?.toFixed(6)), 11700)
+  assert.deepEqual(dealer.scoreModes.map((entry) => entry.value), [11600, 11700, 12000])
+})
+
+test('opponent score display preserves an explicit estimate while filtering its distribution', () => {
+  const { props, opponent } = fixture({ outputs: {
+    'opponent-score': { players: [{ seat: 3, prediction: {
+      pointEstimate: 11050,
+      distribution: [
+        { value: 1000, probability: 0.5 },
+        { value: 12000, probability: 0.5 },
+      ],
+    } }] },
+  } })
+  props.dealer = 3
+  const dealer = opponent.opponentCards.value.find((player) => player.seat === 3)!
+  assert.equal(dealer.scorePrediction.scalarValue, 11050)
+  assert.equal(dealer.scorePrediction.scalarSource, 'point-estimate')
+  assert.deepEqual(dealer.scorePrediction.distribution, [{ value: 12000, probability: 1 }])
+})
