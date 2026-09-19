@@ -117,7 +117,7 @@ const { t } = useI18n()
   right: calc(1.25rem * var(--floating-panel-scale));
   width: min(calc(48rem * var(--floating-panel-scale)), 94vw);
   height: min(
-    calc(30rem * var(--floating-panel-scale)),
+    calc(42rem * var(--floating-panel-scale)),
     calc(100vh - var(--footer-min-h) - 5rem * var(--floating-panel-scale))
   );
   overflow: hidden;

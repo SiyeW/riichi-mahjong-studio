@@ -323,16 +323,47 @@ try {
   )
   await page.evaluate(() => {
     const vm = window.analysisCheck.vm
-    vm.settings.engines.profiles = [{
-      id: 'profile.ui-test', name: 'UI Test Engine', engineId: 'ui-test-engine', engineVersion: '1.0.0',
+    vm.settings.engines.profiles = Array.from({ length: 14 }, (_, index) => ({
+      id: index === 0 ? 'profile.ui-test' : `profile.ui-test-${index}`,
+      name: index === 0 ? 'UI Test Engine' : `Additional UI Test Engine ${index}`,
+      engineId: 'ui-test-engine', engineVersion: '1.0.0',
       enginePath: 'C:\\ui-test\\engine.exe', engineCommand: ['C:\\ui-test\\engine.exe'], engineCwd: '',
       builtIn: false, available: true, autoName: false, weights: [], device: 'cpu', options: { sampleCount: 2 },
-    }]
+    }))
     vm.settings.engines.outputAssignments['opponent-shanten'] = 'profile.ui-test'
     vm.openEngineWindow()
   })
   await page.locator('.engine-window').waitFor()
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.showEngineWindow), true)
+  const engineWindowMetrics = await page.evaluate(() => {
+    const windowElement = document.querySelector('.engine-window')
+    const list = document.querySelector('.engine-profile-list')
+    const detail = document.querySelector('.engine-profile-detail')
+    if (!(windowElement instanceof HTMLElement) || !(list instanceof HTMLElement) || !(detail instanceof HTMLElement)) return null
+    const windowRect = windowElement.getBoundingClientRect()
+    list.scrollTop = list.scrollHeight
+    return {
+      windowWidth: windowRect.width,
+      windowHeight: windowRect.height,
+      windowBottom: windowRect.bottom,
+      viewportHeight: window.innerHeight,
+      listClientHeight: list.clientHeight,
+      listScrollHeight: list.scrollHeight,
+      listScrollTop: list.scrollTop,
+      listOverflowY: getComputedStyle(list).overflowY,
+      detailOverflowY: getComputedStyle(detail).overflowY,
+    }
+  })
+  assert.ok(engineWindowMetrics.windowHeight >= 600, 'engine manager uses the taller working shape')
+  assert.ok(engineWindowMetrics.windowHeight / engineWindowMetrics.windowWidth >= 0.8, 'engine manager is not disproportionately short')
+  assert.ok(engineWindowMetrics.windowBottom <= engineWindowMetrics.viewportHeight, 'engine manager stays inside the viewport')
+  assert.ok(engineWindowMetrics.listScrollHeight > engineWindowMetrics.listClientHeight, 'long engine lists overflow their dedicated list area')
+  assert.ok(engineWindowMetrics.listScrollTop > 0, 'the engine profile list can be scrolled')
+  assert.equal(engineWindowMetrics.listOverflowY, 'auto', 'the engine profile list owns its vertical scrollbar')
+  assert.equal(engineWindowMetrics.detailOverflowY, 'auto', 'engine details retain their independent vertical scrollbar')
+  if (process.env.RMS_ENGINE_UI_CHECK_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_ENGINE_UI_CHECK_SCREENSHOT })
+  }
   await page.locator('.engine-profile-detail input[type="text"]').first().fill('Renamed UI Test Engine')
   const numericOption = page.locator('.engine-profile-detail input[inputmode="numeric"]')
   await numericOption.fill('9')
