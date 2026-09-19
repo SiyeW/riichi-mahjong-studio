@@ -1,4 +1,4 @@
-export const KYOKU_DELTA_BASE_SCALE = 1000
+export const KYOKU_DELTA_BASE_SCALE = 6000
 
 export function symmetricDeltaScale(
   values: Array<number | null | undefined>,

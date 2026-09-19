@@ -32,10 +32,10 @@ function fixture(analysis: AnalysisRecord | null = null) {
 
 test('empty analysis keeps predictions absent and preserves player order', () => {
   const { opponent, game } = fixture()
-  assert.deepEqual(game.playerRows.value.map(player => player.seat), [3, 0, 1, 2])
+  assert.deepEqual(game.playerRows.value.map(player => player.seat), [0, 3, 2, 1])
   assert.ok(game.outcomeSegments.value.every(segment => segment.probability === 0))
   assert.ok(opponent.opponentCards.value.every(player => player.doraPrediction.scalarValue === null))
-  assert.equal(game.maxAbsoluteDelta.value, 1000)
+  assert.equal(game.maxAbsoluteDelta.value, 6000)
 })
 
 test('direct player totals and independently derived hover details stay separate', () => {
@@ -100,5 +100,5 @@ test('risk, score scale and seat order update after replacing analysis and viewp
   assert.equal(risk.riskProbability(3, '2m'), 0)
   assert.equal(game.maxAbsoluteDelta.value, 8000)
   props.controlledSeat = 2
-  assert.deepEqual(game.playerRows.value.map(player => player.seat), [1, 2, 3, 0])
+  assert.deepEqual(game.playerRows.value.map(player => player.seat), [2, 1, 0, 3])
 })

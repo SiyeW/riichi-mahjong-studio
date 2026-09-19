@@ -30,7 +30,14 @@ export function createAnalysisFormatting(t: AnalysisTranslator, numberLocale: Re
   }
 
   function formatDistributionPoints(value: DistributionValue): string {
-    return typeof value === 'number' ? formatCompactPoints(value) : String(value)
+    return typeof value === 'number' ? formatPlainPoints(value) : String(value)
+  }
+
+  function formatMahjongScore(value: DistributionValue): string {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return String(value)
+    return Number.isInteger(value / 100)
+      ? String(value / 100)
+      : formatCompactPoints(value)
   }
 
   function formatProbability(value: number): string {
@@ -46,6 +53,7 @@ export function createAnalysisFormatting(t: AnalysisTranslator, numberLocale: Re
     formatPlainPoints,
     formatSignedCompactPoints,
     formatDistributionPoints,
+    formatMahjongScore,
     formatProbability,
   }
 }

@@ -87,7 +87,7 @@
               @focus="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.score')}`, formatDistributionPoints(entry.value), entry.probability)"
               @blur="tooltip.clear"
             >
-              {{ formatDistributionPoints(entry.value) }}
+              {{ formatMahjongScore(entry.value) }}
             </span>
           </div>
         </div>
@@ -137,6 +137,7 @@ const {
   scoreDistributionScale,
   distributionBarScale,
   formatDistributionPoints,
+  formatMahjongScore,
   formatProbability,
 } = useOpponentAnalysisData(props, t, numberLocale)
 
