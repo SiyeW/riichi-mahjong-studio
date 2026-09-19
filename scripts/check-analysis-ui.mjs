@@ -743,6 +743,15 @@ try {
   assert.ok(roomyOpponent.scoreHeight > 26.4, 'roomy opponent panel grows the score distribution beyond its former fixed height')
   assert.ok(roomyOpponent.doraHeight <= roomyOpponent.doraMaximum + 0.6, 'dora distribution respects its visual maximum')
   assert.ok(roomyOpponent.scoreHeight <= roomyOpponent.scoreMaximum + 0.6, 'score distribution respects its visual maximum')
+  const scoreCell = page.locator('.analysis-score-distribution .analysis-distribution-cell').first()
+  await scoreCell.hover()
+  await page.locator('.analysis-floating-tooltip').waitFor({ state: 'visible' })
+  assert.equal(await scoreCell.evaluate(element => element.classList.contains('is-hovered')), true, 'the hovered score mode receives a visible row highlight')
+  if (process.env.RMS_SCORE_HOVER_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_SCORE_HOVER_SCREENSHOT })
+  }
+  await page.mouse.move(0, 0)
+  await page.waitForFunction(() => !document.querySelector('.analysis-floating-tooltip'))
   if (process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT })
   }
@@ -916,6 +925,20 @@ try {
   await page.mouse.move(0, 0)
   await page.evaluate(() => { window.analysisCheck.vm.analysisCountLayout = 'source-rows' })
   await target().waitFor()
+  const sourceLegendGeometry = await page.locator('.analysis-count-source-legend-group').evaluateAll(groups => groups.map((group) => {
+    const label = group.querySelector('strong')?.getBoundingClientRect()
+    const swatches = [...group.querySelectorAll('i')].map(swatch => swatch.getBoundingClientRect())
+    return {
+      labelToOwnSwatches: label && swatches.length ? swatches[0].left - label.right : Number.POSITIVE_INFINITY,
+      internalSwatchGaps: swatches.slice(1).map((swatch, index) => swatch.left - swatches[index].right),
+    }
+  }))
+  assert.equal(sourceLegendGeometry.length, 4, 'the source legend keeps one compact group for each source')
+  assert.ok(sourceLegendGeometry.every(group => group.labelToOwnSwatches >= 0 && group.labelToOwnSwatches <= 5), 'each source label stays attached to its own color scale')
+  assert.ok(sourceLegendGeometry.flatMap(group => group.internalSwatchGaps).every(gap => gap >= 0 && gap <= 4), 'each five-step color scale reads as one unit')
+  if (process.env.RMS_COUNT_LEGEND_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_COUNT_LEGEND_SCREENSHOT })
+  }
   await target().hover()
   await tooltip.waitFor({ state: 'visible' })
   const tileArtwork = await page.evaluate(() => {
@@ -1113,6 +1136,61 @@ try {
       })
     })
   }
+
+  // Mutually exclusive outcome details share one 100% stacked bar. The rows
+  // below it identify segments and preserve exact values without separate bars.
+  await page.evaluate(() => {
+    const { vm } = window.analysisCheck
+    vm.settings.display.language = 'zh-CN'
+    const result = window.analysisCheck.result()
+    result.outputs['kyoku-outcome'] = {
+      outcomes: [
+        { type: 'draw', probability: 0.10 },
+        { type: 'tsumo', winner: 0, probability: 0.10 },
+        { type: 'ron', winners: [1], target: 0, probability: 0.28 },
+        { type: 'ron', winners: [2], target: 0, probability: 0.20 },
+        { type: 'ron', winners: [3], target: 0, probability: 0.17 },
+        { type: 'ron', winners: [1, 2], target: 0, probability: 0.07 },
+        { type: 'ron', winners: [1, 3], target: 0, probability: 0.05 },
+        { type: 'ron', winners: [2, 3], target: 0, probability: 0.03 },
+      ],
+    }
+    window.analysisCheck.publish(result)
+  })
+  const selfDealInSegment = page.locator('.analysis-offense-row').first().locator('.analysis-offense-segment.is-deal-in')
+  await selfDealInSegment.hover()
+  const outcomeTooltip = page.locator('.analysis-floating-tooltip.is-outcome-detail')
+  await outcomeTooltip.waitFor({ state: 'visible' })
+  const outcomeTooltipGeometry = await outcomeTooltip.evaluate((element) => {
+    const bar = element.querySelector('.analysis-outcome-detail-bar')
+    const rows = [...element.querySelectorAll('.ui-hover-tooltip-row.has-segment')]
+    const segments = [...(bar?.children || [])].map(segment => segment.getBoundingClientRect())
+    const values = rows.map(row => row.lastElementChild?.getBoundingClientRect()).filter(Boolean)
+    return {
+      rowCount: rows.length,
+      barCount: element.querySelectorAll('.analysis-outcome-detail-bar').length,
+      barWidth: bar?.getBoundingClientRect().width || 0,
+      segmentWidths: segments.map(segment => segment.width),
+      labels: rows.map(row => row.firstElementChild?.textContent || ''),
+      swatchCount: element.querySelectorAll('.analysis-outcome-detail-swatch').length,
+      valueRightEdges: values.map(value => value.right),
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+    }
+  })
+  assert.equal(outcomeTooltipGeometry.rowCount, 6, 'all mutually exclusive deal-in details remain visible')
+  assert.equal(outcomeTooltipGeometry.barCount, 1, 'mutually exclusive details share one probability bar')
+  assert.ok(Math.abs(outcomeTooltipGeometry.segmentWidths.reduce((sum, width) => sum + width, 0) - outcomeTooltipGeometry.barWidth) < 1, 'outcome segments fill one 100% bar')
+  assert.ok(outcomeTooltipGeometry.segmentWidths[0] > outcomeTooltipGeometry.segmentWidths[1], 'segment widths preserve the probability ordering')
+  assert.equal(outcomeTooltipGeometry.swatchCount, 6, 'each detail row identifies its segment')
+  assert.ok(outcomeTooltipGeometry.labels.some(label => label.includes('＋')), 'multiple winners are shown as a concise combination')
+  assert.ok(Math.max(...outcomeTooltipGeometry.valueRightEdges) - Math.min(...outcomeTooltipGeometry.valueRightEdges) < 0.6, 'exact probability values share one right edge')
+  assert.ok(outcomeTooltipGeometry.scrollWidth <= outcomeTooltipGeometry.clientWidth + 1, 'outcome detail rows do not overflow the tooltip')
+  if (process.env.RMS_OUTCOME_TOOLTIP_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_OUTCOME_TOOLTIP_SCREENSHOT })
+  }
+  await page.mouse.move(0, 0)
+  await page.waitForFunction(() => !document.querySelector('.analysis-floating-tooltip'))
   }
 
   // A cached node change lets table motion finish before the complete next

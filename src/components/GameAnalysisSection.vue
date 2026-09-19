@@ -136,7 +136,7 @@ const {
   formatPlainPoints,
   formatSignedCompactPoints,
   formatProbability,
-  windLabel,
+  relativeLabel,
 } = useGameAnalysisData(props, t, numberLocale)
 
 const offenseGroupSurface = analysisSurface(() => props.perceptualSurface, 'game-offense-group')
@@ -172,30 +172,39 @@ function showDistributionTooltip(event: Event, subject: string, label: string, d
     rows: distribution.map((entry) => ({ label: `${entry.value}${unit}`, value: formatProbability(entry.probability) })),
   })
 }
+function outcomeSegmentColor(accent: string, index: number, count: number) {
+  const accentShare = count <= 1 ? 100 : Math.round(100 - ((index / (count - 1)) * 68))
+  return `color-mix(in srgb, ${accent} ${accentShare}%, #fff)`
+}
 function showWinTooltip(event: Event, player: typeof playerRows.value[number]) {
   if (!player.targets.length) return showProbabilityTooltip(event, player.label, t('analysis.winProbability'), player.winProbability)
+  const targets = [...player.targets].filter(target => target.probability > 0).sort((left, right) => right.probability - left.probability)
   tooltip.show(event, {
-    title: t('analysis.winTarget', { player: player.label }),
-    lines: [],
-    rows: player.targets.map((target) => ({
-      label: target.label,
+    title: player.label,
+    lines: [t('analysis.winTarget')],
+    variant: 'outcome-detail',
+    rows: targets.map((target, index) => ({
+      label: target.seat === player.seat ? t('action.tsumo') : relativeLabel(target.seat),
       value: formatProbability(target.probability),
-      barWidth: `${target.probability * 100}%`,
-      barColor: 'var(--analysis-self-win-color)',
+      proportion: target.probability,
+      segmentColor: outcomeSegmentColor('var(--analysis-self-win-color)', index, targets.length),
     })),
   })
 }
 function showDealInTooltip(event: Event, player: typeof playerRows.value[number]) {
   if (!player.dealInWinnerSets.length) return showProbabilityTooltip(event, player.label, t('analysis.dealInProbability'), player.dealInProbability)
-  const listFormatter = new Intl.ListFormat(numberLocale.value, { style: 'short', type: 'conjunction' })
+  const winnerSets = [...player.dealInWinnerSets]
+    .filter(detail => detail.probability > 0)
+    .sort((left, right) => right.probability - left.probability)
   tooltip.show(event, {
-    title: t('analysis.dealInWinners', { player: player.label }),
-    lines: [],
-    rows: player.dealInWinnerSets.map((detail) => ({
-      label: listFormatter.format(detail.winners.map(windLabel)),
+    title: player.label,
+    lines: [t('analysis.dealInWinners')],
+    variant: 'outcome-detail',
+    rows: winnerSets.map((detail, index) => ({
+      label: detail.winners.map(relativeLabel).join('＋'),
       value: formatProbability(detail.probability),
-      barWidth: `${detail.probability * 100}%`,
-      barColor: 'var(--analysis-self-deal-in-color)',
+      proportion: detail.probability,
+      segmentColor: outcomeSegmentColor('var(--analysis-self-deal-in-color)', index, winnerSets.length),
     })),
   })
 }

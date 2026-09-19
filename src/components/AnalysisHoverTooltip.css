@@ -15,30 +15,62 @@
   white-space: nowrap;
 }
 
-.analysis-floating-tooltip .ui-hover-tooltip-row.has-bar {
-  grid-template-columns:
-    minmax(calc(4.5rem * var(--floating-panel-scale)), max-content)
-    minmax(calc(4rem * var(--floating-panel-scale)), 1fr)
-    calc(2.9rem * var(--floating-panel-scale));
-  gap: calc(0.28rem * var(--floating-panel-scale));
-  min-width: min(calc(14.5rem * var(--floating-panel-scale)), calc(100% - 1rem));
+.analysis-floating-tooltip.is-outcome-detail {
+  gap: calc(0.3rem * var(--floating-panel-scale));
+  min-width: min(calc(17rem * var(--floating-panel-scale)), calc(100% - 1rem));
 }
 
-.analysis-floating-tooltip .ui-hover-tooltip-row.has-bar > :first-child {
+.analysis-floating-tooltip.is-outcome-detail .analysis-floating-tooltip-line {
+  padding-bottom: calc(0.28rem * var(--floating-panel-scale));
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-dim);
+  font-size: var(--ui-text-caption);
+}
+
+.analysis-outcome-detail-bar {
+  display: flex;
+  width: 100%;
+  height: calc(0.85rem * var(--floating-panel-scale));
   overflow: hidden;
-  max-width: calc(7rem * var(--floating-panel-scale));
-  text-overflow: ellipsis;
+  background: var(--surface-inset);
+}
+
+.analysis-outcome-detail-bar > i {
+  display: block;
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 0;
+}
+
+.analysis-outcome-detail-bar > i + i {
+  border-left: 1px solid var(--surface-overlay);
+}
+
+.analysis-floating-tooltip.is-outcome-detail .ui-hover-tooltip-row.has-segment {
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: calc(0.55rem * var(--floating-panel-scale));
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+}
+
+.analysis-floating-tooltip.is-outcome-detail .ui-hover-tooltip-row.has-segment > :first-child {
+  display: flex;
+  align-items: center;
+  gap: calc(0.38rem * var(--floating-panel-scale));
+  overflow: visible;
+  max-width: none;
+  text-overflow: clip;
   white-space: nowrap;
 }
 
-.analysis-tooltip-bar {
+.analysis-outcome-detail-swatch {
   display: block;
-  height: calc(0.42rem * var(--floating-panel-scale));
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
+  width: calc(0.62rem * var(--floating-panel-scale));
+  height: calc(0.62rem * var(--floating-panel-scale));
+  flex: 0 0 auto;
 }
 
-.analysis-tooltip-bar > span {
-  display: block;
-  height: 100%;
+.analysis-floating-tooltip.is-outcome-detail .ui-hover-tooltip-row.has-segment > :last-child {
+  font-variant-numeric: tabular-nums;
 }

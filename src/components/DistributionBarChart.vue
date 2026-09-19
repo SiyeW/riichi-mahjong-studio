@@ -11,11 +11,12 @@
         v-for="(entry, index) in entries"
         :key="entry.key"
         class="analysis-distribution-cell"
+        :class="{ 'is-hovered': hoveredIndex === index }"
         tabindex="0"
-        @mouseenter="emit('itemEnter', $event, index)"
-        @mouseleave="emit('itemLeave')"
-        @focus="emit('itemEnter', $event, index)"
-        @blur="emit('itemLeave')"
+        @mouseenter="enterItem($event, index)"
+        @mouseleave="leaveItem"
+        @focus="enterItem($event, index)"
+        @blur="leaveItem"
       >
         <i class="analysis-distribution-track" />
         <small>{{ entry.label }}</small>
@@ -26,11 +27,12 @@
         v-for="(entry, index) in entries"
         :key="entry.key"
         class="analysis-distribution-track analysis-distribution-cell"
+        :class="{ 'is-hovered': hoveredIndex === index }"
         tabindex="0"
-        @mouseenter="emit('itemEnter', $event, index)"
-        @mouseleave="emit('itemLeave')"
-        @focus="emit('itemEnter', $event, index)"
-        @blur="emit('itemLeave')"
+        @mouseenter="enterItem($event, index)"
+        @mouseleave="leaveItem"
+        @focus="enterItem($event, index)"
+        @blur="leaveItem"
       />
     </template>
   </div>
@@ -64,8 +66,19 @@ const emit = defineEmits<{
 type DistributionCanvasElement = HTMLCanvasElement & { rmsDistributionRenderSignature?: string }
 const rootElement = ref<HTMLElement | null>(null)
 const canvasElement = ref<DistributionCanvasElement | null>(null)
+const hoveredIndex = ref<number | null>(null)
 let displayedScales: number[] = []
 let animationFrame = 0
+
+function enterItem(event: Event, index: number) {
+  hoveredIndex.value = index
+  emit('itemEnter', event, index)
+}
+
+function leaveItem() {
+  hoveredIndex.value = null
+  emit('itemLeave')
+}
 
 function targetScales(): number[] {
   return props.entries.map(entry => Math.max(0, Math.min(1, entry.scale)))

@@ -85,5 +85,5 @@ export function useGameAnalysisData(
   const maxAbsoluteDelta = computed(() => symmetricDeltaScale(
     playerRows.value.map((player) => player.kyokuDelta),
   ))
-  return { ...formatting, outcomeSegments, playerRows, maxAbsoluteDelta, windLabel }
+  return { ...formatting, outcomeSegments, playerRows, maxAbsoluteDelta, relativeLabel }
 }

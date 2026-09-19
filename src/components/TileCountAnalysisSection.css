@@ -253,9 +253,12 @@
 }
 
 .analysis-count-source-legend {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: calc(0.55rem * var(--floating-panel-scale));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap:
+    calc(0.18rem * var(--floating-panel-scale))
+    calc(0.8rem * var(--floating-panel-scale));
   min-width: 0;
   padding: 0 calc(0.65rem * var(--floating-panel-scale));
 }
@@ -263,12 +266,13 @@
 .analysis-count-source-legend-group {
   display: grid;
   grid-template-columns:
-    minmax(0, 1fr)
+    max-content
     repeat(5, calc(0.64rem * var(--floating-panel-scale)));
   gap:
     calc(0.1rem * var(--floating-panel-scale))
     calc(0.12rem * var(--floating-panel-scale));
   align-items: center;
+  flex: 0 0 auto;
   min-width: 0;
 }
 

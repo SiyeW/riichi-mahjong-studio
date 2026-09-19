@@ -3,14 +3,15 @@ import { onBeforeUnmount, provide, inject, ref, type InjectionKey, type Ref } fr
 export type AnalysisHoverTooltipRow = {
   label: string
   value: string
-  barWidth?: string
-  barColor?: string
+  proportion?: number
+  segmentColor?: string
 }
 
 export type AnalysisHoverTooltipContent = {
   title: string
   lines: string[]
   rows: AnalysisHoverTooltipRow[]
+  variant?: 'outcome-detail'
 }
 
 export type AnalysisHoverTooltipState = AnalysisHoverTooltipContent & {

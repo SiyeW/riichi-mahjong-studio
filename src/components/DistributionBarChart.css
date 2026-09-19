@@ -15,7 +15,9 @@
 }
 
 .analysis-distribution-cell {
+  position: relative;
   min-width: 0;
+  outline: none;
 }
 
 .analysis-distribution-chart:not(.has-labels) > .analysis-distribution-cell {
@@ -35,6 +37,21 @@
   min-height: 0;
   overflow: hidden;
   background: var(--analysis-distribution-track-surface);
+}
+
+.analysis-distribution-track::after {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  border: 1px solid transparent;
+  content: '';
+  pointer-events: none;
+}
+
+.analysis-distribution-cell.is-hovered > .analysis-distribution-track::after,
+.analysis-distribution-track.analysis-distribution-cell.is-hovered::after {
+  border-color: rgba(228, 241, 237, 0.72);
+  background: rgba(228, 241, 237, 0.1);
 }
 
 .analysis-distribution-chart.has-labels > .analysis-distribution-cell + .analysis-distribution-cell .analysis-distribution-track {
