@@ -377,6 +377,31 @@
   line-height: 1.2;
 }
 
+.settings-checkbox-compact {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: calc(0.34rem * var(--ui-scale));
+  min-height: auto;
+  padding: calc(0.18rem * var(--ui-scale)) calc(0.24rem * var(--ui-scale));
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.settings-checkbox-compact .settings-checkbox-control {
+  width: calc(0.95rem * var(--ui-scale));
+  height: calc(0.95rem * var(--ui-scale));
+}
+
+.settings-checkbox-compact .settings-checkbox-label {
+  color: var(--text-dim);
+  font-size: var(--ui-text-caption);
+  transition: color var(--ui-motion-duration) var(--ui-motion-easing);
+}
+
 .settings-checkbox-with-description {
   align-items: flex-start;
 }

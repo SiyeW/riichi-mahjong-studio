@@ -100,15 +100,23 @@
               :disabled="!gameView.table"
             >{{ t('toolbar.analysis') }}</button>
             <span class="toolbar-panel-menu-items" role="menu" :aria-label="t('toolbar.analysis')">
-              <button
+              <label
                 v-for="definition in ANALYSIS_PANEL_DEFINITIONS"
                 :key="definition.id"
+                class="settings-checkbox settings-checkbox-compact toolbar-panel-menu-item"
                 role="menuitemcheckbox"
                 :aria-checked="analysisPanelIsSelected(definition.id)"
-                :class="{ active: analysisPanelIsSelected(definition.id) }"
-                :disabled="!gameView.table"
-                @click.stop="toggleAnalysisPanel(definition.key)"
-              >{{ t(definition.labelKey) }}</button>
+                @click.stop
+              >
+                <input
+                  type="checkbox"
+                  :checked="analysisPanelIsSelected(definition.id)"
+                  :disabled="!gameView.table"
+                  @change="toggleAnalysisPanel(definition.key)"
+                />
+                <span class="settings-checkbox-control" aria-hidden="true"></span>
+                <span class="settings-checkbox-label">{{ t(definition.labelKey) }}</span>
+              </label>
             </span>
           </span>
           <button

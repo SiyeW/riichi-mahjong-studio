@@ -294,22 +294,44 @@ try {
   await page.locator('.toolbar-panel-menu > button').hover()
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.toolbar-panel-menu-items')).visibility === 'visible')
   const analysisMenuStyles = await page.locator('.toolbar-panel-menu-items').evaluate(menu => {
-    const items = [...menu.querySelectorAll('button')]
-    const activeItem = items.find(item => item.classList.contains('active'))
-    const inactiveItem = items.find(item => !item.classList.contains('active'))
+    const durationMs = value => {
+      const number = Number.parseFloat(value)
+      return value.trim().endsWith('ms') ? number : number * 1000
+    }
+    const items = [...menu.querySelectorAll('.toolbar-panel-menu-item')]
+    const activeItem = items.find(item => item.querySelector('input')?.checked)
+    const inactiveItem = items.find(item => !item.querySelector('input')?.checked)
     if (!activeItem || !inactiveItem) throw new Error('analysis menu fixture requires active and inactive items')
+    const activeControl = activeItem.querySelector('.settings-checkbox-control')
+    const inactiveControl = inactiveItem.querySelector('.settings-checkbox-control')
+    const activeLabel = activeItem.querySelector('.settings-checkbox-label')
+    if (!activeControl || !inactiveControl || !activeLabel) throw new Error('analysis menu must reuse the shared compact checkbox structure')
     return {
       backgroundImage: getComputedStyle(menu).backgroundImage,
       itemBorders: items.map(item => getComputedStyle(item).borderTopWidth),
       itemBackgrounds: items.map(item => getComputedStyle(item).backgroundColor),
-      activeMarker: getComputedStyle(activeItem, '::before').backgroundColor,
-      inactiveMarker: getComputedStyle(inactiveItem, '::before').backgroundColor,
+      activeMarker: getComputedStyle(activeControl).backgroundColor,
+      inactiveMarker: getComputedStyle(inactiveControl).backgroundColor,
+      controlWidth: activeControl.getBoundingClientRect().width,
+      labelFontSize: Number.parseFloat(getComputedStyle(activeLabel).fontSize),
+      itemTransitionDurationsMs: getComputedStyle(activeItem).transitionDuration.split(',').map(durationMs),
+      labelTransitionDurationsMs: getComputedStyle(activeLabel).transitionDuration.split(',').map(durationMs),
+      motionDurationMs: durationMs(getComputedStyle(document.body).getPropertyValue('--ui-motion-duration')),
     }
   })
   assert.equal(analysisMenuStyles.backgroundImage, 'none', 'the analysis menu keeps a solid floating surface')
   assert.ok(analysisMenuStyles.itemBorders.every(width => width === '0px'), 'analysis menu choices do not repeat the toolbar button border')
   assert.equal(new Set(analysisMenuStyles.itemBackgrounds).size, 1, 'selection does not turn analysis menu choices into competing green buttons')
-  assert.notEqual(analysisMenuStyles.activeMarker, analysisMenuStyles.inactiveMarker, 'one compact indicator carries each analysis panel selection state')
+  assert.notEqual(analysisMenuStyles.activeMarker, analysisMenuStyles.inactiveMarker, 'the shared checkbox control carries each analysis panel selection state')
+  assert.ok(analysisMenuStyles.controlWidth > analysisMenuStyles.labelFontSize * 0.85, 'the analysis menu keeps the established readable checkbox size')
+  assert.ok(
+    analysisMenuStyles.itemTransitionDurationsMs.every(value => Math.abs(value - analysisMenuStyles.motionDurationMs) < 0.01),
+    `analysis menu row feedback uses the global motion duration: ${JSON.stringify(analysisMenuStyles)}`,
+  )
+  assert.ok(
+    analysisMenuStyles.labelTransitionDurationsMs.every(value => Math.abs(value - analysisMenuStyles.motionDurationMs) < 0.01),
+    `analysis menu label feedback uses the global motion duration: ${JSON.stringify(analysisMenuStyles)}`,
+  )
   if (process.env.RMS_ANALYSIS_MENU_SCREENSHOT) {
     await page.locator('.toolbar-panel-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_SCREENSHOT })
   }
@@ -366,6 +388,17 @@ try {
   })
   await page.locator('.engine-window').waitFor()
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.showEngineWindow), true)
+  const engineCheckboxStyles = await page.locator('.engine-output-assignment').first().evaluate(item => {
+    const control = item.querySelector('.settings-checkbox-control')
+    const label = item.querySelector('.settings-checkbox-label')
+    if (!control || !label) throw new Error('engine output assignment is missing its shared checkbox structure')
+    return {
+      controlWidth: control.getBoundingClientRect().width,
+      labelFontSize: Number.parseFloat(getComputedStyle(label).fontSize),
+    }
+  })
+  assert.ok(Math.abs(engineCheckboxStyles.controlWidth - analysisMenuStyles.controlWidth) < 0.01, 'analysis menu and engine assignment reuse one checkbox size')
+  assert.ok(Math.abs(engineCheckboxStyles.labelFontSize - analysisMenuStyles.labelFontSize) < 0.01, 'analysis menu and engine assignment reuse one text level')
   const engineWindowMetrics = await page.evaluate(() => {
     const windowElement = document.querySelector('.engine-window')
     const list = document.querySelector('.engine-profile-list')
