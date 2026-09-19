@@ -25,7 +25,7 @@
     >
       <div
         v-for="(tile, index) in seat.handParts.closed"
-        :key="`p${positionIndex[seat.view.position]}h-${index}`"
+        :key="tileOccurrenceRenderKey(seat.handParts.closed, index, `p${positionIndex[seat.view.position]}h`)"
         :class="['tileDiv', { 'hand-discard-gap': tile === handDiscardGap }]"
         :data-hand-gap-seat="tile === handDiscardGap ? seat.view.seat : undefined"
       >
@@ -107,6 +107,7 @@
 
 <script setup lang="ts">
 import { useI18n } from '../i18n'
+import { tileOccurrenceRenderKey } from '../tileOccurrenceRenderKey'
 import type { HandParts, MeldDisplayTile, TableSeatView } from '../useTablePresentation'
 
 export interface OpponentHandPresentation {

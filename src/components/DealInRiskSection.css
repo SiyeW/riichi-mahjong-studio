@@ -69,12 +69,15 @@
   cursor: default;
 }
 
-.analysis-risk-bars > i > span {
+.analysis-risk-row-canvas {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--analysis-tile-height) + var(--analysis-chart-gap));
+  left: 0;
   display: block;
-  width: 100%;
-  height: 100%;
-  transform-origin: top center;
-  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
+  width: var(--analysis-risk-main-row-width);
+  height: var(--analysis-risk-bars-height);
+  pointer-events: none;
 }
 
 .analysis-risk-bridge {
@@ -123,11 +126,8 @@
   transform: translateY(-50%);
 }
 
-.analysis-risk-bars > i.source-kamicha > span,
 .analysis-source-legend i.source-kamicha { background: var(--ron-kamicha-color); }
-.analysis-risk-bars > i.source-toimen > span,
 .analysis-source-legend i.source-toimen { background: var(--ron-toimen-color); }
-.analysis-risk-bars > i.source-shimocha > span,
 .analysis-source-legend i.source-shimocha { background: var(--ron-shimocha-color); }
 .analysis-source-legend i.source-wall { background: rgba(211, 226, 223, 0.68); }
 

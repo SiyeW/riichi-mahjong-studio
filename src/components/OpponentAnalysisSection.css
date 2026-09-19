@@ -125,48 +125,6 @@
   max-height: var(--analysis-dora-distribution-max-height);
 }
 
-.analysis-dora-distribution > span {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: calc(0.06rem * var(--floating-panel-scale));
-  min-width: 0;
-}
-
-.analysis-dora-distribution i,
-.analysis-score-distribution i {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  min-width: 0;
-  overflow: hidden;
-  background: var(--analysis-distribution-track-surface);
-}
-
-.analysis-dora-distribution > span + span i {
-  border-left: 1px solid rgba(1, 42, 49, 0.82);
-}
-
-.analysis-dora-distribution em,
-.analysis-score-distribution span {
-  display: block;
-  width: 100%;
-  height: 100%;
-  transform-origin: bottom center;
-  background: var(--analysis-dora-color);
-  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.analysis-dora-distribution small {
-  overflow: hidden;
-  color: rgba(198, 219, 214, 0.72);
-  font-size: var(--ui-text-caption);
-  font-style: normal;
-  line-height: 1;
-  text-align: center;
-  text-overflow: clip;
-  white-space: nowrap;
-}
-
 .analysis-score-distribution {
   display: flex;
   flex: 1 1 var(--analysis-score-distribution-min-height);
@@ -175,14 +133,6 @@
   min-height: var(--analysis-score-distribution-min-height);
   max-height: var(--analysis-score-distribution-max-height);
   overflow: hidden;
-}
-
-.analysis-score-distribution i {
-  flex: 1 1 0;
-}
-
-.analysis-score-distribution span {
-  background: var(--analysis-score-color);
 }
 
 .analysis-score-modes {

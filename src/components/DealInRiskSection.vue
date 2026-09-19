@@ -3,6 +3,11 @@
     <div ref="riskGridElement" v-perceptual-surface="riskTrackSurface" class="analysis-risk-grid">
       <div v-for="row in tileRows" :key="row[0]" class="analysis-tile-chart-row analysis-risk-row">
         <div class="analysis-tile-sequence">
+          <canvas
+            :ref="element => setRiskCanvasElement(row[0], element)"
+            class="analysis-risk-row-canvas"
+            aria-hidden="true"
+          />
           <div v-for="(tile, tileIndex) in row" :key="tile" class="analysis-risk-tile">
             <img class="mahjong-tile-artwork analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
             <div
@@ -19,7 +24,7 @@
                 @mouseleave="tooltip.clear"
                 @focus="showProbabilityTooltip($event, tileFaceLabel(tile), source.label, riskProbability(source.seat, tile))"
                 @blur="tooltip.clear"
-              ><span :style="{ transform: `scaleY(${riskBarScale(riskProbability(source.seat, tile))})` }" /></i>
+              />
             </div>
             <span
               v-if="tileIndex < row.length - 1"
@@ -42,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { analysisRiskGeometry } from '../analysisRiskGeometry'
 import { DEFAULT_PROBABILITY_SCALE as RISK_ADAPTIVE_MIN } from '../analysisProbabilityScale'
 import { analysisSurface } from '../analysisSurface'
@@ -53,16 +58,22 @@ import { useAnalysisHoverTooltipController } from '../useAnalysisHoverTooltip'
 import { useAnalysisPanelFormatting } from '../useAnalysisPanelFormatting'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
 import { useRiskAnalysisData } from '../useRiskAnalysisData'
+import { getUiMotionDurationMs } from '../uiMotion'
 
 const props = defineProps<AnalysisPanelDataProps & {
   tileImageSrc: (tile: string) => string
   tileFaceLabel: (tile: string) => string
   perceptualSurface: PerceptualSurfaceBinding
+  reduceMotion: boolean
 }>()
 const tooltip = useAnalysisHoverTooltipController()
 const { formatProbability } = useAnalysisPanelFormatting()
 const tileRows = ANALYSIS_TILE_ROWS
 const riskGridElement = ref<HTMLElement | null>(null)
+type RiskCanvasElement = HTMLCanvasElement & { rmsRiskRenderSignature?: string }
+const riskCanvasElements = new Map<string, { canvas: RiskCanvasElement; row: readonly string[] }>()
+let displayedRiskScales: number[][][] = []
+let riskAnimationFrame = 0
 const riskTrackSurface = analysisSurface(
   () => props.perceptualSurface,
   'analysis-risk-track',
@@ -77,6 +88,98 @@ const {
   riskBarScale,
   riskScalePosition,
 } = useRiskAnalysisData(props)
+
+function riskScaleTargets(): number[][][] {
+  return tileRows.map(row => row.map(tile => (
+    opponentSources.value.map(source => riskBarScale(riskProbability(source.seat, tile)))
+  )))
+}
+
+function copyRiskScales(values: number[][][]): number[][][] {
+  return values.map(row => row.map(tile => [...tile]))
+}
+
+function renderRiskCanvas(rowIndex: number, canvas: HTMLCanvasElement, row: readonly string[]) {
+  const rect = canvas.getBoundingClientRect()
+  const ratio = Math.max(1, window.devicePixelRatio || 1)
+  const width = Math.max(1, Math.round(rect.width * ratio))
+  const height = Math.max(1, Math.round(rect.height * ratio))
+  if (canvas.width !== width) canvas.width = width
+  if (canvas.height !== height) canvas.height = height
+  const context = canvas.getContext('2d')
+  if (!context) return
+  context.clearRect(0, 0, width, height)
+  const style = getComputedStyle(canvas)
+  const tileWidth = Number.parseFloat(style.getPropertyValue('--analysis-tile-width')) * ratio
+  const barsWidth = Number.parseFloat(style.getPropertyValue('--analysis-risk-bars-width')) * ratio
+  const colors = opponentSources.value.map(source => (
+    style.getPropertyValue(`--ron-${source.key}-color`).trim()
+  ))
+  const rowScales = displayedRiskScales[rowIndex] || []
+  ;(canvas as RiskCanvasElement).rmsRiskRenderSignature = rowScales
+    .flat()
+    .map(value => Math.round(value * 10000))
+    .join(',')
+  const laneCount = Math.max(1, opponentSources.value.length)
+  for (let tileIndex = 0; tileIndex < row.length; tileIndex += 1) {
+    const groupLeft = (tileIndex * tileWidth) + ((tileWidth - barsWidth) / 2)
+    for (let sourceIndex = 0; sourceIndex < laneCount; sourceIndex += 1) {
+      const left = Math.round(groupLeft + ((sourceIndex * barsWidth) / laneCount))
+      const right = Math.round(groupLeft + (((sourceIndex + 1) * barsWidth) / laneCount))
+      const scale = Math.max(0, Math.min(1, rowScales[tileIndex]?.[sourceIndex] || 0))
+      const bottom = Math.max(0, Math.min(height, Math.round(scale * height)))
+      if (right <= left || bottom <= 0) continue
+      context.fillStyle = colors[sourceIndex]
+      context.fillRect(left, 0, right - left, bottom)
+    }
+  }
+}
+
+function renderRiskCanvases() {
+  tileRows.forEach((row, rowIndex) => {
+    const entry = riskCanvasElements.get(row[0])
+    if (entry) renderRiskCanvas(rowIndex, entry.canvas, entry.row)
+  })
+}
+
+function stopRiskAnimation() {
+  if (riskAnimationFrame) cancelAnimationFrame(riskAnimationFrame)
+  riskAnimationFrame = 0
+}
+
+function animateRiskCanvases() {
+  stopRiskAnimation()
+  const target = riskScaleTargets()
+  if (!displayedRiskScales.length || props.reduceMotion) {
+    displayedRiskScales = copyRiskScales(target)
+    renderRiskCanvases()
+    return
+  }
+  const source = copyRiskScales(displayedRiskScales)
+  let startedAt: number | null = null
+  const duration = getUiMotionDurationMs()
+  const step = (now: number) => {
+    if (startedAt === null) startedAt = now
+    const progress = Math.max(0, Math.min(1, (now - startedAt) / duration))
+    const eased = 1 - ((1 - progress) ** 3)
+    displayedRiskScales = target.map((row, rowIndex) => row.map((tile, tileIndex) => (
+      tile.map((value, sourceIndex) => {
+        const start = source[rowIndex]?.[tileIndex]?.[sourceIndex] ?? value
+        return start + ((value - start) * eased)
+      })
+    )))
+    renderRiskCanvases()
+    if (progress < 1) riskAnimationFrame = requestAnimationFrame(step)
+    else riskAnimationFrame = 0
+  }
+  riskAnimationFrame = requestAnimationFrame(step)
+}
+
+function setRiskCanvasElement(key: string, element: unknown) {
+  if (!(element instanceof HTMLCanvasElement)) riskCanvasElements.delete(key)
+  else riskCanvasElements.set(key, { canvas: element as RiskCanvasElement, row: tileRows.find(row => row[0] === key) || [] })
+  renderRiskCanvases()
+}
 
 function updateRiskGeometry() {
   const grid = riskGridElement.value
@@ -108,11 +211,21 @@ function updateRiskGeometry() {
   grid.style.setProperty('--analysis-risk-row-min-height', `${geometry.rowMinimumHeight}px`)
   grid.style.setProperty('--analysis-risk-grid-min-height', `${geometry.gridMinimumHeight}px`)
   grid.style.setProperty('--analysis-risk-grid-content-height', `${geometry.gridContentHeight}px`)
+  renderRiskCanvases()
 }
 
 useResponsiveGeometry(riskGridElement, updateRiskGeometry, {
   resizeAncestorSelector: '.analysis-tiles-view',
   styleAncestorSelector: '.dock-module',
+})
+
+watch(() => [props.analysis, props.analysisOpponents, props.controlledSeat, props.reduceMotion], () => {
+  void nextTick(animateRiskCanvases)
+}, { immediate: true, flush: 'post' })
+
+onBeforeUnmount(() => {
+  stopRiskAnimation()
+  riskCanvasElements.clear()
 })
 
 function showProbabilityTooltip(event: Event, title: string, label: string, value: number) {

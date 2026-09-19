@@ -241,7 +241,7 @@
                     <span class="pov-p0 hand-closed-p0" @contextmenu.prevent="onSouthHandContextMenu">
                       <div
                         v-for="(tile, index) in southDisplayHandParts.closed"
-                        :key="'p0h-'+index"
+                        :key="tileOccurrenceRenderKey(southDisplayHandParts.closed, index, 'p0h')"
                         :class="['tileDiv', { 'hand-discard-gap': tile === HAND_DISCARD_GAP }]"
                         :data-hand-gap-seat="tile === HAND_DISCARD_GAP ? southView.seat : undefined"
                       >
@@ -743,6 +743,7 @@ import { usePlayPrefetch } from './usePlayPrefetch'
 import { useTablePresentation } from './useTablePresentation'
 import { useTableViewport } from './useTableViewport'
 import { useTileArtwork } from './useTileArtwork'
+import { tileOccurrenceRenderKey } from './tileOccurrenceRenderKey'
 import {
   SHANTEN_SHORT_LABELS,
   analysisResultHasRows,

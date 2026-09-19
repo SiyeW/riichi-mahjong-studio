@@ -42,24 +42,17 @@
             <small>{{ t('analysis.dora') }}</small>
             <strong>{{ opponent.dora }}</strong>
           </div>
-          <div
+          <DistributionBarChart
             v-if="opponent.doraPrediction.distribution.length"
-            v-perceptual-surface="distributionTrackSurface"
             class="analysis-dora-distribution"
-          >
-            <span
-              v-for="entry in opponent.doraPrediction.distribution"
-              :key="entry.value"
-              tabindex="0"
-              @mouseenter="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.dora')}`, `${entry.value}${t('unit.tile')}`, entry.probability)"
-              @mouseleave="tooltip.clear"
-              @focus="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.dora')}`, `${entry.value}${t('unit.tile')}`, entry.probability)"
-              @blur="tooltip.clear"
-            >
-              <i><em :style="{ transform: `scaleY(${distributionBarScale(entry.probability, doraDistributionScale)})` }" /></i>
-              <small>{{ entry.value }}</small>
-            </span>
-          </div>
+            :entries="distributionEntries(opponent.doraPrediction.distribution, doraDistributionScale, true)"
+            color-variable="--analysis-dora-color"
+            :reduce-motion="reduceMotion"
+            :show-labels="true"
+            :track-surface="distributionTrackSurface"
+            @item-enter="(event, index) => showDistributionEntryTooltip(event, opponent.label, t('analysis.dora'), opponent.doraPrediction.distribution, index, 'tile')"
+            @item-leave="tooltip.clear"
+          />
         </div>
         <div
           class="analysis-opponent-prediction is-score-prediction"
@@ -73,21 +66,17 @@
             <small>{{ t('analysis.score') }}</small>
             <strong>{{ opponent.score }}</strong>
           </div>
-          <div
+          <DistributionBarChart
             v-if="opponent.scorePrediction.distribution.length"
-            v-perceptual-surface="distributionTrackSurface"
             class="analysis-score-distribution"
-          >
-            <i
-              v-for="entry in opponent.scorePrediction.distribution"
-              :key="entry.value"
-              tabindex="0"
-              @mouseenter="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.score')}`, formatDistributionPoints(entry.value), entry.probability)"
-              @mouseleave="tooltip.clear"
-              @focus="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.score')}`, formatDistributionPoints(entry.value), entry.probability)"
-              @blur="tooltip.clear"
-            ><span :style="{ transform: `scaleY(${distributionBarScale(entry.probability, scoreDistributionScale)})` }" /></i>
-          </div>
+            :entries="distributionEntries(opponent.scorePrediction.distribution, scoreDistributionScale, false)"
+            color-variable="--analysis-score-color"
+            :reduce-motion="reduceMotion"
+            :show-labels="false"
+            :track-surface="distributionTrackSurface"
+            @item-enter="(event, index) => showDistributionEntryTooltip(event, opponent.label, t('analysis.score'), opponent.scorePrediction.distribution, index, 'point')"
+            @item-leave="tooltip.clear"
+          />
           <div v-if="opponent.scoreModes.length" class="analysis-score-modes">
             <span
               v-for="entry in opponent.scoreModes"
@@ -116,6 +105,7 @@ import { useOpponentAnalysisData } from '../useOpponentAnalysisData'
 import { useI18n } from '../i18n'
 import type { NumericPrediction } from '../numericPrediction'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
+import DistributionBarChart, { type DistributionBarEntry } from './DistributionBarChart.vue'
 import ShantenPieChart from './ShantenPieChart.vue'
 
 const props = defineProps<{
@@ -152,6 +142,34 @@ const {
 
 function showProbabilityTooltip(event: Event, title: string, label: string, value: number) {
   tooltip.show(event, { title, lines: [], rows: [{ label, value: formatProbability(value) }] })
+}
+
+function distributionEntries(
+  distribution: NumericPrediction['distribution'],
+  scale: number,
+  includeLabels: boolean,
+): DistributionBarEntry[] {
+  return distribution.map(entry => ({
+    key: entry.value,
+    scale: distributionBarScale(entry.probability, scale),
+    label: includeLabels ? String(entry.value) : undefined,
+  }))
+}
+
+function showDistributionEntryTooltip(
+  event: Event,
+  subject: string,
+  label: string,
+  distribution: NumericPrediction['distribution'],
+  index: number,
+  valueKind: 'tile' | 'point',
+) {
+  const entry = distribution[index]
+  if (!entry) return
+  const value = valueKind === 'point'
+    ? formatDistributionPoints(entry.value)
+    : `${entry.value}${t('unit.tile')}`
+  showProbabilityTooltip(event, `${subject} · ${label}`, value, entry.probability)
 }
 
 function showPredictionTooltip(

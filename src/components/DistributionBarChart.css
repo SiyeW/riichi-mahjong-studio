@@ -1,0 +1,55 @@
+.analysis-distribution-chart {
+  position: relative;
+  overflow: hidden;
+  contain: paint;
+}
+
+.analysis-distribution-canvas {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.analysis-distribution-cell {
+  min-width: 0;
+}
+
+.analysis-distribution-chart:not(.has-labels) > .analysis-distribution-cell {
+  flex: 1 1 0;
+}
+
+.analysis-distribution-chart.has-labels > .analysis-distribution-cell {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: calc(0.06rem * var(--floating-panel-scale));
+}
+
+.analysis-distribution-track {
+  position: relative;
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--analysis-distribution-track-surface);
+}
+
+.analysis-distribution-chart.has-labels > .analysis-distribution-cell + .analysis-distribution-cell .analysis-distribution-track {
+  border-left: 1px solid rgba(1, 42, 49, 0.82);
+}
+
+.analysis-distribution-cell > small {
+  position: relative;
+  z-index: 2;
+  overflow: hidden;
+  color: rgba(198, 219, 214, 0.72);
+  font-size: var(--ui-text-caption);
+  font-style: normal;
+  line-height: 1;
+  text-align: center;
+  text-overflow: clip;
+  white-space: nowrap;
+}
