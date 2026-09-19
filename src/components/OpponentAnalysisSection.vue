@@ -108,7 +108,7 @@ import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
 import { scoreModeGeometry } from '../analysisScoreModeGeometry'
 import type { AnalysisRecord } from '../useAnalysisOutputs'
 import { useAnalysisHoverTooltipController } from '../useAnalysisHoverTooltip'
-import { useOpponentAnalysisData } from '../useOpponentAnalysisData'
+import { selectScoreModeNominations, useOpponentAnalysisData } from '../useOpponentAnalysisData'
 import { useI18n } from '../i18n'
 import type { NumericPrediction } from '../numericPrediction'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
@@ -160,7 +160,7 @@ const scoreModeMeasurementKey = computed(() => opponentCards.value.map((opponent
 )).join('|'))
 
 function visibleScoreModes(entries: NumericPrediction['distribution']) {
-  return entries.slice(0, scoreModeCount.value)
+  return selectScoreModeNominations(entries, scoreModeCount.value)
 }
 
 function finitePixels(value: string): number {
@@ -206,10 +206,9 @@ function updateScoreModeCount() {
   const availableWidth = Math.min(...containers.map((container) => container.getBoundingClientRect().width))
   if (!(availableWidth > 0)) return
 
-  const labelsByOpponent = opponentCards.value.map((opponent) => (
+  const labelWidths = scoreModeIntrinsicWidths(sample, opponentCards.value.flatMap((opponent) => (
     opponent.scoreModes.map((entry) => formatMahjongScore(entry.value))
-  ))
-  const labelWidths = scoreModeIntrinsicWidths(sample, labelsByOpponent.flat())
+  )))
   const sectionStyle = getComputedStyle(section)
   const rootFontSize = finitePixels(getComputedStyle(document.documentElement).fontSize)
   const panelScale = finitePixels(sectionStyle.getPropertyValue('--floating-panel-scale')) || 1
@@ -223,7 +222,10 @@ function updateScoreModeCount() {
     pixelRatio,
   })
   for (let candidateCount = commonMaximum; candidateCount >= 1; candidateCount -= 1) {
-    const visibleLabels = labelsByOpponent.flatMap((labels) => labels.slice(0, candidateCount))
+    const visibleLabels = opponentCards.value.flatMap((opponent) => (
+      selectScoreModeNominations(opponent.scoreModes, candidateCount)
+        .map((entry) => formatMahjongScore(entry.value))
+    ))
     const minimumItemWidth = visibleLabels.reduce((widest, label) => (
       Math.max(widest, labelWidths.get(label) || 0)
     ), 0)

@@ -4,7 +4,7 @@ import { computed, reactive, ref } from 'vue'
 import type { AnalysisPanelDataProps } from './analysisPanelTypes.ts'
 import { useCountAnalysisData } from './useCountAnalysisData.ts'
 import { useGameAnalysisData } from './useGameAnalysisData.ts'
-import { useOpponentAnalysisData } from './useOpponentAnalysisData.ts'
+import { selectScoreModeNominations, useOpponentAnalysisData } from './useOpponentAnalysisData.ts'
 import { useRiskAnalysisData } from './useRiskAnalysisData.ts'
 import { useAnalysisOutputs, type AnalysisRecord } from './useAnalysisOutputs.ts'
 
@@ -151,6 +151,20 @@ test('opponent score modes preserve every possible candidate for responsive pres
   } })
   const player = opponent.opponentCards.value.find((entry) => entry.seat === 3)!
   assert.deepEqual(player.scoreModes.map((entry) => entry.value), [1000, 2000, 3900, 7700])
+})
+
+test('score nominations select by probability and display in point order', () => {
+  const entries = [
+    { value: 1000, probability: 0.2 },
+    { value: 3900, probability: 0.4 },
+    { value: 7700, probability: 0.1 },
+    { value: 8000, probability: 0.3 },
+  ]
+
+  assert.deepEqual(
+    selectScoreModeNominations(entries, 3).map((entry) => entry.value),
+    [1000, 3900, 8000],
+  )
 })
 
 test('opponent distributions keep their base probability ranges and expand only when needed', () => {

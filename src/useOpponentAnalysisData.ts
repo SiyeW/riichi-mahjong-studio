@@ -10,6 +10,16 @@ import type { Ref } from 'vue'
 export const OPPONENT_DORA_BASE_SCALE = 0.5
 export const OPPONENT_SCORE_BASE_SCALE = 0.3
 
+export function selectScoreModeNominations(
+  entries: NumericPrediction['distribution'],
+  count: number,
+): NumericPrediction['distribution'] {
+  return [...entries]
+    .sort((left, right) => right.probability - left.probability)
+    .slice(0, Math.max(0, count))
+    .sort((left, right) => Number(left.value) - Number(right.value))
+}
+
 export function useOpponentAnalysisData(
   props: AnalysisPanelDataProps,
   t: AnalysisTranslator,
@@ -49,8 +59,7 @@ export function useOpponentAnalysisData(
       doraPrediction: dora,
       scorePrediction: score,
       scoreModes: [...score.distribution]
-        .filter((entry) => entry.probability > 0)
-        .sort((left, right) => right.probability - left.probability),
+        .filter((entry) => entry.probability > 0),
     }
   }))
   const hasOpponentDoraDistributions = computed(() => (

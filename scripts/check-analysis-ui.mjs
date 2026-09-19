@@ -984,6 +984,15 @@ try {
   const scoreModeLabels = await page.locator('.analysis-score-modes span').allTextContents()
   assert.ok(!scoreModeLabels.includes('116'), 'non-dealer score modes exclude dealer-only 11,600 points')
   assert.ok(!scoreModeLabels.includes('117'), 'non-dealer score modes exclude dealer-only 11,700 points')
+  const orderedScoreModeLabels = await page.locator('.analysis-score-modes').evaluateAll(groups => (
+    groups.map(group => [...group.children].map(element => Number(element.textContent)))
+  ))
+  assert.ok(
+    orderedScoreModeLabels.every(labels => labels.every((value, index) => (
+      index === 0 || labels[index - 1] <= value
+    ))),
+    'the most probable score nominations follow the distribution chart point order',
+  )
   const scoreSummaries = await page.locator('.analysis-opponent-prediction.is-score-prediction strong').allTextContents()
   assert.ok(scoreSummaries.every(text => !text.includes(',')), 'mahjong point summaries omit locale thousands separators')
   const roomyOpponent = await opponentGeometry()
