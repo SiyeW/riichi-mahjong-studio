@@ -27,17 +27,11 @@ export function buildEngineStatusItems(options: {
   t: Translate
 }): EngineStatusItem[] {
   const { profiles, status, loadingProfileId, loadErrors, runtimeState, runtimeKinds, t } = options
-  const controlledSeat = status.controlledSeat
   const decision = (status.modelActivity?.decision || []).map(normalizeModelActivityState)
   const errors = status.modelActivity?.errors
   const performance = status.modelPerformance || { decision: [0, 0, 0, 0], opponentAnalysis: 0 }
   const statePriority: ModelActivityState[] = ['error', 'loading', 'running', 'idle']
   const decisionState = statePriority.find((state) => decision.includes(state)) || 'idle'
-  const relativeNames = [t('seat.self'), t('seat.shimocha'), t('seat.toimen'), t('seat.kamicha')]
-  const activeRoles = relativeNames.filter((_, offset) => {
-    const state = decision[(controlledSeat + offset) % 4]
-    return state === 'running' || state === 'loading'
-  })
   const decisionErrors = [...new Set((errors?.decision || []).filter(Boolean))] as string[]
   const decisionTimings = (performance.decision || []).filter((value) => Number.isFinite(value) && value > 0)
   const decisionAverage = decisionTimings.length
@@ -77,10 +71,7 @@ export function buildEngineStatusItems(options: {
     const averageMs = timingValues.length
       ? timingValues.reduce((sum, value) => sum + value, 0) / timingValues.length
       : 0
-    const roleLabel = kinds.has('decision') && activeRoles.length
-      ? ` · ${activeRoles.join(t('common.listSeparator'))}`
-      : ''
-    const baseLabel = `${profile.name || t('common.unnamedEngine')}${roleLabel}`
+    const baseLabel = profile.name || t('common.unnamedEngine')
     const uniqueErrors = [...new Set(errorValues.filter(Boolean))]
     return [{
       id: profile.id,
