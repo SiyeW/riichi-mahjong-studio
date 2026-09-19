@@ -122,6 +122,7 @@ class ReactionDecisionHistory:
         nodes = game.get("nodes") if isinstance(game, dict) else None
         if not isinstance(nodes, dict):
             return 0
+        self._remove_superseded_recorded_passes(game)
         source_kind = str((game.get("metadata") or {}).get("source") or "")
         local_record = source_kind == "local-environment"
         edges = [
@@ -244,8 +245,11 @@ class ReactionDecisionHistory:
             if (
                 mode == "recorded_responses"
                 and seat == child_action.get("actor")
-                and response_type == child_type
             ):
+                # The effective child is the authoritative response. Older local
+                # records may still contain the default ``none`` placeholder in
+                # their reaction window even though the following action is a
+                # call or hora by the same seat.
                 continue
             if (
                 len(
@@ -260,6 +264,92 @@ class ReactionDecisionHistory:
             decisions.append((seat, response))
             working_snapshot = _decision_snapshot(working_snapshot, seat)
         return decisions
+
+    def _remove_superseded_recorded_passes(self, game: Game) -> int:
+        """Remove bad pass nodes written by the old local-record repair.
+
+        A previous repair could materialize a reaction-window ``none``
+        placeholder immediately before an effective call or hora by the same
+        seat. Only nodes carrying that repair's private source marker are
+        eligible, so genuine user or AI passes are never rewritten.
+        """
+        nodes = game["nodes"]
+        removed = 0
+        while True:
+            obsolete_id = next(
+                (
+                    node_id
+                    for node_id, node in nodes.items()
+                    if self._is_superseded_recorded_pass(nodes, node_id, node)
+                ),
+                None,
+            )
+            if obsolete_id is None:
+                return removed
+            self._remove_single_child_node(game, obsolete_id)
+            removed += 1
+
+    @staticmethod
+    def _is_superseded_recorded_pass(
+        nodes: dict[str, Any],
+        node_id: str,
+        node: Any,
+    ) -> bool:
+        if not isinstance(node, dict):
+            return False
+        action = node.get("action") or {}
+        if (
+            node.get("type") != "decision"
+            or action.get("type") != "none"
+            or not action.get("decisionOnly")
+            or action.get("source") != "recorded_reaction_decision"
+            or len(node.get("children", [])) != 1
+        ):
+            return False
+        actor = action.get("actor")
+        cursor_id = node["children"][0]
+        seen = {node_id}
+        while cursor_id not in seen:
+            seen.add(cursor_id)
+            cursor = nodes.get(cursor_id)
+            if not isinstance(cursor, dict):
+                return False
+            cursor_action = cursor.get("action") or {}
+            if cursor.get("type") != "decision" and not cursor_action.get("decisionOnly"):
+                return (
+                    cursor_action.get("type") in {"chi", "pon", "daiminkan", "hora"}
+                    and cursor_action.get("actor") == actor
+                )
+            children = cursor.get("children", [])
+            if len(children) != 1:
+                return False
+            cursor_id = children[0]
+        return False
+
+    def _remove_single_child_node(self, game: Game, node_id: str) -> None:
+        nodes = game["nodes"]
+        node = nodes[node_id]
+        parent_id = node.get("parentId")
+        child_id = node["children"][0]
+        parent = nodes.get(parent_id)
+        child = nodes.get(child_id)
+        if not isinstance(parent, dict) or not isinstance(child, dict):
+            return
+
+        parent["children"] = [
+            child_id if value == node_id else value
+            for value in parent.get("children", [])
+        ]
+        if parent.get("mainChildId") == node_id:
+            parent["mainChildId"] = child_id
+        child["parentId"] = parent_id
+        if game.get("currentNodeId") == node_id:
+            game["currentNodeId"] = parent_id
+        if game.get("mainLeafNodeId") == node_id:
+            game["mainLeafNodeId"] = child_id
+        del nodes[node_id]
+        self._shift_subtree_depth(game, child_id, -1)
+        game_tree.mark_tree_changed(game)
 
     def _insert_chain(
         self,

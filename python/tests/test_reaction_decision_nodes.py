@@ -1,9 +1,11 @@
 import copy
 import unittest
+from dataclasses import replace
 from unittest import mock
 
 from rms_backend import game_record_storage
 from rms_backend import legal_actions
+from rms_backend import reaction_decision_history
 from rms_backend import service
 
 
@@ -388,6 +390,86 @@ class ReactionDecisionNodeTests(unittest.TestCase):
         self.assertEqual(game["nodes"][pass_id]["type"], "decision")
         self.assertEqual(game["nodes"][pass_id]["mainChildId"], child_id)
         self.assertEqual(game["nodes"][child_id]["parentId"], pass_id)
+
+    def test_local_hora_does_not_materialize_the_winners_placeholder_pass(self):
+        game, discard_id = reaction_game()
+        game["metadata"]["source"] = "local-environment"
+        hora = {
+            "type": "hora",
+            "actor": 1,
+            "target": 0,
+            "pai": "1m",
+            "variant": "hora",
+        }
+        child_id = service.TREE_EDITS.create_node(
+            game,
+            discard_id,
+            hora,
+            copy.deepcopy(game["nodes"][discard_id]["snapshot"]),
+        )
+        game["nodes"][discard_id]["mainChildId"] = child_id
+        history = reaction_decision_history.ReactionDecisionHistory(replace(
+            service.REACTION_DECISIONS.dependencies,
+            build_legal_actions=lambda _snapshot, *, controlled_seat: (
+                [{"type": "none"}, hora]
+                if controlled_seat == 1
+                else [{"type": "none"}]
+            ),
+        ))
+
+        inserted = history.repair(game)
+
+        self.assertEqual(inserted, 0)
+        self.assertEqual(game["nodes"][discard_id]["mainChildId"], child_id)
+        self.assertEqual(game["nodes"][child_id]["action"]["type"], "hora")
+
+    def test_old_recorded_placeholder_pass_before_hora_is_removed(self):
+        game, discard_id = reaction_game(second_responder=True)
+        game["metadata"]["source"] = "local-environment"
+        hora = {
+            "type": "hora",
+            "actor": 1,
+            "target": 0,
+            "pai": "1m",
+            "variant": "hora",
+        }
+        hora_id = service.TREE_EDITS.create_node(
+            game,
+            discard_id,
+            hora,
+            copy.deepcopy(game["nodes"][discard_id]["snapshot"]),
+        )
+        game["nodes"][discard_id]["mainChildId"] = hora_id
+        response = game["nodes"][discard_id]["snapshot"]["reactionWindow"]["reactions"][0]["response"]
+        other_response = game["nodes"][discard_id]["snapshot"]["reactionWindow"]["reactions"][1]["response"]
+        service.REACTION_DECISIONS._insert_chain(
+            game,
+            discard_id,
+            hora_id,
+            [(1, response), (2, other_response)],
+            "recorded_reaction_decision",
+        )
+        obsolete_id = game["nodes"][discard_id]["mainChildId"]
+        other_pass_id = game["nodes"][obsolete_id]["mainChildId"]
+        game["currentNodeId"] = obsolete_id
+
+        inserted = service.REACTION_DECISIONS.repair(game)
+
+        self.assertEqual(inserted, 0)
+        self.assertNotIn(obsolete_id, game["nodes"])
+        self.assertEqual(game["currentNodeId"], discard_id)
+        self.assertEqual(game["nodes"][discard_id]["mainChildId"], other_pass_id)
+        self.assertEqual(game["nodes"][other_pass_id]["mainChildId"], hora_id)
+        self.assertEqual(game["nodes"][hora_id]["parentId"], other_pass_id)
+        self.assertEqual(game["nodes"][hora_id]["action"]["type"], "hora")
+        service.STATE["controlledSeat"] = 1
+        visible_nodes = {
+            node["id"]: node
+            for node in service.VIEW_BUILDER.build_tree(game, discard_id)["nodes"]
+        }
+        self.assertNotIn(other_pass_id, visible_nodes)
+        self.assertEqual(visible_nodes[discard_id]["mainChildId"], hora_id)
+        self.assertEqual(visible_nodes[hora_id]["action"]["type"], "hora")
 
     def test_external_effective_call_does_not_invent_other_responses(self):
         game, discard_id = reaction_game(second_responder=True)
