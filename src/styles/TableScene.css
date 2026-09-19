@@ -268,19 +268,24 @@
   height: 100%;
   width: 100%;
   display: block;
-  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
+  transition: clip-path var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .special-action-bar-fill {
   bottom: 0;
   background: var(--decision-recommendation-color);
-  transform-origin: bottom center;
 }
 
 .special-action-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  block-size: 100%;
   min-height: 0;
+  padding: 0 0.3em 0.03em;
   font-size: var(--table-text-action);
-  line-height: calc(var(--zoom) * 20px);
+  line-height: 1;
   color: var(--text-main);
   text-align: center;
   white-space: nowrap;
@@ -370,18 +375,17 @@
   width: 100%;
   height: 100%;
   display: block;
-  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
+  transition: clip-path var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .choice-bar-fill {
   bottom: 0;
   background: var(--decision-recommendation-color);
-  transform-origin: bottom center;
 }
 
 @starting-style {
   .discard-bars:not(.recommendation-hidden) .choice-bar-fill {
-    transform: scaleY(0) !important;
+    clip-path: inset(100% 0 0) !important;
   }
 }
 

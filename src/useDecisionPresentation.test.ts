@@ -73,7 +73,7 @@ test('decision action presentation owns quick actions and normalized table bars'
   assert.equal(action.findQuickTsumogiriAction(), discard)
   assert.equal(action.isBestAction(discard), true)
   assert.deepEqual(action.barFillStyle(action.resolveDisplayedActionBar(discard)), {
-    transform: 'scaleY(0.5)',
+    clipPath: 'inset(50% 0 0)',
   })
   showTrainingRecommendations.value = false
   assert.equal(action.resolveDisplayedActionBar(discard), 0)

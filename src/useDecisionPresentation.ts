@@ -353,7 +353,8 @@ export function useDecisionActionPresentation(options: {
   }
 
   function barFillStyle(value: number) {
-    return { transform: `scaleY(${clampBarScale(value)})` }
+    const scale = clampBarScale(value)
+    return { clipPath: `inset(${(1 - scale) * 100}% 0 0)` }
   }
 
   function isBestAction(action?: GameAction): boolean {

@@ -388,6 +388,78 @@ try {
     '1',
     'auto-analysis progress details stay visible without hover',
   )
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    window.originalSpecialActionFixture = {
+      legalActions: JSON.parse(JSON.stringify(vm.gameView.legalActions)),
+      analysis: JSON.parse(JSON.stringify(vm.gameView.analysis)),
+    }
+    vm.gameView.legalActions = [
+      { id: 'pon-ui-test', candidateId: 'pon-ui-test', type: 'pon', variant: 'pon', actor: 0, target: 1, pai: '5m', consumed: ['5m', '5m'] },
+      { id: 'skip-ui-test', candidateId: 'skip-ui-test', type: 'none', variant: 'none', actor: 0 },
+    ]
+    vm.gameView.analysis = {
+      model: 'ui-test-decision',
+      seat: 0,
+      bestAction: { type: 'none', variant: 'none' },
+      reactionEntries: [
+        { candidateId: 'pon-ui-test', type: 'pon', variant: 'pon', label: 'pon', value: 0.08, bar: 0.08 },
+        { candidateId: 'skip-ui-test', type: 'none', variant: 'none', label: 'skip', value: 0.92, bar: 0.92, isBest: true },
+      ],
+    }
+  })
+  const specialActionOptions = page.locator('.special-action-option')
+  await specialActionOptions.nth(1).waitFor()
+  await specialActionOptions.nth(1).evaluate(element => element.classList.add('special-next-main'))
+  await page.waitForTimeout(150)
+  const specialActionGeometry = await page.locator('.special-action-board').evaluate(board => {
+    const options = [...board.querySelectorAll('.special-action-option')]
+    const trackBottoms = options.map(option => option.querySelector('.special-action-bar-track').getBoundingClientRect().bottom)
+    const fillStyles = options.map(option => getComputedStyle(option.querySelector('.special-action-bar-fill')).clipPath)
+    const label = options[1].querySelector('.special-action-label')
+    const labelRect = label.getBoundingClientRect()
+    const range = document.createRange()
+    range.selectNodeContents(label)
+    const textRect = range.getBoundingClientRect()
+    const fontSize = Number.parseFloat(getComputedStyle(label).fontSize)
+    return {
+      trackBottoms,
+      fillStyles,
+      fontSize,
+      gaps: {
+        left: textRect.left - labelRect.left,
+        right: labelRect.right - textRect.right,
+        top: textRect.top - labelRect.top,
+        bottom: labelRect.bottom - textRect.bottom,
+      },
+    }
+  })
+  assert.ok(
+    Math.max(...specialActionGeometry.trackBottoms) - Math.min(...specialActionGeometry.trackBottoms) < 0.01,
+    'special-action recommendation tracks share one exact bottom edge',
+  )
+  assert.ok(
+    specialActionGeometry.fillStyles.every(value => value.startsWith('inset(')),
+    'special-action fills reveal their fixed track with clipping instead of separately rasterized scaling',
+  )
+  assert.ok(
+    specialActionGeometry.gaps.left >= specialActionGeometry.fontSize * 0.25
+      && specialActionGeometry.gaps.right >= specialActionGeometry.fontSize * 0.25,
+    'next-action outlines retain readable horizontal space around their labels',
+  )
+  assert.ok(
+    Math.abs(specialActionGeometry.gaps.top - specialActionGeometry.gaps.bottom) <= specialActionGeometry.fontSize * 0.12,
+    `next-action labels remain visually centered inside their outline box: ${JSON.stringify(specialActionGeometry.gaps)}`,
+  )
+  if (process.env.RMS_SPECIAL_ACTION_SCREENSHOT) {
+    await page.locator('.special-action-stage').screenshot({ path: process.env.RMS_SPECIAL_ACTION_SCREENSHOT })
+  }
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    vm.gameView.legalActions = window.originalSpecialActionFixture.legalActions
+    vm.gameView.analysis = window.originalSpecialActionFixture.analysis
+    delete window.originalSpecialActionFixture
+  })
   for (const operation of ['saveGame', 'saveGameAs']) {
     await page.evaluate(async operation => {
       const check = window.analysisCheck
