@@ -1217,6 +1217,36 @@ try {
   const groupedCountGrid = page.locator('.analysis-count-grid')
   await groupedCountGrid.waitFor()
   await page.waitForTimeout(150)
+  const analysisTrackColors = await page.evaluate(() => {
+    const normalize = (value) => {
+      const probe = document.createElement('i')
+      probe.style.backgroundColor = value
+      document.body.append(probe)
+      const color = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return color
+    }
+    const background = selector => {
+      const element = document.querySelector(selector)
+      return element ? getComputedStyle(element).backgroundColor : ''
+    }
+    const countGrid = document.querySelector('.analysis-count-grid')
+    const bodyStyle = getComputedStyle(document.body)
+    return {
+      expected: normalize(bodyStyle.getPropertyValue('--analysis-chart-track-surface')),
+      risk: background('.analysis-risk-bars > i'),
+      count: countGrid ? normalize(getComputedStyle(countGrid).getPropertyValue('--analysis-count-kamicha-0')) : '',
+      opponent: background('.analysis-distribution-track'),
+      outcome: background('.analysis-outcome-bar'),
+      offense: background('.analysis-offense-track'),
+      delta: background('.analysis-delta-cell'),
+      placement: background('.analysis-placement-bar'),
+    }
+  })
+  for (const [track, color] of Object.entries(analysisTrackColors)) {
+    if (track === 'expected') continue
+    assert.equal(color, analysisTrackColors.expected, `${track} uses the shared analysis track surface`)
+  }
   const splitMetrics = await page.evaluate(() => {
     const visibleBounds = selector => {
       const grid = document.querySelector(selector)

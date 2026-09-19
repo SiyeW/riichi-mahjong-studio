@@ -14,7 +14,7 @@
 }
 
 .analysis-risk-grid {
-  --analysis-risk-track-surface: rgba(255, 255, 255, 0.05);
+  --analysis-risk-track-surface: var(--analysis-chart-track-surface);
   grid-template-rows: repeat(4, calc(var(--analysis-tile-height) + var(--analysis-chart-gap) + var(--analysis-risk-bars-height))) auto;
   align-content: center;
   height: 100%;
@@ -109,7 +109,7 @@
   bottom: 0;
   left: calc(50% + (var(--analysis-risk-bars-width) / 2));
   width: calc(var(--analysis-tile-width) - var(--analysis-risk-bars-width));
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--analysis-risk-track-surface);
   pointer-events: none;
 }
 

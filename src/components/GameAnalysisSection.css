@@ -16,7 +16,7 @@
   display: flex;
   height: calc(1.1rem * var(--ui-scale));
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--analysis-chart-track-surface);
 }
 
 .analysis-outcome-bar span {
@@ -198,7 +198,7 @@
   position: relative;
   height: calc(1rem * var(--ui-scale));
   overflow: visible;
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--analysis-chart-track-surface);
 }
 
 .analysis-offense-track::before {
@@ -261,7 +261,7 @@
   position: relative;
   height: calc(1rem * var(--ui-scale));
   outline: none;
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--analysis-chart-track-surface);
 }
 
 .analysis-zero-axis {
@@ -329,7 +329,7 @@
   height: calc(1rem * var(--ui-scale));
   overflow: hidden;
   outline: none;
-  background: rgba(255, 255, 255, 0.045);
+  background: var(--analysis-chart-track-surface);
 }
 
 .analysis-placement-bar span {

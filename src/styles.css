@@ -47,6 +47,7 @@ body {
   --surface-control-pending: rgba(4, 55, 66, 0.96);
   --surface-danger: rgba(112, 39, 31, 0.96);
   --surface-control-danger: rgba(145, 55, 45, 0.92);
+  --analysis-chart-track-surface: rgb(20 72 81);
   --surface-floating: #073e48;
   --surface-field: rgba(255, 255, 255, 0.95);
   --field-text: #153237;
