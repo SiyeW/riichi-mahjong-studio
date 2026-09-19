@@ -1,7 +1,9 @@
 <template>
   <section
+    ref="sectionElement"
     v-perceptual-surface="opponentSurface"
     class="analysis-opponent-section"
+    :style="{ '--analysis-score-mode-count': String(scoreModeCount) }"
   >
     <div class="analysis-opponent-grid">
       <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-card">
@@ -81,7 +83,7 @@
           />
           <div v-if="opponent.scoreModes.length" class="analysis-score-modes">
             <span
-              v-for="entry in opponent.scoreModes"
+              v-for="entry in visibleScoreModes(opponent.scoreModes)"
               :key="entry.value"
               tabindex="0"
               :style="scoreModeStyle(entry.probability)"
@@ -100,6 +102,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed, nextTick, ref, watch } from 'vue'
 import { analysisSurface } from '../analysisSurface'
 import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
 import type { AnalysisRecord } from '../useAnalysisOutputs'
@@ -108,6 +111,7 @@ import { useOpponentAnalysisData } from '../useOpponentAnalysisData'
 import { useI18n } from '../i18n'
 import type { NumericPrediction } from '../numericPrediction'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
+import { useResponsiveGeometry } from '../useResponsiveGeometry'
 import DistributionBarChart, { type DistributionBarEntry } from './DistributionBarChart.vue'
 import ShantenPieChart from './ShantenPieChart.vue'
 
@@ -125,6 +129,9 @@ const props = defineProps<{
 
 const { t, numberLocale } = useI18n()
 const tooltip = useAnalysisHoverTooltipController()
+const sectionElement = ref<HTMLElement | null>(null)
+const scoreModeCount = ref(3)
+let scoreModeMeasureCanvas: HTMLCanvasElement | null = null
 const opponentSurface = analysisSurface(() => props.perceptualSurface, 'opponent-panel')
 const distributionTrackSurface = analysisSurface(
   () => props.perceptualSurface,
@@ -145,6 +152,64 @@ const {
   formatMahjongScore,
   formatProbability,
 } = useOpponentAnalysisData(props, t, numberLocale)
+
+const scoreModeMeasurementKey = computed(() => opponentCards.value.map((opponent) => (
+  opponent.scoreModes.map((entry) => formatMahjongScore(entry.value)).join(',')
+)).join('|'))
+
+function visibleScoreModes(entries: NumericPrediction['distribution']) {
+  return entries.slice(0, scoreModeCount.value)
+}
+
+function finitePixels(value: string): number {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function updateScoreModeCount() {
+  const section = sectionElement.value
+  if (!section) return
+  const containers = [...section.querySelectorAll<HTMLElement>('.analysis-score-modes')]
+  const sample = containers[0]?.querySelector<HTMLElement>('span')
+  if (!containers.length || !sample) return
+
+  const candidateCounts = opponentCards.value
+    .map((opponent) => opponent.scoreModes.length)
+    .filter((count) => count > 0)
+  if (!candidateCounts.length) return
+  const commonMaximum = Math.min(...candidateCounts)
+  const availableWidth = Math.min(...containers.map((container) => container.getBoundingClientRect().width))
+  if (!(availableWidth > 0)) return
+
+  const sampleStyle = getComputedStyle(sample)
+  scoreModeMeasureCanvas ??= document.createElement('canvas')
+  const context = scoreModeMeasureCanvas.getContext('2d')
+  if (!context) return
+  context.font = sampleStyle.font || `${sampleStyle.fontSize} ${sampleStyle.fontFamily}`
+  const letterSpacing = finitePixels(sampleStyle.letterSpacing)
+  const labels = opponentCards.value.flatMap((opponent) => (
+    opponent.scoreModes.map((entry) => formatMahjongScore(entry.value))
+  ))
+  const widestLabel = labels.reduce((widest, label) => {
+    const width = context.measureText(label).width + (Math.max(0, label.length - 1) * letterSpacing)
+    return Math.max(widest, width)
+  }, 0)
+  const horizontalPadding = finitePixels(sampleStyle.paddingLeft) + finitePixels(sampleStyle.paddingRight)
+  const containerStyle = getComputedStyle(containers[0])
+  const gap = finitePixels(containerStyle.columnGap)
+  const minimumCellWidth = Math.ceil(widestLabel + horizontalPadding + 2)
+  const fittingCount = Math.max(1, Math.floor((availableWidth + gap) / (minimumCellWidth + gap)))
+  scoreModeCount.value = Math.min(commonMaximum, fittingCount)
+}
+
+const scheduleScoreModeCount = useResponsiveGeometry(sectionElement, updateScoreModeCount, {
+  resizeAncestorSelector: '.dock-module',
+  styleAncestorSelector: '.dock-module',
+})
+
+watch([scoreModeMeasurementKey, numberLocale], () => {
+  void nextTick(scheduleScoreModeCount)
+}, { flush: 'post' })
 
 function scoreModeStyle(probability: number): Record<string, string> {
   const normalized = distributionBarScale(probability, scoreDistributionScale.value)

@@ -137,7 +137,7 @@
 
 .analysis-score-modes {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--analysis-score-mode-count, 3), minmax(0, 1fr));
   gap: calc(0.12rem * var(--floating-panel-scale));
   margin-top: calc(0.12rem * var(--floating-panel-scale));
 }

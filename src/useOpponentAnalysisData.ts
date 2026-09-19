@@ -50,8 +50,7 @@ export function useOpponentAnalysisData(
       scorePrediction: score,
       scoreModes: [...score.distribution]
         .filter((entry) => entry.probability > 0)
-        .sort((left, right) => right.probability - left.probability)
-        .slice(0, 3),
+        .sort((left, right) => right.probability - left.probability),
     }
   }))
   const hasOpponentDoraDistributions = computed(() => (

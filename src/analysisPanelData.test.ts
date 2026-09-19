@@ -140,6 +140,19 @@ test('opponent score display preserves an explicit estimate while filtering its 
   assert.deepEqual(dealer.scorePrediction.distribution, [{ value: 12000, probability: 1 }])
 })
 
+test('opponent score modes preserve every possible candidate for responsive presentation', () => {
+  const { opponent } = fixture({ outputs: {
+    'opponent-score': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 1000, probability: 0.4 },
+      { value: 2000, probability: 0.3 },
+      { value: 3900, probability: 0.2 },
+      { value: 7700, probability: 0.1 },
+    ] } }] },
+  } })
+  const player = opponent.opponentCards.value.find((entry) => entry.seat === 3)!
+  assert.deepEqual(player.scoreModes.map((entry) => entry.value), [1000, 2000, 3900, 7700])
+})
+
 test('opponent distributions keep their base probability ranges and expand only when needed', () => {
   const { props, opponent } = fixture({ outputs: {
     'opponent-dora-count': { players: [{ seat: 3, prediction: { distribution: [

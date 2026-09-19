@@ -746,10 +746,12 @@ try {
     }
     for (const player of result.outputs['opponent-score'].players) {
       player.prediction.distribution = [
-        { value: 1000, probability: 0.25 },
-        { value: 2000, probability: 0.25 },
-        { value: 3900, probability: 0.25 },
-        { value: 8000, probability: 0.25 },
+        { value: 1000, probability: 0.22 },
+        { value: 2000, probability: 0.19 },
+        { value: 3900, probability: 0.17 },
+        { value: 7700, probability: 0.16 },
+        { value: 8000, probability: 0.14 },
+        { value: 12000, probability: 0.12 },
       ]
     }
     window.analysisCheck.publish(result)
@@ -780,7 +782,17 @@ try {
     }
   })
   await page.locator('.analysis-dora-distribution').first().waitFor()
-  await page.waitForTimeout(100)
+  await page.waitForFunction(() => {
+    const groups = [...document.querySelectorAll('.analysis-score-modes')]
+    return groups.length === 3
+      && groups[0].children.length > 3
+      && groups.every((group) => group.children.length === groups[0].children.length)
+  })
+  const scoreModeCounts = await page.locator('.analysis-score-modes').evaluateAll(groups => (
+    groups.map(group => group.children.length)
+  ))
+  assert.equal(new Set(scoreModeCounts).size, 1, 'all opponents show the same width-derived number of score nominations')
+  assert.ok(scoreModeCounts[0] > 3, 'a roomy panel shows more than the former fixed three score nominations')
   const scoreModeLabels = await page.locator('.analysis-score-modes span').allTextContents()
   assert.ok(!scoreModeLabels.includes('116'), 'non-dealer score modes exclude dealer-only 11,600 points')
   assert.ok(!scoreModeLabels.includes('117'), 'non-dealer score modes exclude dealer-only 11,700 points')
