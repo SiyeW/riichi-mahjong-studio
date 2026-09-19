@@ -38,7 +38,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { DEFAULT_PROBABILITY_SCALE, probabilityScaleRatio } from '../analysisProbabilityScale'
-import { getUiMotionDurationMs } from '../uiMotion'
+import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
 
 export type TableRonRiskSlot = Readonly<{
@@ -175,10 +175,11 @@ function animate() {
   const thresholdSource = displayedThresholdScale
   let startedAt: number | null = null
   const duration = getUiMotionDurationMs()
+  const easing = getUiMotionEasingFunction()
   const step = (now: number) => {
     if (startedAt === null) startedAt = now
     const progress = Math.max(0, Math.min(1, (now - startedAt) / duration))
-    const eased = 1 - ((1 - progress) ** 3)
+    const eased = easing(progress)
     displayedScales = target.map((row, slotIndex) => row.map((value, sourceIndex) => {
       const start = source[slotIndex]?.[sourceIndex] ?? value
       return start + ((value - start) * eased)

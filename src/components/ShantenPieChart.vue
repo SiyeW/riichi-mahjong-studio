@@ -42,7 +42,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
-import { getUiMotionDurationMs } from '../uiMotion'
+import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 
 const { t } = useI18n()
 
@@ -86,9 +86,10 @@ function animateTo(values: number[]) {
   }
   const startedAt = performance.now()
   const duration = getUiMotionDurationMs()
+  const easing = getUiMotionEasingFunction()
   const step = (now: number) => {
     const progress = Math.min(1, (now - startedAt) / duration)
-    const eased = 1 - ((1 - progress) ** 3)
+    const eased = easing(progress)
     animatedProbabilities.value = source.map(
       (value, index) => value + ((target[index] - value) * eased),
     )

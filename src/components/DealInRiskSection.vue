@@ -58,7 +58,7 @@ import { useAnalysisHoverTooltipController } from '../useAnalysisHoverTooltip'
 import { useAnalysisPanelFormatting } from '../useAnalysisPanelFormatting'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
 import { useRiskAnalysisData } from '../useRiskAnalysisData'
-import { getUiMotionDurationMs } from '../uiMotion'
+import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 
 const props = defineProps<AnalysisPanelDataProps & {
   tileImageSrc: (tile: string) => string
@@ -158,10 +158,11 @@ function animateRiskCanvases() {
   const source = copyRiskScales(displayedRiskScales)
   let startedAt: number | null = null
   const duration = getUiMotionDurationMs()
+  const easing = getUiMotionEasingFunction()
   const step = (now: number) => {
     if (startedAt === null) startedAt = now
     const progress = Math.max(0, Math.min(1, (now - startedAt) / duration))
-    const eased = 1 - ((1 - progress) ** 3)
+    const eased = easing(progress)
     displayedRiskScales = target.map((row, rowIndex) => row.map((tile, tileIndex) => (
       tile.map((value, sourceIndex) => {
         const start = source[rowIndex]?.[tileIndex]?.[sourceIndex] ?? value

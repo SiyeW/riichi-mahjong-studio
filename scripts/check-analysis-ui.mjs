@@ -82,7 +82,10 @@ try {
             status: 'ready',
             context: { gameId: vm.gameView.gameId, nodeId: vm.gameView.currentNodeId, seat: vm.status.controlledSeat, inputMode: 'public', cacheKey: 'test-engine', cacheEpoch: this.epoch },
             outputs: {
-              'wall-tile-count': { tiles: { '1m': { expectedValue, distribution: [{ value: 0, probability: 0.25 }, { value: 1, probability: 0.75 }] } } },
+              'wall-tile-count': { tiles: { '1m': { expectedValue, distribution: [
+                { value: 0, probability: expectedValue <= 1 ? 0.8 : 0.1 },
+                { value: 1, probability: expectedValue <= 1 ? 0.2 : 0.9 },
+              ] } } },
               'opponent-dora-count': {
                 players: [1, 2, 3].map((seat, index) => ({
                   seat,
@@ -177,6 +180,11 @@ try {
           if (doraDistribution?.length >= 2) {
             doraDistribution[0].probability = index === 0 ? 0.68 : 0.12
             doraDistribution[1].probability = index === 0 ? 0.12 : 0.68
+          }
+          const wallCountDistribution = result.outputs?.['wall-tile-count']?.tiles?.['1m']?.distribution
+          if (wallCountDistribution?.length >= 2) {
+            wallCountDistribution[0].probability = index === 0 ? 0.8 : 0.1
+            wallCountDistribution[1].probability = index === 0 ? 0.2 : 0.9
           }
           result.predictions ||= {}
           result.predictions.ron_wait = Object.fromEntries(['kamicha', 'toimen', 'shimocha'].map((key, sourceIndex) => [
@@ -1209,6 +1217,14 @@ try {
         renderSignature: canvas.rmsRonRiskRenderSignature || '',
       }
     }
+    const captureCountCanvasSignature = () => [
+      ...document.querySelectorAll(
+        '.analysis-count-source-row-canvas, .analysis-count-row-canvas',
+      ),
+    ].map(canvas => canvas.rmsCountRenderSignature || '').join('|')
+    const oldPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
+    const oldRiskCanvas = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
+    const oldCountCanvas = captureCountCanvasSignature()
     const frameSample = new Promise(resolve => {
       const startedAt = performance.now()
       const observer = typeof PerformanceObserver === 'function'
@@ -1233,10 +1249,11 @@ try {
             && Boolean(animation.effect.target.closest('.analysis-panel-live'))
           ))
           const riskSignature = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
+          const countSignature = captureCountCanvasSignature()
           if (analysisAnimation && typeof analysisAnimation.currentTime === 'number') {
-            analysisMotionSamples.push({ timestamp, currentTime: analysisAnimation.currentTime, riskSignature })
-          } else if (riskSignature && riskSignature !== oldRiskCanvas) {
-            analysisMotionSamples.push({ timestamp, currentTime: null, riskSignature })
+            analysisMotionSamples.push({ timestamp, currentTime: analysisAnimation.currentTime, riskSignature, countSignature })
+          } else if ((riskSignature && riskSignature !== oldRiskCanvas) || (countSignature && countSignature !== oldCountCanvas)) {
+            analysisMotionSamples.push({ timestamp, currentTime: null, riskSignature, countSignature })
           }
         }
         if (timestamp - startedAt < 300) requestAnimationFrame(sample)
@@ -1247,8 +1264,6 @@ try {
       }
       requestAnimationFrame(sample)
     })
-    const oldPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
-    const oldRiskCanvas = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
     const distributionBefore = captureDistributionGeometry()
     const tableRonRiskBefore = captureTableRonRiskGeometry()
     await vm.jumpToNode(nextNodeId)
@@ -1300,6 +1315,7 @@ try {
         transitionDurations,
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
         riskCanvas: document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '',
+        countCanvas: captureCountCanvasSignature(),
         distributionGeometry: captureDistributionGeometry(),
         tableRonRiskGeometry: captureTableRonRiskGeometry(),
       })
@@ -1314,6 +1330,7 @@ try {
         )).length,
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
         riskCanvas: document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '',
+        countCanvas: captureCountCanvasSignature(),
         distributionGeometry: captureDistributionGeometry(),
         tableRonRiskGeometry: captureTableRonRiskGeometry(),
       })
@@ -1330,6 +1347,7 @@ try {
     return {
       oldPiePath,
       oldRiskCanvas,
+      oldCountCanvas,
       immediatePiePath,
       distributionBefore,
       tableRonRiskBefore,
@@ -1353,7 +1371,7 @@ try {
         analysisMotionSamples,
       },
     }
-  }, Boolean(process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC))
+  }, Boolean(process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC || realisticPerformance))
   const performanceAfter = await cdpSession.send('Performance.getMetrics')
   let traceSummary = null
   if (traceEnabled) {
@@ -1478,6 +1496,23 @@ try {
   )
   assert.notEqual(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart interpolates its values instead of replacing the pie at once')
   assert.notEqual(navigationMotion.after.riskCanvas, navigationMotion.oldRiskCanvas, 'the deal-in chart draws the next values on its fixed canvas')
+  if (realisticPerformance) {
+    assert.notEqual(navigationMotion.after.countCanvas, navigationMotion.oldCountCanvas, 'the count chart draws the next distributions on its fixed canvas')
+    assert.ok(
+      new Set(navigationMotion.performance.analysisMotionSamples.map(sample => sample.countSignature).filter(Boolean)).size >= 3,
+      'count distributions interpolate through multiple visible frames instead of jumping to the next result',
+    )
+  }
+  assert.equal(
+    await page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--ui-motion-duration').trim()),
+    '110ms',
+    'the shared UI motion duration remains 110ms',
+  )
+  assert.equal(
+    await page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--ui-motion-easing').trim()),
+    'cubic-bezier(0.33, 1, 0.68, 1)',
+    'the shared UI motion keeps the established fast-out easing curve',
+  )
   assert.equal(
     await page.locator('.grid-main .choice-bar-fill').first().evaluate(element => getComputedStyle(element).transitionDuration),
     '0.11s',

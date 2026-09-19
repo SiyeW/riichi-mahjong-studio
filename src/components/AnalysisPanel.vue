@@ -51,6 +51,7 @@
         :tile-face-label="tileFaceLabel"
         :perceptual-surface="perceptualSurface"
         :count-layout="countLayout"
+        :reduce-motion="reduceMotion"
         @update:count-layout="emit('update:countLayout', $event)"
       />
     </div>

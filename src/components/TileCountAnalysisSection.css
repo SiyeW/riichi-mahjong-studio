@@ -71,6 +71,7 @@
 }
 
 .analysis-count-source-sequence {
+  position: relative;
   display: flex;
   flex: 0 0 var(--analysis-count-source-content-width, 100%);
   gap: var(--analysis-count-tile-gap, 1px);
@@ -78,7 +79,19 @@
   min-height: 0;
 }
 
+.analysis-count-source-row-canvas {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 .analysis-count-source-tile {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   flex: 0 0 var(--analysis-count-source-tile-width, 0.75rem);
@@ -102,14 +115,7 @@
   flex-direction: column;
   min-height: var(--analysis-count-bar-min-height, 0px);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.04);
-}
-
-.analysis-count-source-bar > i {
-  display: block;
-  flex: 0 0 auto;
-  width: 100%;
-  min-height: 0;
+  background: transparent;
 }
 
 .analysis-count-source-tile > img {
