@@ -10,6 +10,7 @@ import { checkWorkspaceDock } from './check-workspace-dock.mjs'
 const root = path.resolve(import.meta.dirname, '..')
 const realisticPerformance = Boolean(process.env.RMS_UI_REALISTIC_PERFORMANCE)
 const performanceOnly = Boolean(process.env.RMS_UI_PERFORMANCE_ONLY)
+const externalRendererUrl = process.env.RMS_UI_TEST_URL || null
 
 function loadRealisticAnalysisFixtures() {
   if (!realisticPerformance) return []
@@ -30,18 +31,21 @@ function loadRealisticAnalysisFixtures() {
 }
 
 const realisticAnalysisFixtures = loadRealisticAnalysisFixtures()
-const server = await createServer({ root, mode: 'ui-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
+const server = externalRendererUrl
+  ? null
+  : await createServer({ root, mode: 'ui-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
 let browser
 let electronApp
 try {
-  await server.listen()
+  await server?.listen()
+  const rendererUrl = externalRendererUrl || server.resolvedUrls.local[0]
   let page
   if (process.env.RMS_UI_ELECTRON) {
     electronApp = await electron.launch({
       args: [path.join(root, 'scripts', 'electron-ui-test-main.cjs')],
       env: {
         ...process.env,
-        RMS_UI_TEST_URL: server.resolvedUrls.local[0],
+        RMS_UI_TEST_URL: rendererUrl,
       },
     })
     page = await electronApp.firstWindow()
@@ -280,7 +284,7 @@ try {
       }
     }
   })
-  await page.goto(server.resolvedUrls.local[0], { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await page.goto(rendererUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
   // A fresh CI runner has to start Vite and decode the complete tile artwork set
   // without the warm caches available during local iteration. Keep ordinary UI
   // assertions on the short default timeout, but give this one-time bootstrap its
@@ -980,6 +984,8 @@ try {
   const scoreModeLabels = await page.locator('.analysis-score-modes span').allTextContents()
   assert.ok(!scoreModeLabels.includes('116'), 'non-dealer score modes exclude dealer-only 11,600 points')
   assert.ok(!scoreModeLabels.includes('117'), 'non-dealer score modes exclude dealer-only 11,700 points')
+  const scoreSummaries = await page.locator('.analysis-opponent-prediction.is-score-prediction strong').allTextContents()
+  assert.ok(scoreSummaries.every(text => !text.includes(',')), 'mahjong point summaries omit locale thousands separators')
   const roomyOpponent = await opponentGeometry()
   assert.ok(roomyOpponent.doraHeight > 68, 'roomy opponent panel lets the dora distribution grow beyond its former cap')
   assert.ok(roomyOpponent.scoreHeight > 50, 'roomy opponent panel lets the score distribution grow beyond its former cap')
@@ -998,6 +1004,7 @@ try {
   await scoreCell.hover()
   await page.locator('.analysis-floating-tooltip').waitFor({ state: 'visible' })
   assert.equal(await scoreCell.evaluate(element => element.classList.contains('is-hovered')), true, 'the hovered score mode receives a visible row highlight')
+  assert.ok(!(await page.locator('.analysis-floating-tooltip').innerText()).includes(','), 'exact point values in hover details omit locale thousands separators')
   if (process.env.RMS_SCORE_HOVER_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_SCORE_HOVER_SCREENSHOT })
   }
@@ -2322,5 +2329,5 @@ try {
 } finally {
   await browser?.close()
   await electronApp?.close()
-  await server.close()
+  await server?.close()
 }

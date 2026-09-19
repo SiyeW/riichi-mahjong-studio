@@ -9,6 +9,7 @@ export function createAnalysisFormatting(t: AnalysisTranslator, numberLocale: Re
     if (value === null || !Number.isFinite(value)) return '—'
     return new Intl.NumberFormat(numberLocale.value, {
       notation: Math.abs(value) >= 10000 ? 'compact' : 'standard',
+      useGrouping: false,
       maximumFractionDigits: 1,
     }).format(Math.round(value))
   }
@@ -16,11 +17,11 @@ export function createAnalysisFormatting(t: AnalysisTranslator, numberLocale: Re
   function formatPoints(value: number | null): string {
     return value === null || !Number.isFinite(value)
       ? t('analysis.noData')
-      : t('analysis.points', { value: Math.round(value).toLocaleString(numberLocale.value) })
+      : t('analysis.points', { value: String(Math.round(value)) })
   }
 
   function formatPlainPoints(value: number | null): string {
-    return value === null || !Number.isFinite(value) ? '—' : Math.round(value).toLocaleString(numberLocale.value)
+    return value === null || !Number.isFinite(value) ? '—' : String(Math.round(value))
   }
 
   function formatSignedCompactPoints(value: number | null): string {

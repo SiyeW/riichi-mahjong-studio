@@ -213,11 +213,11 @@ export function useDecisionEntryPresentation(options: {
       : null
     const text = fractionDigits === null
       ? new Intl.NumberFormat('en-US', {
-          useGrouping: metric.format === 'points',
+          useGrouping: false,
           maximumSignificantDigits: 15,
         }).format(displayedValue)
       : new Intl.NumberFormat('en-US', {
-          useGrouping: metric.format === 'points',
+          useGrouping: false,
           minimumFractionDigits: fractionDigits,
           maximumFractionDigits: fractionDigits,
         }).format(displayedValue)

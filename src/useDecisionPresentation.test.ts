@@ -63,7 +63,7 @@ test('decision entry presentation owns matching, ordering, and best-action ident
   assert.equal(resolved?.candidateId, 'discard')
   assert.equal(entry.analysisEntryIsBest(resolved), true)
   assert.deepEqual(entry.mergedAnalysisEntries.value.map((item) => item.candidateId), ['discard', 'pass'])
-  assert.equal(entry.formatDecisionMetric(1234, entry.decisionMetricDefinitions.value[0]), '1,234')
+  assert.equal(entry.formatDecisionMetric(1234, entry.decisionMetricDefinitions.value[0]), '1234')
 })
 
 test('decision action presentation owns quick actions and normalized table bars', () => {

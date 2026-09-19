@@ -18,11 +18,13 @@ test('mahjong score labels use hundreds without rounding distinct scores togethe
 
 test('mahjong score labels preserve nonstandard distribution values', () => {
   assert.equal(formatting.formatMahjongScore('12000+'), '12000+')
-  assert.equal(formatting.formatMahjongScore(1250), '1,250')
+  assert.equal(formatting.formatMahjongScore(1250), '1250')
 })
 
-test('score distribution tooltips retain the exact point value', () => {
-  assert.equal(formatting.formatDistributionPoints(11600), '11,600')
-  assert.equal(formatting.formatDistributionPoints(11700), '11,700')
-  assert.equal(formatting.formatDistributionPoints(12000), '12,000')
+test('point values never use locale grouping separators', () => {
+  assert.equal(formatting.formatPlainPoints(25000), '25000')
+  assert.equal(formatting.formatPoints(11600), 'analysis.points:{"value":"11600"}')
+  assert.equal(formatting.formatDistributionPoints(11600), '11600')
+  assert.equal(formatting.formatDistributionPoints(11700), '11700')
+  assert.equal(formatting.formatDistributionPoints(12000), '12000')
 })
