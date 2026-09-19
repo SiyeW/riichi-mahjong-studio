@@ -148,6 +148,12 @@ try {
               toimen: distributions[(1 + shift) % distributions.length],
               shimocha: distributions[(2 + shift) % distributions.length],
             },
+            ron_wait: Object.fromEntries(['kamicha', 'toimen', 'shimocha'].map((key, sourceIndex) => [
+              key,
+              Array.from({ length: 34 }, (_, tileIndex) => (
+                Math.min(0.95, ((((tileIndex + sourceIndex + shift) % 5) + 1) * 0.025 * expectedValue))
+              )),
+            ])),
           }
           return result
         },
@@ -172,6 +178,13 @@ try {
             doraDistribution[0].probability = index === 0 ? 0.68 : 0.12
             doraDistribution[1].probability = index === 0 ? 0.12 : 0.68
           }
+          result.predictions ||= {}
+          result.predictions.ron_wait = Object.fromEntries(['kamicha', 'toimen', 'shimocha'].map((key, sourceIndex) => [
+            key,
+            Array.from({ length: 34 }, (_, tileIndex) => (
+              Math.min(0.95, ((((tileIndex + sourceIndex + index) % 5) + 1) * 0.025 * (index + 1)))
+            )),
+          ]))
           return result
         },
         publish(result = this.result()) {
@@ -1070,9 +1083,10 @@ try {
     await page.locator('.analysis-player-section').waitFor()
   }
   await page.locator('.grid-main .choice-bar-fill').first().waitFor()
+  await page.locator('.grid-main .table-ron-risk-canvas').waitFor()
   await page.waitForTimeout(200)
   const permanentLayerHints = await page.evaluate(() => [
-    ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back), .grid-main .choice-bar-fill, .grid-main .ron-risk-fill'),
+    ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back), .grid-main .choice-bar-fill'),
   ].filter(element => getComputedStyle(element).willChange.includes('transform')).length)
   assert.equal(permanentLayerHints, 0, 'repeated table primitives do not reserve permanent compositor layers')
   const analysisCssMotionDisabled = Boolean(process.env.RMS_UI_EXPERIMENT_NO_ANALYSIS_CSS_MOTION)
@@ -1146,6 +1160,24 @@ try {
         renderSignatures: canvases.map(canvas => canvas.rmsDistributionRenderSignature || ''),
       }
     }
+    const captureTableRonRiskGeometry = () => {
+      const root = document.querySelector('.grid-main .ron-risk-bars')
+      const canvas = root?.querySelector('.table-ron-risk-canvas')
+      if (!(root instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return null
+      const rootRect = root.getBoundingClientRect()
+      const canvasRect = canvas.getBoundingClientRect()
+      return {
+        rootHeight: rootRect.height,
+        canvasHeight: canvasRect.height,
+        overflow: {
+          top: rootRect.top - canvasRect.top,
+          right: canvasRect.right - rootRect.right,
+          bottom: canvasRect.bottom - rootRect.bottom,
+          left: rootRect.left - canvasRect.left,
+        },
+        renderSignature: canvas.rmsRonRiskRenderSignature || '',
+      }
+    }
     const frameSample = new Promise(resolve => {
       const startedAt = performance.now()
       const observer = typeof PerformanceObserver === 'function'
@@ -1187,6 +1219,7 @@ try {
     const oldPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
     const oldRiskCanvas = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
     const distributionBefore = captureDistributionGeometry()
+    const tableRonRiskBefore = captureTableRonRiskGeometry()
     await vm.jumpToNode(nextNodeId)
     const immediatePiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
     const tablePhasePromise = new Promise(resolve => setTimeout(() => {
@@ -1237,6 +1270,7 @@ try {
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
         riskCanvas: document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '',
         distributionGeometry: captureDistributionGeometry(),
+        tableRonRiskGeometry: captureTableRonRiskGeometry(),
       })
     }, 210))
     const [tablePhase, during] = await Promise.all([tablePhasePromise, duringPromise])
@@ -1250,6 +1284,7 @@ try {
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
         riskCanvas: document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '',
         distributionGeometry: captureDistributionGeometry(),
+        tableRonRiskGeometry: captureTableRonRiskGeometry(),
       })
     }, 140))
     window.studioAPI.jumpToNode = originalJump
@@ -1266,6 +1301,7 @@ try {
       oldRiskCanvas,
       immediatePiePath,
       distributionBefore,
+      tableRonRiskBefore,
       tablePhase,
       during,
       after,
@@ -1388,6 +1424,26 @@ try {
     navigationMotion.after.distributionGeometry.renderSignatures,
     navigationMotion.distributionBefore.renderSignatures,
     'fixed dora and score canvases draw the next distribution instead of retaining stale pixels',
+  )
+  assert.equal(
+    navigationMotion.during.tableRonRiskGeometry.rootHeight,
+    navigationMotion.tableRonRiskBefore.rootHeight,
+    'table deal-in bar height remains fixed while its values animate',
+  )
+  assert.equal(
+    navigationMotion.after.tableRonRiskGeometry.rootHeight,
+    navigationMotion.tableRonRiskBefore.rootHeight,
+    'table deal-in bar height remains fixed after its values settle',
+  )
+  assert.deepEqual(
+    navigationMotion.during.tableRonRiskGeometry.overflow,
+    { top: 0, right: 0, bottom: 0, left: 0 },
+    'table deal-in drawing remains clipped to its fixed layout box',
+  )
+  assert.notEqual(
+    navigationMotion.after.tableRonRiskGeometry.renderSignature,
+    navigationMotion.tableRonRiskBefore.renderSignature,
+    'table deal-in canvas draws the next probabilities instead of retaining stale pixels',
   )
   assert.notEqual(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart interpolates its values instead of replacing the pie at once')
   assert.notEqual(navigationMotion.after.riskCanvas, navigationMotion.oldRiskCanvas, 'the deal-in chart draws the next values on its fixed canvas')

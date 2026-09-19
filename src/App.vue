@@ -290,48 +290,18 @@
                     </span>
                   </span>
                   <!-- 自家手牌对应的三家放铳率，从手牌下沿向下显示。 -->
-                  <div
-                    class="discard-bars ron-risk-bars"
-                    :class="{
-                      'recommendation-toggle': canToggleDecisionRecommendations,
-                    }"
-                    :role="canToggleDecisionRecommendations ? 'button' : undefined"
-                    :tabindex="canToggleDecisionRecommendations ? 0 : undefined"
-                    :aria-pressed="canToggleDecisionRecommendations ? decisionRecommendationsEnabled : undefined"
-                    :aria-label="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')) : undefined"
-                    v-ui-tooltip="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')) : undefined"
-                    @click.stop="toggleDecisionRecommendations"
-                    @keydown.enter.prevent="toggleDecisionRecommendations"
-                    @keydown.space.prevent="toggleDecisionRecommendations"
-                  >
-                    <div
-                      v-for="slot in southRonRiskSlots"
-                      :key="`ron-risk-${slot.index}`"
-                      class="discard-bar-slot ron-risk-slot"
-                      :class="{
-                        'is-drawn': slot.isDrawn,
-                        'has-adaptive-threshold': showTrainingRecommendations && showSouthRonRiskThreshold && !slot.isGap,
-                        'connect-left': slot.connectLeft,
-                        'connect-right': slot.connectRight,
-                      }"
-                      :style="showTrainingRecommendations && showSouthRonRiskThreshold && !slot.isGap
-                        ? { '--ron-risk-threshold-top': southRonRiskBarHeight(RON_BAR_ADAPTIVE_MIN) }
-                        : undefined"
-                    >
-                      <span
-                        v-if="showTrainingRecommendations && !slot.isGap"
-                        class="ron-risk-lanes"
-                        aria-hidden="true"
-                      >
-                        <span v-for="risk in slot.risks" :key="risk.key" class="ron-risk-track">
-                          <span
-                            :class="['ron-risk-fill', `ron-bar-${risk.key}`]"
-                            :style="{ transform: `scaleY(${southRonRiskBarScale(risk.probability)})` }"
-                          />
-                        </span>
-                      </span>
-                    </div>
-                  </div>
+                  <TableRonRiskBars
+                    :slots="southRonRiskSlots"
+                    :adaptive-max="southRonRiskAdaptiveMax"
+                    :show-threshold="showSouthRonRiskThreshold"
+                    :visible="showTrainingRecommendations"
+                    :reduce-motion="reduceMotionEnabled"
+                    :can-toggle="canToggleDecisionRecommendations"
+                    :enabled="decisionRecommendationsEnabled"
+                    :toggle-label="decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')"
+                    :tooltip-label="decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')"
+                    @toggle="toggleDecisionRecommendations"
+                  />
                 </span>
               </span>
               <div class="south-bottom-buffer"></div>
@@ -744,11 +714,6 @@ import {
   analysisResultHasRows,
   useAnalysisSession,
 } from './useAnalysisSession'
-import {
-  DEFAULT_PROBABILITY_SCALE,
-  probabilityScalePercent,
-  probabilityScaleRatio,
-} from './analysisProbabilityScale'
 import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import AutomaticAnalysisPanel from './components/AutomaticAnalysisPanel.vue'
@@ -767,6 +732,7 @@ import SettingsDialog from './components/SettingsDialog.vue'
 import TableActionAnnouncement from './components/TableActionAnnouncement.vue'
 import TableCenterInfo from './components/TableCenterInfo.vue'
 import TableOpponentHands, { type OpponentHandPresentation } from './components/TableOpponentHands.vue'
+import TableRonRiskBars from './components/TableRonRiskBars.vue'
 import TableRivers from './components/TableRivers.vue'
 import WallViewWindow from './components/WallViewWindow.vue'
 import { useI18n } from './i18n'
@@ -872,13 +838,6 @@ const floatingPanelZ = reactive<Record<FloatingPanelName, number>>({
 let floatingPanelZCounter = 1000
 function focusFloatingPanel(panel: FloatingPanelName) {
   floatingPanelZ[panel] = ++floatingPanelZCounter
-}
-const RON_BAR_ADAPTIVE_MIN = DEFAULT_PROBABILITY_SCALE
-function southRonRiskBarHeight(prob: number): string {
-  return probabilityScalePercent(prob, southRonRiskAdaptiveMax.value)
-}
-function southRonRiskBarScale(prob: number): number {
-  return probabilityScaleRatio(prob, southRonRiskAdaptiveMax.value)
 }
 // Shared drag state for floating analysis panels.
 let floatingPanelDragPos: { x: number; y: number } | null = null
