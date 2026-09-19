@@ -305,7 +305,8 @@ try {
     const activeControl = activeItem.querySelector('.settings-checkbox-control')
     const inactiveControl = inactiveItem.querySelector('.settings-checkbox-control')
     const activeLabel = activeItem.querySelector('.settings-checkbox-label')
-    if (!activeControl || !inactiveControl || !activeLabel) throw new Error('analysis menu must reuse the shared compact checkbox structure')
+    const trigger = menu.parentElement?.querySelector(':scope > button')
+    if (!activeControl || !inactiveControl || !activeLabel || !trigger) throw new Error('analysis menu must reuse the shared compact checkbox structure')
     return {
       backgroundImage: getComputedStyle(menu).backgroundImage,
       itemBorders: items.map(item => getComputedStyle(item).borderTopWidth),
@@ -317,6 +318,9 @@ try {
       itemTransitionDurationsMs: getComputedStyle(activeItem).transitionDuration.split(',').map(durationMs),
       labelTransitionDurationsMs: getComputedStyle(activeLabel).transitionDuration.split(',').map(durationMs),
       motionDurationMs: durationMs(getComputedStyle(document.body).getPropertyValue('--ui-motion-duration')),
+      triggerLeft: trigger.getBoundingClientRect().left,
+      menuLeft: menu.getBoundingClientRect().left,
+      triggerFontSize: Number.parseFloat(getComputedStyle(trigger).fontSize),
     }
   })
   assert.equal(analysisMenuStyles.backgroundImage, 'none', 'the analysis menu keeps a solid floating surface')
@@ -324,6 +328,14 @@ try {
   assert.equal(new Set(analysisMenuStyles.itemBackgrounds).size, 1, 'selection does not turn analysis menu choices into competing green buttons')
   assert.notEqual(analysisMenuStyles.activeMarker, analysisMenuStyles.inactiveMarker, 'the shared checkbox control carries each analysis panel selection state')
   assert.ok(analysisMenuStyles.controlWidth > analysisMenuStyles.labelFontSize * 0.85, 'the analysis menu keeps the established readable checkbox size')
+  assert.ok(
+    Math.abs(analysisMenuStyles.menuLeft - analysisMenuStyles.triggerLeft) < 0.5,
+    `the analysis menu follows the trigger's reading edge: ${JSON.stringify(analysisMenuStyles)}`,
+  )
+  assert.ok(
+    Math.abs(analysisMenuStyles.labelFontSize - analysisMenuStyles.triggerFontSize) < 0.01,
+    `the top-level analysis choices retain the toolbar's readable control text: ${JSON.stringify(analysisMenuStyles)}`,
+  )
   assert.ok(
     analysisMenuStyles.itemTransitionDurationsMs.every(value => Math.abs(value - analysisMenuStyles.motionDurationMs) < 0.01),
     `analysis menu row feedback uses the global motion duration: ${JSON.stringify(analysisMenuStyles)}`,
@@ -335,6 +347,40 @@ try {
   if (process.env.RMS_ANALYSIS_MENU_SCREENSHOT) {
     await page.locator('.toolbar-panel-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_SCREENSHOT })
   }
+  if (process.env.RMS_ANALYSIS_MENU_CONTEXT_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_ANALYSIS_MENU_CONTEXT_SCREENSHOT, fullPage: true })
+  }
+  const analysisMenuItems = page.locator('.toolbar-panel-menu-item')
+  const clickedMenuItemIndex = await analysisMenuItems.evaluateAll(items => items.findIndex(item => {
+    const input = item.querySelector('input')
+    return input && !input.checked && !input.disabled
+  }))
+  assert.notEqual(clickedMenuItemIndex, -1, 'analysis menu fixture provides an enabled inactive choice')
+  const clickedMenuItem = analysisMenuItems.nth(clickedMenuItemIndex)
+  const clickedMenuInput = clickedMenuItem.locator('input')
+  await clickedMenuItem.click()
+  assert.equal(await clickedMenuInput.isChecked(), true, 'clicking an analysis menu choice toggles its checkbox')
+  await clickedMenuInput.focus()
+  assert.equal(
+    await clickedMenuInput.evaluate(input => input.matches(':focus-visible')),
+    false,
+    'the pointer interaction does not become a keyboard-focus indication',
+  )
+  await page.mouse.move(0, 0)
+  await page.waitForTimeout(150)
+  assert.equal(
+    await clickedMenuItem.evaluate(item => getComputedStyle(item).boxShadow),
+    'none',
+    'mouse-click focus does not leave the analysis menu hover outline stuck after the pointer leaves',
+  )
+  if (process.env.RMS_ANALYSIS_MENU_CLICK_SCREENSHOT) {
+    await page.locator('.toolbar-panel-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_CLICK_SCREENSHOT })
+  }
+  await clickedMenuItem.click()
+  assert.equal(await clickedMenuInput.isChecked(), false, 'the analysis menu fixture restores the original panel selection')
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  })
   await page.mouse.move(0, 0)
   await page.evaluate(() => { window.analysisCheck.vm.showMjaiDebug = true })
   assert.deepEqual(
@@ -398,7 +444,7 @@ try {
     }
   })
   assert.ok(Math.abs(engineCheckboxStyles.controlWidth - analysisMenuStyles.controlWidth) < 0.01, 'analysis menu and engine assignment reuse one checkbox size')
-  assert.ok(Math.abs(engineCheckboxStyles.labelFontSize - analysisMenuStyles.labelFontSize) < 0.01, 'analysis menu and engine assignment reuse one text level')
+  assert.ok(engineCheckboxStyles.labelFontSize < analysisMenuStyles.labelFontSize, 'shared checkbox structure preserves context-specific text hierarchy')
   const engineWindowMetrics = await page.evaluate(() => {
     const windowElement = document.querySelector('.engine-window')
     const list = document.querySelector('.engine-profile-list')

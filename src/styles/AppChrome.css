@@ -170,7 +170,7 @@
   position: absolute;
   z-index: 1200;
   top: 100%;
-  right: 0;
+  left: 0;
   display: grid;
   gap: calc(0.06rem * var(--chrome-scale));
   min-width: max-content;
@@ -207,6 +207,10 @@
     box-shadow var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
+.toolbar .toolbar-panel-menu-item .settings-checkbox-label {
+  font-size: var(--ui-text-control);
+}
+
 .toolbar .toolbar-panel-menu-item:has(input:checked) .settings-checkbox-label {
   color: var(--text-main);
 }
@@ -217,13 +221,13 @@
 }
 
 .toolbar .toolbar-panel-menu-item:hover:not(:has(input:disabled)),
-.toolbar .toolbar-panel-menu-item:focus-within {
+.toolbar .toolbar-panel-menu-item:has(input:focus-visible) {
   background: rgba(228, 241, 237, 0.08);
   box-shadow: inset 0 0 0 1px rgba(228, 241, 237, 0.28);
 }
 
 .toolbar .toolbar-panel-menu-item:hover:not(:has(input:disabled)) .settings-checkbox-label,
-.toolbar .toolbar-panel-menu-item:focus-within .settings-checkbox-label {
+.toolbar .toolbar-panel-menu-item:has(input:focus-visible) .settings-checkbox-label {
   color: var(--text-main);
 }
 
