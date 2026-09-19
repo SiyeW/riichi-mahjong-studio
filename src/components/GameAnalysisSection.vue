@@ -35,6 +35,10 @@
             v-perceptual-surface="offenseTrackSurface"
             class="analysis-offense-track"
             :class="{ 'labels-measured': offenseLabelPositions.has(player.seat) }"
+            :style="{
+              '--analysis-win-probability': `${player.winProbability}`,
+              '--analysis-deal-in-probability': `${player.dealInProbability}`,
+            }"
           >
             <div
               class="analysis-offense-segment is-win"

@@ -32,11 +32,23 @@
 
 .analysis-outcome-bar span::after,
 .analysis-delta-cell::after,
-.analysis-placement-bar::after,
-.analysis-offense-track::after {
+.analysis-placement-bar::after {
   position: absolute;
   z-index: 5;
   inset: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  content: '';
+  pointer-events: none;
+}
+
+.analysis-offense-track::after {
+  position: absolute;
+  z-index: 5;
+  box-sizing: border-box;
+  top: 0;
+  bottom: 0;
+  width: 0;
   border: 1px solid transparent;
   background: transparent;
   content: '';
@@ -57,12 +69,16 @@
 
 .analysis-offense-track:has(.analysis-offense-segment.is-deal-in:hover)::after,
 .analysis-offense-track:has(.analysis-offense-segment.is-deal-in:focus-visible)::after {
-  right: 50%;
+  right: auto;
+  left: 0;
+  width: calc(var(--analysis-deal-in-probability, 0) * 100%);
 }
 
 .analysis-offense-track:has(.analysis-offense-segment.is-win:hover)::after,
 .analysis-offense-track:has(.analysis-offense-segment.is-win:focus-visible)::after {
-  left: 50%;
+  right: 0;
+  left: auto;
+  width: calc(var(--analysis-win-probability, 0) * 100%);
 }
 
 .analysis-outcome-bar small {

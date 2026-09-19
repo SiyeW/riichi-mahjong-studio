@@ -458,8 +458,33 @@ try {
     const vm = window.analysisCheck.vm
     vm.gameView.legalActions = window.originalSpecialActionFixture.legalActions
     vm.gameView.analysis = window.originalSpecialActionFixture.analysis
+    vm.gameView.tree = {
+      rootNodeId: 'node-1',
+      currentNodeId: 'node-1',
+      mainLeafNodeId: 'node-2',
+      currentRoundRootId: 'node-1',
+      revision: 1,
+      nodes: [
+        { id: 'node-1', parentId: null, children: ['node-2'], mainChildId: 'node-2', depth: 0, roundDepth: 0, type: 'root', action: null, isCurrent: true },
+        { id: 'node-2', parentId: 'node-1', children: [], mainChildId: null, depth: 1, roundDepth: 1, type: 'action', action: { type: 'discard', actor: 0, pai: '1m' }, isCurrent: false },
+      ],
+      rounds: [],
+    }
     delete window.originalSpecialActionFixture
   })
+  const treeHitRegion = page.locator('.tree-hit-region').last()
+  await treeHitRegion.hover()
+  assert.equal(await page.locator('.tree-hover-indicator').count(), 1, 'the hovered branch node receives one crisp indicator')
+  assert.equal(await page.locator('.tree-axis-label.is-hovered').count(), 1, 'branch labels share the active node hover feedback')
+  assert.notEqual(
+    await page.locator('.tree-axis-label.is-hovered').evaluate(element => getComputedStyle(element).boxShadow),
+    'none',
+    'the hovered branch row uses a clear outline instead of a faint brightness filter',
+  )
+  if (process.env.RMS_BRANCH_HOVER_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_BRANCH_HOVER_SCREENSHOT })
+  }
+  await page.mouse.move(0, 0)
   for (const operation of ['saveGame', 'saveGameAs']) {
     await page.evaluate(async operation => {
       const check = window.analysisCheck
@@ -754,7 +779,14 @@ try {
   await page.waitForFunction(() => !document.querySelector('.analysis-floating-tooltip'))
   const shantenSlice = page.locator('.shanten-chart path').first()
   await shantenSlice.hover()
-  assert.ok(await shantenSlice.evaluate(element => Number.parseFloat(getComputedStyle(element).strokeWidth) >= 0.03), 'the hovered shanten slice receives a crisp outline')
+  const shantenOutline = page.locator('.shanten-chart .shanten-hover-outline')
+  await shantenOutline.waitFor({ state: 'visible' })
+  assert.equal(await shantenOutline.getAttribute('d'), await shantenSlice.getAttribute('d'), 'the hovered shanten slice receives its own top-layer outline')
+  assert.equal(await shantenSlice.locator('xpath=following-sibling::*[contains(@class, "shanten-hover-outline")]').count(), 1, 'the shanten hover outline paints after the data slices')
+  assert.equal(await page.locator('.shanten-chart svg').first().evaluate(element => getComputedStyle(element).overflow), 'visible', 'shanten outlines are not clipped by the SVG viewport')
+  if (process.env.RMS_SHANTEN_HOVER_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_SHANTEN_HOVER_SCREENSHOT })
+  }
   await page.mouse.move(0, 0)
   if (process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT })
@@ -1186,6 +1218,15 @@ try {
   })
   const selfDealInSegment = page.locator('.analysis-offense-row').first().locator('.analysis-offense-segment.is-deal-in')
   await selfDealInSegment.hover()
+  const selfOffenseTrack = page.locator('.analysis-offense-row').first().locator('.analysis-offense-track')
+  const dealInHoverGeometry = await selfOffenseTrack.evaluate((element) => ({
+    trackWidth: element.getBoundingClientRect().width,
+    hoverWidth: Number.parseFloat(getComputedStyle(element, '::after').width),
+  }))
+  assert.ok(Math.abs(dealInHoverGeometry.hoverWidth - (dealInHoverGeometry.trackWidth * 0.8)) < 1, 'deal-in hover covers only the actual probability bar')
+  if (process.env.RMS_OFFENSE_HOVER_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_OFFENSE_HOVER_SCREENSHOT })
+  }
   const outcomeTooltip = page.locator('.analysis-floating-tooltip.is-outcome-detail')
   await outcomeTooltip.waitFor({ state: 'visible' })
   const outcomeTooltipGeometry = await outcomeTooltip.evaluate((element) => {

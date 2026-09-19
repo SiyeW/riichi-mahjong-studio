@@ -24,10 +24,19 @@
           :stroke-width="slice.probability > 0 ? 0.012 : 0"
           stroke-linejoin="round"
           :tabindex="slice.probability > 0 ? 0 : -1"
-          @mouseenter="emit('slice-enter', $event, slice.label, slice.probability)"
-          @mouseleave="emit('slice-leave')"
-          @focus="emit('slice-enter', $event, slice.label, slice.probability)"
-          @blur="emit('slice-leave')"
+          @mouseenter="enterSlice($event, index, slice.label, slice.probability)"
+          @mouseleave="leaveSlice(index)"
+          @focus="enterSlice($event, index, slice.label, slice.probability)"
+          @blur="leaveSlice(index)"
+        />
+        <path
+          v-if="highlightedSlice"
+          class="shanten-hover-outline"
+          :d="highlightedSlice.path"
+          fill="none"
+          stroke="rgba(228, 241, 237, 0.82)"
+          stroke-width="0.035"
+          stroke-linejoin="round"
         />
         <text
           v-for="slice in labeledSlices"
@@ -71,7 +80,18 @@ function normalizeProbabilities(values: number[]): number[] {
 }
 
 const animatedProbabilities = ref(normalizeProbabilities(props.probabilities))
+const highlightedSliceIndex = ref<number | null>(null)
 let animationFrame = 0
+
+function enterSlice(event: Event, index: number, label: string, probability: number) {
+  highlightedSliceIndex.value = index
+  emit('slice-enter', event, label, probability)
+}
+
+function leaveSlice(index: number) {
+  if (highlightedSliceIndex.value === index) highlightedSliceIndex.value = null
+  emit('slice-leave')
+}
 
 function stopAnimation() {
   if (!animationFrame) return
@@ -142,6 +162,11 @@ const slices = computed(() => {
 })
 
 const labeledSlices = computed(() => slices.value.filter((slice) => slice.probability > 0.05))
+const highlightedSlice = computed(() => (
+  highlightedSliceIndex.value === null
+    ? null
+    : slices.value[highlightedSliceIndex.value] ?? null
+))
 
 onBeforeUnmount(stopAnimation)
 </script>

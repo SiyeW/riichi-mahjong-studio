@@ -11,15 +11,14 @@
   width: 100%;
   height: auto;
   aspect-ratio: 1;
+  overflow: visible;
 }
 .shanten-chart path {
   cursor: default;
   outline: none;
 }
-.shanten-chart path:hover,
-.shanten-chart path:focus-visible {
-  stroke: rgba(228, 241, 237, 0.82);
-  stroke-width: 0.035;
+.shanten-chart .shanten-hover-outline {
+  pointer-events: none;
 }
 .shanten-slice-label {
   fill: rgb(248 252 250 / 75%);
