@@ -139,3 +139,40 @@ test('opponent score display preserves an explicit estimate while filtering its 
   assert.equal(dealer.scorePrediction.scalarSource, 'point-estimate')
   assert.deepEqual(dealer.scorePrediction.distribution, [{ value: 12000, probability: 1 }])
 })
+
+test('opponent distributions keep their base probability ranges and expand only when needed', () => {
+  const { props, opponent } = fixture({ outputs: {
+    'opponent-dora-count': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 0, probability: 0.25 },
+      { value: 1, probability: 0.2 },
+    ] } }] },
+    'opponent-score': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 1000, probability: 0.25 },
+      { value: 2000, probability: 0.25 },
+      { value: 3900, probability: 0.25 },
+      { value: 8000, probability: 0.25 },
+    ] } }] },
+  } })
+  assert.equal(opponent.doraDistributionScale.value, 0.4)
+  assert.equal(opponent.scoreDistributionScale.value, 0.3)
+  assert.equal(opponent.doraDistributionReferenceRatio.value, null)
+  assert.equal(opponent.scoreDistributionReferenceRatio.value, null)
+
+  props.analysis = { outputs: {
+    'opponent-dora-count': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 0, probability: 0.7 },
+      { value: 1, probability: 0.3 },
+    ] } }] },
+    'opponent-score': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 1000, probability: 0.55 },
+      { value: 2000, probability: 0.25 },
+      { value: 3900, probability: 0.2 },
+    ] } }] },
+  } }
+  assert.equal(opponent.doraDistributionScale.value, 0.7)
+  assert.equal(opponent.scoreDistributionScale.value, 0.55)
+  const doraReference = opponent.doraDistributionReferenceRatio.value
+  const scoreReference = opponent.scoreDistributionReferenceRatio.value
+  assert.ok(doraReference !== null && Math.abs(doraReference - (0.4 / 0.7)) < 1e-12)
+  assert.ok(scoreReference !== null && Math.abs(scoreReference - (0.3 / 0.55)) < 1e-12)
+})

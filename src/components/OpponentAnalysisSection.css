@@ -146,7 +146,11 @@
   overflow: hidden;
   padding: calc(0.08rem * var(--floating-panel-scale)) calc(0.12rem * var(--floating-panel-scale));
   color: rgba(220, 232, 228, 0.76);
-  background: color-mix(in srgb, var(--analysis-score-color) 10%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--analysis-score-color) var(--analysis-score-mode-strength, 12%),
+    var(--analysis-distribution-track-surface)
+  );
   font-size: var(--ui-text-caption);
   font-variant-numeric: tabular-nums;
   line-height: 1.15;

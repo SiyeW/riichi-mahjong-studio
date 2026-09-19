@@ -1,11 +1,14 @@
 import { computed } from 'vue'
 import type { AnalysisPanelDataProps } from './analysisPanelTypes.ts'
 import { createAnalysisFormatting, type AnalysisTranslator } from './analysisFormatting.ts'
-import { clampProbability } from './analysisProbabilityScale.ts'
+import { adaptiveProbabilityScale, probabilityScaleRatio } from './analysisProbabilityScale.ts'
 import type { NumericPrediction } from './numericPrediction.ts'
 import { isPossibleRiichiHandValue } from './riichiScoring.ts'
 import { useAnalysisOutputs } from './useAnalysisOutputs.ts'
 import type { Ref } from 'vue'
+
+export const OPPONENT_DORA_BASE_SCALE = 0.4
+export const OPPONENT_SCORE_BASE_SCALE = 0.3
 
 export function useOpponentAnalysisData(
   props: AnalysisPanelDataProps,
@@ -57,19 +60,31 @@ export function useOpponentAnalysisData(
   const hasOpponentScoreDistributions = computed(() => (
     opponentCards.value.some((opponent) => opponent.scorePrediction.distribution.length)
   ))
-  function maximumDistributionProbability(predictions: NumericPrediction[]): number {
-    return Math.max(0.01, ...predictions.flatMap((prediction) => (
+  function distributionProbabilities(predictions: NumericPrediction[]): number[] {
+    return predictions.flatMap((prediction) => (
       prediction.distribution.map((entry) => entry.probability)
-    )))
+    ))
   }
-  const doraDistributionScale = computed(() => maximumDistributionProbability(
-    opponentCards.value.map((opponent) => opponent.doraPrediction),
+  const doraDistributionScale = computed(() => adaptiveProbabilityScale(
+    distributionProbabilities(opponentCards.value.map((opponent) => opponent.doraPrediction)),
+    OPPONENT_DORA_BASE_SCALE,
   ))
-  const scoreDistributionScale = computed(() => maximumDistributionProbability(
-    opponentCards.value.map((opponent) => opponent.scorePrediction),
+  const scoreDistributionScale = computed(() => adaptiveProbabilityScale(
+    distributionProbabilities(opponentCards.value.map((opponent) => opponent.scorePrediction)),
+    OPPONENT_SCORE_BASE_SCALE,
+  ))
+  const doraDistributionReferenceRatio = computed(() => (
+    doraDistributionScale.value > OPPONENT_DORA_BASE_SCALE
+      ? probabilityScaleRatio(OPPONENT_DORA_BASE_SCALE, doraDistributionScale.value)
+      : null
+  ))
+  const scoreDistributionReferenceRatio = computed(() => (
+    scoreDistributionScale.value > OPPONENT_SCORE_BASE_SCALE
+      ? probabilityScaleRatio(OPPONENT_SCORE_BASE_SCALE, scoreDistributionScale.value)
+      : null
   ))
   function distributionBarScale(value: number, scale: number): number {
-    return Math.min(1, clampProbability(value) / Math.max(0.01, scale))
+    return probabilityScaleRatio(value, scale)
   }
   return {
     ...formatting,
@@ -78,6 +93,8 @@ export function useOpponentAnalysisData(
     hasOpponentScoreDistributions,
     doraDistributionScale,
     scoreDistributionScale,
+    doraDistributionReferenceRatio,
+    scoreDistributionReferenceRatio,
     distributionBarScale,
   }
 }

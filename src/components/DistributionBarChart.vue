@@ -3,7 +3,11 @@
     ref="rootElement"
     v-perceptual-surface="trackSurface"
     class="analysis-distribution-chart"
-    :class="{ 'has-labels': showLabels }"
+    :class="{
+      'has-labels': showLabels,
+      'has-reference-line': referenceLineStyle !== null,
+    }"
+    :style="referenceLineStyle || undefined"
   >
     <canvas ref="canvasElement" class="analysis-distribution-canvas" aria-hidden="true" />
     <template v-if="showLabels">
@@ -39,7 +43,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { PerceptualSurfaceBinding } from '../perceptualSurface'
 import { vPerceptualSurface } from '../perceptualSurface'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
@@ -57,6 +61,7 @@ const props = defineProps<{
   reduceMotion: boolean
   showLabels: boolean
   trackSurface: PerceptualSurfaceBinding
+  referenceRatio?: number | null
 }>()
 const emit = defineEmits<{
   itemEnter: [event: Event, index: number]
@@ -69,6 +74,12 @@ const canvasElement = ref<DistributionCanvasElement | null>(null)
 const hoveredIndex = ref<number | null>(null)
 let displayedScales: number[] = []
 let animationFrame = 0
+
+const referenceLineStyle = computed<Record<string, string> | null>(() => {
+  if (!Number.isFinite(props.referenceRatio)) return null
+  const ratio = Math.max(0, Math.min(1, Number(props.referenceRatio)))
+  return { '--analysis-distribution-reference-top': `${((1 - ratio) * 100).toFixed(3)}%` }
+})
 
 function enterItem(event: Event, index: number) {
   hoveredIndex.value = index

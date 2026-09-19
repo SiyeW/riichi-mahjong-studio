@@ -50,6 +50,7 @@
             :reduce-motion="reduceMotion"
             :show-labels="true"
             :track-surface="distributionTrackSurface"
+            :reference-ratio="doraDistributionReferenceRatio"
             @item-enter="(event, index) => showDistributionEntryTooltip(event, opponent.label, t('analysis.dora'), opponent.doraPrediction.distribution, index, 'tile')"
             @item-leave="tooltip.clear"
           />
@@ -74,6 +75,7 @@
             :reduce-motion="reduceMotion"
             :show-labels="false"
             :track-surface="distributionTrackSurface"
+            :reference-ratio="scoreDistributionReferenceRatio"
             @item-enter="(event, index) => showDistributionEntryTooltip(event, opponent.label, t('analysis.score'), opponent.scorePrediction.distribution, index, 'point')"
             @item-leave="tooltip.clear"
           />
@@ -82,6 +84,7 @@
               v-for="entry in opponent.scoreModes"
               :key="entry.value"
               tabindex="0"
+              :style="scoreModeStyle(entry.probability)"
               @mouseenter="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.score')}`, formatDistributionPoints(entry.value), entry.probability)"
               @mouseleave="tooltip.clear"
               @focus="showProbabilityTooltip($event, `${opponent.label} · ${t('analysis.score')}`, formatDistributionPoints(entry.value), entry.probability)"
@@ -135,11 +138,19 @@ const {
   hasOpponentScoreDistributions,
   doraDistributionScale,
   scoreDistributionScale,
+  doraDistributionReferenceRatio,
+  scoreDistributionReferenceRatio,
   distributionBarScale,
   formatDistributionPoints,
   formatMahjongScore,
   formatProbability,
 } = useOpponentAnalysisData(props, t, numberLocale)
+
+function scoreModeStyle(probability: number): Record<string, string> {
+  const normalized = distributionBarScale(probability, scoreDistributionScale.value)
+  const strength = 12 + (normalized * 50)
+  return { '--analysis-score-mode-strength': `${strength.toFixed(1)}%` }
+}
 
 function showProbabilityTooltip(event: Event, title: string, label: string, value: number) {
   tooltip.show(event, { title, lines: [], rows: [{ label, value: formatProbability(value) }] })

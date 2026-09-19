@@ -48,6 +48,17 @@
   pointer-events: none;
 }
 
+.analysis-distribution-chart.has-reference-line .analysis-distribution-track::before {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  left: 0;
+  top: var(--analysis-distribution-reference-top);
+  border-top: 1px solid rgba(198, 214, 211, 0.42);
+  content: '';
+  pointer-events: none;
+}
+
 .analysis-distribution-cell.is-hovered > .analysis-distribution-track::after,
 .analysis-distribution-track.analysis-distribution-cell.is-hovered::after {
   border-color: rgba(228, 241, 237, 0.72);

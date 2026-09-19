@@ -731,7 +731,28 @@ try {
   await page.setViewportSize({ width: 1400, height: 1000 })
   await page.evaluate(() => {
     const vm = window.analysisCheck.vm
-    window.analysisCheck.publish(window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1))
+    const result = window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1)
+    for (const player of result.outputs['opponent-dora-count'].players) {
+      player.prediction.distribution = [
+        { value: 0, probability: 0.25 },
+        { value: 1, probability: 0.2 },
+        { value: 2, probability: 0.15 },
+        { value: 3, probability: 0.12 },
+        { value: 4, probability: 0.1 },
+        { value: 5, probability: 0.08 },
+        { value: 6, probability: 0.06 },
+        { value: '7+', probability: 0.04 },
+      ]
+    }
+    for (const player of result.outputs['opponent-score'].players) {
+      player.prediction.distribution = [
+        { value: 1000, probability: 0.25 },
+        { value: 2000, probability: 0.25 },
+        { value: 3900, probability: 0.25 },
+        { value: 8000, probability: 0.25 },
+      ]
+    }
+    window.analysisCheck.publish(result)
     vm.settings.display.workspaceLayout = {
       ...vm.workspaceLayout,
       analysisVisible: true,
@@ -768,6 +789,15 @@ try {
   assert.ok(roomyOpponent.scoreHeight > 26.4, 'roomy opponent panel grows the score distribution beyond its former fixed height')
   assert.ok(roomyOpponent.doraHeight <= roomyOpponent.doraMaximum + 0.6, 'dora distribution respects its visual maximum')
   assert.ok(roomyOpponent.scoreHeight <= roomyOpponent.scoreMaximum + 0.6, 'score distribution respects its visual maximum')
+  assert.equal(
+    await page.locator('.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line').count(),
+    0,
+    '30% and 40% guide lines stay hidden while the default ranges are sufficient',
+  )
+  const baselineModeStrengths = await page.locator('.analysis-score-modes span').evaluateAll(elements => (
+    elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))
+  ))
+  assert.ok(baselineModeStrengths.every(Number.isFinite), 'each nominated score carries probability-derived background strength')
   const scoreCell = page.locator('.analysis-score-distribution .analysis-distribution-cell').first()
   await scoreCell.hover()
   await page.locator('.analysis-floating-tooltip').waitFor({ state: 'visible' })
@@ -777,6 +807,55 @@ try {
   }
   await page.mouse.move(0, 0)
   await page.waitForFunction(() => !document.querySelector('.analysis-floating-tooltip'))
+
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    const result = window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1)
+    for (const player of result.outputs['opponent-dora-count'].players) {
+      player.prediction.distribution = [
+        { value: 0, probability: 0.55 },
+        { value: 1, probability: 0.2 },
+        { value: 2, probability: 0.1 },
+        { value: 3, probability: 0.07 },
+        { value: 4, probability: 0.04 },
+        { value: 5, probability: 0.02 },
+        { value: 6, probability: 0.01 },
+        { value: '7+', probability: 0.01 },
+      ]
+    }
+    for (const player of result.outputs['opponent-score'].players) {
+      player.prediction.distribution = [
+        { value: 1000, probability: 0.62 },
+        { value: 2000, probability: 0.2 },
+        { value: 3900, probability: 0.1 },
+        { value: 8000, probability: 0.08 },
+      ]
+    }
+    window.analysisCheck.publish(result)
+  })
+  await page.waitForFunction(() => {
+    const doraTrack = document.querySelector('.analysis-dora-distribution .analysis-distribution-track')
+    const scoreTrack = document.querySelector('.analysis-score-distribution .analysis-distribution-track')
+    return doraTrack && scoreTrack
+      && Number.parseFloat(getComputedStyle(doraTrack, '::before').top) > 2
+      && Number.parseFloat(getComputedStyle(scoreTrack, '::before').top) > 2
+  })
+  const adaptiveGuideRatios = await page.locator('.analysis-dora-distribution, .analysis-score-distribution').evaluateAll(charts => charts.slice(0, 2).map(chart => {
+    const track = chart.querySelector('.analysis-distribution-track')
+    const bounds = track?.getBoundingClientRect()
+    return bounds ? Number.parseFloat(getComputedStyle(track, '::before').top) / bounds.height : -1
+  }))
+  assert.ok(Math.abs(adaptiveGuideRatios[0] - (1 - (0.4 / 0.55))) < 0.02, 'the 40% dora guide moves inside an expanded range')
+  assert.ok(Math.abs(adaptiveGuideRatios[1] - (1 - (0.3 / 0.62))) < 0.02, 'the 30% score guide moves inside an expanded range')
+  const adaptiveModeStrengths = await page.locator('.analysis-score-modes').first().locator('span').evaluateAll(elements => (
+    elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))
+  ))
+  assert.ok(adaptiveModeStrengths[0] > adaptiveModeStrengths[1] && adaptiveModeStrengths[1] > adaptiveModeStrengths[2], 'nominated score backgrounds preserve the probability ordering')
+  assert.ok(adaptiveModeStrengths[0] - adaptiveModeStrengths[2] > 30, 'an extreme score prediction remains visibly distinct from lower nominations')
+  if (process.env.RMS_OPPONENT_SCALE_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_OPPONENT_SCALE_SCREENSHOT })
+  }
+
   const shantenSlice = page.locator('.shanten-chart path').first()
   await shantenSlice.hover()
   const shantenOutline = page.locator('.shanten-chart .shanten-hover-outline')
@@ -788,6 +867,10 @@ try {
     await page.screenshot({ path: process.env.RMS_SHANTEN_HOVER_SCREENSHOT })
   }
   await page.mouse.move(0, 0)
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    window.analysisCheck.publish(window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1))
+  })
   if (process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT })
   }
