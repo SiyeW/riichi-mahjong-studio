@@ -47,6 +47,7 @@
         :analysis-opponents="analysisOpponents"
         :controlled-seat="controlledSeat"
         :dealer="dealer"
+        :table="table"
         :tile-image-src="tileImageSrc"
         :tile-face-label="tileFaceLabel"
         :perceptual-surface="perceptualSurface"

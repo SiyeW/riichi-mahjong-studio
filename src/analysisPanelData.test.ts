@@ -166,7 +166,7 @@ test('opponent distributions keep their base probability ranges and expand only 
       { value: 8000, probability: 0.25 },
     ] } }] },
   } })
-  assert.equal(opponent.doraDistributionScale.value, 0.4)
+  assert.equal(opponent.doraDistributionScale.value, 0.5)
   assert.equal(opponent.scoreDistributionScale.value, 0.3)
   assert.equal(opponent.doraDistributionReferenceRatio.value, null)
   assert.equal(opponent.scoreDistributionReferenceRatio.value, null)
@@ -186,6 +186,6 @@ test('opponent distributions keep their base probability ranges and expand only 
   assert.equal(opponent.scoreDistributionScale.value, 0.55)
   const doraReference = opponent.doraDistributionReferenceRatio.value
   const scoreReference = opponent.scoreDistributionReferenceRatio.value
-  assert.ok(doraReference !== null && Math.abs(doraReference - (0.4 / 0.7)) < 1e-12)
+  assert.ok(doraReference !== null && Math.abs(doraReference - (0.5 / 0.7)) < 1e-12)
   assert.ok(scoreReference !== null && Math.abs(scoreReference - (0.3 / 0.55)) < 1e-12)
 })

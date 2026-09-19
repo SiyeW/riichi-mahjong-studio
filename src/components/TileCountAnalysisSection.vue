@@ -7,9 +7,20 @@
       :class="{ 'is-source-row-layout': countLayout === 'source-rows' }"
       @perceptual-surface-change="scheduleCountBarGeometry"
     >
-      <div class="analysis-count-layout-toggle" role="group" :aria-label="t('analysis.countLayout')">
-        <button type="button" :class="{ active: countLayout === 'source-rows' }" @click="emit('update:countLayout', 'source-rows')">{{ t('analysis.countLayoutSources') }}</button>
-        <button type="button" :class="{ active: countLayout === 'tile-groups' }" @click="emit('update:countLayout', 'tile-groups')">{{ t('analysis.countLayoutTiles') }}</button>
+      <div class="analysis-count-toolbar">
+        <div class="analysis-count-layout-toggle" role="group" :aria-label="t('analysis.countLayout')">
+          <button type="button" :class="{ active: countLayout === 'source-rows' }" @click="emit('update:countLayout', 'source-rows')">{{ t('analysis.countLayoutSources') }}</button>
+          <button type="button" :class="{ active: countLayout === 'tile-groups' }" @click="emit('update:countLayout', 'tile-groups')">{{ t('analysis.countLayoutTiles') }}</button>
+        </div>
+        <button
+          type="button"
+          class="analysis-count-baseline-toggle"
+          :class="{ active: theoreticalBaselineEnabled }"
+          :aria-pressed="theoreticalBaselineEnabled"
+          :disabled="!theoreticalBaselineAvailable"
+          v-ui-tooltip="t('analysis.countTheoreticalBaselineHint')"
+          @click="toggleTheoreticalBaseline"
+        >{{ t('analysis.countTheoreticalBaseline') }}</button>
       </div>
       <template v-if="countLayout === 'tile-groups'">
         <div
@@ -39,12 +50,12 @@
           </div>
           <div v-if="rowIndex === countTileRows.length - 1" class="analysis-count-legends">
             <div class="analysis-count-palette-legend" aria-hidden="true">
-              <span aria-hidden="true" />
-              <small v-for="value in [0, 1, 2, 3, 4]" :key="`heading-${value}`">{{ value }}</small>
               <template v-for="source in countSources" :key="source.key">
                 <strong>{{ source.label }}</strong>
                 <i v-for="value in [0, 1, 2, 3, 4]" :key="`${source.key}-${value}`" :style="{ background: countSegmentColor(source.key, value) }" />
               </template>
+              <span aria-hidden="true" />
+              <small v-for="value in [0, 1, 2, 3, 4]" :key="`heading-${value}`">{{ value }}</small>
             </div>
           </div>
         </div>
@@ -79,10 +90,10 @@
       </div>
       <div v-if="countLayout === 'source-rows'" class="analysis-count-source-legend" aria-hidden="true">
         <div v-for="source in countSources" :key="source.key" class="analysis-count-source-legend-group">
-          <span aria-hidden="true" />
-          <small v-for="value in [0, 1, 2, 3, 4]" :key="`${source.key}-heading-${value}`">{{ value }}</small>
           <strong>{{ source.label }}</strong>
           <i v-for="value in [0, 1, 2, 3, 4]" :key="`${source.key}-${value}`" :style="{ background: countSegmentColor(source.key, value) }" />
+          <span aria-hidden="true" />
+          <small v-for="value in [0, 1, 2, 3, 4]" :key="`${source.key}-heading-${value}`">{{ value }}</small>
         </div>
       </div>
     </div>
@@ -96,8 +107,11 @@ import { groupedCountGeometry } from '../analysisCountGeometry'
 import { ANALYSIS_COUNT_SPACING, type AnalysisCountLayout } from '../analysisCountSpacing'
 import { COUNT_EMPTY_COLOR, countPaletteVariable, countSegmentColor, countSourcePalette } from '../analysisCountPalette'
 import type { AnalysisPanelDataProps, TileSource } from '../analysisPanelTypes'
-import { isRedFiveTile } from '../analysisTiles'
+import { analysisCountSourceTiles, analysisCountTileRows, isRedFiveTile } from '../analysisTiles'
+import type { TableState } from '../contracts/game'
+import type { DistributionEntry, NumericPrediction } from '../numericPrediction'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
+import { buildRandomTileCountBaseline, randomBaselinePrediction } from '../randomTileCountBaseline'
 import { useCountAnalysisData } from '../useCountAnalysisData'
 import { useI18n } from '../i18n'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
@@ -109,6 +123,7 @@ const COUNT_GRID_GAP_RATIO = 0.1
 const COUNT_SOURCE_ROW_GAP_RATIO = 0.12
 
 const props = defineProps<AnalysisPanelDataProps & {
+  table: TableState | null
   tileImageSrc: (tile: string) => string
   tileFaceLabel: (tile: string) => string
   perceptualSurface: PerceptualSurfaceBinding
@@ -118,6 +133,9 @@ const props = defineProps<AnalysisPanelDataProps & {
 const emit = defineEmits<{ 'update:countLayout': [value: AnalysisCountLayout] }>()
 const { t } = useI18n()
 const countGridElement = ref<HTMLElement | null>(null)
+const theoreticalBaselineEnabled = ref(false)
+const theoreticalBaseline = computed(() => buildRandomTileCountBaseline(props.table, props.controlledSeat))
+const theoreticalBaselineAvailable = computed(() => theoreticalBaseline.value !== null)
 type CountCanvasElement = HTMLCanvasElement & { rmsCountRenderSignature?: string }
 const countCanvasElements = new Map<string, { canvas: CountCanvasElement; row: readonly string[] }>()
 const sourceCanvasElements = new Map<string, { canvas: CountCanvasElement; source: TileSource }>()
@@ -135,15 +153,40 @@ const countSurface = computed<PerceptualSurfaceBinding>(() => ({
   debugLabel: 'analysis-count-panel',
   surfaceOverride: COUNT_EMPTY_COLOR,
 }))
+const countData = useCountAnalysisData(props, () => t('analysis.wall'))
 const {
-  countTileRows,
-  countSourceTiles,
   countSources,
-  tilePrediction,
-  countSegments,
   countTooltipContextKey,
   hasCountPrediction,
-} = useCountAnalysisData(props, () => t('analysis.wall'))
+} = countData
+const countTileRows = computed(() => theoreticalBaselineEnabled.value
+  ? analysisCountTileRows(true)
+  : countData.countTileRows.value)
+const countSourceTiles = computed(() => theoreticalBaselineEnabled.value
+  ? analysisCountSourceTiles(true)
+  : countData.countSourceTiles.value)
+
+function tilePrediction(tile: string, source: TileSource): NumericPrediction {
+  const baseline = theoreticalBaseline.value
+  if (theoreticalBaselineEnabled.value && baseline) return randomBaselinePrediction(baseline, tile, source.seat)
+  return countData.tilePrediction(tile, source)
+}
+
+function countSegments(tile: string, source: TileSource): DistributionEntry[] {
+  if (!theoreticalBaselineEnabled.value) return countData.countSegments(tile, source)
+  const prediction = tilePrediction(tile, source)
+  const values = (isRedFiveTile(tile) ? [0, 1] : [0, 1, 2, 3, 4]).map((value) => ({
+    value,
+    probability: prediction.distribution.find((entry) => entry.value === value)?.probability || 0,
+  }))
+  const total = values.reduce((sum, entry) => sum + entry.probability, 0)
+  return total > 0 ? values.map((entry) => ({ ...entry, probability: entry.probability / total })) : values
+}
+
+function toggleTheoreticalBaseline() {
+  if (!theoreticalBaselineAvailable.value) return
+  theoreticalBaselineEnabled.value = !theoreticalBaselineEnabled.value
+}
 
 function countDistributionKey(tile: string, source: TileSource): string {
   return `${source.key}:${tile}`
@@ -202,7 +245,7 @@ function updateCountBarGeometry() {
   const gridRect = grid.getBoundingClientRect()
   const longestGroupedRow = Math.max(1, ...countTileRows.value.map((row) => row.tiles.length))
   const groupedTileGapPixels = ANALYSIS_COUNT_SPACING['tile-groups'].tileGapPixels
-  const toggleHeightPixels = elementHeightPixels(grid.querySelector('.analysis-count-layout-toggle'), ratio)
+  const toggleHeightPixels = elementHeightPixels(grid.querySelector('.analysis-count-toolbar'), ratio)
   const groupedLegendPixels = groupedLegendHeightPixels(grid, ratio, rootRem, floatingScale)
   const groupedGeometry = groupedCountGeometry({
     availableWidth: gridRect.width,
@@ -426,6 +469,9 @@ const countHoverTooltip = computed(() => {
   }
 })
 function clearCountTooltip() { countHoverTarget.value = null }
+function activeCountTooltipContextKey(): string {
+  return `${countTooltipContextKey()}:${theoreticalBaselineEnabled.value ? 'theoretical' : 'model'}`
+}
 function showCountTooltip(event: Event, tile: string, source: TileSource) {
   const anchor = event.currentTarget
   if (!(anchor instanceof Element) || !countGridElement.value) return
@@ -433,15 +479,15 @@ function showCountTooltip(event: Event, tile: string, source: TileSource) {
     anchor,
     tile,
     sourceKey: source.key,
-    contextKey: countTooltipContextKey(),
+    contextKey: activeCountTooltipContextKey(),
     controlledSeat: props.controlledSeat,
   }
 }
-watch(() => [props.analysis, props.controlledSeat, props.reduceMotion], () => {
+watch(() => [props.analysis, props.table, props.controlledSeat, props.reduceMotion, theoreticalBaselineEnabled.value, theoreticalBaseline.value], () => {
   const target = countHoverTarget.value
   if (target && (
     !target.anchor.isConnected
-    || target.contextKey !== countTooltipContextKey()
+    || target.contextKey !== activeCountTooltipContextKey()
     || target.controlledSeat !== props.controlledSeat
     || !countHoverTooltip.value
     || !hasCountPrediction(countHoverTooltip.value.prediction)
@@ -451,6 +497,9 @@ watch(() => [props.analysis, props.controlledSeat, props.reduceMotion], () => {
     animateCountCanvases()
   })
 }, { flush: 'post', immediate: true })
+watch(theoreticalBaselineAvailable, (available) => {
+  if (!available) theoreticalBaselineEnabled.value = false
+})
 watch(() => props.countLayout, () => {
   clearCountTooltip()
   void nextTick(() => {

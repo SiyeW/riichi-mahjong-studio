@@ -391,6 +391,7 @@
         :reduce-motion="reduceMotionEnabled || suppressAnalysisTransitions"
         :controlled-seat="status.controlledSeat"
         :dealer="gameView.table?.dealer ?? 0"
+        :table="gameView.table"
         :tile-image-src="tileImageSrc"
         :tile-face-label="tileFaceLabel"
         :has-opponent-ground-truth="hasOpponentGroundTruth"

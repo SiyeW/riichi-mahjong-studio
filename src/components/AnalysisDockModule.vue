@@ -43,6 +43,7 @@
         :reduce-motion="reduceMotion"
         :controlled-seat="controlledSeat"
         :dealer="dealer"
+        :table="table"
         :tile-image-src="tileImageSrc"
         :tile-face-label="tileFaceLabel"
         :perceptual-surface="perceptualSurface"
@@ -63,6 +64,7 @@ import { useI18n } from '../i18n'
 import type { AnalysisCountLayout } from '../analysisCountSpacing'
 import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
 import type { PerceptualSurfaceBinding } from '../perceptualSurface'
+import type { TableState } from '../contracts/game'
 import AnalysisPanel from './AnalysisPanel.vue'
 
 const { t } = useI18n()
@@ -84,6 +86,7 @@ defineProps<{
   reduceMotion: boolean
   controlledSeat: number
   dealer: number
+  table: TableState | null
   tileImageSrc: (tile: string) => string
   tileFaceLabel: (tile: string) => string
   hasOpponentGroundTruth: boolean

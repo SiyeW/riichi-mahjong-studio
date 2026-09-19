@@ -126,6 +126,8 @@
   "analysis.countLayout": "Tile count layout",
   "analysis.countLayoutTiles": "By tile",
   "analysis.countLayoutSources": "By source",
+  "analysis.countTheoreticalBaseline": "Theoretical baseline",
+  "analysis.countTheoreticalBaselineHint": "The theoretical distribution when unknown tiles are uniformly allocated from the current public information",
   "analysis.tileCountDistribution": "{source} {tile} count distribution",
   "analysis.countUnit": "{value}",
   "analysis.expectedCount": "Expected {value}",

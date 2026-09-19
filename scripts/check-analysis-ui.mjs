@@ -847,7 +847,8 @@ try {
 
   // Mouse clicks retain normal focus, but must not pin a hover-only tooltip.
   await page.evaluate(() => {
-    window.analysisCheck.vm.gameView.table.hands = Array.from({ length: 4 }, () => Array(13).fill('1m'))
+    const hand = ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p']
+    window.analysisCheck.vm.gameView.table.hands = Array.from({ length: 4 }, () => [...hand])
   })
   const handButtons = page.locator('.opponent-hand-toggle')
   const hint = page.locator('[id^="ui-hover-tooltip-"]')
@@ -987,7 +988,7 @@ try {
   assert.equal(
     await page.locator('.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line').count(),
     0,
-    '30% and 40% guide lines stay hidden while the default ranges are sufficient',
+    '30% and 50% guide lines stay hidden while the default ranges are sufficient',
   )
   const baselineModeStrengths = await page.locator('.analysis-score-modes span').evaluateAll(elements => (
     elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))
@@ -1040,7 +1041,7 @@ try {
     const bounds = track?.getBoundingClientRect()
     return bounds ? Number.parseFloat(getComputedStyle(track, '::before').top) / bounds.height : -1
   }))
-  assert.ok(Math.abs(adaptiveGuideRatios[0] - (1 - (0.4 / 0.55))) < 0.02, 'the 40% dora guide moves inside an expanded range')
+  assert.ok(Math.abs(adaptiveGuideRatios[0] - (1 - (0.5 / 0.55))) < 0.02, 'the 50% dora guide moves inside an expanded range')
   assert.ok(Math.abs(adaptiveGuideRatios[1] - (1 - (0.3 / 0.62))) < 0.02, 'the 30% score guide moves inside an expanded range')
   const adaptiveModeStrengths = await page.locator('.analysis-score-modes').first().locator('span').evaluateAll(elements => (
     elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))
@@ -1233,6 +1234,12 @@ try {
   assert.ok(splitMetrics.risk.tileWidth <= splitMetrics.risk.fontSize * 3 + 0.6, 'risk tiles stay within the 3em interface limit')
   assert.ok(splitMetrics.counts.tileWidth <= splitMetrics.counts.fontSize * 3 + 0.6, 'grouped count tiles stay within the 3em interface limit')
   assert.ok(splitMetrics.counts.tileWidth < 60, 'grouped count tiles are height-limited in a wide, short panel')
+  const groupedLegendRowOrder = await page.locator('.analysis-count-palette-legend').evaluate((legend) => {
+    const swatch = legend.querySelector('i')?.getBoundingClientRect()
+    const number = legend.querySelector('small')?.getBoundingClientRect()
+    return { swatchTop: swatch?.top || 0, numberTop: number?.top || 0 }
+  })
+  assert.ok(groupedLegendRowOrder.numberTop > groupedLegendRowOrder.swatchTop, 'grouped count legend numbers stay on the lower row')
   const groupedCountLane = page.locator('.analysis-count-bars > button').first()
   await groupedCountLane.hover()
   assert.notEqual(await groupedCountLane.evaluate(element => getComputedStyle(element, '::after').borderTopColor), 'rgba(0, 0, 0, 0)', 'grouped count lanes receive the shared analysis highlight')
@@ -1258,6 +1265,39 @@ try {
   assert.equal(sourceLegendGeometry.length, 4, 'the source legend keeps one compact group for each source')
   assert.ok(sourceLegendGeometry.every(group => group.labelToOwnSwatches >= 0 && group.labelToOwnSwatches <= 5), 'each source label stays attached to its own color scale')
   assert.ok(sourceLegendGeometry.flatMap(group => group.internalSwatchGaps).every(gap => gap >= 0 && gap <= 4), 'each five-step color scale reads as one unit')
+  const sourceLegendRowOrder = await page.locator('.analysis-count-source-legend-group').evaluateAll(groups => groups.map((group) => {
+    const swatch = group.querySelector('i')?.getBoundingClientRect()
+    const number = group.querySelector('small')?.getBoundingClientRect()
+    return { swatchTop: swatch?.top || 0, numberTop: number?.top || 0 }
+  }))
+  assert.ok(sourceLegendRowOrder.every(row => row.numberTop > row.swatchTop), 'count legend numbers stay on the lower row')
+  const baselineToggle = page.locator('.analysis-count-baseline-toggle')
+  assert.equal(await baselineToggle.isEnabled(), true, 'the theoretical baseline is available when a table is loaded')
+  const modelSignature = await page.locator('.analysis-count-source-row-canvas').first().evaluate(canvas => canvas.rmsCountRenderSignature)
+  await baselineToggle.click()
+  await page.waitForFunction(previous => {
+    const toggle = document.querySelector('.analysis-count-baseline-toggle')
+    const canvas = document.querySelector('.analysis-count-source-row-canvas')
+    return toggle?.getAttribute('aria-pressed') === 'true' && canvas?.rmsCountRenderSignature !== previous
+  }, modelSignature)
+  const baselineSignature = await page.locator('.analysis-count-source-row-canvas').first().evaluate(canvas => canvas.rmsCountRenderSignature)
+  await page.evaluate(() => {
+    window.analysisCheck.vm.gameView.table.pendingDiscard = {
+      actor: 1, pai: '1s', tsumogiri: true, targetActor: 2, riichi: false,
+    }
+  })
+  await page.waitForFunction(previous => (
+    document.querySelector('.analysis-count-source-row-canvas')?.rmsCountRenderSignature !== previous
+  ), baselineSignature)
+  await page.evaluate(() => { window.analysisCheck.vm.gameView.table.pendingDiscard = null })
+  await page.waitForFunction(expected => (
+    document.querySelector('.analysis-count-source-row-canvas')?.rmsCountRenderSignature === expected
+  ), baselineSignature)
+  if (process.env.RMS_COUNT_BASELINE_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_COUNT_BASELINE_SCREENSHOT })
+  }
+  await baselineToggle.click()
+  await page.waitForFunction(() => document.querySelector('.analysis-count-baseline-toggle')?.getAttribute('aria-pressed') === 'false')
   if (process.env.RMS_COUNT_LEGEND_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_COUNT_LEGEND_SCREENSHOT })
   }

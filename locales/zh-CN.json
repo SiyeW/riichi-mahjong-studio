@@ -126,6 +126,8 @@
   "analysis.countLayout": "枚数预测布局",
   "analysis.countLayoutTiles": "按牌张",
   "analysis.countLayoutSources": "按来源",
+  "analysis.countTheoreticalBaseline": "理论基准",
+  "analysis.countTheoreticalBaselineHint": "假设未知牌按当前公开信息均匀分配时的理论分布",
   "analysis.tileCountDistribution": "{source} {tile}枚数分布",
   "analysis.countUnit": "{value}枚",
   "analysis.expectedCount": "期望 {value} 枚",
