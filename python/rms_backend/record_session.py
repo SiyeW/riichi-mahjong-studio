@@ -11,6 +11,7 @@ from . import game_tree
 from . import snapshot_state
 from . import tree_view
 from .analysis_cache import migrate_analysis_cache_storage
+from .analysis_cache_storage import expand_record_analysis_caches
 from .custom_tenhou import (
     build_custom_tenhou_game,
     export_custom_tenhou,
@@ -98,6 +99,7 @@ class RecordSession:
     def load(self, record: Any) -> None:
         if not isinstance(record, dict):
             raise ValueError("Record must be an object.")
+        expand_record_analysis_caches(record)
         format_version = int(record.get("formatVersion") or 0)
         if format_version not in (1, 2, 3):
             raise ValueError("Unsupported record format version.")

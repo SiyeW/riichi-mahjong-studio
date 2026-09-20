@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from rms_backend import service
 from rms_backend.analysis_cache import OPPONENT_ANALYSIS_CACHE_FIELD
+from rms_backend.analysis_cache_storage import expand_record_analysis_caches
 
 
 class CheckpointExportTests(unittest.TestCase):
@@ -37,6 +38,7 @@ class CheckpointExportTests(unittest.TestCase):
         node[OPPONENT_ANALYSIS_CACHE_FIELD] = {'test': {'probabilities': [0.2, 0.8]}}
         with patch.dict(service.STATE, {'game': game, 'gameLoaded': True}):
             record = service.RECORD_SESSION.serialize()
+        expand_record_analysis_caches(record)
         record['game']['nodes'][node_id][OPPONENT_ANALYSIS_CACHE_FIELD]['test']['probabilities'].clear()
         self.assertEqual(node[OPPONENT_ANALYSIS_CACHE_FIELD]['test']['probabilities'], [0.2, 0.8])
 

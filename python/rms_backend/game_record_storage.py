@@ -6,6 +6,7 @@ import copy
 import json
 
 from .analysis_cache import OPPONENT_ANALYSIS_CACHE_FIELD
+from .analysis_cache_storage import compact_record_analysis_caches
 
 from .service_helpers import (
     DORA_INDICATOR_POSITIONS,
@@ -686,7 +687,7 @@ def serialize_game_record_parts(game_copy, state_copy):
     _compact_round_walls_for_record(game_copy)
     _compact_round_states_for_record(game_copy)
     _compact_game_structure_for_record(game_copy)
-    return {
+    return compact_record_analysis_caches({
         "formatVersion": RECORD_FORMAT_VERSION,
         "savedAt": now_iso(),
         "state": {
@@ -695,4 +696,4 @@ def serialize_game_record_parts(game_copy, state_copy):
             "visibleHands": state_copy["visibleHands"],
         },
         "game": game_copy,
-    }
+    })

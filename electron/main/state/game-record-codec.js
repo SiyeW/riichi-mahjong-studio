@@ -1,5 +1,6 @@
 const zlib = require('node:zlib')
 const { promisify } = require('node:util')
+const { compactAnalysisCaches, expandAnalysisCaches } = require('./analysis-cache-storage')
 
 const gzip = promisify(zlib.gzip)
 
@@ -22,7 +23,7 @@ async function encodeGameRecordAsync(record, compressed = true) {
 function decodeGameRecord(input) {
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input)
   const json = isGzipBuffer(buffer) ? zlib.gunzipSync(buffer) : buffer
-  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json))
+  return expandAnalysisCaches(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json)))
 }
 
 function prepareGameRecordForWrite(record, options = {}) {
@@ -43,10 +44,10 @@ function prepareGameRecordForWrite(record, options = {}) {
       schemaVersion: 3,
     }
   }
-  return {
+  return compactAnalysisCaches({
     ...record,
     metadata,
-  }
+  })
 }
 
 function isRecoveryGameRecord(record) {
