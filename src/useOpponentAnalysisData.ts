@@ -17,10 +17,10 @@ export function riichiScoreGroup(value: unknown, dealer: boolean): number | null
   const score = Number(value)
   if (!Number.isFinite(score)) return null
   const bounds = dealer ? DEALER_SCORE_GROUP_BOUNDS : NON_DEALER_SCORE_GROUP_BOUNDS
-  for (let index = 0; index < bounds.length - 1; index += 1) {
-    if (score <= bounds[index]) return index
+  for (let index = bounds.length - 1; index >= 1; index -= 1) {
+    if (score >= bounds[index]) return index
   }
-  return score < bounds.at(-1)! ? bounds.length - 1 : bounds.length
+  return 0
 }
 
 export function scoreDistributionGroupStarts(
