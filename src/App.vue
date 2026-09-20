@@ -383,9 +383,9 @@
         :shanten-labels="SHANTEN_LABELS"
         :shanten-short-labels="SHANTEN_SHORT_LABELS"
         :reduce-motion="reduceMotionEnabled || suppressAnalysisTransitions"
-        :controlled-seat="status.controlledSeat"
-        :dealer="gameView.table?.dealer ?? 0"
-        :table="gameView.table"
+        :controlled-seat="displayedAnalysisControlledSeat"
+        :dealer="displayedAnalysisTable?.dealer ?? gameView.table?.dealer ?? 0"
+        :table="displayedAnalysisTable ?? gameView.table"
         :tile-image-src="tileImageSrc"
         :tile-face-label="tileFaceLabel"
         :has-opponent-ground-truth="hasOpponentGroundTruth"
@@ -967,6 +967,8 @@ const {
   clearingAnalysisCaches,
   decisionRecommendationsEnabled,
   displayedOpponentAnalysis,
+  displayedAnalysisTable,
+  displayedAnalysisControlledSeat,
   effectiveDecisionRecommendationsEnabled,
   fetchAnalysisOnce,
   hasOpponentGroundTruth,
@@ -1944,6 +1946,8 @@ if (import.meta.env.MODE === 'ui-test') {
     closeState,
     tileArtworkReady,
     opponentAnalysisIsLoading,
+    displayedAnalysisTable,
+    stageOpponentAnalysisForView,
     showWallView,
     wallTiles,
     showEngineWindow,

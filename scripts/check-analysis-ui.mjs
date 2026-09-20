@@ -1196,6 +1196,51 @@ try {
     const vm = window.analysisCheck.vm
     window.analysisCheck.publish(window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1))
   })
+  await page.waitForTimeout(160)
+  const roundAnalysisHandoff = await page.evaluate(async () => {
+    const check = window.analysisCheck
+    const { vm } = check
+    const originalTable = vm.gameView.table
+    const originalDealer = originalTable.dealer
+    const nextDealer = [0, 1, 2, 3].find(seat => (
+      seat !== originalDealer && seat !== vm.status.controlledSeat
+    ))
+    const labels = () => [...document.querySelectorAll('.analysis-score-modes span')]
+      .map(element => element.textContent)
+    const beforeLabels = labels()
+    const nextResult = check.resultForNode(vm.gameView.currentNodeId, 2)
+    vm.gameView.table = { ...originalTable, dealer: nextDealer }
+    vm.stageOpponentAnalysisForView(nextResult)
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    const during = {
+      labels: labels(),
+      dealer: vm.displayedAnalysisTable?.dealer,
+    }
+    await new Promise(resolve => setTimeout(resolve, 160))
+    const after = {
+      labels: labels(),
+      dealer: vm.displayedAnalysisTable?.dealer,
+    }
+    vm.gameView.table = originalTable
+    vm.stageOpponentAnalysisForView(check.resultForNode(vm.gameView.currentNodeId, 1))
+    await new Promise(resolve => setTimeout(resolve, 160))
+    return { originalDealer, nextDealer, beforeLabels, during, after }
+  })
+  assert.equal(
+    roundAnalysisHandoff.during.dealer,
+    roundAnalysisHandoff.originalDealer,
+    'a retained analysis keeps the dealer context from the round that produced it',
+  )
+  assert.deepEqual(
+    roundAnalysisHandoff.during.labels,
+    roundAnalysisHandoff.beforeLabels,
+    'score nominations do not jump while the next round analysis is staged',
+  )
+  assert.equal(
+    roundAnalysisHandoff.after.dealer,
+    roundAnalysisHandoff.nextDealer,
+    'the dealer context changes atomically with the next complete analysis',
+  )
   if (process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT })
   }

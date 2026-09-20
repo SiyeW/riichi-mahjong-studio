@@ -1,6 +1,6 @@
 import type { AnalysisCountLayout } from '../analysisCountSpacing'
 import type { StudioSettings } from '../contracts/settings'
-import type { GameView } from '../contracts/game'
+import type { GameView, TableState } from '../contracts/game'
 import type { PythonEvent, StudioStatus } from '../contracts/runtime'
 
 // Explicit fixture controls for the isolated renderer. This module is only
@@ -19,6 +19,11 @@ export interface AnalysisTestApi {
   readonly bootstrapError: string
   readonly tileArtworkReady: boolean
   readonly opponentAnalysisIsLoading: boolean
+  readonly displayedAnalysisTable: TableState | null
+  stageOpponentAnalysisForView: (
+    result: Record<string, unknown> | null | undefined,
+    options?: { resetDisplay?: boolean; withoutMotion?: boolean },
+  ) => void
   readonly showWallView: boolean
   readonly wallTiles: Array<{ index: number; tile: string; status: string }>
   readonly showEngineWindow: boolean
