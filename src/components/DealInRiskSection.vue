@@ -12,8 +12,6 @@
             <img class="mahjong-tile-artwork analysis-tile-face" :src="tileImageSrc(tile)" :alt="tileFaceLabel(tile)" />
             <div
               class="analysis-risk-bars"
-              :class="{ 'has-adaptive-threshold': showRiskAdaptiveThreshold }"
-              :style="{ '--analysis-risk-threshold': riskScalePosition(RISK_ADAPTIVE_MIN) }"
             >
               <i
                 v-for="source in opponentSources"
@@ -29,8 +27,6 @@
             <span
               v-if="tileIndex < row.length - 1"
               class="analysis-risk-bridge"
-              :class="{ 'has-adaptive-threshold': showRiskAdaptiveThreshold }"
-              :style="{ '--analysis-risk-threshold': riskScalePosition(RISK_ADAPTIVE_MIN) }"
               aria-hidden="true"
             />
           </div>
@@ -72,12 +68,15 @@ const tileRows = ANALYSIS_TILE_ROWS
 const riskGridElement = ref<HTMLElement | null>(null)
 type RiskCanvasElement = HTMLCanvasElement & {
   rmsRiskRenderSignature?: string
+  rmsRiskGuideBounds?: { left: number; right: number; top: number; bottom: number } | null
   rmsRiskGeometry?: {
     width: number
     height: number
     tileWidth: number
     barsWidth: number
     colors: string[]
+    guideColor: string
+    pixelRatio: number
   }
 }
 const riskCanvasElements = new Map<string, { canvas: RiskCanvasElement; row: readonly string[] }>()
@@ -121,7 +120,8 @@ function measureRiskCanvas(canvas: RiskCanvasElement) {
   const colors = opponentSources.value.map(source => (
     style.getPropertyValue(`--ron-${source.key}-color`).trim()
   ))
-  canvas.rmsRiskGeometry = { width, height, tileWidth, barsWidth, colors }
+  const guideColor = style.getPropertyValue('--analysis-risk-guide-color').trim()
+  canvas.rmsRiskGeometry = { width, height, tileWidth, barsWidth, colors, guideColor, pixelRatio: ratio }
 }
 
 function measureRiskCanvases() {
@@ -132,7 +132,7 @@ function renderRiskCanvas(rowIndex: number, canvas: RiskCanvasElement, row: read
   if (!canvas.rmsRiskGeometry) measureRiskCanvas(canvas)
   const geometry = canvas.rmsRiskGeometry
   if (!geometry) return
-  const { width, height, tileWidth, barsWidth, colors } = geometry
+  const { width, height, tileWidth, barsWidth, colors, guideColor, pixelRatio } = geometry
   const context = canvas.getContext('2d')
   if (!context) return
   context.clearRect(0, 0, width, height)
@@ -153,6 +153,25 @@ function renderRiskCanvas(rowIndex: number, canvas: RiskCanvasElement, row: read
       context.fillStyle = colors[sourceIndex]
       context.fillRect(left, 0, right - left, bottom)
     }
+  }
+  if (showRiskAdaptiveThreshold.value && row.length > 0) {
+    const lineWidth = Math.max(1, Math.round(pixelRatio))
+    const lineTop = Math.max(
+      0,
+      Math.min(height - lineWidth, Math.round((riskBarScale(RISK_ADAPTIVE_MIN) * height) - (lineWidth / 2))),
+    )
+    const lineLeft = 0
+    const lineRight = Math.min(width, Math.round(row.length * tileWidth))
+    context.fillStyle = guideColor
+    context.fillRect(lineLeft, lineTop, Math.max(0, lineRight - lineLeft), lineWidth)
+    canvas.rmsRiskGuideBounds = {
+      left: lineLeft,
+      right: lineRight,
+      top: lineTop,
+      bottom: lineTop + lineWidth,
+    }
+  } else {
+    canvas.rmsRiskGuideBounds = null
   }
 }
 

@@ -66,11 +66,14 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ toggle: [] }>()
 
-type RonRiskCanvasElement = HTMLCanvasElement & { rmsRonRiskRenderSignature?: string }
+type RonRiskCanvasElement = HTMLCanvasElement & {
+  rmsRonRiskRenderSignature?: string
+  rmsRonRiskGuideBounds?: CanvasBox | null
+}
 const rootElement = ref<HTMLElement | null>(null)
 const canvasElement = ref<RonRiskCanvasElement | null>(null)
 let displayedScales: number[][] = []
-let displayedThresholdScale = 0
+let displayedThresholdScale = 1
 let animationFrame = 0
 
 interface CanvasBox {
@@ -83,7 +86,7 @@ interface CanvasBox {
 interface RonRiskCanvasGeometry {
   width: number
   height: number
-  thresholdSlots: (CanvasBox & { lineHeight: number })[]
+  thresholdLine: (CanvasBox & { lineHeight: number }) | null
   tracks: (CanvasBox & { color: string })[]
 }
 
@@ -96,9 +99,7 @@ function targetScales(): number[][] {
 }
 
 function targetThresholdScale(): number {
-  return props.showThreshold
-    ? probabilityScaleRatio(DEFAULT_PROBABILITY_SCALE, props.adaptiveMax)
-    : 0
+  return probabilityScaleRatio(DEFAULT_PROBABILITY_SCALE, props.adaptiveMax)
 }
 
 function copyScales(values: number[][]): number[][] {
@@ -121,20 +122,17 @@ function measureGeometry() {
 
   const rootStyle = getComputedStyle(root)
   const slotElements = root.querySelectorAll<HTMLElement>('.ron-risk-slot')
-  const thresholdSlots = [...slotElements].flatMap((slotElement, slotIndex) => {
-    const slot = props.slots[slotIndex]
-    const lanes = slotElement.querySelector<HTMLElement>('.ron-risk-lanes')
-    if (!slot || slot.isGap || !lanes) return []
-    const slotRect = slotElement.getBoundingClientRect()
-    const lanesRect = lanes.getBoundingClientRect()
-    return [{
-      left: Math.max(0, Math.round(((slot.connectLeft ? slotRect.left : lanesRect.left) - rootRect.left) * ratio)),
-      right: Math.min(width, Math.round(((slot.connectRight ? slotRect.right : lanesRect.right) - rootRect.left) * ratio)),
-      top: Math.max(0, Math.round((slotRect.top - rootRect.top) * ratio)),
-      bottom: Math.min(height, Math.round((slotRect.bottom - rootRect.top) * ratio)),
-      lineHeight: Math.max(1, Math.round(slotRect.width * 0.025 * ratio)),
-    }]
-  })
+  const firstSlotRect = slotElements[0]?.getBoundingClientRect()
+  const lastSlotRect = slotElements[slotElements.length - 1]?.getBoundingClientRect()
+  const thresholdLine = firstSlotRect && lastSlotRect
+    ? {
+        left: Math.max(0, Math.round((firstSlotRect.left - rootRect.left) * ratio)),
+        right: Math.min(width, Math.round((lastSlotRect.right - rootRect.left) * ratio)),
+        top: Math.max(0, Math.round((firstSlotRect.top - rootRect.top) * ratio)),
+        bottom: Math.min(height, Math.round((firstSlotRect.bottom - rootRect.top) * ratio)),
+        lineHeight: Math.max(1, Math.round(firstSlotRect.width * 0.025 * ratio)),
+      }
+    : null
 
   const trackElements = root.querySelectorAll<HTMLElement>('.ron-risk-track')
   let trackIndex = 0
@@ -154,7 +152,7 @@ function measureGeometry() {
       }]
     })
   }).filter((track): track is CanvasBox & { color: string } => Boolean(track))
-  renderGeometry = { width, height, thresholdSlots, tracks }
+  renderGeometry = { width, height, thresholdLine, tracks }
 }
 
 function render() {
@@ -167,14 +165,6 @@ function render() {
   if (!props.visible) {
     canvas.rmsRonRiskRenderSignature = ''
     return
-  }
-
-  if (displayedThresholdScale > 0) {
-    context.fillStyle = 'rgba(198, 214, 211, 0.42)'
-    geometry.thresholdSlots.forEach(({ left, right, top, bottom, lineHeight }) => {
-      const y = Math.max(top, Math.min(bottom - 1, Math.round(top + ((bottom - top) * displayedThresholdScale))))
-      if (right > left && bottom > top) context.fillRect(left, y, right - left, Math.min(lineHeight, bottom - y))
-    })
   }
 
   let trackIndex = 0
@@ -193,6 +183,21 @@ function render() {
       context.fillRect(left, top, right - left, fillHeight)
     })
   })
+  const showGuide = props.showThreshold || displayedThresholdScale < 1 - 1e-6
+  const guide = geometry.thresholdLine
+  if (showGuide && guide) {
+    const { left, right, top, bottom, lineHeight } = guide
+    const y = Math.max(top, Math.min(bottom - lineHeight, Math.round(
+      top + (((bottom - top) * displayedThresholdScale) - (lineHeight / 2)),
+    )))
+    if (right > left && bottom > top) {
+      context.fillStyle = 'rgba(198, 214, 211, 0.42)'
+      context.fillRect(left, y, right - left, Math.min(lineHeight, bottom - y))
+      canvas.rmsRonRiskGuideBounds = { left, right, top: y, bottom: y + lineHeight }
+    }
+  } else {
+    canvas.rmsRonRiskGuideBounds = null
+  }
   canvas.rmsRonRiskRenderSignature = [
     Math.round(displayedThresholdScale * 10000),
     ...displayedScales.flat().map(value => Math.round(value * 10000)),

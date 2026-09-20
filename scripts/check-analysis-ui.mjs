@@ -1140,7 +1140,7 @@ try {
   await page.setViewportSize({ width: 1400, height: 1000 })
   await page.evaluate(() => {
     const vm = window.analysisCheck.vm
-    window.analysisCheck.publish(window.analysisCheck.result())
+    window.analysisCheck.publish(window.analysisCheck.result(2))
     vm.settings.display.workspaceLayout = {
       ...vm.workspaceLayout,
       analysisVisible: true,
@@ -1162,6 +1162,7 @@ try {
     const firstBars = grid.querySelector('.analysis-risk-bars')
     const scale = grid.querySelector('.analysis-risk-scale')
     const sequence = grid.querySelector('.analysis-tile-sequence')
+    const rowCanvases = [...grid.querySelectorAll('.analysis-risk-row-canvas')]
     const body = grid.closest('.analysis-dock-body')
     return {
       gridWidth: grid.getBoundingClientRect().width,
@@ -1174,6 +1175,14 @@ try {
       faceWidth: firstFace?.getBoundingClientRect().width || 0,
       barsHeight: firstBars?.getBoundingClientRect().height || 0,
       sequenceWidth: sequence?.getBoundingClientRect().width || 0,
+      guideBounds: rowCanvases.map(canvas => canvas.rmsRiskGuideBounds || null),
+      guideExpectedWidths: rowCanvases.map((canvas, index) => {
+        const rowTiles = [...(rows[index]?.querySelectorAll('.analysis-risk-tile') || [])]
+        if (!rowTiles.length) return 0
+        const first = rowTiles[0].getBoundingClientRect()
+        const last = rowTiles.at(-1).getBoundingClientRect()
+        return Math.round((last.right - first.left) * (canvas.width / canvas.getBoundingClientRect().width))
+      }),
       scaleHeight: scale?.getBoundingClientRect().height || 0,
       scaleRight: scale?.getBoundingClientRect().right || 0,
       gridRight: grid.getBoundingClientRect().right,
@@ -1194,6 +1203,14 @@ try {
   assert.ok(roomyRisk.barsHeight > roomyRisk.faceHeight * 1.15, 'bars expand into height not used by capped tiles')
   assert.ok(roomyRisk.scaleHeight > 0 && roomyRisk.scaleRight <= roomyRisk.gridRight + 0.6, 'the scale stays alongside the bars')
   assert.ok(roomyRisk.rowBorders.every(width => width === '0px'), 'risk rows have no divider rules')
+  assert.ok(roomyRisk.guideBounds.every(Boolean), 'an adaptive deal-in scale draws the 20% reference line')
+  assert.ok(roomyRisk.guideBounds.every((bounds, index) => (
+    bounds.left === 0
+    && Math.abs(bounds.right - roomyRisk.guideExpectedWidths[index]) <= 1
+  )), `each 20% reference line is continuous across its complete tile row: ${JSON.stringify({
+    guideBounds: roomyRisk.guideBounds,
+    guideExpectedWidths: roomyRisk.guideExpectedWidths,
+  })}`)
   const riskLane = page.locator('.analysis-risk-bars > i').first()
   await riskLane.hover()
   assert.notEqual(await riskLane.evaluate(element => getComputedStyle(element, '::after').borderTopColor), 'rgba(0, 0, 0, 0)', 'the hovered deal-in lane receives the shared analysis highlight')
@@ -1865,6 +1882,7 @@ try {
     const frameTimes = []
     const longTasks = []
     const tableMotionSamples = []
+    const tableRonRiskGuideSamples = []
     const analysisMotionSamples = []
     const captureDistributionGeometry = () => {
       const distributions = [...document.querySelectorAll(
@@ -1891,6 +1909,10 @@ try {
       if (!(root instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return null
       const rootRect = root.getBoundingClientRect()
       const canvasRect = canvas.getBoundingClientRect()
+      const slotRects = [...root.querySelectorAll('.ron-risk-slot')].map(slot => slot.getBoundingClientRect())
+      const expectedGuideWidth = slotRects.length
+        ? Math.round((slotRects.at(-1).right - slotRects[0].left) * (canvas.width / canvasRect.width))
+        : 0
       return {
         rootHeight: rootRect.height,
         canvasHeight: canvasRect.height,
@@ -1901,6 +1923,8 @@ try {
           left: rootRect.left - canvasRect.left,
         },
         renderSignature: canvas.rmsRonRiskRenderSignature || '',
+        guideBounds: canvas.rmsRonRiskGuideBounds || null,
+        expectedGuideWidth,
       }
     }
     const captureCountCanvasSignature = () => [
@@ -1926,6 +1950,13 @@ try {
       const sample = timestamp => {
         frameTimes.push(timestamp)
         if (collectMotionSamples) {
+          const tableRiskCanvas = document.querySelector('.grid-main .table-ron-risk-canvas')
+          if (tableRiskCanvas?.rmsRonRiskGuideBounds) {
+            tableRonRiskGuideSamples.push({
+              ...tableRiskCanvas.rmsRonRiskGuideBounds,
+              canvasHeight: tableRiskCanvas.height,
+            })
+          }
           const activeAnimations = document.getAnimations().filter(animation => animation.playState !== 'finished')
           const tableAnimation = activeAnimations.find(animation => (
             animation.effect?.target instanceof Element
@@ -2080,6 +2111,7 @@ try {
       immediatePiePath,
       distributionBefore,
       tableRonRiskBefore,
+      tableRonRiskGuideSamples,
       wheelNavigation: {
         requestLatency: wheelRequestAt === null ? null : wheelRequestAt - wheelDispatchedAt,
         viewLatency: wheelViewAppliedAt - wheelDispatchedAt,
@@ -2257,6 +2289,24 @@ try {
     navigationMotion.after.tableRonRiskGeometry.renderSignature,
     navigationMotion.tableRonRiskBefore.renderSignature,
     'table deal-in canvas draws the next probabilities instead of retaining stale pixels',
+  )
+  assert.ok(
+    navigationMotion.after.tableRonRiskGeometry.guideBounds,
+    'an adaptive table deal-in scale draws the 20% reference line',
+  )
+  assert.ok(
+    Math.abs(
+      (navigationMotion.after.tableRonRiskGeometry.guideBounds.right
+        - navigationMotion.after.tableRonRiskGeometry.guideBounds.left)
+      - navigationMotion.after.tableRonRiskGeometry.expectedGuideWidth,
+    ) <= 1,
+    'the table 20% reference line remains continuous across drawn-tile and discard gaps',
+  )
+  assert.ok(
+    navigationMotion.tableRonRiskGuideSamples.length >= 2
+    && navigationMotion.tableRonRiskGuideSamples[0].top
+      > navigationMotion.tableRonRiskGuideSamples.at(-1).top,
+    'the table 20% reference line enters from the outer edge toward its adaptive-scale position',
   )
   assert.notEqual(navigationMotion.during.piePath, navigationMotion.oldPiePath, 'the staged shanten chart contains the next result')
   assert.notEqual(navigationMotion.after.piePath, navigationMotion.oldPiePath, 'the shanten chart finishes the next animated result')
