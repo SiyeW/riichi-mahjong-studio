@@ -1077,6 +1077,21 @@ try {
   assert.ok(roomyOpponent.scoreHeight > 50, 'roomy opponent panel lets the score distribution grow beyond its former cap')
   assert.ok(Math.abs(roomyOpponent.unusedBottomHeight) < 1, 'opponent predictions consume the full remaining panel height')
   assert.equal(roomyOpponent.chartsStayInsideRows, true, 'expanded distributions stay inside their fixed prediction rows')
+  const baselineGuideCounts = await page.evaluate(async () => {
+    const count = () => document.querySelectorAll(
+      '.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line',
+    ).length
+    const samples = [count()]
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    samples.push(count())
+    await new Promise(resolve => setTimeout(resolve, 45))
+    samples.push(count())
+    return samples
+  })
+  assert.ok(
+    baselineGuideCounts.every(count => count === 0),
+    `default-range dora and score guides remain absent throughout frame motion: ${JSON.stringify(baselineGuideCounts)}`,
+  )
   assert.equal(
     await page.locator('.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line').count(),
     0,
@@ -1122,6 +1137,27 @@ try {
     }
     window.analysisCheck.publish(result)
   })
+  const adaptiveGuideMotion = await page.evaluate(async () => {
+    const sample = () => {
+      const track = document.querySelector('.analysis-score-distribution .analysis-distribution-track')
+      const bounds = track?.getBoundingClientRect()
+      return bounds && bounds.height > 0
+        ? Number.parseFloat(getComputedStyle(track, '::before').top) / bounds.height
+        : -1
+    }
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    const start = sample()
+    await new Promise(resolve => setTimeout(resolve, 35))
+    const middle = sample()
+    await new Promise(resolve => setTimeout(resolve, 120))
+    return { start, middle, end: sample() }
+  })
+  assert.ok(
+    adaptiveGuideMotion.start >= 0
+      && adaptiveGuideMotion.start < adaptiveGuideMotion.middle
+      && adaptiveGuideMotion.middle < adaptiveGuideMotion.end,
+    `the score reference line enters from the outer scale edge instead of jumping: ${JSON.stringify(adaptiveGuideMotion)}`,
+  )
   await page.waitForFunction(() => {
     const doraTrack = document.querySelector('.analysis-dora-distribution .analysis-distribution-track')
     const scoreTrack = document.querySelector('.analysis-score-distribution .analysis-distribution-track')
@@ -1843,11 +1879,18 @@ try {
   await page.locator('.grid-main .table-ron-risk-canvas').waitFor()
   const tableMarkerGeometry = await page.locator('.recommendation-geometry-marker').first().evaluate((marker) => {
     const rect = marker.getBoundingClientRect()
-    return { width: rect.width, height: rect.height }
+    const laneRect = marker.parentElement?.getBoundingClientRect()
+    return { width: rect.width, height: rect.height, laneWidth: laneRect?.width || 0 }
   })
   assert.ok(
     tableMarkerGeometry.width > tableMarkerGeometry.height,
     `the hand recommendation canvas measures the shared downward-triangle geometry: ${JSON.stringify(tableMarkerGeometry)}`,
+  )
+  assert.ok(
+    tableMarkerGeometry.laneWidth > 0
+      && tableMarkerGeometry.width / tableMarkerGeometry.laneWidth <= 0.71
+      && tableMarkerGeometry.height / tableMarkerGeometry.width <= 0.56,
+    `the preferred marker remains a restrained pointer rather than extending the bar: ${JSON.stringify(tableMarkerGeometry)}`,
   )
   await page.waitForTimeout(200)
   await page.waitForFunction(() => document.getAnimations().every(animation => (

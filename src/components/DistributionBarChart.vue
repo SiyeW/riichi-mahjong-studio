@@ -87,9 +87,11 @@ function structureKey(): string {
   return `${props.showLabels ? 'labels' : 'tracks'}:${props.entries.map(entry => String(entry.key)).join('\u001f')}`
 }
 
+const displayedReferenceRatio = ref<number | null>(null)
+
 const referenceLineStyle = computed<Record<string, string> | null>(() => {
-  if (!Number.isFinite(props.referenceRatio)) return null
-  const ratio = Math.max(0, Math.min(1, Number(props.referenceRatio)))
+  if (displayedReferenceRatio.value === null) return null
+  const ratio = displayedReferenceRatio.value
   return { '--analysis-distribution-reference-top': `${((1 - ratio) * 100).toFixed(3)}%` }
 })
 
@@ -167,14 +169,30 @@ function stopAnimation() {
 function animate() {
   stopAnimation()
   const target = targetScales()
-  const unchanged = target.length === displayedScales.length
+  const targetReferenceRatio = Number.isFinite(props.referenceRatio)
+    ? Math.max(0, Math.min(1, Number(props.referenceRatio)))
+    : null
+  // A guide that is not meaningful for the target range must not linger or
+  // flash during the bar transition. Only an entering or still-valid guide
+  // participates in the scale animation.
+  if (targetReferenceRatio === null) displayedReferenceRatio.value = null
+  const sourceReferenceRatio = displayedReferenceRatio.value ?? 1
+  const settledReferenceRatio = targetReferenceRatio ?? 1
+  const referenceUnchanged = targetReferenceRatio === null
+    || Math.abs(settledReferenceRatio - sourceReferenceRatio) <= 1e-6
+  const unchanged = referenceUnchanged
+    && target.length === displayedScales.length
     && target.every((value, index) => Math.abs(value - displayedScales[index]) <= 1e-6)
   if (!displayedScales.length || props.reduceMotion || unchanged) {
     displayedScales = target
+    displayedReferenceRatio.value = targetReferenceRatio
     render()
     return
   }
   const source = [...displayedScales]
+  if (displayedReferenceRatio.value === null && targetReferenceRatio !== null) {
+    displayedReferenceRatio.value = 1
+  }
   let startedAt: number | null = null
   const duration = getUiMotionDurationMs()
   const easing = getUiMotionEasingFunction()
@@ -186,9 +204,16 @@ function animate() {
       const start = source[index] ?? value
       return start + ((value - start) * eased)
     })
+    if (targetReferenceRatio !== null) {
+      displayedReferenceRatio.value = sourceReferenceRatio
+        + ((settledReferenceRatio - sourceReferenceRatio) * eased)
+    }
     render()
     if (progress < 1) animationFrame = requestAnimationFrame(step)
-    else animationFrame = 0
+    else {
+      displayedReferenceRatio.value = targetReferenceRatio
+      animationFrame = 0
+    }
   }
   animationFrame = requestAnimationFrame(step)
 }
@@ -203,7 +228,7 @@ useResponsiveGeometry(rootElement, updateGeometry, {
   styleAncestorSelector: '.dock-module',
 })
 
-watch(() => [props.entries, props.colorVariable, props.reduceMotion], () => {
+watch(() => [props.entries, props.colorVariable, props.reduceMotion, props.referenceRatio], () => {
   void nextTick(() => {
     if (
       !renderGeometry

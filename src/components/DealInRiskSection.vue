@@ -43,9 +43,13 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { analysisRiskGeometry } from '../analysisRiskGeometry'
-import { DEFAULT_PROBABILITY_SCALE as RISK_ADAPTIVE_MIN } from '../analysisProbabilityScale'
+import {
+  DEFAULT_PROBABILITY_SCALE as RISK_ADAPTIVE_MIN,
+  probabilityScaleRatio,
+  probabilityScaleTicks,
+} from '../analysisProbabilityScale'
 import { analysisSurface } from '../analysisSurface'
 import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
 import { ANALYSIS_TILE_ROWS } from '../analysisTiles'
@@ -81,6 +85,7 @@ type RiskCanvasElement = HTMLCanvasElement & {
 }
 const riskCanvasElements = new Map<string, { canvas: RiskCanvasElement; row: readonly string[] }>()
 let displayedRiskScales: number[][][] = []
+const displayedRiskScale = ref(RISK_ADAPTIVE_MIN)
 let riskAnimationFrame = 0
 const riskTrackSurface = analysisSurface(
   () => props.perceptualSurface,
@@ -91,15 +96,23 @@ const riskLegendSurface = analysisSurface(() => props.perceptualSurface, 'analys
 const {
   opponentSources,
   riskProbability,
-  showRiskAdaptiveThreshold,
-  riskScaleTicks,
-  riskBarScale,
-  riskScalePosition,
+  riskScale,
 } = useRiskAnalysisData(props)
+
+const showRiskAdaptiveThreshold = computed(() => displayedRiskScale.value > RISK_ADAPTIVE_MIN + 1e-6)
+const riskScaleTicks = computed(() => probabilityScaleTicks(displayedRiskScale.value))
+
+function displayedRiskRatio(value: number): number {
+  return probabilityScaleRatio(value, displayedRiskScale.value)
+}
+
+function riskScalePosition(value: number): string {
+  return `${displayedRiskRatio(value) * 100}%`
+}
 
 function riskScaleTargets(): number[][][] {
   return tileRows.map(row => row.map(tile => (
-    opponentSources.value.map(source => riskBarScale(riskProbability(source.seat, tile)))
+    opponentSources.value.map(source => riskProbability(source.seat, tile))
   )))
 }
 
@@ -147,7 +160,7 @@ function renderRiskCanvas(rowIndex: number, canvas: RiskCanvasElement, row: read
     for (let sourceIndex = 0; sourceIndex < laneCount; sourceIndex += 1) {
       const left = Math.round(groupLeft + ((sourceIndex * barsWidth) / laneCount))
       const right = Math.round(groupLeft + (((sourceIndex + 1) * barsWidth) / laneCount))
-      const scale = Math.max(0, Math.min(1, rowScales[tileIndex]?.[sourceIndex] || 0))
+      const scale = displayedRiskRatio(rowScales[tileIndex]?.[sourceIndex] || 0)
       const bottom = Math.max(0, Math.min(height, Math.round(scale * height)))
       if (right <= left || bottom <= 0) continue
       context.fillStyle = colors[sourceIndex]
@@ -158,7 +171,7 @@ function renderRiskCanvas(rowIndex: number, canvas: RiskCanvasElement, row: read
     const lineWidth = Math.max(1, Math.round(pixelRatio))
     const lineTop = Math.max(
       0,
-      Math.min(height - lineWidth, Math.round((riskBarScale(RISK_ADAPTIVE_MIN) * height) - (lineWidth / 2))),
+      Math.min(height - lineWidth, Math.round((displayedRiskRatio(RISK_ADAPTIVE_MIN) * height) - (lineWidth / 2))),
     )
     const lineLeft = 0
     const lineRight = Math.min(width, Math.round(row.length * tileWidth))
@@ -190,15 +203,19 @@ function stopRiskAnimation() {
 function animateRiskCanvases() {
   stopRiskAnimation()
   const target = riskScaleTargets()
-  const unchanged = target.every((row, rowIndex) => row.every((tile, tileIndex) => (
+  const targetScale = riskScale.value
+  const unchanged = Math.abs(targetScale - displayedRiskScale.value) <= 1e-6
+    && target.every((row, rowIndex) => row.every((tile, tileIndex) => (
     tile.every((value, sourceIndex) => Math.abs(value - (displayedRiskScales[rowIndex]?.[tileIndex]?.[sourceIndex] ?? value)) <= 1e-6)
   )))
   if (!displayedRiskScales.length || props.reduceMotion || unchanged) {
     displayedRiskScales = copyRiskScales(target)
+    displayedRiskScale.value = targetScale
     renderRiskCanvases()
     return
   }
   const source = copyRiskScales(displayedRiskScales)
+  const sourceScale = displayedRiskScale.value
   let startedAt: number | null = null
   const duration = getUiMotionDurationMs()
   const easing = getUiMotionEasingFunction()
@@ -212,6 +229,7 @@ function animateRiskCanvases() {
         return start + ((value - start) * eased)
       })
     )))
+    displayedRiskScale.value = sourceScale + ((targetScale - sourceScale) * eased)
     renderRiskCanvases()
     if (progress < 1) riskAnimationFrame = requestAnimationFrame(step)
     else riskAnimationFrame = 0
