@@ -74,12 +74,18 @@ const canvasElement = ref<DistributionCanvasElement | null>(null)
 const hoveredIndex = ref<number | null>(null)
 let displayedScales: number[] = []
 let animationFrame = 0
+let measuredStructureKey = ''
+let measuredColorVariable = ''
 let renderGeometry: {
   width: number
   height: number
   color: string
   tracks: Array<{ left: number; right: number; top: number; bottom: number }>
 } | null = null
+
+function structureKey(): string {
+  return `${props.showLabels ? 'labels' : 'tracks'}:${props.entries.map(entry => String(entry.key)).join('\u001f')}`
+}
 
 const referenceLineStyle = computed<Record<string, string> | null>(() => {
   if (!Number.isFinite(props.referenceRatio)) return null
@@ -127,6 +133,8 @@ function measureGeometry() {
     }
   })
   renderGeometry = { width, height, color, tracks }
+  measuredStructureKey = structureKey()
+  measuredColorVariable = props.colorVariable
 }
 
 function render() {
@@ -197,7 +205,11 @@ useResponsiveGeometry(rootElement, updateGeometry, {
 
 watch(() => [props.entries, props.colorVariable, props.reduceMotion], () => {
   void nextTick(() => {
-    measureGeometry()
+    if (
+      !renderGeometry
+      || measuredStructureKey !== structureKey()
+      || measuredColorVariable !== props.colorVariable
+    ) measureGeometry()
     animate()
   })
 }, { immediate: true, flush: 'post' })
