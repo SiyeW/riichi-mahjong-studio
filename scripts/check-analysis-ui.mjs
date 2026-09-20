@@ -552,10 +552,17 @@ try {
     range.selectNodeContents(label)
     const textRect = range.getBoundingClientRect()
     const fontSize = Number.parseFloat(getComputedStyle(label).fontSize)
+    const marker = options[1].querySelector('.choice-best-marker')
+    const markerRect = marker.getBoundingClientRect()
     return {
       trackBottoms,
       fillStyles,
       fontSize,
+      marker: {
+        width: markerRect.width,
+        height: markerRect.height,
+        clipPath: getComputedStyle(marker).clipPath,
+      },
       gaps: {
         left: textRect.left - labelRect.left,
         right: labelRect.right - textRect.right,
@@ -582,6 +589,11 @@ try {
   assert.ok(
     Math.abs(specialActionGeometry.gaps.top - specialActionGeometry.gaps.bottom) <= specialActionGeometry.fontSize * 0.12,
     `next-action labels remain visually centered inside their outline box: ${JSON.stringify(specialActionGeometry.gaps)}`,
+  )
+  assert.ok(
+    specialActionGeometry.marker.width > specialActionGeometry.marker.height
+      && specialActionGeometry.marker.clipPath.startsWith('polygon('),
+    `the preferred-action marker is a clear downward triangle: ${JSON.stringify(specialActionGeometry.marker)}`,
   )
   if (process.env.RMS_SPECIAL_ACTION_SCREENSHOT) {
     await page.locator('.special-action-stage').screenshot({ path: process.env.RMS_SPECIAL_ACTION_SCREENSHOT })
@@ -1790,6 +1802,14 @@ try {
   }
   await page.locator('.grid-main .table-recommendation-canvas').waitFor()
   await page.locator('.grid-main .table-ron-risk-canvas').waitFor()
+  const tableMarkerGeometry = await page.locator('.recommendation-geometry-marker').first().evaluate((marker) => {
+    const rect = marker.getBoundingClientRect()
+    return { width: rect.width, height: rect.height }
+  })
+  assert.ok(
+    tableMarkerGeometry.width > tableMarkerGeometry.height,
+    `the hand recommendation canvas measures the shared downward-triangle geometry: ${JSON.stringify(tableMarkerGeometry)}`,
+  )
   await page.waitForTimeout(200)
   await page.waitForFunction(() => document.getAnimations().every(animation => (
     animation.playState === 'finished'

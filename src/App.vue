@@ -192,6 +192,7 @@
                       @click="submitAction(action)"
                     >
                       <span class="special-action-bar-track" :class="{ 'recommendation-hidden': !showTrainingRecommendations }">
+                        <span class="choice-best-marker" aria-hidden="true" />
                         <span
                           class="special-action-bar-fill"
                           :style="barFillStyle(resolveDisplayedActionBar(action))"

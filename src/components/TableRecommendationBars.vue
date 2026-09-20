@@ -22,7 +22,9 @@
       class="discard-bar-slot recommendation-geometry-slot"
       :class="{ 'is-drawn': slot.isDrawn }"
     >
-      <span v-if="!slot.isGap" class="recommendation-geometry-lane" />
+      <span v-if="!slot.isGap" class="recommendation-geometry-lane">
+        <span class="recommendation-geometry-marker" />
+      </span>
     </div>
   </div>
 </template>
@@ -55,7 +57,10 @@ interface LaneGeometry {
   right: number
   top: number
   bottom: number
-  markerX: number
+  markerLeft: number
+  markerRight: number
+  markerTop: number
+  markerBottom: number
 }
 
 interface CanvasGeometry {
@@ -64,7 +69,6 @@ interface CanvasGeometry {
   lanes: (LaneGeometry | null)[]
   emptyColor: string
   fillColor: string
-  markerRadius: number
 }
 
 const rootElement = ref<HTMLElement | null>(null)
@@ -97,22 +101,25 @@ function measureGeometry() {
       const lane = slotElement.querySelector<HTMLElement>('.recommendation-geometry-lane')
       if (!lane) return null
       const laneRect = lane.getBoundingClientRect()
+      const markerRect = lane.querySelector<HTMLElement>('.recommendation-geometry-marker')?.getBoundingClientRect()
+      if (!markerRect) return null
       return {
         left: Math.round((laneRect.left - rootRect.left) * ratio),
         right: Math.round((laneRect.right - rootRect.left) * ratio),
         top: Math.round((laneRect.top - rootRect.top) * ratio),
         bottom: Math.round((laneRect.bottom - rootRect.top) * ratio),
-        markerX: Math.round((((laneRect.left + laneRect.right) / 2) - rootRect.left) * ratio),
+        markerLeft: Math.round((markerRect.left - rootRect.left) * ratio),
+        markerRight: Math.round((markerRect.right - rootRect.left) * ratio),
+        markerTop: Math.round((markerRect.top - rootRect.top) * ratio),
+        markerBottom: Math.round((markerRect.bottom - rootRect.top) * ratio),
       }
     })
-  const markerSize = Number.parseFloat(rootStyle.getPropertyValue('--choice-best-marker-size')) || 5
   geometry = {
     width,
     height,
     lanes,
     emptyColor: rootStyle.getPropertyValue('--bar-empty-bg').trim(),
     fillColor: rootStyle.getPropertyValue('--decision-recommendation-color').trim(),
-    markerRadius: Math.max(1, (markerSize * ratio) / 2),
   }
 }
 
@@ -136,7 +143,10 @@ function render() {
     }
     if (props.slots[index]?.isBest) {
       context.beginPath()
-      context.arc(lane.markerX, Math.max(geometry!.markerRadius, lane.top - (geometry!.markerRadius * 2)), geometry!.markerRadius, 0, Math.PI * 2)
+      context.moveTo(lane.markerLeft, lane.markerTop)
+      context.lineTo(lane.markerRight, lane.markerTop)
+      context.lineTo(Math.round((lane.markerLeft + lane.markerRight) / 2), lane.markerBottom)
+      context.closePath()
       context.fillStyle = geometry!.fillColor
       context.fill()
     }
@@ -226,9 +236,19 @@ onBeforeUnmount(stopAnimation)
 }
 
 .recommendation-geometry-lane {
+  position: relative;
   display: block;
   width: var(--decision-bar-width);
   height: var(--discard-bar-lane-height);
   visibility: hidden;
+}
+
+.recommendation-geometry-marker {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + var(--choice-best-marker-gap));
+  width: var(--choice-best-marker-width);
+  height: var(--choice-best-marker-height);
+  transform: translateX(-50%);
 }
 </style>

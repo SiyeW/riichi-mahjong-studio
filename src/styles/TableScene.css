@@ -45,7 +45,7 @@
   --grid-top-row: calc((2 * var(--tile-h)) + (var(--zoom) * 2px));
   --grid-river-row: calc((4 * var(--tile-w)) - (var(--zoom) * 1px));
   --side-hand-lane-span: calc(var(--grid-top-row) + (2 * var(--grid-river-row)) + var(--grid-center-col));
-  --recommendation-bar-height: calc((var(--tile-h) * 1.14) - var(--choice-best-marker-size) - var(--choice-best-marker-gap));
+  --recommendation-bar-height: calc((var(--tile-h) * 1.14) - var(--choice-best-marker-height) - var(--choice-best-marker-gap));
   --south-recommendation-row-height: calc(var(--tile-h) * 1.14);
   --south-hand-edge-gap: calc(var(--zoom) * 6px);
   --grid-bottom-row: calc(
@@ -177,7 +177,7 @@
   position: relative;
   display: grid;
   grid-template-rows:
-    calc(var(--recommendation-bar-height) + var(--choice-best-marker-size) + var(--choice-best-marker-gap))
+    calc(var(--recommendation-bar-height) + var(--choice-best-marker-height) + var(--choice-best-marker-gap))
     calc(var(--zoom) * 20px)
     calc(var(--tile-img-h) * 0.7);
   justify-items: center;
@@ -242,14 +242,13 @@
   align-self: end;
 }
 
-.special-action-bar-track::after {
-  content: "";
+.choice-best-marker {
   position: absolute;
   left: 50%;
   bottom: calc(100% + var(--choice-best-marker-gap));
-  width: var(--choice-best-marker-size);
-  height: var(--choice-best-marker-size);
-  border-radius: 999px;
+  width: var(--choice-best-marker-width);
+  height: var(--choice-best-marker-height);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
   transform: translateX(-50%);
   opacity: 0;
   background: var(--decision-recommendation-color);
@@ -258,7 +257,7 @@
     background-color var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.special-action-option.best .special-action-bar-track::after {
+.special-action-option.best .choice-best-marker {
   opacity: 1;
 }
 
@@ -319,7 +318,7 @@
   margin: 0;
   min-height: calc(var(--tile-h) * 1.14);
   justify-content: flex-start;
-  padding-top: calc(var(--choice-best-marker-size) + var(--choice-best-marker-gap));
+  padding-top: calc(var(--choice-best-marker-height) + var(--choice-best-marker-gap));
   box-sizing: border-box;
 }
 
@@ -342,32 +341,12 @@
   margin-left: calc(0.4 * var(--tile-w));
 }
 
-.discard-bar-slot.best .choice-bar-lane::after {
-  opacity: 1;
-}
-
 .choice-bar-lane {
   position: relative;
   width: var(--decision-bar-width);
   height: var(--discard-bar-lane-height);
   display: block;
   background: var(--bar-empty-bg);
-}
-
-.choice-bar-lane::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + var(--choice-best-marker-gap));
-  width: var(--choice-best-marker-size);
-  height: var(--choice-best-marker-size);
-  border-radius: 999px;
-  transform: translateX(-50%);
-  opacity: 0;
-  background: var(--decision-recommendation-color);
-  transition:
-    opacity var(--ui-motion-duration) var(--ui-motion-easing),
-    background-color var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .choice-bar-fill {
@@ -391,9 +370,8 @@
   }
 }
 
-.grid-main.reset-without-motion .special-action-bar-track::after,
+.grid-main.reset-without-motion .choice-best-marker,
 .grid-main.reset-without-motion .special-action-bar-fill,
-.grid-main.reset-without-motion .choice-bar-lane::after,
 .grid-main.reset-without-motion .choice-bar-fill {
   transition: none;
 }
