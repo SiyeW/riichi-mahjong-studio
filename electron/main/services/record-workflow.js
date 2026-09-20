@@ -55,9 +55,10 @@ function createRecordWorkflow({
       markSaved = true,
       recovery = false,
       rememberPath = true,
+      exportRecord = () => backendGateway.exportGameRecord(),
     } = options
     const exportedRevision = gameFileStore.getRevision()
-    const response = await withCurrentRecord(gameFileStore, () => backendGateway.exportGameRecord())
+    const response = await withCurrentRecord(gameFileStore, exportRecord)
     const record = prepareGameRecordForWrite(response.record, {
       appVersion: app.getVersion(),
       recovery,
@@ -84,6 +85,7 @@ function createRecordWorkflow({
       markSaved: false,
       recovery: true,
       rememberPath: false,
+      exportRecord: () => backendGateway.exportRecoveryGameRecord(),
     })
   }
 
