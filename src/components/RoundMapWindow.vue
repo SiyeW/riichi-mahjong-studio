@@ -244,10 +244,6 @@ const { t } = useI18n()
   pointer-events: none;
 }
 
-.round-map-dot.is-current {
-  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.42));
-}
-
 .round-map-hover-indicator {
   fill: rgba(228, 241, 237, 0.1);
   stroke: rgba(228, 241, 237, 0.72);
