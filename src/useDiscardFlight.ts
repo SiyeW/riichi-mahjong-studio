@@ -6,10 +6,15 @@ import type { StudioStatus } from './contracts/runtime'
 export type PendingDiscardView = NonNullable<NonNullable<GameView['table']>['pendingDiscard']>
 export interface PendingDiscardReturnFlight {
   ghost: HTMLElement
-  destination: HTMLElement
+  destination: HTMLElement | null
   backOverlay: HTMLElement | null
   regularPose: HTMLElement | null
   settledImage: HTMLElement | null
+  seat: number
+  sourceCenterX: number
+  sourceCenterY: number
+  destinationCenterX: number
+  destinationCenterY: number
   deltaX: number
   deltaY: number
 }
@@ -261,9 +266,42 @@ function preparePendingDiscardReturnFlight(seat: number): PendingDiscardReturnFl
     backOverlay,
     regularPose,
     settledImage: clonedImage,
+    seat,
+    sourceCenterX: sourceVisualRect.left + (sourceVisualRect.width / 2),
+    sourceCenterY: sourceVisualRect.top + (sourceVisualRect.height / 2),
+    destinationCenterX: destinationRect.left + (destinationRect.width / 2),
+    destinationCenterY: destinationRect.top + (destinationRect.height / 2),
     deltaX: (destinationRect.left + (destinationRect.width / 2)) - (sourceVisualRect.left + (sourceVisualRect.width / 2)),
     deltaY: (destinationRect.top + (destinationRect.height / 2)) - (sourceVisualRect.top + (sourceVisualRect.height / 2)),
   }
+}
+
+function resolvePendingDiscardReturnDestination(flight: PendingDiscardReturnFlight) {
+  const candidates = [...document.querySelectorAll<HTMLElement>(`[data-hand-seat="${flight.seat}"]`)]
+  let closest: HTMLElement | null = null
+  let closestDistance = Number.POSITIVE_INFINITY
+  for (const candidate of candidates) {
+    const rect = candidate.getBoundingClientRect()
+    const centerX = rect.left + (rect.width / 2)
+    const centerY = rect.top + (rect.height / 2)
+    const distance = ((centerX - flight.destinationCenterX) ** 2)
+      + ((centerY - flight.destinationCenterY) ** 2)
+    if (distance < closestDistance) {
+      closest = candidate
+      closestDistance = distance
+    }
+  }
+  if (!closest) return false
+
+  const destinationRect = closest.getBoundingClientRect()
+  flight.destination = closest
+  pendingDiscardReturnDestination = closest
+  flight.deltaX = (destinationRect.left + (destinationRect.width / 2))
+    - flight.sourceCenterX
+  flight.deltaY = (destinationRect.top + (destinationRect.height / 2))
+    - flight.sourceCenterY
+  closest.style.visibility = 'hidden'
+  return true
 }
 
 function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) {
@@ -273,6 +311,13 @@ function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) 
     pendingDiscardReturnFrame = requestAnimationFrame(() => {
       pendingDiscardReturnFrame = 0
       if (!flight.ghost.isConnected) {
+        clearPendingDiscardReturnFlight()
+        return
+      }
+      // The gap in the pending-discard frame is replaced by the returned tile
+      // after Vue commits the previous node. Re-resolve the hand slot here so
+      // that tile stays hidden until the reverse flight reaches it.
+      if (!resolvePendingDiscardReturnDestination(flight)) {
         clearPendingDiscardReturnFlight()
         return
       }

@@ -1470,6 +1470,85 @@ try {
   await page.waitForFunction(expected => (
     document.querySelector('.analysis-count-source-row-canvas')?.rmsCountRenderSignature === expected
   ), baselineSignature)
+
+  // Backward frame navigation restores a pending discard to its hand. The
+  // returning tile must remain hidden in the new hand until the river ghost
+  // reaches it; otherwise it flashes in the former gap and duplicates itself.
+  const reverseDiscardFlight = await page.evaluate(async () => {
+    const { vm } = window.analysisCheck
+    const originalView = JSON.parse(JSON.stringify(vm.gameView))
+    const actor = vm.status.controlledSeat
+    const returnedTile = '5m'
+    const remainingHand = ['1m', '2m', '3m', '4m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p']
+    const pendingView = JSON.parse(JSON.stringify(originalView))
+    const parentId = 'reverse-discard-parent'
+    const childId = 'reverse-discard-child'
+    pendingView.currentNodeId = childId
+    pendingView.tree = {
+      rootNodeId: parentId,
+      currentNodeId: childId,
+      mainLeafNodeId: childId,
+      currentRoundRootId: parentId,
+      revision: 1,
+      nodes: [
+        { id: parentId, parentId: null, children: [childId], mainChildId: childId, depth: 0, roundDepth: 0, type: 'root', action: null, isCurrent: false },
+        { id: childId, parentId, children: [], mainChildId: null, depth: 1, roundDepth: 1, type: 'action', action: { type: 'discard', actor, pai: returnedTile }, isCurrent: true },
+      ],
+      rounds: [],
+    }
+    pendingView.table.hands[actor] = remainingHand
+    pendingView.table.rivers[actor] = []
+    pendingView.table.pendingRiichiDiscard = null
+    pendingView.table.pendingDiscard = {
+      actor, pai: returnedTile, tsumogiri: false, targetActor: actor, riichi: false,
+    }
+    pendingView.table.actionHistory = [
+      { type: 'tsumo', actor, pai: returnedTile },
+      { type: 'dahai', actor, pai: returnedTile },
+    ]
+    vm.gameView.currentNodeId = pendingView.currentNodeId
+    vm.gameView.tree = pendingView.tree
+    vm.gameView.table = pendingView.table
+    await new Promise(resolve => requestAnimationFrame(resolve))
+
+    const restoredView = JSON.parse(JSON.stringify(pendingView))
+    restoredView.currentNodeId = parentId
+    restoredView.tree.currentNodeId = parentId
+    restoredView.tree.nodes[0].isCurrent = true
+    restoredView.tree.nodes[1].isCurrent = false
+    restoredView.table.pendingDiscard = null
+    restoredView.table.hands[actor] = ['1m', '2m', '3m', '4m', returnedTile, '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p']
+    restoredView.table.rivers[actor] = [returnedTile]
+    const originalJump = window.studioAPI.jumpToNode
+    window.studioAPI.jumpToNode = async () => ({
+      state: JSON.parse(JSON.stringify(vm.status)), view: restoredView,
+    })
+    await vm.jumpToNode(parentId)
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    const targets = [...document.querySelectorAll(`[data-hand-seat="${actor}"]`)]
+      .filter(element => !element.classList.contains('hand-discard-gap'))
+    const returnedSlot = targets.find(element => element.querySelector('img')?.getAttribute('alt') === returnedTile)
+    const duringFlight = {
+      ghost: Boolean(document.querySelector('.discard-return-ghost')),
+      returnedSlotHidden: returnedSlot ? getComputedStyle(returnedSlot).visibility === 'hidden' : false,
+    }
+    await new Promise(resolve => setTimeout(resolve, 320))
+    const settledReturnedSlot = [...document.querySelectorAll(`[data-hand-seat="${actor}"]`)]
+      .find(element => element.querySelector('img')?.getAttribute('alt') === returnedTile)
+    const afterFlight = {
+      ghost: Boolean(document.querySelector('.discard-return-ghost')),
+      returnedSlotHidden: settledReturnedSlot ? getComputedStyle(settledReturnedSlot).visibility === 'hidden' : true,
+    }
+    vm.gameView.currentNodeId = originalView.currentNodeId
+    vm.gameView.tree = originalView.tree
+    vm.gameView.table = originalView.table
+    window.studioAPI.jumpToNode = originalJump
+    return { duringFlight, afterFlight }
+  })
+  assert.equal(reverseDiscardFlight.duringFlight.ghost, true, 'backward discard navigation creates one returning river ghost')
+  assert.equal(reverseDiscardFlight.duringFlight.returnedSlotHidden, true, 'the returned hand slot stays hidden during its reverse flight')
+  assert.equal(reverseDiscardFlight.afterFlight.ghost, false, 'the returning ghost is removed after it reaches the hand')
+  assert.equal(reverseDiscardFlight.afterFlight.returnedSlotHidden, false, 'the restored hand tile becomes visible after the reverse flight')
   if (process.env.RMS_COUNT_BASELINE_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_COUNT_BASELINE_SCREENSHOT })
   }

@@ -238,6 +238,7 @@
                         v-for="(tile, index) in southDisplayHandParts.closed"
                         :key="tileOccurrenceRenderKey(southDisplayHandParts.closed, index, 'p0h')"
                         :class="['tileDiv', { 'hand-discard-gap': tile === HAND_DISCARD_GAP }]"
+                        :data-hand-seat="southView.seat"
                         :data-hand-gap-seat="tile === HAND_DISCARD_GAP ? southView.seat : undefined"
                       >
                         <img
@@ -253,6 +254,7 @@
                       <div
                         v-if="southDisplayHandParts.drawn"
                         :class="['tileDiv', 'is-drawn', { 'hand-discard-gap': southDisplayHandParts.drawn === HAND_DISCARD_GAP }]"
+                        :data-hand-seat="southView.seat"
                         :data-hand-gap-seat="southDisplayHandParts.drawn === HAND_DISCARD_GAP ? southView.seat : undefined"
                       >
                         <img
