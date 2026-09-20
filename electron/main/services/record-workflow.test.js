@@ -109,6 +109,7 @@ test('opening a record starts in the portable records folder', async (context) =
 
   assert.equal(await workflow.openGame(), null)
   assert.equal(openOptions.defaultPath, path.join(portableDirectory, 'records'))
+  assert.deepEqual(openOptions.filters[0].extensions, ['mjstudio', 'mjtrain', 'json'])
   assert.equal(fs.existsSync(openOptions.defaultPath), true)
 })
 

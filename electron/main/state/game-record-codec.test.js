@@ -37,6 +37,23 @@ test('new writes compact analysis caches while decoding restores the backend rec
   assert.equal(decoded.analysisCacheStorage, undefined)
 })
 
+test('legacy inline analysis caches remain readable without migration metadata', () => {
+  const legacy = {
+    formatVersion: 2,
+    game: {
+      nodes: {
+        n1: {
+          analysisCache: { model: { entries: [{ action: 'dahai', probability: 0.75 }] } },
+          opponentAnalysisCache: { model: { outputs: { probability: 0.125 } } },
+        },
+      },
+    },
+  }
+  const decoded = decodeGameRecord(zlib.gzipSync(Buffer.from(JSON.stringify(legacy))))
+  assert.deepEqual(decoded, legacy)
+  assert.equal(decoded.analysisCacheStorage, undefined)
+})
+
 function testWriteMetadataIsPortable() {
   const source = {
     formatVersion: 2,
