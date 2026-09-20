@@ -50,7 +50,7 @@ export function useOffenseLabels(readPlayers: () => readonly PlayerProbabilities
 
   function offenseLabelStyle(seat: number, kind: 'win' | 'dealIn') {
     const position = offenseLabelPositions.value.get(seat)?.[kind] || 0
-    return { left: `${position}px` }
+    return { transform: `translateX(${position}px)` }
   }
 
   function handleOffenseResize(entries: ResizeObserverEntry[]) {

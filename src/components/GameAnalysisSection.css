@@ -254,7 +254,7 @@
 
 .analysis-offense-track.labels-measured .analysis-offense-value {
   opacity: 1;
-  transition: left var(--ui-motion-duration) var(--ui-motion-easing);
+  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .analysis-delta-cell {

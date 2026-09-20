@@ -213,33 +213,17 @@
               </div>
               <span class="grid-hand pov-p0 grid-hand-p0" v-if="southView">
                 <span class="bottom-player-rail">
-                  <div
+                  <TableRecommendationBars
                     v-if="southDiscardBarSlots.length"
-                    class="discard-bars"
-                    :class="{
-                      'recommendation-toggle': canToggleDecisionRecommendations,
-                      'recommendation-hidden': !showTrainingRecommendations || !discardActions.length,
-                    }"
-                    :role="canToggleDecisionRecommendations ? 'button' : undefined"
-                    :tabindex="canToggleDecisionRecommendations ? 0 : undefined"
-                    :aria-pressed="canToggleDecisionRecommendations ? decisionRecommendationsEnabled : undefined"
-                    :aria-label="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')) : undefined"
-                    v-ui-tooltip="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')) : undefined"
-                    @click.stop="toggleDecisionRecommendations"
-                    @keydown.enter.prevent="toggleDecisionRecommendations"
-                    @keydown.space.prevent="toggleDecisionRecommendations"
-                  >
-                    <div
-                      v-for="(slot, index) in southDiscardBarSlots"
-                      :key="'dbar-'+index"
-                      class="discard-bar-slot"
-                      :class="{ best: showTrainingRecommendations && slot.isBest, 'discard-bar-next-main': !slot.isGap && tileNextMoveClass(slot.tile, slot.isDrawn) === 'tile-next-main', 'discard-bar-next-side': !slot.isGap && tileNextMoveClass(slot.tile, slot.isDrawn) === 'tile-next-side', 'is-drawn': slot.isDrawn }"
-                    >
-                      <span v-if="!slot.isGap" class="choice-bar-lane">
-                        <span class="choice-bar-fill" :style="barFillStyle(resolveDisplayedDiscardSlotBar(slot))" />
-                      </span>
-                    </div>
-                  </div>
+                    :slots="southRecommendationBarSlots"
+                    :visible="showTrainingRecommendations && Boolean(discardActions.length)"
+                    :reduce-motion="reduceMotionEnabled"
+                    :can-toggle="canToggleDecisionRecommendations"
+                    :enabled="decisionRecommendationsEnabled"
+                    :toggle-label="decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')"
+                    :tooltip-label="decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')"
+                    @toggle="toggleDecisionRecommendations"
+                  />
                   <span class="hand-row">
                     <span class="pov-p0 hand-closed-p0" @contextmenu.prevent="onSouthHandContextMenu">
                       <div
@@ -741,6 +725,7 @@ import SettingsDialog from './components/SettingsDialog.vue'
 import TableActionAnnouncement from './components/TableActionAnnouncement.vue'
 import TableCenterInfo from './components/TableCenterInfo.vue'
 import TableOpponentHands, { type OpponentHandPresentation } from './components/TableOpponentHands.vue'
+import TableRecommendationBars from './components/TableRecommendationBars.vue'
 import TableRonRiskBars from './components/TableRonRiskBars.vue'
 import TableRivers from './components/TableRivers.vue'
 import WallViewWindow from './components/WallViewWindow.vue'
@@ -1348,6 +1333,13 @@ const opponentHandPresentations = computed<OpponentHandPresentation[]>(() => [
   { view: northView.value, handParts: northDisplayHandParts.value },
   { view: westView.value, handParts: westDisplayHandParts.value },
 ].filter((seat): seat is OpponentHandPresentation => Boolean(seat.view)))
+
+const southRecommendationBarSlots = computed(() => southDiscardBarSlots.value.map(slot => ({
+  value: resolveDisplayedDiscardSlotBar(slot),
+  isBest: showTrainingRecommendations.value && slot.isBest,
+  isDrawn: slot.isDrawn,
+  isGap: slot.isGap,
+})))
 
 const {
   ROUND_BASE_X,

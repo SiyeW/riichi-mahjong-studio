@@ -73,6 +73,22 @@ let displayedScales: number[][] = []
 let displayedThresholdScale = 0
 let animationFrame = 0
 
+interface CanvasBox {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
+interface RonRiskCanvasGeometry {
+  width: number
+  height: number
+  thresholdSlots: (CanvasBox & { lineHeight: number })[]
+  tracks: (CanvasBox & { color: string })[]
+}
+
+let renderGeometry: RonRiskCanvasGeometry | null = null
+
 function targetScales(): number[][] {
   return props.slots.map(slot => (
     slot.isGap ? [] : slot.risks.map(risk => probabilityScaleRatio(risk.probability, props.adaptiveMax))
@@ -89,64 +105,91 @@ function copyScales(values: number[][]): number[][] {
   return values.map(row => [...row])
 }
 
-function render() {
+function measureGeometry() {
   const root = rootElement.value
   const canvas = canvasElement.value
-  if (!root || !canvas) return
+  if (!root || !canvas) {
+    renderGeometry = null
+    return
+  }
   const rootRect = root.getBoundingClientRect()
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const width = Math.max(1, Math.round(rootRect.width * ratio))
   const height = Math.max(1, Math.round(rootRect.height * ratio))
   if (canvas.width !== width) canvas.width = width
   if (canvas.height !== height) canvas.height = height
+
+  const rootStyle = getComputedStyle(root)
+  const slotElements = root.querySelectorAll<HTMLElement>('.ron-risk-slot')
+  const thresholdSlots = [...slotElements].flatMap((slotElement, slotIndex) => {
+    const slot = props.slots[slotIndex]
+    const lanes = slotElement.querySelector<HTMLElement>('.ron-risk-lanes')
+    if (!slot || slot.isGap || !lanes) return []
+    const slotRect = slotElement.getBoundingClientRect()
+    const lanesRect = lanes.getBoundingClientRect()
+    return [{
+      left: Math.max(0, Math.round(((slot.connectLeft ? slotRect.left : lanesRect.left) - rootRect.left) * ratio)),
+      right: Math.min(width, Math.round(((slot.connectRight ? slotRect.right : lanesRect.right) - rootRect.left) * ratio)),
+      top: Math.max(0, Math.round((slotRect.top - rootRect.top) * ratio)),
+      bottom: Math.min(height, Math.round((slotRect.bottom - rootRect.top) * ratio)),
+      lineHeight: Math.max(1, Math.round(slotRect.width * 0.025 * ratio)),
+    }]
+  })
+
+  const trackElements = root.querySelectorAll<HTMLElement>('.ron-risk-track')
+  let trackIndex = 0
+  const tracks = props.slots.flatMap((slot) => {
+    if (slot.isGap) return
+    return slot.risks.flatMap((risk) => {
+      const track = trackElements[trackIndex]
+      trackIndex += 1
+      if (!track) return []
+      const trackRect = track.getBoundingClientRect()
+      return [{
+        left: Math.max(0, Math.round((trackRect.left - rootRect.left) * ratio)),
+        right: Math.min(width, Math.round((trackRect.right - rootRect.left) * ratio)),
+        top: Math.max(0, Math.round((trackRect.top - rootRect.top) * ratio)),
+        bottom: Math.min(height, Math.round((trackRect.bottom - rootRect.top) * ratio)),
+        color: rootStyle.getPropertyValue(`--ron-${risk.key}-color`).trim(),
+      }]
+    })
+  }).filter((track): track is CanvasBox & { color: string } => Boolean(track))
+  renderGeometry = { width, height, thresholdSlots, tracks }
+}
+
+function render() {
+  const canvas = canvasElement.value
+  const geometry = renderGeometry
+  if (!canvas || !geometry) return
   const context = canvas.getContext('2d')
   if (!context) return
-  context.clearRect(0, 0, width, height)
+  context.clearRect(0, 0, geometry.width, geometry.height)
   if (!props.visible) {
     canvas.rmsRonRiskRenderSignature = ''
     return
   }
 
-  const rootStyle = getComputedStyle(root)
-  const slotElements = root.querySelectorAll<HTMLElement>('.ron-risk-slot')
   if (displayedThresholdScale > 0) {
     context.fillStyle = 'rgba(198, 214, 211, 0.42)'
-    slotElements.forEach((slotElement, slotIndex) => {
-      const slot = props.slots[slotIndex]
-      const lanes = slotElement.querySelector<HTMLElement>('.ron-risk-lanes')
-      if (!slot || slot.isGap || !lanes) return
-      const slotRect = slotElement.getBoundingClientRect()
-      const lanesRect = lanes.getBoundingClientRect()
-      const leftCss = slot.connectLeft ? slotRect.left : lanesRect.left
-      const rightCss = slot.connectRight ? slotRect.right : lanesRect.right
-      const left = Math.max(0, Math.round((leftCss - rootRect.left) * ratio))
-      const right = Math.min(width, Math.round((rightCss - rootRect.left) * ratio))
-      const top = Math.max(0, Math.round((slotRect.top - rootRect.top) * ratio))
-      const bottom = Math.min(height, Math.round((slotRect.bottom - rootRect.top) * ratio))
+    geometry.thresholdSlots.forEach(({ left, right, top, bottom, lineHeight }) => {
       const y = Math.max(top, Math.min(bottom - 1, Math.round(top + ((bottom - top) * displayedThresholdScale))))
-      const lineHeight = Math.max(1, Math.round(slotRect.width * 0.025 * ratio))
       if (right > left && bottom > top) context.fillRect(left, y, right - left, Math.min(lineHeight, bottom - y))
     })
   }
 
-  const trackElements = root.querySelectorAll<HTMLElement>('.ron-risk-track')
   let trackIndex = 0
   props.slots.forEach((slot, slotIndex) => {
     if (slot.isGap) return
-    slot.risks.forEach((risk, sourceIndex) => {
-      const track = trackElements[trackIndex]
+    slot.risks.forEach((_risk, sourceIndex) => {
+      const track = geometry.tracks[trackIndex]
       trackIndex += 1
       if (!track) return
-      const trackRect = track.getBoundingClientRect()
-      const left = Math.max(0, Math.round((trackRect.left - rootRect.left) * ratio))
-      const right = Math.min(width, Math.round((trackRect.right - rootRect.left) * ratio))
-      const top = Math.max(0, Math.round((trackRect.top - rootRect.top) * ratio))
-      const bottom = Math.min(height, Math.round((trackRect.bottom - rootRect.top) * ratio))
+      const { left, right, top, bottom, color } = track
       const trackHeight = Math.max(0, bottom - top)
       const scale = Math.max(0, Math.min(1, displayedScales[slotIndex]?.[sourceIndex] || 0))
       const fillHeight = Math.max(0, Math.min(trackHeight, Math.round(trackHeight * scale)))
       if (right <= left || fillHeight <= 0) return
-      context.fillStyle = rootStyle.getPropertyValue(`--ron-${risk.key}-color`).trim()
+      context.fillStyle = color
       context.fillRect(left, top, right - left, fillHeight)
     })
   })
@@ -165,6 +208,16 @@ function animate() {
   stopAnimation()
   const target = targetScales()
   const thresholdTarget = targetThresholdScale()
+  const alreadyAtTarget = displayedThresholdScale === thresholdTarget
+    && displayedScales.length === target.length
+    && displayedScales.every((row, slotIndex) => (
+      row.length === target[slotIndex]?.length
+      && row.every((value, sourceIndex) => value === target[slotIndex]?.[sourceIndex])
+    ))
+  if (alreadyAtTarget) {
+    render()
+    return
+  }
   if (!displayedScales.length || props.reduceMotion || !props.visible) {
     displayedScales = copyScales(target)
     displayedThresholdScale = thresholdTarget
@@ -192,13 +245,21 @@ function animate() {
   animationFrame = requestAnimationFrame(step)
 }
 
-useResponsiveGeometry(rootElement, render, {
+function updateGeometry() {
+  measureGeometry()
+  render()
+}
+
+useResponsiveGeometry(rootElement, updateGeometry, {
   resizeAncestorSelector: '.south-container',
   styleAncestorSelector: '.grid-main',
 })
 
 watch(() => [props.slots, props.adaptiveMax, props.showThreshold, props.visible, props.reduceMotion], () => {
-  void nextTick(animate)
+  void nextTick(() => {
+    measureGeometry()
+    animate()
+  })
 }, { immediate: true, flush: 'post' })
 
 onBeforeUnmount(() => stopAnimation())

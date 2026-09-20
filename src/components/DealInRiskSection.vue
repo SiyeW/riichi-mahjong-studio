@@ -70,7 +70,16 @@ const tooltip = useAnalysisHoverTooltipController()
 const { formatProbability } = useAnalysisPanelFormatting()
 const tileRows = ANALYSIS_TILE_ROWS
 const riskGridElement = ref<HTMLElement | null>(null)
-type RiskCanvasElement = HTMLCanvasElement & { rmsRiskRenderSignature?: string }
+type RiskCanvasElement = HTMLCanvasElement & {
+  rmsRiskRenderSignature?: string
+  rmsRiskGeometry?: {
+    width: number
+    height: number
+    tileWidth: number
+    barsWidth: number
+    colors: string[]
+  }
+}
 const riskCanvasElements = new Map<string, { canvas: RiskCanvasElement; row: readonly string[] }>()
 let displayedRiskScales: number[][][] = []
 let riskAnimationFrame = 0
@@ -99,22 +108,34 @@ function copyRiskScales(values: number[][][]): number[][][] {
   return values.map(row => row.map(tile => [...tile]))
 }
 
-function renderRiskCanvas(rowIndex: number, canvas: HTMLCanvasElement, row: readonly string[]) {
+function measureRiskCanvas(canvas: RiskCanvasElement) {
   const rect = canvas.getBoundingClientRect()
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const width = Math.max(1, Math.round(rect.width * ratio))
   const height = Math.max(1, Math.round(rect.height * ratio))
   if (canvas.width !== width) canvas.width = width
   if (canvas.height !== height) canvas.height = height
-  const context = canvas.getContext('2d')
-  if (!context) return
-  context.clearRect(0, 0, width, height)
   const style = getComputedStyle(canvas)
   const tileWidth = Number.parseFloat(style.getPropertyValue('--analysis-tile-width')) * ratio
   const barsWidth = Number.parseFloat(style.getPropertyValue('--analysis-risk-bars-width')) * ratio
   const colors = opponentSources.value.map(source => (
     style.getPropertyValue(`--ron-${source.key}-color`).trim()
   ))
+  canvas.rmsRiskGeometry = { width, height, tileWidth, barsWidth, colors }
+}
+
+function measureRiskCanvases() {
+  for (const { canvas } of riskCanvasElements.values()) measureRiskCanvas(canvas)
+}
+
+function renderRiskCanvas(rowIndex: number, canvas: RiskCanvasElement, row: readonly string[]) {
+  if (!canvas.rmsRiskGeometry) measureRiskCanvas(canvas)
+  const geometry = canvas.rmsRiskGeometry
+  if (!geometry) return
+  const { width, height, tileWidth, barsWidth, colors } = geometry
+  const context = canvas.getContext('2d')
+  if (!context) return
+  context.clearRect(0, 0, width, height)
   const rowScales = displayedRiskScales[rowIndex] || []
   ;(canvas as RiskCanvasElement).rmsRiskRenderSignature = rowScales
     .flat()
@@ -150,7 +171,10 @@ function stopRiskAnimation() {
 function animateRiskCanvases() {
   stopRiskAnimation()
   const target = riskScaleTargets()
-  if (!displayedRiskScales.length || props.reduceMotion) {
+  const unchanged = target.every((row, rowIndex) => row.every((tile, tileIndex) => (
+    tile.every((value, sourceIndex) => Math.abs(value - (displayedRiskScales[rowIndex]?.[tileIndex]?.[sourceIndex] ?? value)) <= 1e-6)
+  )))
+  if (!displayedRiskScales.length || props.reduceMotion || unchanged) {
     displayedRiskScales = copyRiskScales(target)
     renderRiskCanvases()
     return
@@ -212,6 +236,7 @@ function updateRiskGeometry() {
   grid.style.setProperty('--analysis-risk-row-min-height', `${geometry.rowMinimumHeight}px`)
   grid.style.setProperty('--analysis-risk-grid-min-height', `${geometry.gridMinimumHeight}px`)
   grid.style.setProperty('--analysis-risk-grid-content-height', `${geometry.gridContentHeight}px`)
+  measureRiskCanvases()
   renderRiskCanvases()
 }
 

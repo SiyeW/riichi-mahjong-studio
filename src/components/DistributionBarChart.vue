@@ -74,6 +74,12 @@ const canvasElement = ref<DistributionCanvasElement | null>(null)
 const hoveredIndex = ref<number | null>(null)
 let displayedScales: number[] = []
 let animationFrame = 0
+let renderGeometry: {
+  width: number
+  height: number
+  color: string
+  tracks: Array<{ left: number; right: number; top: number; bottom: number }>
+} | null = null
 
 const referenceLineStyle = computed<Record<string, string> | null>(() => {
   if (!Number.isFinite(props.referenceRatio)) return null
@@ -95,29 +101,44 @@ function targetScales(): number[] {
   return props.entries.map(entry => Math.max(0, Math.min(1, entry.scale)))
 }
 
-function render() {
+function measureGeometry() {
   const root = rootElement.value
   const canvas = canvasElement.value
-  if (!root || !canvas) return
+  if (!root || !canvas) {
+    renderGeometry = null
+    return
+  }
   const rootRect = root.getBoundingClientRect()
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const width = Math.max(1, Math.round(rootRect.width * ratio))
   const height = Math.max(1, Math.round(rootRect.height * ratio))
   if (canvas.width !== width) canvas.width = width
   if (canvas.height !== height) canvas.height = height
-  const context = canvas.getContext('2d')
-  if (!context) return
-  context.clearRect(0, 0, width, height)
   const color = getComputedStyle(root).getPropertyValue(props.colorVariable).trim()
-  const tracks = root.querySelectorAll<HTMLElement>('.analysis-distribution-track')
-  tracks.forEach((track, index) => {
+  const tracks = [...root.querySelectorAll<HTMLElement>('.analysis-distribution-track')].map((track) => {
     const trackRect = track.getBoundingClientRect()
     const trackStyle = getComputedStyle(track)
     const borderLeft = Number.parseFloat(trackStyle.borderLeftWidth) || 0
-    const left = Math.max(0, Math.round((trackRect.left - rootRect.left + borderLeft) * ratio))
-    const right = Math.min(width, Math.round((trackRect.right - rootRect.left) * ratio))
-    const top = Math.max(0, Math.round((trackRect.top - rootRect.top) * ratio))
-    const bottom = Math.min(height, Math.round((trackRect.bottom - rootRect.top) * ratio))
+    return {
+      left: Math.max(0, Math.round((trackRect.left - rootRect.left + borderLeft) * ratio)),
+      right: Math.min(width, Math.round((trackRect.right - rootRect.left) * ratio)),
+      top: Math.max(0, Math.round((trackRect.top - rootRect.top) * ratio)),
+      bottom: Math.min(height, Math.round((trackRect.bottom - rootRect.top) * ratio)),
+    }
+  })
+  renderGeometry = { width, height, color, tracks }
+}
+
+function render() {
+  const canvas = canvasElement.value
+  if (!canvas) return
+  if (!renderGeometry) measureGeometry()
+  if (!renderGeometry) return
+  const { width, height, color, tracks } = renderGeometry
+  const context = canvas.getContext('2d')
+  if (!context) return
+  context.clearRect(0, 0, width, height)
+  tracks.forEach(({ left, right, top, bottom }, index) => {
     const trackHeight = Math.max(0, bottom - top)
     const scale = Math.max(0, Math.min(1, displayedScales[index] || 0))
     const fillHeight = Math.max(0, Math.min(trackHeight, Math.round(trackHeight * scale)))
@@ -138,7 +159,9 @@ function stopAnimation() {
 function animate() {
   stopAnimation()
   const target = targetScales()
-  if (!displayedScales.length || props.reduceMotion) {
+  const unchanged = target.length === displayedScales.length
+    && target.every((value, index) => Math.abs(value - displayedScales[index]) <= 1e-6)
+  if (!displayedScales.length || props.reduceMotion || unchanged) {
     displayedScales = target
     render()
     return
@@ -163,6 +186,7 @@ function animate() {
 }
 
 function updateGeometry() {
+  measureGeometry()
   render()
 }
 
@@ -172,7 +196,10 @@ useResponsiveGeometry(rootElement, updateGeometry, {
 })
 
 watch(() => [props.entries, props.colorVariable, props.reduceMotion], () => {
-  void nextTick(animate)
+  void nextTick(() => {
+    measureGeometry()
+    animate()
+  })
 }, { immediate: true, flush: 'post' })
 
 onBeforeUnmount(() => stopAnimation())

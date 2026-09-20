@@ -365,7 +365,7 @@ function schedulePendingDiscardFlight(seat: number) {
 
       pendingDiscardFlightAnimation = target.animate(
         [
-          { transform: `translate(${deltaX}px, ${deltaY}px) ${settledTransform}` },
+          { transform: `translate3d(${deltaX}px, ${deltaY}px, 0) ${settledTransform}` },
           { transform: settledTransform },
         ],
         { duration, easing },

@@ -13,24 +13,39 @@ const performanceOnly = Boolean(process.env.RMS_UI_PERFORMANCE_ONLY)
 const externalRendererUrl = process.env.RMS_UI_TEST_URL || null
 
 function loadRealisticAnalysisFixtures() {
-  if (!realisticPerformance) return []
+  if (!realisticPerformance) return { analyses: [], crowdedTable: null }
   const encoded = fs.readFileSync(path.join(root, 'examples', 'example-record.mjstudio'))
   const record = JSON.parse(zlib.gunzipSync(encoded).toString('utf8'))
   const unique = new Map()
+  let crowdedTable = null
+  let crowdedTileCount = -1
   for (const node of Object.values(record.game?.nodes || {})) {
+    const snapshot = node?.snapshot
+    if (snapshot) {
+      const tileCount = [...(snapshot.hands || []), ...(snapshot.rivers || []), ...(snapshot.melds || [])]
+        .flat(Infinity)
+        .length
+      if (tileCount > crowdedTileCount) {
+        crowdedTable = snapshot
+        crowdedTileCount = tileCount
+      }
+    }
     for (const value of Object.values(node?.opponentAnalysisCache || {})) {
       if (!value?.outputs || Object.keys(value.outputs).length < 8) continue
       const serialized = JSON.stringify(value)
       if (!unique.has(serialized)) unique.set(serialized, value)
     }
   }
-  return [...unique.entries()]
-    .sort((left, right) => right[0].length - left[0].length)
-    .slice(0, 2)
-    .map(([, value]) => value)
+  return {
+    analyses: [...unique.entries()]
+      .sort((left, right) => right[0].length - left[0].length)
+      .slice(0, 2)
+      .map(([, value]) => value),
+    crowdedTable,
+  }
 }
 
-const realisticAnalysisFixtures = loadRealisticAnalysisFixtures()
+const realisticFixtures = loadRealisticAnalysisFixtures()
 const server = externalRendererUrl
   ? null
   : await createServer({ root, mode: 'ui-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
@@ -70,10 +85,11 @@ try {
     page = await browser.newPage({ viewport: { width: 1400, height: 1000 } })
   }
   page.setDefaultTimeout(10000)
-  if (realisticAnalysisFixtures.length) {
+  if (realisticFixtures.analyses.length) {
     await page.addInitScript((fixtures) => {
-      window.rmsRealisticAnalysisFixtures = fixtures
-    }, realisticAnalysisFixtures)
+      window.rmsRealisticAnalysisFixtures = fixtures.analyses
+      window.rmsRealisticCrowdedTable = fixtures.crowdedTable
+    }, realisticFixtures)
   }
   const errors = []
   page.on('pageerror', error => { errors.push(error.message); console.error(error.message) })
@@ -521,7 +537,15 @@ try {
   const specialActionGeometry = await page.locator('.special-action-board').evaluate(board => {
     const options = [...board.querySelectorAll('.special-action-option')]
     const trackBottoms = options.map(option => option.querySelector('.special-action-bar-track').getBoundingClientRect().bottom)
-    const fillStyles = options.map(option => getComputedStyle(option.querySelector('.special-action-bar-fill')).clipPath)
+    const fillStyles = options.map(option => {
+      const fill = option.querySelector('.special-action-bar-fill')
+      const style = getComputedStyle(fill)
+      return {
+        transform: style.transform,
+        transformOriginY: Number.parseFloat(style.transformOrigin.split(' ')[1]),
+        height: fill.offsetHeight,
+      }
+    })
     const label = options[1].querySelector('.special-action-label')
     const labelRect = label.getBoundingClientRect()
     const range = document.createRange()
@@ -545,8 +569,10 @@ try {
     'special-action recommendation tracks share one exact bottom edge',
   )
   assert.ok(
-    specialActionGeometry.fillStyles.every(value => value.startsWith('inset(')),
-    'special-action fills reveal their fixed track with clipping instead of separately rasterized scaling',
+    specialActionGeometry.fillStyles.every(({ transform, transformOriginY, height }) => (
+      transform.startsWith('matrix(') && Math.abs(transformOriginY - height) < 0.5
+    )),
+    'special-action fills scale from the shared bottom edge without moving their fixed tracks',
   )
   assert.ok(
     specialActionGeometry.gaps.left >= specialActionGeometry.fontSize * 0.25
@@ -1321,12 +1347,12 @@ try {
   assert.equal(await baselineToggle.isEnabled(), true, 'the theoretical baseline is available when a table is loaded')
   const modelSignature = await page.locator('.analysis-count-source-row-canvas').first().evaluate(canvas => canvas.rmsCountRenderSignature)
   await baselineToggle.click()
-  await page.waitForFunction(previous => {
-    const toggle = document.querySelector('.analysis-count-baseline-toggle')
-    const canvas = document.querySelector('.analysis-count-source-row-canvas')
-    return toggle?.getAttribute('aria-pressed') === 'true' && canvas?.rmsCountRenderSignature !== previous
-  }, modelSignature)
+  await page.waitForFunction(() => (
+    document.querySelector('.analysis-count-baseline-toggle')?.getAttribute('aria-pressed') === 'true'
+  ))
+  await page.waitForTimeout(150)
   const baselineSignature = await page.locator('.analysis-count-source-row-canvas').first().evaluate(canvas => canvas.rmsCountRenderSignature)
+  assert.notEqual(baselineSignature, modelSignature, 'the theoretical baseline replaces the model distribution')
   await page.evaluate(() => {
     window.analysisCheck.vm.gameView.table.pendingDiscard = {
       actor: 1, pai: '1s', tsumogiri: true, targetActor: 2, riichi: false,
@@ -1335,6 +1361,7 @@ try {
   await page.waitForFunction(previous => (
     document.querySelector('.analysis-count-source-row-canvas')?.rmsCountRenderSignature !== previous
   ), baselineSignature)
+  await page.waitForTimeout(150)
   await page.evaluate(() => { window.analysisCheck.vm.gameView.table.pendingDiscard = null })
   await page.waitForFunction(expected => (
     document.querySelector('.analysis-count-source-row-canvas')?.rmsCountRenderSignature === expected
@@ -1668,8 +1695,14 @@ try {
   await page.evaluate(() => {
     const check = window.analysisCheck
     const { vm } = check
-    const hand = ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p']
-    vm.gameView.table.hands[vm.status.controlledSeat] = hand
+    const crowdedTable = window.rmsRealisticCrowdedTable
+    if (crowdedTable) {
+      vm.gameView.table = structuredClone(crowdedTable)
+      vm.gameView.table.currentActor = vm.status.controlledSeat
+      vm.gameView.table.phase = 'discard'
+      vm.gameView.table.pendingDiscard = null
+    }
+    const hand = vm.gameView.table.hands[vm.status.controlledSeat]
     vm.gameView.legalActions = hand.map((pai, index) => ({
       id: `discard-${index}`,
       type: 'dahai',
@@ -1738,11 +1771,16 @@ try {
     await page.locator('.analysis-count-grid').waitFor()
     await page.locator('.analysis-player-section').waitFor()
   }
-  await page.locator('.grid-main .choice-bar-fill').first().waitFor()
+  await page.locator('.grid-main .table-recommendation-canvas').waitFor()
   await page.locator('.grid-main .table-ron-risk-canvas').waitFor()
   await page.waitForTimeout(200)
+  await page.waitForFunction(() => document.getAnimations().every(animation => (
+    animation.playState === 'finished'
+      || !(animation.effect?.target instanceof Element)
+      || !animation.effect.target.closest('.analysis-panel-live')
+  )))
   const permanentLayerHints = await page.evaluate(() => [
-    ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back), .grid-main .choice-bar-fill'),
+    ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back)'),
   ].filter(element => getComputedStyle(element).willChange.includes('transform')).length)
   assert.equal(permanentLayerHints, 0, 'repeated table primitives do not reserve permanent compositor layers')
   const analysisCssMotionDisabled = Boolean(process.env.RMS_UI_EXPERIMENT_NO_ANALYSIS_CSS_MOTION)
@@ -1776,8 +1814,33 @@ try {
     const originalRead = window.studioAPI.getAnalysis
     const nextNodeId = `${vm.gameView.currentNodeId}-performance`
     const nextResult = check.realisticResultForNode(1, nextNodeId) || check.resultForNode(nextNodeId, 2)
+    const currentNodeId = vm.gameView.currentNodeId
+    vm.gameView.tree = {
+      rootNodeId: currentNodeId,
+      currentNodeId,
+      mainLeafNodeId: nextNodeId,
+      currentRoundRootId: currentNodeId,
+      revision: 1,
+      nodes: [
+        { id: currentNodeId, parentId: null, children: [nextNodeId], mainChildId: nextNodeId, depth: 0, roundDepth: 0, type: 'root', action: null, isCurrent: true },
+        { id: nextNodeId, parentId: currentNodeId, children: [], mainChildId: null, depth: 1, roundDepth: 1, type: 'action', action: { type: 'discard', actor: vm.status.controlledSeat, pai: '1m' }, isCurrent: false },
+      ],
+      rounds: [],
+    }
+    // Let Vue publish the replacement tree before exercising the actual wheel
+    // handler; the measured interval starts only after this fixture setup.
+    await new Promise(resolve => requestAnimationFrame(resolve))
     window.studioAPI.getAnalysis = async () => nextResult
+    let wheelRequestAt = null
+    let wheelNavigationArmed = false
     window.studioAPI.jumpToNode = async () => {
+      if (!wheelNavigationArmed) {
+        return {
+          state: JSON.parse(JSON.stringify(vm.status)),
+          view: JSON.parse(JSON.stringify(vm.gameView)),
+        }
+      }
+      wheelRequestAt = performance.now()
       const view = JSON.parse(JSON.stringify(vm.gameView))
       view.currentNodeId = nextNodeId
       view.opponentAnalysis = nextResult
@@ -1795,6 +1858,10 @@ try {
       }))
       return { state: JSON.parse(JSON.stringify(vm.status)), view }
     }
+    // Use the public navigation path to synchronize its private wheel cursor
+    // with this fixture before timing the wheel event itself.
+    await vm.jumpToNode(currentNodeId)
+    wheelNavigationArmed = true
     const frameTimes = []
     const longTasks = []
     const tableMotionSamples = []
@@ -1803,11 +1870,13 @@ try {
       const distributions = [...document.querySelectorAll(
         '.analysis-panel-live .analysis-dora-distribution, .analysis-panel-live .analysis-score-distribution',
       )]
-      const tracks = [...document.querySelectorAll('.analysis-panel-live .analysis-distribution-track')]
       const canvases = [...document.querySelectorAll('.analysis-panel-live .analysis-distribution-canvas')]
       return {
         distributionHeights: distributions.map(element => element.getBoundingClientRect().height),
-        trackHeights: tracks.map(element => element.getBoundingClientRect().height),
+        trackHeights: distributions.map(distribution => (
+          [...distribution.querySelectorAll('.analysis-distribution-track')]
+            .map(element => element.getBoundingClientRect().height)
+        )),
         bottomOverflow: canvases.map((canvas) => {
           const canvasRect = canvas.getBoundingClientRect()
           const distributionRect = canvas.parentElement?.getBoundingClientRect()
@@ -1883,7 +1952,23 @@ try {
     })
     const distributionBefore = captureDistributionGeometry()
     const tableRonRiskBefore = captureTableRonRiskGeometry()
-    await vm.jumpToNode(nextNodeId)
+    const tableStage = document.querySelector('.table-stage')
+    if (!tableStage) throw new Error('Table stage is unavailable for wheel navigation')
+    const wheelDispatchedAt = performance.now()
+    tableStage.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+    const wheelDeadline = wheelDispatchedAt + 1000
+    while (vm.gameView.currentNodeId !== nextNodeId && performance.now() < wheelDeadline) {
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    }
+    const wheelViewAppliedAt = performance.now()
+    if (vm.gameView.currentNodeId !== nextNodeId) throw new Error(`Wheel navigation did not apply the next node: ${JSON.stringify({
+      currentNodeId: vm.gameView.currentNodeId,
+      nextNodeId,
+      mode: vm.status.mode,
+      requestObserved: wheelRequestAt !== null,
+      treeCurrentNodeId: vm.gameView.tree?.currentNodeId,
+      nodes: vm.gameView.tree?.nodes?.map(node => node.id),
+    })}`)
     const immediatePiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
     const tablePhasePromise = new Promise(resolve => setTimeout(() => {
       const activeAnimations = document.getAnimations().filter(animation => animation.playState !== 'finished')
@@ -1912,6 +1997,19 @@ try {
         return counts
       }, {})).sort((left, right) => right[1] - left[1])
       const animationTargets = describeAnimationTargets(analysisDataAnimations)
+      const panelAnimations = document.getAnimations()
+        .filter(animation => (
+          animation.playState !== 'finished'
+          && animation.effect?.target instanceof Element
+          && animation.effect.target.classList.contains('analysis-panel-live')
+        ))
+        .map(animation => ({
+          duration: animation.effect.getTiming().duration,
+          easing: animation.effect.getTiming().easing,
+          properties: [...new Set(animation.effect.getKeyframes().flatMap(frame => (
+            Object.keys(frame).filter(key => !['offset', 'computedOffset', 'easing', 'composite'].includes(key))
+          )))].sort(),
+        }))
       const transitionDurations = [
         ...document.querySelectorAll(
           '.analysis-panel-live .analysis-outcome-bar > span, '
@@ -1925,8 +2023,10 @@ try {
         tableSuppressed: document.querySelector('.grid-main')?.classList.contains('reset-without-motion') || false,
         panelsSuppressed: [...document.querySelectorAll('.analysis-panel-content')]
           .every(element => element.classList.contains('reduce-motion')),
+        visiblePanelCount: document.querySelectorAll('.analysis-panel-live').length,
         analysisDataAnimationCount: analysisDataAnimations.length,
         animationTargets,
+        panelAnimations,
         tableDataAnimationCount: tableDataAnimations.length,
         tableAnimationTargets: describeAnimationTargets(tableDataAnimations),
         transitionDurations,
@@ -1968,6 +2068,10 @@ try {
       immediatePiePath,
       distributionBefore,
       tableRonRiskBefore,
+      wheelNavigation: {
+        requestLatency: wheelRequestAt === null ? null : wheelRequestAt - wheelDispatchedAt,
+        viewLatency: wheelViewAppliedAt - wheelDispatchedAt,
+      },
       tablePhase,
       during,
       after,
@@ -2035,30 +2139,71 @@ try {
     return [name, nextValue - (beforeMetrics[name] || 0)]
   }))
   await cdpSession.detach()
+  if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) {
+    console.log(`Frame-switch performance: ${JSON.stringify(navigationMotion.performance)}`)
+    console.log(`Frame-switch browser work: ${JSON.stringify(performanceDelta)}`)
+    if (traceSummary) console.log(`Frame-switch trace: ${JSON.stringify(traceSummary)}`)
+    console.log(`Navigation motion: ${JSON.stringify({
+      tablePhase: navigationMotion.tablePhase,
+      during: {
+        panelsSuppressed: navigationMotion.during.panelsSuppressed,
+        visiblePanelCount: navigationMotion.during.visiblePanelCount,
+        analysisDataAnimationCount: navigationMotion.during.analysisDataAnimationCount,
+        animationTargets: navigationMotion.during.animationTargets,
+        panelAnimations: navigationMotion.during.panelAnimations,
+      },
+    })}`)
+  }
   assert.equal(navigationMotion.immediatePiePath, navigationMotion.oldPiePath, 'cached analysis waits until table motion has finished')
+  assert.ok(
+    navigationMotion.wheelNavigation.requestLatency !== null
+      && navigationMotion.wheelNavigation.requestLatency < 20,
+    `wheel navigation dispatches without an artificial delay: ${JSON.stringify(navigationMotion.wheelNavigation)}`,
+  )
+  assert.ok(
+    navigationMotion.wheelNavigation.viewLatency < 100,
+    `wheel navigation applies the available node before visual motion begins: ${JSON.stringify(navigationMotion.wheelNavigation)}`,
+  )
   assert.ok(navigationMotion.tablePhase.tableAnimations > 0, 'the representative navigation runs real table motion')
   assert.equal(navigationMotion.tablePhase.analysisAnimations, 0, 'analysis feedback does not overlap the table motion window')
   assert.equal(navigationMotion.during.tableSuppressed, false, 'ordinary table motion remains available during navigation')
-  assert.equal(navigationMotion.during.panelsSuppressed, false, 'ordinary analysis feedback remains available during navigation')
+  assert.equal(navigationMotion.during.panelsSuppressed, true, 'child charts settle once while the complete panels present the next result')
   if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) {
     const durationCounts = navigationMotion.during.transitionDurations.reduce((counts, duration) => {
       counts[duration] = (counts[duration] || 0) + 1
       return counts
     }, {})
-    console.log('Navigation motion:', JSON.stringify({
-      ...navigationMotion.during,
+    console.log('Navigation motion details:', JSON.stringify({
+      tableAnimationTargets: navigationMotion.during.tableAnimationTargets,
+      animationTargets: navigationMotion.during.animationTargets,
+      panelAnimations: navigationMotion.during.panelAnimations,
       transitionDurations: durationCounts,
     }))
   }
   if (!analysisMotionExperiment) {
-    assert.ok(
-      navigationMotion.during.analysisDataAnimationCount > 0
-        || navigationMotion.during.riskCanvas !== navigationMotion.oldRiskCanvas,
-      'analysis values animate after the table motion window',
+    assert.equal(
+      navigationMotion.during.analysisDataAnimationCount,
+      navigationMotion.during.visiblePanelCount,
+      'each visible analysis panel uses one presentation animation after the table motion window',
     )
     assert.ok(
-      navigationMotion.during.transitionDurations.every(duration => duration === '0.11s'),
-      'CSS prediction primitives use the established 110ms motion duration',
+      navigationMotion.during.animationTargets.every(([target, count]) => (
+        target === 'analysis-panel-live' && count === navigationMotion.during.visiblePanelCount
+      )),
+      'analysis presentation does not fan out into animations on individual values',
+    )
+    assert.ok(
+      navigationMotion.during.panelAnimations.every(animation => (
+        animation.duration === 110
+        && animation.easing === 'cubic-bezier(0.33, 1, 0.68, 1)'
+        && animation.properties.length === 1
+        && animation.properties[0] === 'opacity'
+      )),
+      'panel presentation uses only the established 110ms opacity handoff',
+    )
+    assert.ok(
+      navigationMotion.during.transitionDurations.every(duration => duration === '0s'),
+      'child prediction primitives do not start parallel transitions during the panel handoff',
     )
   }
   assert.equal(navigationMotion.after.activeDataAnimations, 0, 'analysis value motion finishes within the shared motion duration')
@@ -2072,16 +2217,19 @@ try {
     navigationMotion.distributionBefore.distributionHeights,
     'dora distribution height remains fixed after its values settle',
   )
-  assert.deepEqual(
-    navigationMotion.during.distributionGeometry.trackHeights,
-    navigationMotion.distributionBefore.trackHeights,
-    'every dora and score track keeps its allocated height while values animate',
-  )
-  assert.deepEqual(
-    navigationMotion.after.distributionGeometry.trackHeights,
-    navigationMotion.distributionBefore.trackHeights,
-    'every dora and score track keeps its allocated height after values settle',
-  )
+  for (const [phase, geometry] of [
+    ['during', navigationMotion.during.distributionGeometry],
+    ['after', navigationMotion.after.distributionGeometry],
+  ]) {
+    assert.ok(
+      geometry.trackHeights.every((tracks, index) => (
+        tracks.length > 0
+        && tracks.every(height => Math.abs(height - tracks[0]) < 0.01)
+        && Math.abs(tracks[0] - navigationMotion.distributionBefore.trackHeights[index][0]) < 0.01
+      )),
+      `every dora and score track keeps its allocated height ${phase === 'during' ? 'while values animate' : 'after values settle'}`,
+    )
+  }
   assert.ok(
     navigationMotion.during.distributionGeometry.bottomOverflow.every(value => Math.abs(value) < 0.01),
     'dora fills remain clipped to the fixed track during animation',
@@ -2111,14 +2259,13 @@ try {
     navigationMotion.tableRonRiskBefore.renderSignature,
     'table deal-in canvas draws the next probabilities instead of retaining stale pixels',
   )
-  assert.notEqual(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart interpolates its values instead of replacing the pie at once')
-  assert.notEqual(navigationMotion.after.riskCanvas, navigationMotion.oldRiskCanvas, 'the deal-in chart draws the next values on its fixed canvas')
+  assert.notEqual(navigationMotion.during.piePath, navigationMotion.oldPiePath, 'the staged shanten chart contains the next result')
+  assert.equal(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart remains stable during the panel handoff')
+  assert.notEqual(navigationMotion.during.riskCanvas, navigationMotion.oldRiskCanvas, 'the staged deal-in chart draws the next values on its fixed canvas')
+  assert.equal(navigationMotion.after.riskCanvas, navigationMotion.during.riskCanvas, 'the deal-in chart remains stable during the panel handoff')
   if (realisticPerformance) {
-    assert.notEqual(navigationMotion.after.countCanvas, navigationMotion.oldCountCanvas, 'the count chart draws the next distributions on its fixed canvas')
-    assert.ok(
-      new Set(navigationMotion.performance.analysisMotionSamples.map(sample => sample.countSignature).filter(Boolean)).size >= 3,
-      'count distributions interpolate through multiple visible frames instead of jumping to the next result',
-    )
+    assert.notEqual(navigationMotion.during.countCanvas, navigationMotion.oldCountCanvas, 'the staged count chart draws the next distributions on its fixed canvas')
+    assert.equal(navigationMotion.after.countCanvas, navigationMotion.during.countCanvas, 'count distributions remain stable during the panel handoff')
   }
   assert.equal(
     await page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--ui-motion-duration').trim()),
@@ -2130,16 +2277,10 @@ try {
     'cubic-bezier(0.33, 1, 0.68, 1)',
     'the shared UI motion keeps the established fast-out easing curve',
   )
-  assert.equal(
-    await page.locator('.grid-main .choice-bar-fill').first().evaluate(element => getComputedStyle(element).transitionDuration),
-    '0.11s',
-    'table recommendation bars use the established 110ms motion duration',
+  assert.ok(
+    await page.locator('.grid-main .table-recommendation-canvas').evaluate(canvas => Boolean(canvas.rmsRecommendationRenderSignature)),
+    'the table recommendation canvas renders the settled recommendation values',
   )
-  if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) {
-    console.log(`Frame-switch performance: ${JSON.stringify(navigationMotion.performance)}`)
-    console.log(`Frame-switch browser work: ${JSON.stringify(performanceDelta)}`)
-    if (traceSummary) console.log(`Frame-switch trace: ${JSON.stringify(traceSummary)}`)
-  }
   if (process.env.RMS_UI_PERFORMANCE_SCREENSHOT) {
     await page.screenshot({ path: path.resolve(process.env.RMS_UI_PERFORMANCE_SCREENSHOT) })
   }

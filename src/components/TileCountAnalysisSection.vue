@@ -136,7 +136,20 @@ const countGridElement = ref<HTMLElement | null>(null)
 const theoreticalBaselineEnabled = ref(false)
 const theoreticalBaseline = computed(() => buildRandomTileCountBaseline(props.table, props.controlledSeat))
 const theoreticalBaselineAvailable = computed(() => theoreticalBaseline.value !== null)
-type CountCanvasElement = HTMLCanvasElement & { rmsCountRenderSignature?: string }
+type CountTrackGeometry = { left: number; right: number; top: number; bottom: number }
+type CountCanvasGeometry = {
+  width: number
+  height: number
+  tileGap?: number
+  tileWidth?: number
+  wallGap?: number
+  palettes: string[][]
+  tracks?: CountTrackGeometry[]
+}
+type CountCanvasElement = HTMLCanvasElement & {
+  rmsCountRenderSignature?: string
+  rmsCountGeometry?: CountCanvasGeometry
+}
 const countCanvasElements = new Map<string, { canvas: CountCanvasElement; row: readonly string[] }>()
 const sourceCanvasElements = new Map<string, { canvas: CountCanvasElement; source: TileSource }>()
 let displayedCountDistributions = new Map<string, number[]>()
@@ -300,6 +313,7 @@ function updateCountBarGeometry() {
   grid.style.setProperty('--analysis-count-source-row-min-height', `${sourceRowMinimumPixels / ratio}px`)
   grid.style.setProperty('--analysis-count-grid-min-height', `${(props.countLayout === 'tile-groups' ? groupedGridMinimumPixels : sourceGridMinimumPixels) / ratio}px`)
   updateCountPaletteVariables(grid)
+  measureCountCanvases()
 }
 function updateCountPaletteVariables(grid: HTMLElement) {
   const style = getComputedStyle(grid)
@@ -308,30 +322,75 @@ function updateCountPaletteVariables(grid: HTMLElement) {
   }
 }
 function prepareCountCanvas(canvas: CountCanvasElement) {
+  const geometry = canvas.rmsCountGeometry
+  if (!geometry) return null
+  const { width, height } = geometry
+  const context = canvas.getContext('2d')
+  if (!context) return null
+  context.clearRect(0, 0, width, height)
+  return { context, geometry }
+}
+
+function measureCanvasBox(canvas: CountCanvasElement) {
   const rect = canvas.getBoundingClientRect()
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const width = Math.max(1, Math.round(rect.width * ratio))
   const height = Math.max(1, Math.round(rect.height * ratio))
   if (canvas.width !== width) canvas.width = width
   if (canvas.height !== height) canvas.height = height
-  const context = canvas.getContext('2d')
-  if (!context) return null
-  context.clearRect(0, 0, width, height)
-  return { context, rect, ratio, width, height }
+  return { rect, ratio, width, height }
+}
+
+function measureCountCanvases() {
+  for (const { canvas } of countCanvasElements.values()) {
+    const { ratio, width, height } = measureCanvasBox(canvas)
+    const style = getComputedStyle(canvas)
+    const sources = countSources.value
+    canvas.rmsCountGeometry = {
+      width,
+      height,
+      tileGap: Math.max(0, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-tile-gap')) * ratio)),
+      tileWidth: Math.max(sources.length, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-tile-width')) * ratio)),
+      wallGap: sources.length > 1
+        ? Math.max(0, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-wall-gap')) * ratio))
+        : 0,
+      palettes: sources.map(source => countSourcePalette(source.key, style)),
+    }
+  }
+  for (const { canvas, source } of sourceCanvasElements.values()) {
+    const { rect, ratio, width, height } = measureCanvasBox(canvas)
+    const style = getComputedStyle(canvas)
+    const tracks = [...(canvas.parentElement?.querySelectorAll<HTMLElement>('.analysis-count-source-bar') || [])]
+      .map((track) => {
+        const trackRect = track.getBoundingClientRect()
+        return {
+          left: Math.max(0, Math.round((trackRect.left - rect.left) * ratio)),
+          right: Math.min(width, Math.round((trackRect.right - rect.left) * ratio)),
+          top: Math.max(0, Math.round((trackRect.top - rect.top) * ratio)),
+          bottom: Math.min(height, Math.round((trackRect.bottom - rect.top) * ratio)),
+        }
+      })
+    canvas.rmsCountGeometry = {
+      width,
+      height,
+      palettes: [countSourcePalette(source.key, style)],
+      tracks,
+    }
+  }
 }
 
 function renderCountCanvas(row: readonly string[], canvas: CountCanvasElement) {
   const prepared = prepareCountCanvas(canvas)
   if (!prepared) return
-  const { context, ratio, height } = prepared
+  const { context, geometry } = prepared
+  const { height } = geometry
   const sources = countSources.value
   if (!sources.length || !row.length) return
-  const style = getComputedStyle(canvas)
-  const tileGap = Math.max(0, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-tile-gap')) * ratio))
-  const tileWidth = Math.max(sources.length, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-tile-width')) * ratio))
-  const wallGap = sources.length > 1 ? Math.max(0, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-wall-gap')) * ratio)) : 0
+  const tileGap = geometry.tileGap || 0
+  const tileWidth = geometry.tileWidth || sources.length
+  const wallGap = geometry.wallGap || 0
   const sourceWidth = Math.max(sources.length, tileWidth - wallGap)
-  const palettes = sources.map((source) => countSourcePalette(source.key, style))
+  const palettes = geometry.palettes
   for (let tileIndex = 0; tileIndex < row.length; tileIndex += 1) {
     const tile = row[tileIndex]
     const blockLeft = tileIndex * (tileWidth + tileGap)
@@ -363,20 +422,12 @@ function renderCountCanvas(row: readonly string[], canvas: CountCanvasElement) {
 function renderSourceCanvas(canvas: CountCanvasElement, source: TileSource) {
   const prepared = prepareCountCanvas(canvas)
   if (!prepared) return
-  const { context, rect, ratio, width, height } = prepared
-  const sequence = canvas.parentElement
-  if (!sequence) return
-  const tracks = sequence.querySelectorAll<HTMLElement>('.analysis-count-source-bar')
-  const style = getComputedStyle(canvas)
-  const palette = countSourcePalette(source.key, style)
-  tracks.forEach((track, tileIndex) => {
+  const { context, geometry } = prepared
+  const palette = geometry.palettes[0]
+  geometry.tracks?.forEach((track, tileIndex) => {
     const entry = countSourceTiles.value[tileIndex]
     if (!entry) return
-    const trackRect = track.getBoundingClientRect()
-    const left = Math.max(0, Math.round((trackRect.left - rect.left) * ratio))
-    const right = Math.min(width, Math.round((trackRect.right - rect.left) * ratio))
-    const top = Math.max(0, Math.round((trackRect.top - rect.top) * ratio))
-    const bottom = Math.min(height, Math.round((trackRect.bottom - rect.top) * ratio))
+    const { left, right, top, bottom } = track
     if (right <= left || bottom <= top) return
     context.fillStyle = 'rgba(255, 255, 255, 0.04)'
     context.fillRect(left, top, right - left, bottom - top)
@@ -426,7 +477,11 @@ function stopCountAnimation() {
 function animateCountCanvases() {
   stopCountAnimation()
   const target = targetCountDistributions()
-  if (!displayedCountDistributions.size || props.reduceMotion) {
+  const unchanged = target.size === displayedCountDistributions.size
+    && [...target].every(([key, probabilities]) => probabilities.every((value, index) => (
+      Math.abs(value - (displayedCountDistributions.get(key)?.[index] ?? value)) <= 1e-6
+    )))
+  if (!displayedCountDistributions.size || props.reduceMotion || unchanged) {
     displayedCountDistributions = copyCountDistributions(target)
     renderCountCanvases()
     return
