@@ -106,7 +106,7 @@
 
 .analysis-count-source-row-canvas {
   position: absolute;
-  z-index: 0;
+  z-index: 1;
   inset: 0;
   display: block;
   width: 100%;
@@ -116,7 +116,7 @@
 
 .analysis-count-source-tile {
   position: relative;
-  z-index: 1;
+  z-index: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   flex: 0 0 var(--analysis-count-source-tile-width, 0.75rem);
@@ -130,6 +130,11 @@
   background: transparent;
   cursor: default;
   outline: none;
+}
+
+.analysis-count-source-tile:hover,
+.analysis-count-source-tile:focus-visible {
+  z-index: 2;
 }
 
 .analysis-count-source-tile.is-group-start {
@@ -226,7 +231,7 @@
 
 .analysis-count-row-canvas {
   position: absolute;
-  z-index: 0;
+  z-index: 1;
   top: 0;
   left: 0;
   display: block;
@@ -237,7 +242,7 @@
 
 .analysis-count-bars > button {
   position: relative;
-  z-index: 1;
+  z-index: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -251,6 +256,11 @@
   background: transparent;
   cursor: default;
   outline: none;
+}
+
+.analysis-count-bars > button:hover,
+.analysis-count-bars > button:focus-visible {
+  z-index: 2;
 }
 
 .analysis-count-legends {

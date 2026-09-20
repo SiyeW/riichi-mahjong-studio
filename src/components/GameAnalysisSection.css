@@ -1,6 +1,17 @@
 .analysis-player-section {
+  position: relative;
   min-width: 0;
   background: transparent;
+}
+
+.analysis-game-canvas {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
 }
 
 .analysis-outcome-strip {
@@ -21,13 +32,13 @@
 
 .analysis-outcome-bar span {
   position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
   min-width: 0;
   outline: none;
-  transition: width var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .analysis-outcome-bar span::after,
@@ -90,10 +101,15 @@
   white-space: nowrap;
 }
 
-.is-draw { background: var(--analysis-draw-color); }
-.is-self-win { background: var(--analysis-self-win-color); }
-.is-self-deal-in { background: var(--analysis-self-deal-in-color); }
-.is-horizontal { background: var(--analysis-horizontal-color); }
+.analysis-outcome-bar > .is-draw,
+.analysis-outcome-bar > .is-self-win,
+.analysis-outcome-bar > .is-self-deal-in,
+.analysis-outcome-bar > .is-horizontal { background: transparent; }
+
+.analysis-outcome-legend .is-draw { background: var(--analysis-draw-color); }
+.analysis-outcome-legend .is-self-win { background: var(--analysis-self-win-color); }
+.analysis-outcome-legend .is-self-deal-in { background: var(--analysis-self-deal-in-color); }
+.analysis-outcome-legend .is-horizontal { background: var(--analysis-horizontal-color); }
 
 .analysis-outcome-legend {
   display: flex;
@@ -220,18 +236,16 @@
   min-width: 0;
   width: 100%;
   outline: none;
-  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
+  background: transparent;
 }
 
 .analysis-offense-segment.is-win {
   right: 0;
-  background: var(--analysis-self-win-color);
   transform-origin: right center;
 }
 
 .analysis-offense-segment.is-deal-in {
   left: 0;
-  background: var(--analysis-self-deal-in-color);
   transform-origin: left center;
 }
 
@@ -254,7 +268,6 @@
 
 .analysis-offense-track.labels-measured .analysis-offense-value {
   opacity: 1;
-  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .analysis-delta-cell {
@@ -280,15 +293,13 @@
   top: 0;
   bottom: 0;
   width: 50%;
-  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
+  background: transparent;
 }
 
 .analysis-delta-cell > span.positive {
-  background: var(--analysis-self-win-color);
   transform-origin: left center;
 }
 .analysis-delta-cell > span.negative {
-  background: var(--analysis-self-deal-in-color);
   transform-origin: right center;
 }
 
@@ -333,12 +344,14 @@
 }
 
 .analysis-placement-bar span {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: center;
   height: 100%;
   min-width: 0;
-  transition: width var(--ui-motion-duration) var(--ui-motion-easing);
+  background: transparent;
 }
 
 .analysis-placement-bar small {
@@ -356,10 +369,6 @@
   color: rgba(248, 252, 250, 0.9);
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
 }
-.rank-1 { background: var(--analysis-rank-1-color); }
-.rank-2 { background: var(--analysis-rank-2-color); }
-.rank-3 { background: var(--analysis-rank-3-color); }
-.rank-4 { background: var(--analysis-rank-4-color); }
 
 .analysis-placement-value,
 .analysis-score-cell {

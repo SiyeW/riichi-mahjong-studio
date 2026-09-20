@@ -1908,9 +1908,13 @@ try {
         '.analysis-count-source-row-canvas, .analysis-count-row-canvas',
       ),
     ].map(canvas => canvas.rmsCountRenderSignature || '').join('|')
+    const captureGameCanvasSignature = () => (
+      document.querySelector('.analysis-game-canvas')?.rmsGameAnalysisRenderSignature || ''
+    )
     const oldPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
     const oldRiskCanvas = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
     const oldCountCanvas = captureCountCanvasSignature()
+    const oldGameCanvas = captureGameCanvasSignature()
     const frameSample = new Promise(resolve => {
       const startedAt = performance.now()
       const observer = typeof PerformanceObserver === 'function'
@@ -1936,10 +1940,15 @@ try {
           ))
           const riskSignature = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
           const countSignature = captureCountCanvasSignature()
+          const gameSignature = captureGameCanvasSignature()
           if (analysisAnimation && typeof analysisAnimation.currentTime === 'number') {
-            analysisMotionSamples.push({ timestamp, currentTime: analysisAnimation.currentTime, riskSignature, countSignature })
-          } else if ((riskSignature && riskSignature !== oldRiskCanvas) || (countSignature && countSignature !== oldCountCanvas)) {
-            analysisMotionSamples.push({ timestamp, currentTime: null, riskSignature, countSignature })
+            analysisMotionSamples.push({ timestamp, currentTime: analysisAnimation.currentTime, riskSignature, countSignature, gameSignature })
+          } else if (
+            (riskSignature && riskSignature !== oldRiskCanvas)
+            || (countSignature && countSignature !== oldCountCanvas)
+            || (gameSignature && gameSignature !== oldGameCanvas)
+          ) {
+            analysisMotionSamples.push({ timestamp, currentTime: null, riskSignature, countSignature, gameSignature })
           }
         }
         if (timestamp - startedAt < 300) requestAnimationFrame(sample)
@@ -2033,6 +2042,7 @@ try {
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
         riskCanvas: document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '',
         countCanvas: captureCountCanvasSignature(),
+        gameCanvas: captureGameCanvasSignature(),
         distributionGeometry: captureDistributionGeometry(),
         tableRonRiskGeometry: captureTableRonRiskGeometry(),
       })
@@ -2048,6 +2058,7 @@ try {
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
         riskCanvas: document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '',
         countCanvas: captureCountCanvasSignature(),
+        gameCanvas: captureGameCanvasSignature(),
         distributionGeometry: captureDistributionGeometry(),
         tableRonRiskGeometry: captureTableRonRiskGeometry(),
       })
@@ -2065,6 +2076,7 @@ try {
       oldPiePath,
       oldRiskCanvas,
       oldCountCanvas,
+      oldGameCanvas,
       immediatePiePath,
       distributionBefore,
       tableRonRiskBefore,
@@ -2092,7 +2104,7 @@ try {
         analysisMotionSamples,
       },
     }
-  }, Boolean(process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC || realisticPerformance))
+  }, true)
   const performanceAfter = await cdpSession.send('Performance.getMetrics')
   let traceSummary = null
   if (traceEnabled) {
@@ -2167,7 +2179,7 @@ try {
   assert.ok(navigationMotion.tablePhase.tableAnimations > 0, 'the representative navigation runs real table motion')
   assert.equal(navigationMotion.tablePhase.analysisAnimations, 0, 'analysis feedback does not overlap the table motion window')
   assert.equal(navigationMotion.during.tableSuppressed, false, 'ordinary table motion remains available during navigation')
-  assert.equal(navigationMotion.during.panelsSuppressed, true, 'child charts settle once while the complete panels present the next result')
+  assert.equal(navigationMotion.during.panelsSuppressed, false, 'analysis values animate without invalidating every panel descendant')
   if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) {
     const durationCounts = navigationMotion.during.transitionDurations.reduce((counts, duration) => {
       counts[duration] = (counts[duration] || 0) + 1
@@ -2181,29 +2193,16 @@ try {
     }))
   }
   if (!analysisMotionExperiment) {
-    assert.equal(
-      navigationMotion.during.analysisDataAnimationCount,
-      navigationMotion.during.visiblePanelCount,
-      'each visible analysis panel uses one presentation animation after the table motion window',
-    )
-    assert.ok(
-      navigationMotion.during.animationTargets.every(([target, count]) => (
-        target === 'analysis-panel-live' && count === navigationMotion.during.visiblePanelCount
-      )),
-      'analysis presentation does not fan out into animations on individual values',
-    )
-    assert.ok(
-      navigationMotion.during.panelAnimations.every(animation => (
-        animation.duration === 110
-        && animation.easing === 'cubic-bezier(0.33, 1, 0.68, 1)'
-        && animation.properties.length === 1
-        && animation.properties[0] === 'opacity'
-      )),
-      'panel presentation uses only the established 110ms opacity handoff',
-    )
+    assert.equal(navigationMotion.during.panelAnimations.length, 0, 'analysis panels do not flash through a whole-panel opacity handoff')
     assert.ok(
       navigationMotion.during.transitionDurations.every(duration => duration === '0s'),
-      'child prediction primitives do not start parallel transitions during the panel handoff',
+      'game-analysis bars avoid per-value CSS layout and compositor animations',
+    )
+    assert.ok(
+      new Set(navigationMotion.performance.analysisMotionSamples.map(sample => (
+        `${sample.riskSignature}|${sample.countSignature}|${sample.gameSignature}`
+      ))).size >= 2,
+      'analysis canvases expose multiple intermediate frames instead of replacing the result at once',
     )
   }
   assert.equal(navigationMotion.after.activeDataAnimations, 0, 'analysis value motion finishes within the shared motion duration')
@@ -2260,12 +2259,18 @@ try {
     'table deal-in canvas draws the next probabilities instead of retaining stale pixels',
   )
   assert.notEqual(navigationMotion.during.piePath, navigationMotion.oldPiePath, 'the staged shanten chart contains the next result')
-  assert.equal(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart remains stable during the panel handoff')
+  assert.notEqual(navigationMotion.after.piePath, navigationMotion.oldPiePath, 'the shanten chart finishes the next animated result')
+  assert.notEqual(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart exposes an intermediate animated frame')
   assert.notEqual(navigationMotion.during.riskCanvas, navigationMotion.oldRiskCanvas, 'the staged deal-in chart draws the next values on its fixed canvas')
-  assert.equal(navigationMotion.after.riskCanvas, navigationMotion.during.riskCanvas, 'the deal-in chart remains stable during the panel handoff')
+  assert.notEqual(navigationMotion.after.riskCanvas, navigationMotion.oldRiskCanvas, 'the deal-in chart finishes the next animated values')
+  assert.notEqual(navigationMotion.after.riskCanvas, navigationMotion.during.riskCanvas, 'the deal-in chart exposes an intermediate animated frame')
   if (realisticPerformance) {
     assert.notEqual(navigationMotion.during.countCanvas, navigationMotion.oldCountCanvas, 'the staged count chart draws the next distributions on its fixed canvas')
-    assert.equal(navigationMotion.after.countCanvas, navigationMotion.during.countCanvas, 'count distributions remain stable during the panel handoff')
+    assert.notEqual(navigationMotion.after.countCanvas, navigationMotion.oldCountCanvas, 'count distributions finish the next animated values')
+    assert.notEqual(navigationMotion.after.countCanvas, navigationMotion.during.countCanvas, 'count distributions expose an intermediate animated frame')
+  }
+  if (navigationMotion.oldGameCanvas || navigationMotion.after.gameCanvas) {
+    assert.notEqual(navigationMotion.after.gameCanvas, navigationMotion.oldGameCanvas, 'the game-analysis canvas draws the next result')
   }
   assert.equal(
     await page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--ui-motion-duration').trim()),
