@@ -85,34 +85,52 @@ class RecordSession:
     def normalize_mode(value: Any) -> str:
         return "research" if value == "research" else "play"
 
-    @staticmethod
-    def _checkpoint_game(game: Game) -> Game:
-        """Return a cache-free view for a recovery-only deep copy.
+    def prepare_recovery_checkpoint(self) -> tuple[Game, dict[str, Any]]:
+        """Detach mutable record structure while the caller holds the state lock.
 
-        Analysis outputs are derived data and can be requested again after a
-        crash. Excluding them before deepcopy keeps periodic recovery work
-        proportional to authored/gameplay state instead of model output size.
+        Node snapshots are immutable after a node is committed. Copy node
+        dictionaries and their mutable tree links here, then leave the expensive
+        recursive copy and storage normalization to the checkpoint worker.
         """
-        checkpoint_game = dict(game)
-        nodes = game.get("nodes")
+        self.ensure_loaded()
+        live_game = self._state["game"]
+        prepared_game = dict(live_game)
+        nodes = live_game.get("nodes")
         if isinstance(nodes, dict):
-            checkpoint_game["nodes"] = {
-                node_id: {
+            prepared_nodes = {}
+            for node_id, node in nodes.items():
+                if not isinstance(node, dict):
+                    prepared_nodes[node_id] = node
+                    continue
+                prepared_node = {
                     key: value
                     for key, value in node.items()
                     if key not in ("analysisCache", "opponentAnalysisCache")
                 }
-                if isinstance(node, dict) else node
-                for node_id, node in nodes.items()
-            }
-        return checkpoint_game
+                children = prepared_node.get("children")
+                if isinstance(children, list):
+                    prepared_node["children"] = list(children)
+                prepared_nodes[node_id] = prepared_node
+            prepared_game["nodes"] = prepared_nodes
+        state_copy = {
+            "mode": self._state["mode"],
+            "controlledSeat": self._state["controlledSeat"],
+            "pendingSeatSwitch": self._state["pendingSeatSwitch"],
+            "visibleHands": self._state["visibleHands"],
+        }
+        return prepared_game, state_copy
 
-    def serialize(self, *, recovery_checkpoint: bool = False) -> dict:
+    @staticmethod
+    def serialize_prepared_recovery_checkpoint(
+        prepared: tuple[Game, dict[str, Any]],
+    ) -> dict:
+        """Finish a detached recovery snapshot without holding live-state locks."""
+        game, state = prepared
+        return serialize_game_record_parts(copy.deepcopy(game), copy.deepcopy(state))
+
+    def serialize(self) -> dict:
         self.ensure_loaded()
-        live_game = self._state["game"]
-        game_copy = copy.deepcopy(
-            self._checkpoint_game(live_game) if recovery_checkpoint else live_game
-        )
+        game_copy = copy.deepcopy(self._state["game"])
         state_copy = {
             "mode": self._state["mode"],
             "controlledSeat": self._state["controlledSeat"],

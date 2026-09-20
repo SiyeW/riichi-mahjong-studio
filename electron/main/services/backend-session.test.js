@@ -12,7 +12,9 @@ function fixture(loaded = true, checkpointOptions = {}) {
     restart() { this.running = true; calls.push('restart') },
     async sendRequest(command, payload) {
       calls.push(command)
-      if (command === 'export_game_record') return { record, state: { analysisVisibility: { opponentAnalysis: true } } }
+      if (command === 'export_game_record' || command === 'export_recovery_checkpoint') {
+        return { record, state: { analysisVisibility: { opponentAnalysis: true } } }
+      }
       if (command === 'import_game_record') {
         assert.deepEqual(payload.record, record)
         if (backend.failImport) throw new Error('import failed')

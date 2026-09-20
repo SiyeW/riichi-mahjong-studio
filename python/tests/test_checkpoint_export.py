@@ -18,8 +18,8 @@ class CheckpointExportTests(unittest.TestCase):
             'game': game, 'gameLoaded': True, 'mode': 'research',
             'controlledSeat': 0, 'pendingSeatSwitch': None, 'visibleHands': True,
         }):
-            result = service.STATEFUL_COMMANDS.dispatch(
-                'request', 'export_game_record', {'checkpoint': True}
+            result = service._export_recovery_checkpoint(
+                'request', 'export_recovery_checkpoint'
             )
             record = result['record']
             self.assertEqual(game, before, 'compaction must not mutate the live record')
@@ -43,8 +43,8 @@ class CheckpointExportTests(unittest.TestCase):
             'game': game, 'gameLoaded': True, 'mode': 'play',
             'controlledSeat': 0, 'pendingSeatSwitch': None, 'visibleHands': False,
         }):
-            result = service.STATEFUL_COMMANDS.dispatch(
-                'request', 'export_game_record', {'checkpoint': True}
+            result = service._export_recovery_checkpoint(
+                'request', 'export_recovery_checkpoint'
             )
 
         exported_node = result['record']['game']['nodes'][node_id]
@@ -67,6 +67,27 @@ class CheckpointExportTests(unittest.TestCase):
         expand_record_analysis_caches(record)
         self.assertIn('decision', record['game']['nodes'][node_id]['analysisCache'])
 
+    def test_prepared_checkpoint_is_detached_before_background_serialization(self):
+        game = service.create_empty_game(123456)
+        node_id = game['currentNodeId']
+        node = game['nodes'][node_id]
+        node['comment'] = 'before'
+        node['children'] = ['first']
+        with patch.dict(service.STATE, {
+            'game': game, 'gameLoaded': True, 'mode': 'play',
+            'controlledSeat': 0, 'pendingSeatSwitch': None, 'visibleHands': False,
+        }):
+            prepared = service.RECORD_SESSION.prepare_recovery_checkpoint()
+            node['comment'] = 'after'
+            node['children'].append('second')
+            record = service.RECORD_SESSION.serialize_prepared_recovery_checkpoint(
+                prepared
+            )
+
+        exported = record['game']['nodes'][node_id]
+        self.assertEqual(exported['comment'], 'before')
+        self.assertEqual(exported['children'], ['first'])
+
     def test_changing_exported_cache_cannot_change_live_analysis(self):
         game = service.create_empty_game(123456)
         node_id = game['currentNodeId']
@@ -80,17 +101,20 @@ class CheckpointExportTests(unittest.TestCase):
 
     def test_checkpoint_exports_record_without_building_or_consuming_ui_state(self):
         record = {'game': {'gameId': 'test'}}
-        with patch.object(service.RECORD_SESSION, 'serialize', return_value=record) as serialize, \
+        prepared = ({'gameId': 'test'}, {})
+        with patch.object(service.RECORD_SESSION, 'prepare_recovery_checkpoint', return_value=prepared) as prepare, \
+             patch.object(service.RECORD_SESSION, 'serialize_prepared_recovery_checkpoint', return_value=record) as serialize, \
              patch.object(service.VIEW_BUILDER, 'build_view_payload', side_effect=AssertionError('unneeded view')), \
              patch.object(service.VIEW_BUILDER, 'build_state_payload', side_effect=AssertionError('unneeded runtime state')):
-            result = service.STATEFUL_COMMANDS.dispatch(
-                'request', 'export_game_record', {'checkpoint': True}
+            result = service._export_recovery_checkpoint(
+                'request', 'export_recovery_checkpoint'
             )
         self.assertIs(result['record'], record)
         self.assertEqual(result['request_id'], 'request')
         self.assertNotIn('view', result)
         self.assertIn('analysisVisibility', result['state'])
-        serialize.assert_called_once_with(recovery_checkpoint=True)
+        prepare.assert_called_once_with()
+        serialize.assert_called_once_with(prepared)
 
     def test_normal_export_keeps_the_existing_response(self):
         with patch.object(service.RECORD_SESSION, 'serialize', return_value={'game': {}}), \

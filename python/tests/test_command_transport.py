@@ -20,6 +20,7 @@ class CommandTransportTests(unittest.TestCase):
             unload=mock.Mock(return_value={"loaded": False}),
         )
         self.collect_metrics = mock.Mock(return_value={"backendPrivateBytes": 1})
+        self.export_checkpoint = mock.Mock(return_value={"command": "checkpoint"})
         self.dispatch_stateful = mock.Mock(return_value={"command": "stateful"})
         self.emit = mock.Mock()
         self.transport = CommandTransport(
@@ -27,6 +28,7 @@ class CommandTransportTests(unittest.TestCase):
             view_builder=self.view_builder,
             engine_management=self.engine_management,
             collect_runtime_metrics=self.collect_metrics,
+            export_recovery_checkpoint=self.export_checkpoint,
             dispatch_stateful=self.dispatch_stateful,
             emit=self.emit,
             now_iso=lambda: "now",
@@ -68,6 +70,15 @@ class CommandTransportTests(unittest.TestCase):
             payload,
         )
         self.emit.assert_called_once_with({"command": "stateful"})
+
+    def test_recovery_checkpoint_bypasses_stateful_dispatch(self):
+        self.transport.process("request", "export_recovery_checkpoint", {})
+
+        self.export_checkpoint.assert_called_once_with(
+            "request", "export_recovery_checkpoint"
+        )
+        self.dispatch_stateful.assert_not_called()
+        self.emit.assert_called_once_with({"command": "checkpoint"})
 
     def test_failure_is_returned_as_transport_error(self):
         self.dispatch_stateful.side_effect = ValueError("failed")

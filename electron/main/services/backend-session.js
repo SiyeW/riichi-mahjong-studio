@@ -20,7 +20,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
   let derivedRecordDirty = false
   const checkpoint = createSessionCheckpoint({
     ...checkpointOptions,
-    exportRecord: () => backend.sendRequest('export_game_record', { checkpoint: true }),
+    exportRecord: () => backend.sendRequest('export_recovery_checkpoint'),
     isRunning: () => !stopped && !restarting && backend.isRunning(),
   })
 

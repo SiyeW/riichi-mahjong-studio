@@ -703,11 +703,32 @@ STATEFUL_COMMANDS = stateful_command_dispatcher.StatefulCommandDispatcher(
 )
 
 
+def _export_recovery_checkpoint(request_id, command):
+    # Only detach the mutable tree structure while foreground commands are
+    # excluded. Recursive copying and storage normalization run afterwards on
+    # the dedicated checkpoint executor.
+    with _STATE_LOCK:
+        prepared = RECORD_SESSION.prepare_recovery_checkpoint()
+        visibility = {
+            "decisionRecommendations": bool(
+                STATE.get("decisionRecommendationsEnabled", True)
+            ),
+            "opponentAnalysis": bool(STATE.get("opponentAnalysisEnabled", False)),
+        }
+    return {
+        "request_id": request_id,
+        "command": command,
+        "record": RECORD_SESSION.serialize_prepared_recovery_checkpoint(prepared),
+        "state": {"analysisVisibility": visibility},
+    }
+
+
 COMMAND_TRANSPORT = command_transport.CommandTransport(
     state_lock=_STATE_LOCK,
     view_builder=VIEW_BUILDER,
     engine_management=ENGINE_MANAGEMENT,
     collect_runtime_metrics=runtime_metrics.collect_runtime_memory_metrics,
+    export_recovery_checkpoint=_export_recovery_checkpoint,
     dispatch_stateful=STATEFUL_COMMANDS.dispatch,
     emit=emit,
     now_iso=now_iso,

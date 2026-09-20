@@ -24,6 +24,7 @@ class ServiceRuntime:
         self.engine_prewarm = executor_factory(max_workers=2)
         self._request_executors = {
             "command": executor_factory(max_workers=1),
+            "checkpoint": executor_factory(max_workers=1),
             "status": executor_factory(max_workers=1),
             "metrics": executor_factory(max_workers=1),
             "engine_inspection": executor_factory(max_workers=1),
@@ -40,6 +41,7 @@ class ServiceRuntime:
     @staticmethod
     def request_lane(command: str) -> str:
         return {
+            "export_recovery_checkpoint": "checkpoint",
             "get_status": "status",
             "get_runtime_metrics": "metrics",
             "describe_engine": "engine_inspection",
