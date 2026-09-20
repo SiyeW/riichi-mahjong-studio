@@ -89,7 +89,7 @@ class RecordWorkspaceCommands:
             return {
                 "request_id": request_id,
                 "command": command,
-                "record": self._record_session.serialize(),
+                "record": self._record_session.serialize(recovery_checkpoint=True),
                 "state": {
                     "analysisVisibility": {
                         "decisionRecommendations": bool(

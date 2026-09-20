@@ -85,9 +85,34 @@ class RecordSession:
     def normalize_mode(value: Any) -> str:
         return "research" if value == "research" else "play"
 
-    def serialize(self) -> dict:
+    @staticmethod
+    def _checkpoint_game(game: Game) -> Game:
+        """Return a cache-free view for a recovery-only deep copy.
+
+        Analysis outputs are derived data and can be requested again after a
+        crash. Excluding them before deepcopy keeps periodic recovery work
+        proportional to authored/gameplay state instead of model output size.
+        """
+        checkpoint_game = dict(game)
+        nodes = game.get("nodes")
+        if isinstance(nodes, dict):
+            checkpoint_game["nodes"] = {
+                node_id: {
+                    key: value
+                    for key, value in node.items()
+                    if key not in ("analysisCache", "opponentAnalysisCache")
+                }
+                if isinstance(node, dict) else node
+                for node_id, node in nodes.items()
+            }
+        return checkpoint_game
+
+    def serialize(self, *, recovery_checkpoint: bool = False) -> dict:
         self.ensure_loaded()
-        game_copy = copy.deepcopy(self._state["game"])
+        live_game = self._state["game"]
+        game_copy = copy.deepcopy(
+            self._checkpoint_game(live_game) if recovery_checkpoint else live_game
+        )
         state_copy = {
             "mode": self._state["mode"],
             "controlledSeat": self._state["controlledSeat"],
