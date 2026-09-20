@@ -72,7 +72,7 @@
           <DistributionBarChart
             v-if="opponent.scorePrediction.distribution.length"
             class="analysis-score-distribution"
-            :entries="distributionEntries(opponent.scorePrediction.distribution, scoreDistributionScale, false)"
+            :entries="scoreDistributionEntries(opponent.scorePrediction.distribution, opponent.seat === dealer)"
             color-variable="--analysis-score-color"
             :reduce-motion="reduceMotion"
             :show-labels="false"
@@ -108,7 +108,11 @@ import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
 import { scoreModeGeometry } from '../analysisScoreModeGeometry'
 import type { AnalysisRecord } from '../useAnalysisOutputs'
 import { useAnalysisHoverTooltipController } from '../useAnalysisHoverTooltip'
-import { selectScoreModeNominations, useOpponentAnalysisData } from '../useOpponentAnalysisData'
+import {
+  scoreDistributionGroupStarts,
+  selectScoreModeNominations,
+  useOpponentAnalysisData,
+} from '../useOpponentAnalysisData'
 import { useI18n } from '../i18n'
 import type { NumericPrediction } from '../numericPrediction'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
@@ -275,6 +279,18 @@ function distributionEntries(
     key: entry.value,
     scale: distributionBarScale(entry.probability, scale),
     label: includeLabels ? String(entry.value) : undefined,
+  }))
+}
+
+function scoreDistributionEntries(
+  distribution: NumericPrediction['distribution'],
+  dealer: boolean,
+): DistributionBarEntry[] {
+  const groupStarts = scoreDistributionGroupStarts(distribution, dealer)
+  return distribution.map((entry, index) => ({
+    key: entry.value,
+    scale: distributionBarScale(entry.probability, scoreDistributionScale.value),
+    gapBefore: groupStarts[index],
   }))
 }
 

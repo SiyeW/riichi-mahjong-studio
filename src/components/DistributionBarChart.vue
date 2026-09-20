@@ -53,6 +53,7 @@ export type DistributionBarEntry = Readonly<{
   key: string | number
   scale: number
   label?: string
+  gapBefore?: boolean
 }>
 
 const props = defineProps<{
@@ -68,7 +69,10 @@ const emit = defineEmits<{
   itemLeave: []
 }>()
 
-type DistributionCanvasElement = HTMLCanvasElement & { rmsDistributionRenderSignature?: string }
+type DistributionCanvasElement = HTMLCanvasElement & {
+  rmsDistributionRenderSignature?: string
+  rmsDistributionGapPixels?: number[]
+}
 const rootElement = ref<HTMLElement | null>(null)
 const canvasElement = ref<DistributionCanvasElement | null>(null)
 const hoveredIndex = ref<number | null>(null)
@@ -80,11 +84,14 @@ let renderGeometry: {
   width: number
   height: number
   color: string
+  gapColor: string
   tracks: Array<{ left: number; right: number; top: number; bottom: number }>
 } | null = null
 
 function structureKey(): string {
-  return `${props.showLabels ? 'labels' : 'tracks'}:${props.entries.map(entry => String(entry.key)).join('\u001f')}`
+  return `${props.showLabels ? 'labels' : 'tracks'}:${props.entries.map(entry => (
+    `${entry.gapBefore ? '1' : '0'}:${String(entry.key)}`
+  )).join('\u001f')}`
 }
 
 const displayedReferenceRatio = ref<number | null>(null)
@@ -122,7 +129,10 @@ function measureGeometry() {
   const height = Math.max(1, Math.round(rootRect.height * ratio))
   if (canvas.width !== width) canvas.width = width
   if (canvas.height !== height) canvas.height = height
-  const color = getComputedStyle(root).getPropertyValue(props.colorVariable).trim()
+  const rootStyle = getComputedStyle(root)
+  const color = rootStyle.getPropertyValue(props.colorVariable).trim()
+  const gapColor = rootStyle.getPropertyValue('--analysis-distribution-gap-color').trim()
+    || 'rgba(1, 42, 49, 0.82)'
   const tracks = [...root.querySelectorAll<HTMLElement>('.analysis-distribution-track')].map((track) => {
     const trackRect = track.getBoundingClientRect()
     const trackStyle = getComputedStyle(track)
@@ -134,7 +144,7 @@ function measureGeometry() {
       bottom: Math.min(height, Math.round((trackRect.bottom - rootRect.top) * ratio)),
     }
   })
-  renderGeometry = { width, height, color, tracks }
+  renderGeometry = { width, height, color, gapColor, tracks }
   measuredStructureKey = structureKey()
   measuredColorVariable = props.colorVariable
 }
@@ -144,7 +154,7 @@ function render() {
   if (!canvas) return
   if (!renderGeometry) measureGeometry()
   if (!renderGeometry) return
-  const { width, height, color, tracks } = renderGeometry
+  const { width, height, color, gapColor, tracks } = renderGeometry
   const context = canvas.getContext('2d')
   if (!context) return
   context.clearRect(0, 0, width, height)
@@ -156,9 +166,17 @@ function render() {
     context.fillStyle = color
     context.fillRect(left, bottom - fillHeight, right - left, fillHeight)
   })
+  const gapPixels: number[] = []
+  tracks.forEach(({ left, top, bottom }, index) => {
+    if (!props.entries[index]?.gapBefore || left <= 0 || bottom <= top) return
+    context.fillStyle = gapColor
+    context.fillRect(left, top, 1, bottom - top)
+    gapPixels.push(left)
+  })
   canvas.rmsDistributionRenderSignature = displayedScales
     .map(value => Math.round(value * 10000))
     .join(',')
+  canvas.rmsDistributionGapPixels = gapPixels
 }
 
 function stopAnimation() {

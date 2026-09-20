@@ -1,5 +1,6 @@
 .analysis-opponent-section {
   --analysis-distribution-track-surface: var(--analysis-chart-track-surface);
+  --analysis-distribution-gap-color: rgba(1, 42, 49, 0.82);
   --analysis-dora-distribution-min-height: calc(2.25rem * var(--floating-panel-scale));
   --analysis-score-distribution-min-height: calc(1.65rem * var(--floating-panel-scale));
   display: flex;

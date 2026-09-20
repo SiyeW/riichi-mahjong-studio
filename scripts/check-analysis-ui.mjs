@@ -1072,6 +1072,16 @@ try {
   )
   const scoreSummaries = await page.locator('.analysis-opponent-prediction.is-score-prediction strong').allTextContents()
   assert.ok(scoreSummaries.every(text => !text.includes(',')), 'mahjong point summaries omit locale thousands separators')
+  await page.waitForFunction(() => [...document.querySelectorAll('.analysis-score-distribution canvas')].every(canvas => (
+    Array.isArray(canvas.rmsDistributionGapPixels) && canvas.rmsDistributionGapPixels.length === 5
+  )))
+  const scoreClusterGaps = await page.locator('.analysis-score-distribution canvas').evaluateAll(canvases => (
+    canvases.map(canvas => canvas.rmsDistributionGapPixels)
+  ))
+  assert.ok(
+    scoreClusterGaps.every(gaps => gaps.length === 5 && gaps.every(Number.isInteger)),
+    'non-dealer score charts render five han/limit boundaries on physical pixels',
+  )
   const roomyOpponent = await opponentGeometry()
   assert.ok(roomyOpponent.doraHeight > 68, 'roomy opponent panel lets the dora distribution grow beyond its former cap')
   assert.ok(roomyOpponent.scoreHeight > 50, 'roomy opponent panel lets the score distribution grow beyond its former cap')

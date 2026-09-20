@@ -10,6 +10,32 @@ import type { Ref } from 'vue'
 export const OPPONENT_DORA_BASE_SCALE = 0.5
 export const OPPONENT_SCORE_BASE_SCALE = 0.3
 
+const NON_DEALER_SCORE_GROUP_BOUNDS = [1000, 2000, 3900, 7700, 32000] as const
+const DEALER_SCORE_GROUP_BOUNDS = [1500, 2900, 5800, 11600, 48000] as const
+
+export function riichiScoreGroup(value: unknown, dealer: boolean): number | null {
+  const score = Number(value)
+  if (!Number.isFinite(score)) return null
+  const bounds = dealer ? DEALER_SCORE_GROUP_BOUNDS : NON_DEALER_SCORE_GROUP_BOUNDS
+  for (let index = 0; index < bounds.length - 1; index += 1) {
+    if (score <= bounds[index]) return index
+  }
+  return score < bounds.at(-1)! ? bounds.length - 1 : bounds.length
+}
+
+export function scoreDistributionGroupStarts(
+  entries: NumericPrediction['distribution'],
+  dealer: boolean,
+): boolean[] {
+  let previousGroup: number | null = null
+  return entries.map((entry, index) => {
+    const group = riichiScoreGroup(entry.value, dealer)
+    const startsGroup = index > 0 && group !== null && previousGroup !== null && group !== previousGroup
+    if (group !== null) previousGroup = group
+    return startsGroup
+  })
+}
+
 export function selectScoreModeNominations(
   entries: NumericPrediction['distribution'],
   count: number,

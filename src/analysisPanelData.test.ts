@@ -4,7 +4,12 @@ import { computed, reactive, ref } from 'vue'
 import type { AnalysisPanelDataProps } from './analysisPanelTypes.ts'
 import { useCountAnalysisData } from './useCountAnalysisData.ts'
 import { useGameAnalysisData } from './useGameAnalysisData.ts'
-import { selectScoreModeNominations, useOpponentAnalysisData } from './useOpponentAnalysisData.ts'
+import {
+  riichiScoreGroup,
+  scoreDistributionGroupStarts,
+  selectScoreModeNominations,
+  useOpponentAnalysisData,
+} from './useOpponentAnalysisData.ts'
 import { useRiskAnalysisData } from './useRiskAnalysisData.ts'
 import { useAnalysisOutputs, type AnalysisRecord } from './useAnalysisOutputs.ts'
 
@@ -164,6 +169,23 @@ test('score nominations select by probability and display in point order', () =>
   assert.deepEqual(
     selectScoreModeNominations(entries, 3).map((entry) => entry.value),
     [1000, 3900, 8000],
+  )
+})
+
+test('score distributions split at ordinary han, limit and yakuman boundaries', () => {
+  const nonDealerValues = [1000, 1300, 2000, 2600, 3900, 5800, 7700, 8000, 24000, 32000, 64000]
+  const dealerValues = [1500, 2000, 2900, 3900, 5800, 7700, 11600, 12000, 36000, 48000, 96000]
+  const entries = (values: number[]) => values.map((value) => ({ value, probability: 0.1 }))
+
+  assert.deepEqual(nonDealerValues.map((value) => riichiScoreGroup(value, false)), [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
+  assert.deepEqual(dealerValues.map((value) => riichiScoreGroup(value, true)), [0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5])
+  assert.deepEqual(
+    scoreDistributionGroupStarts(entries(nonDealerValues), false),
+    [false, true, false, true, false, true, false, true, false, true, false],
+  )
+  assert.deepEqual(
+    scoreDistributionGroupStarts(entries(dealerValues), true),
+    [false, true, false, true, false, true, false, true, false, true, false],
   )
 })
 
