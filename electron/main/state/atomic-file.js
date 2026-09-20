@@ -17,4 +17,20 @@ function writeFileAtomically(targetPath, contents, io = fs) {
   }
 }
 
-module.exports = { writeFileAtomically }
+async function writeFileAtomicallyAsync(targetPath, contents, io = fs.promises) {
+  const temporaryPath = `${targetPath}.${randomUUID()}.tmp`
+  let handle = null
+  try {
+    handle = await io.open(temporaryPath, 'wx')
+    await handle.writeFile(contents)
+    await handle.sync()
+    await handle.close()
+    handle = null
+    await io.rename(temporaryPath, targetPath)
+  } finally {
+    if (handle) await handle.close().catch(() => {})
+    await io.rm(temporaryPath, { force: true }).catch(() => {})
+  }
+}
+
+module.exports = { writeFileAtomically, writeFileAtomicallyAsync }

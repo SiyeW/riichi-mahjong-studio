@@ -1,4 +1,7 @@
 const zlib = require('node:zlib')
+const { promisify } = require('node:util')
+
+const gzip = promisify(zlib.gzip)
 
 const RECOVERY_RECORD_KIND = 'unsaved-exit'
 
@@ -9,6 +12,11 @@ function isGzipBuffer(buffer) {
 function encodeGameRecord(record, compressed = true) {
   const json = Buffer.from(JSON.stringify(record), 'utf8')
   return compressed ? zlib.gzipSync(json, { level: 6 }) : json
+}
+
+async function encodeGameRecordAsync(record, compressed = true) {
+  const json = Buffer.from(JSON.stringify(record), 'utf8')
+  return compressed ? gzip(json, { level: 6 }) : json
 }
 
 function decodeGameRecord(input) {
@@ -55,6 +63,7 @@ module.exports = {
   RECOVERY_RECORD_KIND,
   decodeGameRecord,
   encodeGameRecord,
+  encodeGameRecordAsync,
   getRecoverySourcePath,
   isGzipBuffer,
   isRecoveryGameRecord,

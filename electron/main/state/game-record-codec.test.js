@@ -5,10 +5,17 @@ const zlib = require('node:zlib')
 const {
   decodeGameRecord,
   encodeGameRecord,
+  encodeGameRecordAsync,
   getRecoverySourcePath,
   isRecoveryGameRecord,
   prepareGameRecordForWrite,
 } = require('./game-record-codec')
+
+test('asynchronous encoding preserves the synchronous record format', async () => {
+  const record = { formatVersion: 1, game: { gameId: 'async-test', nodes: { n1: { comment: '🀄' } } } }
+  assert.deepEqual(await encodeGameRecordAsync(record), encodeGameRecord(record))
+  assert.deepEqual(decodeGameRecord(await encodeGameRecordAsync(record)), record)
+})
 
 function testWriteMetadataIsPortable() {
   const source = {
