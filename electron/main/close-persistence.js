@@ -31,10 +31,14 @@ function requestRendererFlush(window, ipcMain, timeoutMessage, timeoutMs = 5000)
   })
 }
 
-async function persistBeforeClose(flushRenderer, shouldSaveRecovery, saveRecovery) {
+async function persistBeforeClose(flushRenderer, shouldSaveRecovery, saveRecovery, onStage = () => {}) {
+  onStage('flushing')
   await flushRenderer()
   // Saving a pending comment may itself make the record dirty.
-  if (shouldSaveRecovery()) await saveRecovery()
+  if (shouldSaveRecovery()) {
+    onStage('recovery')
+    await saveRecovery()
+  }
 }
 
 module.exports = { requestRendererFlush, persistBeforeClose }

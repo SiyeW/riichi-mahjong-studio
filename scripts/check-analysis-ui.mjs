@@ -311,6 +311,45 @@ try {
   }
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
   if (!performanceOnly) {
+  await page.evaluate(() => {
+    window.analysisCheck.vm.closeState.active = true
+    window.analysisCheck.vm.closeState.stage = 'recovery'
+  })
+  const exitSavingOverlay = page.locator('.exit-saving-overlay')
+  await exitSavingOverlay.waitFor({ state: 'visible' })
+  const exitSavingGeometry = await exitSavingOverlay.evaluate((overlay) => {
+    const overlayRect = overlay.getBoundingClientRect()
+    const card = overlay.querySelector('.exit-saving-card')
+    if (!card) throw new Error('exit-saving overlay is missing its status card')
+    return {
+      role: overlay.getAttribute('role'),
+      live: overlay.getAttribute('aria-live'),
+      text: overlay.textContent.replace(/\s+/g, ' ').trim(),
+      overlay: { left: overlayRect.left, top: overlayRect.top, right: overlayRect.right, bottom: overlayRect.bottom },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      overlayBackgroundImage: getComputedStyle(overlay).backgroundImage,
+      cardBackgroundImage: getComputedStyle(card).backgroundImage,
+    }
+  })
+  assert.equal(exitSavingGeometry.role, 'status', 'exit persistence feedback is exposed as a status')
+  assert.equal(exitSavingGeometry.live, 'assertive', 'exit persistence feedback is announced immediately')
+  assert.ok(exitSavingGeometry.text.includes('正在保存恢复数据'), `exit feedback reports the active persistence stage: ${exitSavingGeometry.text}`)
+  assert.deepEqual(
+    exitSavingGeometry.overlay,
+    { left: 0, top: 0, right: exitSavingGeometry.viewport.width, bottom: exitSavingGeometry.viewport.height },
+    'exit persistence feedback covers the complete application viewport',
+  )
+  assert.equal(exitSavingGeometry.overlayBackgroundImage, 'none', 'exit feedback uses a flat overlay surface')
+  assert.equal(exitSavingGeometry.cardBackgroundImage, 'none', 'exit feedback card uses a flat panel surface')
+  if (process.env.RMS_CLOSE_OVERLAY_SCREENSHOT) {
+    await page.screenshot({ path: path.resolve(process.env.RMS_CLOSE_OVERLAY_SCREENSHOT), fullPage: true })
+  }
+  await page.evaluate(() => {
+    window.analysisCheck.vm.closeState.active = false
+    window.analysisCheck.vm.closeState.stage = ''
+  })
+  await exitSavingOverlay.waitFor({ state: 'detached' })
+
   await page.locator('.toolbar-panel-menu > button').hover()
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.toolbar-panel-menu-items')).visibility === 'visible')
   const analysisMenuStyles = await page.locator('.toolbar-panel-menu-items').evaluate(menu => {

@@ -60,9 +60,13 @@ test('main window owns construction, first display, and close persistence', asyn
     loadSettingsImpl: () => structuredClone(settings),
     saveSettingsImpl: (value) => { savedSettings = value },
     requestRendererFlushImpl: async (...args) => calls.push(['requestRendererFlush', ...args]),
-    persistBeforeCloseImpl: async (flush, shouldRecover, recover) => {
+    persistBeforeCloseImpl: async (flush, shouldRecover, recover, onStage) => {
+      onStage('flushing')
       await flush()
-      if (shouldRecover()) await recover()
+      if (shouldRecover()) {
+        onStage('recovery')
+        await recover()
+      }
     },
   })
 
@@ -84,7 +88,10 @@ test('main window owns construction, first display, and close persistence', asyn
   assert.equal(prevented, true)
   assert.deepEqual(savedSettings.window, { width: 1400, height: 900 })
   assert.deepEqual(calls.slice(4), [
+    ['send', 'record:close-state', { active: true, stage: 'preparing' }],
+    ['send', 'record:close-state', { active: true, stage: 'flushing' }],
     ['requestRendererFlush', window, ipcMain, 'native.closeSaveTimeout'],
+    ['send', 'record:close-state', { active: true, stage: 'recovery' }],
     ['writeRecoveryGameRecord'],
     ['close'],
   ])

@@ -10,6 +10,7 @@ test('desktop bridge subscriptions forward handlers and clean every listener onc
     ['onRecordDirtyChanged', 'recordDirtyChanged'],
     ['onUiZoomShortcut', 'uiZoomShortcut'],
     ['onBeforeClose', 'beforeClose'],
+    ['onCloseState', 'closeState'],
   ].map(([method, handler]) => [method, (callback: (...args: never[]) => unknown) => {
     registered[handler] = callback
     return () => { cleanupCalls.push(handler) }
@@ -20,17 +21,19 @@ test('desktop bridge subscriptions forward handlers and clean every listener onc
     recordDirtyChanged: () => { calls.push('dirty') },
     uiZoomShortcut: () => { calls.push('zoom') },
     beforeClose: () => { calls.push('close') },
+    closeState: () => { calls.push('closeState') },
   })
 
   registered.pythonEvent()
   registered.recordDirtyChanged()
   registered.uiZoomShortcut()
   registered.beforeClose()
-  assert.deepEqual(calls, ['python', 'dirty', 'zoom', 'close'])
+  registered.closeState()
+  assert.deepEqual(calls, ['python', 'dirty', 'zoom', 'close', 'closeState'])
 
   unsubscribe()
   unsubscribe()
-  assert.deepEqual(cleanupCalls.sort(), ['beforeClose', 'pythonEvent', 'recordDirtyChanged', 'uiZoomShortcut'].sort())
+  assert.deepEqual(cleanupCalls.sort(), ['beforeClose', 'closeState', 'pythonEvent', 'recordDirtyChanged', 'uiZoomShortcut'].sort())
 })
 
 test('desktop bridge subscription tolerates an unavailable bridge', () => {
@@ -39,6 +42,7 @@ test('desktop bridge subscription tolerates an unavailable bridge', () => {
     recordDirtyChanged: () => {},
     uiZoomShortcut: () => {},
     beforeClose: () => {},
+    closeState: () => {},
   })
   assert.doesNotThrow(unsubscribe)
 })

@@ -143,6 +143,13 @@
       </button>
     </div>
 
+    <div v-if="closeState.active" class="exit-saving-overlay" role="status" aria-live="assertive">
+      <div class="exit-saving-card">
+        <strong>{{ closingExitLabel }}</strong>
+        <span>{{ t('close.keepOpen') }}</span>
+      </div>
+    </div>
+
     <main
       ref="workspaceRoot"
       class="workspace"
@@ -1074,6 +1081,11 @@ const bootstrapError = ref('')
 const backendRecoveryNeeded = ref(false)
 const backendHasCheckpoint = ref(false)
 const backendRetrying = ref(false)
+const closeState = reactive<{
+  active: boolean
+  stage: 'preparing' | 'flushing' | 'recovery' | ''
+}>({ active: false, stage: '' })
+const closingExitLabel = computed(() => t(`close.${closeState.stage || 'preparing'}`))
 
 async function retryBackend() {
   if (backendRetrying.value || !window.studioAPI) return
@@ -1891,6 +1903,10 @@ useDesktopBridgeSubscriptions({
   pythonEvent: handlePythonEvent,
   recordDirtyChanged: handleRecordDirtyChanged,
   uiZoomShortcut: (direction) => { void changeUiScale(direction) },
+  closeState: (state) => {
+    closeState.active = Boolean(state.active)
+    closeState.stage = state.stage || ''
+  },
   beforeClose: () => flushBeforeClose(
     flushNodeComment,
     flushEngineAutosave,
@@ -1923,6 +1939,7 @@ if (import.meta.env.MODE === 'ui-test') {
     analysisCountLayout,
     showPerceptualColorDebugger,
     bootstrapError,
+    closeState,
     tileArtworkReady,
     opponentAnalysisIsLoading,
     showWallView,

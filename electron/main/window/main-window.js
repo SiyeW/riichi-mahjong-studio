@@ -62,11 +62,15 @@ function createMainWindow({
 
   let closeAllowed = false
   let closeInProgress = false
+  const publishCloseState = (active, stage = '') => {
+    if (!window.isDestroyed()) window.webContents.send('record:close-state', { active, stage })
+  }
   window.on('close', (event) => {
     if (closeAllowed) return
     event.preventDefault()
     if (closeInProgress) return
     closeInProgress = true
+    publishCloseState(true, 'preparing')
     void (async () => {
       try {
         const latest = loadSettingsImpl(appOptions)
@@ -81,6 +85,7 @@ function createMainWindow({
           () => requestRendererFlushImpl(window, ipcMain, t('native.closeSaveTimeout')),
           () => loadSettingsImpl(appOptions).records?.saveRecoveryOnExit && gameFileStore.isDirty(),
           writeRecoveryGameRecord,
+          (stage) => publishCloseState(true, stage),
         )
         closeAllowed = true
         window.close()
@@ -101,6 +106,7 @@ function createMainWindow({
           return
         }
         closeInProgress = false
+        publishCloseState(false)
       }
     })()
   })

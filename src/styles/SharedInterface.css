@@ -177,6 +177,33 @@
   font-weight: 600;
 }
 
+.exit-saving-overlay {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 24, 30, 0.72);
+}
+
+.exit-saving-card {
+  display: grid;
+  min-width: min(22rem, calc(100vw - 2rem));
+  gap: calc(0.35rem * var(--chrome-scale));
+  padding: calc(0.85rem * var(--chrome-scale)) calc(1rem * var(--chrome-scale));
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  background: var(--surface-overlay);
+  font-size: var(--ui-text-body);
+  line-height: 1.35;
+}
+
+.exit-saving-card > strong {
+  color: var(--text-main);
+  font-size: var(--ui-text-heading);
+  font-weight: 600;
+}
+
 .ui-hover-tooltip-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
