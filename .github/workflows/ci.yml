@@ -31,13 +31,13 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: requirements-release.txt
+          cache-dependency-path: packaging/windows/requirements-release.txt
 
       - name: Install Node.js dependencies
         run: npm ci
 
       - name: Install Python dependencies
-        run: python -m pip install -r requirements-release.txt
+        run: python -m pip install -r packaging/windows/requirements-release.txt
 
       - name: Install Chromium for renderer tests
         run: npx playwright install chromium

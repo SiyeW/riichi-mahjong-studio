@@ -31,7 +31,7 @@ if ($LASTEXITCODE -ne 0) {
 $NpmPackages = $NpmOutput | ConvertFrom-Json
 
 if (-not (Test-Path -LiteralPath $EnvironmentRoot -PathType Container)) {
-    throw 'Missing .conda-backend environment. Create it from environment.yml first.'
+    throw 'Missing .conda-backend environment. Run packaging\windows\setup-environment.ps1 first.'
 }
 
 $CondaExecutable = $env:CONDA_EXE

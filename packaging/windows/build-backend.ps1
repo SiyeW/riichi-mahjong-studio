@@ -2,7 +2,7 @@
 param()
 
 $ErrorActionPreference = 'Stop'
-$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $Python = Join-Path $ProjectRoot '.conda-backend\python.exe'
 $ReleaseRoot = Join-Path $ProjectRoot 'release'
 $BackendRoot = Join-Path $ReleaseRoot 'backend'
@@ -10,7 +10,7 @@ $WorkRoot = Join-Path $ReleaseRoot '.pyi-work'
 $SpecRoot = Join-Path $ReleaseRoot '.pyi-spec'
 
 if (-not (Test-Path -LiteralPath $Python -PathType Leaf)) {
-    throw 'Missing .conda-backend environment. Create it from environment.yml first.'
+    throw 'Missing .conda-backend environment. Run packaging\windows\setup-environment.ps1 first.'
 }
 
 function Assert-ProjectPath {

@@ -14,7 +14,7 @@
     "dev:renderer": "vite",
     "dev:electron": "node scripts/run-electron.mjs",
     "build": "npm run type-check && vite build",
-    "build:backend:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ./build-backend.ps1",
+    "build:backend:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ./packaging/windows/build-backend.ps1",
     "collect:licenses": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/collect-third-party-licenses.ps1",
     "check:release-inputs": "node scripts/check-release-inputs.mjs",
     "package:win": "npm run check:release-inputs && npm run build:backend:win && npm run build && npm run collect:licenses && electron-builder --win dir",

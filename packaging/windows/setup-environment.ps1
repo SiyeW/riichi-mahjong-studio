@@ -2,10 +2,12 @@
 param()
 
 $ErrorActionPreference = 'Stop'
-$ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ProjectRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..\..'))
 $EnvironmentRoot = Join-Path $ProjectRoot '.conda-backend'
-$EnvironmentFile = Join-Path $ProjectRoot 'environment.yml'
-$ProjectCondarc = Join-Path $ProjectRoot '.condarc'
+$PackagingRoot = $PSScriptRoot
+$EnvironmentFile = Join-Path $PackagingRoot 'environment.yml'
+$RequirementsFile = Join-Path $PackagingRoot 'requirements-release.txt'
+$ProjectCondarc = Join-Path $PackagingRoot '.condarc'
 $PreviousCondarc = [System.Environment]::GetEnvironmentVariable('CONDARC', 'Process')
 
 try {
@@ -17,6 +19,12 @@ try {
     }
     if ($LASTEXITCODE -ne 0) {
         throw "Conda failed with exit code $LASTEXITCODE."
+    }
+
+    $Python = Join-Path $EnvironmentRoot 'python.exe'
+    & $Python -m pip install -r $RequirementsFile
+    if ($LASTEXITCODE -ne 0) {
+        throw "Pip failed with exit code $LASTEXITCODE."
     }
 } finally {
     if ($null -eq $PreviousCondarc) {

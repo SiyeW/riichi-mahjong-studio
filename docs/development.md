@@ -23,7 +23,7 @@ npm ci
 后端开发和打包使用项目目录内的独立环境：
 
 ```powershell
-.\setup-environment.ps1
+.\packaging\windows\setup-environment.ps1
 ```
 
 开发启动器会自动使用 `.conda-backend`。如需使用其他兼容的 Python 可执行文件，请在 `.vscode/launch.local.env` 中设置 `RMS_BACKEND_PYTHON`。
@@ -96,7 +96,7 @@ npm ci
 バックエンドの開発とパッケージ作成には、プロジェクト内の専用環境を使用します。
 
 ```powershell
-.\setup-environment.ps1
+.\packaging\windows\setup-environment.ps1
 ```
 
 開発ランチャーは `.conda-backend` を自動的に使用します。別の互換 Python 実行ファイルを使用する場合は、`.vscode/launch.local.env` に `RMS_BACKEND_PYTHON` を設定してください。
@@ -169,7 +169,7 @@ npm ci
 Backend development and packaging use a project-local environment:
 
 ```powershell
-.\setup-environment.ps1
+.\packaging\windows\setup-environment.ps1
 ```
 
 The development launcher uses `.conda-backend` automatically. To override it, set `RMS_BACKEND_PYTHON` in `.vscode/launch.local.env`.

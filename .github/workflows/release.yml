@@ -44,8 +44,8 @@ jobs:
         shell: pwsh
         run: |
           conda create --yes --override-channels --channel conda-forge `
-            --prefix .conda-backend --file environment-win-64.lock
-          .\.conda-backend\python.exe -m pip install -r requirements-release.txt
+            --prefix .conda-backend --file packaging/windows/environment-win-64.lock
+          .\.conda-backend\python.exe -m pip install -r packaging/windows/requirements-release.txt
 
       - name: Install Node.js dependencies
         run: npm ci
