@@ -5,10 +5,54 @@ const zlib = require('node:zlib')
 const {
   decodeGameRecord,
   encodeGameRecord,
+  encodeGameRecordAsync,
   getRecoverySourcePath,
   isRecoveryGameRecord,
   prepareGameRecordForWrite,
 } = require('./game-record-codec')
+
+test('asynchronous encoding preserves the synchronous record format', async () => {
+  const record = { formatVersion: 1, game: { gameId: 'async-test', nodes: { n1: { comment: '🀄' } } } }
+  assert.deepEqual(await encodeGameRecordAsync(record), encodeGameRecord(record))
+  assert.deepEqual(decodeGameRecord(await encodeGameRecordAsync(record)), record)
+})
+
+test('new writes compact analysis caches while decoding restores the backend record shape', async () => {
+  const record = {
+    formatVersion: 3,
+    game: {
+      nodes: {
+        n1: {
+          analysisCache: { decision: { probability: 0.12345678901234568 } },
+          opponentAnalysisCache: { opponent: { probability: 0 } },
+        },
+      },
+    },
+  }
+  const prepared = prepareGameRecordForWrite(record, { appVersion: '1.0.0' })
+  assert.equal(Object.hasOwn(prepared.game.nodes.n1, 'analysisCache'), false)
+  assert.ok(prepared.analysisCacheStorage)
+  const decoded = decodeGameRecord(await encodeGameRecordAsync(prepared))
+  assert.deepEqual(decoded.game, record.game)
+  assert.equal(decoded.analysisCacheStorage, undefined)
+})
+
+test('legacy inline analysis caches remain readable without migration metadata', () => {
+  const legacy = {
+    formatVersion: 2,
+    game: {
+      nodes: {
+        n1: {
+          analysisCache: { model: { entries: [{ action: 'dahai', probability: 0.75 }] } },
+          opponentAnalysisCache: { model: { outputs: { probability: 0.125 } } },
+        },
+      },
+    },
+  }
+  const decoded = decodeGameRecord(zlib.gzipSync(Buffer.from(JSON.stringify(legacy))))
+  assert.deepEqual(decoded, legacy)
+  assert.equal(decoded.analysisCacheStorage, undefined)
+})
 
 function testWriteMetadataIsPortable() {
   const source = {

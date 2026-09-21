@@ -75,6 +75,13 @@ function createSessionCheckpoint({ exportRecord, isRunning, delayMs = 750,
     if (value.record?.game?.gameId === gameId) checkpoint = value
   }
 
+  function rememberFresh(value) {
+    if (value.record?.game?.gameId !== gameId) return false
+    stop()
+    checkpoint = value
+    return true
+  }
+
   function moveCursor(nodeId) {
     const game = checkpoint?.record?.game
     if (!nodeId || !game?.nodes?.[nodeId]) return false
@@ -89,7 +96,22 @@ function createSessionCheckpoint({ exportRecord, isRunning, delayMs = 750,
     return true
   }
 
-  return { observe, changed, stop, reset, remember, moveCursor, updateVisibility, get: () => checkpoint }
+  function getFresh() {
+    return checkpoint && !dirty && timer === null && !exporting ? checkpoint : null
+  }
+
+  return {
+    observe,
+    changed,
+    stop,
+    reset,
+    remember,
+    rememberFresh,
+    moveCursor,
+    updateVisibility,
+    get: () => checkpoint,
+    getFresh,
+  }
 }
 
 module.exports = { createSessionCheckpoint }

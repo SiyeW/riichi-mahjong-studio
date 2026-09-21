@@ -28,6 +28,7 @@
         :analysis-opponents="analysisOpponents"
         :controlled-seat="controlledSeat"
         :dealer="dealer"
+        :reduce-motion="reduceMotion"
         :perceptual-surface="perceptualSurface"
       />
       <DealInRiskSection
@@ -36,6 +37,7 @@
         :analysis-opponents="analysisOpponents"
         :controlled-seat="controlledSeat"
         :dealer="dealer"
+        :reduce-motion="reduceMotion"
         :tile-image-src="tileImageSrc"
         :tile-face-label="tileFaceLabel"
         :perceptual-surface="perceptualSurface"
@@ -46,10 +48,12 @@
         :analysis-opponents="analysisOpponents"
         :controlled-seat="controlledSeat"
         :dealer="dealer"
+        :table="table"
         :tile-image-src="tileImageSrc"
         :tile-face-label="tileFaceLabel"
         :perceptual-surface="perceptualSurface"
         :count-layout="countLayout"
+        :reduce-motion="reduceMotion"
         @update:count-layout="emit('update:countLayout', $event)"
       />
     </div>
@@ -72,7 +76,7 @@ import GameAnalysisSection from './GameAnalysisSection.vue'
 import OpponentAnalysisSection from './OpponentAnalysisSection.vue'
 import TileCountAnalysisSection from './TileCountAnalysisSection.vue'
 
-defineProps<AnalysisPanelProps>()
+const props = defineProps<AnalysisPanelProps>()
 const emit = defineEmits<{ 'update:countLayout': [value: AnalysisCountLayout] }>()
 const analysisRootElement = ref<HTMLElement | null>(null)
 const { tooltip, tooltipElement } = useAnalysisHoverTooltip(analysisRootElement)

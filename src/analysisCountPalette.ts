@@ -7,6 +7,8 @@ import {
   type RgbColor,
 } from './perceptualColor.ts'
 
+// Canvas rendering needs the RGB value directly. Keep this synchronized with
+// --analysis-chart-track-surface, the shared empty-track color in styles.css.
 export const COUNT_EMPTY_COLOR: RgbColor = [20, 72, 81]
 const COUNT_FULL_COLOR: RgbColor = [255, 255, 255]
 export type CountSourceKey = 'kamicha' | 'toimen' | 'shimocha' | 'wall'

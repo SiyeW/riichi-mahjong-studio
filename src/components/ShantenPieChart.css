@@ -11,9 +11,14 @@
   width: 100%;
   height: auto;
   aspect-ratio: 1;
+  overflow: visible;
 }
 .shanten-chart path {
   cursor: default;
+  outline: none;
+}
+.shanten-chart .shanten-hover-outline {
+  pointer-events: none;
 }
 .shanten-slice-label {
   fill: rgb(248 252 250 / 75%);

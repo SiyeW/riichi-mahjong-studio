@@ -11,6 +11,7 @@ from . import game_tree
 from . import snapshot_state
 from . import tree_view
 from .analysis_cache import migrate_analysis_cache_storage
+from .analysis_cache_storage import expand_record_analysis_caches
 from .custom_tenhou import (
     build_custom_tenhou_game,
     export_custom_tenhou,
@@ -84,6 +85,49 @@ class RecordSession:
     def normalize_mode(value: Any) -> str:
         return "research" if value == "research" else "play"
 
+    def prepare_recovery_checkpoint(self) -> tuple[Game, dict[str, Any]]:
+        """Detach mutable record structure while the caller holds the state lock.
+
+        Node snapshots are immutable after a node is committed. Copy node
+        dictionaries and their mutable tree links here, then leave the expensive
+        recursive copy and storage normalization to the checkpoint worker.
+        """
+        self.ensure_loaded()
+        live_game = self._state["game"]
+        prepared_game = dict(live_game)
+        nodes = live_game.get("nodes")
+        if isinstance(nodes, dict):
+            prepared_nodes = {}
+            for node_id, node in nodes.items():
+                if not isinstance(node, dict):
+                    prepared_nodes[node_id] = node
+                    continue
+                prepared_node = {
+                    key: value
+                    for key, value in node.items()
+                    if key not in ("analysisCache", "opponentAnalysisCache")
+                }
+                children = prepared_node.get("children")
+                if isinstance(children, list):
+                    prepared_node["children"] = list(children)
+                prepared_nodes[node_id] = prepared_node
+            prepared_game["nodes"] = prepared_nodes
+        state_copy = {
+            "mode": self._state["mode"],
+            "controlledSeat": self._state["controlledSeat"],
+            "pendingSeatSwitch": self._state["pendingSeatSwitch"],
+            "visibleHands": self._state["visibleHands"],
+        }
+        return prepared_game, state_copy
+
+    @staticmethod
+    def serialize_prepared_recovery_checkpoint(
+        prepared: tuple[Game, dict[str, Any]],
+    ) -> dict:
+        """Finish a detached recovery snapshot without holding live-state locks."""
+        game, state = prepared
+        return serialize_game_record_parts(copy.deepcopy(game), copy.deepcopy(state))
+
     def serialize(self) -> dict:
         self.ensure_loaded()
         game_copy = copy.deepcopy(self._state["game"])
@@ -98,6 +142,7 @@ class RecordSession:
     def load(self, record: Any) -> None:
         if not isinstance(record, dict):
             raise ValueError("Record must be an object.")
+        expand_record_analysis_caches(record)
         format_version = int(record.get("formatVersion") or 0)
         if format_version not in (1, 2, 3):
             raise ValueError("Unsupported record format version.")

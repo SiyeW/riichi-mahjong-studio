@@ -4,7 +4,12 @@ import { computed, reactive, ref } from 'vue'
 import type { AnalysisPanelDataProps } from './analysisPanelTypes.ts'
 import { useCountAnalysisData } from './useCountAnalysisData.ts'
 import { useGameAnalysisData } from './useGameAnalysisData.ts'
-import { useOpponentAnalysisData } from './useOpponentAnalysisData.ts'
+import {
+  riichiScoreGroup,
+  scoreDistributionGroupStarts,
+  selectScoreModeNominations,
+  useOpponentAnalysisData,
+} from './useOpponentAnalysisData.ts'
 import { useRiskAnalysisData } from './useRiskAnalysisData.ts'
 import { useAnalysisOutputs, type AnalysisRecord } from './useAnalysisOutputs.ts'
 
@@ -32,10 +37,10 @@ function fixture(analysis: AnalysisRecord | null = null) {
 
 test('empty analysis keeps predictions absent and preserves player order', () => {
   const { opponent, game } = fixture()
-  assert.deepEqual(game.playerRows.value.map(player => player.seat), [3, 0, 1, 2])
+  assert.deepEqual(game.playerRows.value.map(player => player.seat), [0, 3, 2, 1])
   assert.ok(game.outcomeSegments.value.every(segment => segment.probability === 0))
   assert.ok(opponent.opponentCards.value.every(player => player.doraPrediction.scalarValue === null))
-  assert.equal(game.maxAbsoluteDelta.value, 1000)
+  assert.equal(game.maxAbsoluteDelta.value, 6000)
 })
 
 test('direct player totals and independently derived hover details stay separate', () => {
@@ -100,5 +105,123 @@ test('risk, score scale and seat order update after replacing analysis and viewp
   assert.equal(risk.riskProbability(3, '2m'), 0)
   assert.equal(game.maxAbsoluteDelta.value, 8000)
   props.controlledSeat = 2
-  assert.deepEqual(game.playerRows.value.map(player => player.seat), [1, 2, 3, 0])
+  assert.deepEqual(game.playerRows.value.map(player => player.seat), [2, 1, 0, 3])
+})
+
+test('opponent score display excludes impossible dealer values and renormalizes derived data', () => {
+  const { props, opponent } = fixture({ outputs: {
+    'opponent-score': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 1000, probability: 0.4 },
+      { value: 11600, probability: 0.3 },
+      { value: 11700, probability: 0.2 },
+      { value: 12000, probability: 0.1 },
+    ] } }] },
+  } })
+  props.dealer = 3
+  const dealer = opponent.opponentCards.value.find((player) => player.seat === 3)!
+  assert.deepEqual(dealer.scorePrediction.distribution.map((entry) => entry.value), [11600, 11700, 12000])
+  assert.deepEqual(
+    dealer.scorePrediction.distribution.map((entry) => Number(entry.probability.toFixed(6))),
+    [0.5, 0.333333, 0.166667],
+  )
+  assert.equal(Number(dealer.scorePrediction.scalarValue?.toFixed(6)), 11700)
+  assert.deepEqual(dealer.scoreModes.map((entry) => entry.value), [11600, 11700, 12000])
+})
+
+test('opponent score display preserves an explicit estimate while filtering its distribution', () => {
+  const { props, opponent } = fixture({ outputs: {
+    'opponent-score': { players: [{ seat: 3, prediction: {
+      pointEstimate: 11050,
+      distribution: [
+        { value: 1000, probability: 0.5 },
+        { value: 12000, probability: 0.5 },
+      ],
+    } }] },
+  } })
+  props.dealer = 3
+  const dealer = opponent.opponentCards.value.find((player) => player.seat === 3)!
+  assert.equal(dealer.scorePrediction.scalarValue, 11050)
+  assert.equal(dealer.scorePrediction.scalarSource, 'point-estimate')
+  assert.deepEqual(dealer.scorePrediction.distribution, [{ value: 12000, probability: 1 }])
+})
+
+test('opponent score modes preserve every possible candidate for responsive presentation', () => {
+  const { opponent } = fixture({ outputs: {
+    'opponent-score': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 1000, probability: 0.4 },
+      { value: 2000, probability: 0.3 },
+      { value: 3900, probability: 0.2 },
+      { value: 7700, probability: 0.1 },
+    ] } }] },
+  } })
+  const player = opponent.opponentCards.value.find((entry) => entry.seat === 3)!
+  assert.deepEqual(player.scoreModes.map((entry) => entry.value), [1000, 2000, 3900, 7700])
+})
+
+test('score nominations select by probability and display in point order', () => {
+  const entries = [
+    { value: 1000, probability: 0.2 },
+    { value: 3900, probability: 0.4 },
+    { value: 7700, probability: 0.1 },
+    { value: 8000, probability: 0.3 },
+  ]
+
+  assert.deepEqual(
+    selectScoreModeNominations(entries, 3).map((entry) => entry.value),
+    [1000, 3900, 8000],
+  )
+})
+
+test('score distributions split at ordinary han, limit and yakuman boundaries', () => {
+  const nonDealerValues = [1000, 1300, 2000, 2600, 3900, 5800, 7700, 8000, 24000, 32000, 64000]
+  const dealerValues = [1500, 2000, 2900, 3900, 5800, 7700, 11600, 12000, 36000, 48000, 96000]
+  const entries = (values: number[]) => values.map((value) => ({ value, probability: 0.1 }))
+
+  assert.deepEqual(nonDealerValues.map((value) => riichiScoreGroup(value, false)), [0, 0, 1, 1, 2, 2, 3, 3, 3, 4, 4])
+  assert.deepEqual(dealerValues.map((value) => riichiScoreGroup(value, true)), [0, 0, 1, 1, 2, 2, 3, 3, 3, 4, 4])
+  assert.deepEqual(
+    scoreDistributionGroupStarts(entries(nonDealerValues), false),
+    [false, false, true, false, true, false, true, false, false, true, false],
+  )
+  assert.deepEqual(
+    scoreDistributionGroupStarts(entries(dealerValues), true),
+    [false, false, true, false, true, false, true, false, false, true, false],
+  )
+})
+
+test('opponent distributions keep their base probability ranges and expand only when needed', () => {
+  const { props, opponent } = fixture({ outputs: {
+    'opponent-dora-count': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 0, probability: 0.25 },
+      { value: 1, probability: 0.2 },
+    ] } }] },
+    'opponent-score': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 1000, probability: 0.25 },
+      { value: 2000, probability: 0.25 },
+      { value: 3900, probability: 0.25 },
+      { value: 8000, probability: 0.25 },
+    ] } }] },
+  } })
+  assert.equal(opponent.doraDistributionScale.value, 0.5)
+  assert.equal(opponent.scoreDistributionScale.value, 0.3)
+  assert.equal(opponent.doraDistributionReferenceRatio.value, null)
+  assert.equal(opponent.scoreDistributionReferenceRatio.value, null)
+
+  props.analysis = { outputs: {
+    'opponent-dora-count': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 0, probability: 0.7 },
+      { value: 1, probability: 0.3 },
+    ] } }] },
+    'opponent-score': { players: [{ seat: 3, prediction: { distribution: [
+      { value: 1000, probability: 0.55 },
+      { value: 2000, probability: 0.25 },
+      { value: 3900, probability: 0.2 },
+    ] } }] },
+  } }
+  assert.equal(opponent.doraDistributionScale.value, 0.7)
+  assert.equal(opponent.scoreDistributionScale.value, 0.55)
+  const doraReference = opponent.doraDistributionReferenceRatio.value
+  const scoreReference = opponent.scoreDistributionReferenceRatio.value
+  assert.ok(doraReference !== null && Math.abs(doraReference - (0.5 / 0.7)) < 1e-12)
+  assert.ok(scoreReference !== null && Math.abs(scoreReference - (0.3 / 0.55)) < 1e-12)
 })

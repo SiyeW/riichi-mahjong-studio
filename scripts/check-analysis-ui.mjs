@@ -1,35 +1,111 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import path from 'node:path'
+import zlib from 'node:zlib'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { _electron as electron, chromium } from 'playwright'
 import { checkWorkspaceDock } from './check-workspace-dock.mjs'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
 const root = path.resolve(import.meta.dirname, '..')
-const server = await createServer({ root, mode: 'ui-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
+const realisticPerformance = Boolean(process.env.RMS_UI_REALISTIC_PERFORMANCE)
+const performanceOnly = Boolean(process.env.RMS_UI_PERFORMANCE_ONLY)
+const externalRendererUrl = process.env.RMS_UI_TEST_URL || null
+
+function loadRealisticAnalysisFixtures() {
+  if (!realisticPerformance) return { analyses: [], crowdedTable: null }
+  const encoded = fs.readFileSync(path.join(root, 'examples', 'example-record.mjstudio'))
+  const record = JSON.parse(zlib.gunzipSync(encoded).toString('utf8'))
+  const unique = new Map()
+  let crowdedTable = null
+  let crowdedTileCount = -1
+  for (const node of Object.values(record.game?.nodes || {})) {
+    const snapshot = node?.snapshot
+    if (snapshot) {
+      const tileCount = [...(snapshot.hands || []), ...(snapshot.rivers || []), ...(snapshot.melds || [])]
+        .flat(Infinity)
+        .length
+      if (tileCount > crowdedTileCount) {
+        crowdedTable = snapshot
+        crowdedTileCount = tileCount
+      }
+    }
+    for (const value of Object.values(node?.opponentAnalysisCache || {})) {
+      if (!value?.outputs || Object.keys(value.outputs).length < 8) continue
+      const serialized = JSON.stringify(value)
+      if (!unique.has(serialized)) unique.set(serialized, value)
+    }
+  }
+  return {
+    analyses: [...unique.entries()]
+      .sort((left, right) => right[0].length - left[0].length)
+      .slice(0, 2)
+      .map(([, value]) => value),
+    crowdedTable,
+  }
+}
+
+const realisticFixtures = loadRealisticAnalysisFixtures()
+const server = externalRendererUrl
+  ? null
+  : await createServer({ root, mode: 'ui-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
 let browser
+let electronApp
 try {
-  await server.listen()
-  browser = await chromium.launch({
-    headless: true,
-    args: process.env.RMS_UI_UNTHROTTLED
-      ? ['--disable-frame-rate-limit', '--disable-gpu-vsync']
-      : [],
-  })
-  const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } })
+  await server?.listen()
+  const rendererUrl = externalRendererUrl || server.resolvedUrls.local[0]
+  let page
+  if (process.env.RMS_UI_ELECTRON) {
+    electronApp = await electron.launch({
+      args: [path.join(root, 'scripts', 'electron-ui-test-main.cjs')],
+      env: {
+        ...process.env,
+        RMS_UI_TEST_URL: rendererUrl,
+      },
+    })
+    page = await electronApp.firstWindow()
+    await page.setViewportSize({ width: 1400, height: 1000 })
+    if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) {
+      const gpu = await electronApp.evaluate(async ({ app }) => ({
+        argv: process.argv,
+        disableGpu: app.commandLine.hasSwitch('disable-gpu'),
+        useAngle: app.commandLine.getSwitchValue('use-angle'),
+        featureStatus: app.getGPUFeatureStatus(),
+        basicInfo: await app.getGPUInfo('basic'),
+      }))
+      console.log(`Electron GPU: ${JSON.stringify(gpu)}`)
+    }
+  } else {
+    browser = await chromium.launch({
+      headless: true,
+      args: process.env.RMS_UI_UNTHROTTLED
+        ? ['--disable-frame-rate-limit', '--disable-gpu-vsync']
+        : [],
+    })
+    page = await browser.newPage({ viewport: { width: 1400, height: 1000 } })
+  }
   page.setDefaultTimeout(10000)
+  if (realisticFixtures.analyses.length) {
+    await page.addInitScript((fixtures) => {
+      window.rmsRealisticAnalysisFixtures = fixtures.analyses
+      window.rmsRealisticCrowdedTable = fixtures.crowdedTable
+    }, realisticFixtures)
+  }
   const errors = []
   page.on('pageerror', error => { errors.push(error.message); console.error(error.message) })
   await page.addInitScript(() => {
     window.setupRmsAnalysisTest = vm => {
       window.analysisCheck = {
-        vm, reads: 0, epoch: 0, wallReads: 0, settingsSaves: [],
+        vm, reads: 0, epoch: 0, wallReads: 0, runtimeMetricReads: 0, settingsSaves: [],
         result(expectedValue = 1) {
           return {
             status: 'ready',
             context: { gameId: vm.gameView.gameId, nodeId: vm.gameView.currentNodeId, seat: vm.status.controlledSeat, inputMode: 'public', cacheKey: 'test-engine', cacheEpoch: this.epoch },
             outputs: {
-              'wall-tile-count': { tiles: { '1m': { expectedValue, distribution: [{ value: 0, probability: 0.25 }, { value: 1, probability: 0.75 }] } } },
+              'wall-tile-count': { tiles: { '1m': { expectedValue, distribution: [
+                { value: 0, probability: expectedValue <= 1 ? 0.8 : 0.1 },
+                { value: 1, probability: expectedValue <= 1 ? 0.2 : 0.9 },
+              ] } } },
               'opponent-dora-count': {
                 players: [1, 2, 3].map((seat, index) => ({
                   seat,
@@ -47,7 +123,7 @@ try {
                   seat,
                   prediction: {
                     expectedValue: 6800 + (index * 450),
-                    distribution: [1000, 2000, 3900, 5800, 7700, 8000, 12000, 16000, 24000, 32000, 48000, 64000, 96000].map((value, valueIndex) => ({
+                    distribution: [1000, 2000, 3900, 5800, 7700, 11600, 11700, 8000, 12000, 16000, 24000, 32000, 48000, 64000, 96000].map((value, valueIndex) => ({
                       value,
                       probability: Math.max(0.01, 0.16 - Math.abs(valueIndex - 5 - index) * 0.018),
                     })),
@@ -72,6 +148,17 @@ try {
         resultForNode(nodeId, expectedValue = 1) {
           const result = this.result(expectedValue)
           result.context.nodeId = nodeId
+          const riskPlayers = result.outputs?.['opponent-deal-in-probability']?.players || []
+          if (riskPlayers[0]?.tiles) {
+            // Change the shape as well as the magnitude. A uniform multiplier is
+            // intentionally invisible after the chart's adaptive normalization.
+            riskPlayers[0].tiles['1m'] = Math.min(0.95, 0.015 + (expectedValue * 0.07))
+          }
+          const doraDistribution = result.outputs?.['opponent-dora-count']?.players?.[0]?.prediction?.distribution
+          if (doraDistribution?.length >= 2) {
+            doraDistribution[0].probability = expectedValue <= 1 ? 0.68 : 0.12
+            doraDistribution[1].probability = expectedValue <= 1 ? 0.12 : 0.68
+          }
           const distributions = [
             [0.52, 0.24, 0.12, 0.06, 0.03, 0.02, 0.01, 0],
             [0.18, 0.42, 0.2, 0.1, 0.05, 0.03, 0.01, 0.01],
@@ -84,7 +171,48 @@ try {
               toimen: distributions[(1 + shift) % distributions.length],
               shimocha: distributions[(2 + shift) % distributions.length],
             },
+            ron_wait: Object.fromEntries(['kamicha', 'toimen', 'shimocha'].map((key, sourceIndex) => [
+              key,
+              Array.from({ length: 34 }, (_, tileIndex) => (
+                Math.min(0.95, ((((tileIndex + sourceIndex + shift) % 5) + 1) * 0.025 * expectedValue))
+              )),
+            ])),
           }
+          return result
+        },
+        realisticResultForNode(index, nodeId) {
+          const fixture = window.rmsRealisticAnalysisFixtures?.[index]
+          if (!fixture) return null
+          const result = structuredClone(fixture)
+          result.context = {
+            gameId: vm.gameView.gameId,
+            nodeId,
+            seat: vm.status.controlledSeat,
+            inputMode: 'public',
+            cacheKey: 'realistic-example',
+            cacheEpoch: this.epoch,
+          }
+          const riskPlayers = result.outputs?.['opponent-deal-in-probability']?.players || []
+          if (riskPlayers[0]?.tiles) {
+            riskPlayers[0].tiles['1m'] = index === 0 ? 0.0125 : 0.2875
+          }
+          const doraDistribution = result.outputs?.['opponent-dora-count']?.players?.[0]?.prediction?.distribution
+          if (doraDistribution?.length >= 2) {
+            doraDistribution[0].probability = index === 0 ? 0.68 : 0.12
+            doraDistribution[1].probability = index === 0 ? 0.12 : 0.68
+          }
+          const wallCountDistribution = result.outputs?.['wall-tile-count']?.tiles?.['1m']?.distribution
+          if (wallCountDistribution?.length >= 2) {
+            wallCountDistribution[0].probability = index === 0 ? 0.8 : 0.1
+            wallCountDistribution[1].probability = index === 0 ? 0.2 : 0.9
+          }
+          result.predictions ||= {}
+          result.predictions.ron_wait = Object.fromEntries(['kamicha', 'toimen', 'shimocha'].map((key, sourceIndex) => [
+            key,
+            Array.from({ length: 34 }, (_, tileIndex) => (
+              Math.min(0.95, ((((tileIndex + sourceIndex + index) % 5) + 1) * 0.025 * (index + 1)))
+            )),
+          ]))
           return result
         },
         publish(result = this.result()) {
@@ -99,6 +227,17 @@ try {
       window.studioAPI = {
         getSettings: async () => JSON.parse(JSON.stringify(vm.settings)),
         getStatus: async () => JSON.parse(JSON.stringify(vm.status)),
+        getRuntimeMetrics: async () => {
+          check.runtimeMetricReads++
+          return {
+            electronBytes: 512 * 1024 * 1024,
+            backendBytes: 256 * 1024 * 1024,
+            engineBytes: 0,
+            engineProcessCount: 0,
+            systemTotalBytes: 16 * 1024 * 1024 * 1024,
+            systemAvailableBytes: 8 * 1024 * 1024 * 1024,
+          }
+        },
         restoreStartupRecovery: async () => null,
         getRecordDirty: async () => false,
         onRecordDirtyChanged: callback => { check.notifyDirty = callback; return () => {} },
@@ -161,7 +300,7 @@ try {
       }
     }
   })
-  await page.goto(server.resolvedUrls.local[0], { waitUntil: 'domcontentloaded', timeout: 30000 })
+  await page.goto(rendererUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
   // A fresh CI runner has to start Vite and decode the complete tile artwork set
   // without the warm caches available during local iteration. Keep ordinary UI
   // assertions on the short default timeout, but give this one-time bootstrap its
@@ -171,6 +310,137 @@ try {
     await page.screenshot({ path: path.resolve(process.env.RMS_UI_SCREENSHOT), fullPage: true })
   }
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
+  if (!performanceOnly) {
+  await page.evaluate(() => {
+    window.analysisCheck.vm.closeState.active = true
+    window.analysisCheck.vm.closeState.stage = 'recovery'
+  })
+  const exitSavingOverlay = page.locator('.exit-saving-overlay')
+  await exitSavingOverlay.waitFor({ state: 'visible' })
+  const exitSavingGeometry = await exitSavingOverlay.evaluate((overlay) => {
+    const overlayRect = overlay.getBoundingClientRect()
+    const card = overlay.querySelector('.exit-saving-card')
+    if (!card) throw new Error('exit-saving overlay is missing its status card')
+    return {
+      role: overlay.getAttribute('role'),
+      live: overlay.getAttribute('aria-live'),
+      text: overlay.textContent.replace(/\s+/g, ' ').trim(),
+      overlay: { left: overlayRect.left, top: overlayRect.top, right: overlayRect.right, bottom: overlayRect.bottom },
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      overlayBackgroundImage: getComputedStyle(overlay).backgroundImage,
+      cardBackgroundImage: getComputedStyle(card).backgroundImage,
+    }
+  })
+  assert.equal(exitSavingGeometry.role, 'status', 'exit persistence feedback is exposed as a status')
+  assert.equal(exitSavingGeometry.live, 'assertive', 'exit persistence feedback is announced immediately')
+  assert.ok(exitSavingGeometry.text.includes('正在保存恢复数据'), `exit feedback reports the active persistence stage: ${exitSavingGeometry.text}`)
+  assert.deepEqual(
+    exitSavingGeometry.overlay,
+    { left: 0, top: 0, right: exitSavingGeometry.viewport.width, bottom: exitSavingGeometry.viewport.height },
+    'exit persistence feedback covers the complete application viewport',
+  )
+  assert.equal(exitSavingGeometry.overlayBackgroundImage, 'none', 'exit feedback uses a flat overlay surface')
+  assert.equal(exitSavingGeometry.cardBackgroundImage, 'none', 'exit feedback card uses a flat panel surface')
+  if (process.env.RMS_CLOSE_OVERLAY_SCREENSHOT) {
+    await page.screenshot({ path: path.resolve(process.env.RMS_CLOSE_OVERLAY_SCREENSHOT), fullPage: true })
+  }
+  await page.evaluate(() => {
+    window.analysisCheck.vm.closeState.active = false
+    window.analysisCheck.vm.closeState.stage = ''
+  })
+  await exitSavingOverlay.waitFor({ state: 'detached' })
+
+  await page.locator('.toolbar-panel-menu > button').hover()
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.toolbar-panel-menu-items')).visibility === 'visible')
+  const analysisMenuStyles = await page.locator('.toolbar-panel-menu-items').evaluate(menu => {
+    const durationMs = value => {
+      const number = Number.parseFloat(value)
+      return value.trim().endsWith('ms') ? number : number * 1000
+    }
+    const items = [...menu.querySelectorAll('.toolbar-panel-menu-item')]
+    const activeItem = items.find(item => item.querySelector('input')?.checked)
+    const inactiveItem = items.find(item => !item.querySelector('input')?.checked)
+    if (!activeItem || !inactiveItem) throw new Error('analysis menu fixture requires active and inactive items')
+    const activeControl = activeItem.querySelector('.settings-checkbox-control')
+    const inactiveControl = inactiveItem.querySelector('.settings-checkbox-control')
+    const activeLabel = activeItem.querySelector('.settings-checkbox-label')
+    const trigger = menu.parentElement?.querySelector(':scope > button')
+    if (!activeControl || !inactiveControl || !activeLabel || !trigger) throw new Error('analysis menu must reuse the shared compact checkbox structure')
+    return {
+      backgroundImage: getComputedStyle(menu).backgroundImage,
+      itemBorders: items.map(item => getComputedStyle(item).borderTopWidth),
+      itemBackgrounds: items.map(item => getComputedStyle(item).backgroundColor),
+      activeMarker: getComputedStyle(activeControl).backgroundColor,
+      inactiveMarker: getComputedStyle(inactiveControl).backgroundColor,
+      controlWidth: activeControl.getBoundingClientRect().width,
+      labelFontSize: Number.parseFloat(getComputedStyle(activeLabel).fontSize),
+      itemTransitionDurationsMs: getComputedStyle(activeItem).transitionDuration.split(',').map(durationMs),
+      labelTransitionDurationsMs: getComputedStyle(activeLabel).transitionDuration.split(',').map(durationMs),
+      motionDurationMs: durationMs(getComputedStyle(document.body).getPropertyValue('--ui-motion-duration')),
+      triggerLeft: trigger.getBoundingClientRect().left,
+      menuLeft: menu.getBoundingClientRect().left,
+      triggerFontSize: Number.parseFloat(getComputedStyle(trigger).fontSize),
+    }
+  })
+  assert.equal(analysisMenuStyles.backgroundImage, 'none', 'the analysis menu keeps a solid floating surface')
+  assert.ok(analysisMenuStyles.itemBorders.every(width => width === '0px'), 'analysis menu choices do not repeat the toolbar button border')
+  assert.equal(new Set(analysisMenuStyles.itemBackgrounds).size, 1, 'selection does not turn analysis menu choices into competing green buttons')
+  assert.notEqual(analysisMenuStyles.activeMarker, analysisMenuStyles.inactiveMarker, 'the shared checkbox control carries each analysis panel selection state')
+  assert.ok(analysisMenuStyles.controlWidth > analysisMenuStyles.labelFontSize * 0.85, 'the analysis menu keeps the established readable checkbox size')
+  assert.ok(
+    Math.abs(analysisMenuStyles.menuLeft - analysisMenuStyles.triggerLeft) < 0.5,
+    `the analysis menu follows the trigger's reading edge: ${JSON.stringify(analysisMenuStyles)}`,
+  )
+  assert.ok(
+    Math.abs(analysisMenuStyles.labelFontSize - analysisMenuStyles.triggerFontSize) < 0.01,
+    `the top-level analysis choices retain the toolbar's readable control text: ${JSON.stringify(analysisMenuStyles)}`,
+  )
+  assert.ok(
+    analysisMenuStyles.itemTransitionDurationsMs.every(value => Math.abs(value - analysisMenuStyles.motionDurationMs) < 0.01),
+    `analysis menu row feedback uses the global motion duration: ${JSON.stringify(analysisMenuStyles)}`,
+  )
+  assert.ok(
+    analysisMenuStyles.labelTransitionDurationsMs.every(value => Math.abs(value - analysisMenuStyles.motionDurationMs) < 0.01),
+    `analysis menu label feedback uses the global motion duration: ${JSON.stringify(analysisMenuStyles)}`,
+  )
+  if (process.env.RMS_ANALYSIS_MENU_SCREENSHOT) {
+    await page.locator('.toolbar-panel-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_SCREENSHOT })
+  }
+  if (process.env.RMS_ANALYSIS_MENU_CONTEXT_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_ANALYSIS_MENU_CONTEXT_SCREENSHOT, fullPage: true })
+  }
+  const analysisMenuItems = page.locator('.toolbar-panel-menu-item')
+  const clickedMenuItemIndex = await analysisMenuItems.evaluateAll(items => items.findIndex(item => {
+    const input = item.querySelector('input')
+    return input && !input.checked && !input.disabled
+  }))
+  assert.notEqual(clickedMenuItemIndex, -1, 'analysis menu fixture provides an enabled inactive choice')
+  const clickedMenuItem = analysisMenuItems.nth(clickedMenuItemIndex)
+  const clickedMenuInput = clickedMenuItem.locator('input')
+  await clickedMenuItem.click()
+  assert.equal(await clickedMenuInput.isChecked(), true, 'clicking an analysis menu choice toggles its checkbox')
+  await clickedMenuInput.focus()
+  assert.equal(
+    await clickedMenuInput.evaluate(input => input.matches(':focus-visible')),
+    false,
+    'the pointer interaction does not become a keyboard-focus indication',
+  )
+  await page.mouse.move(0, 0)
+  await page.waitForTimeout(150)
+  assert.equal(
+    await clickedMenuItem.evaluate(item => getComputedStyle(item).boxShadow),
+    'none',
+    'mouse-click focus does not leave the analysis menu hover outline stuck after the pointer leaves',
+  )
+  if (process.env.RMS_ANALYSIS_MENU_CLICK_SCREENSHOT) {
+    await page.locator('.toolbar-panel-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_CLICK_SCREENSHOT })
+  }
+  await clickedMenuItem.click()
+  assert.equal(await clickedMenuInput.isChecked(), false, 'the analysis menu fixture restores the original panel selection')
+  await page.evaluate(() => {
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
+  })
+  await page.mouse.move(0, 0)
   await page.evaluate(() => { window.analysisCheck.vm.showMjaiDebug = true })
   assert.deepEqual(
     await page.locator('.mjai-debug-panel').evaluate(panel => ({
@@ -211,16 +481,58 @@ try {
   )
   await page.evaluate(() => {
     const vm = window.analysisCheck.vm
-    vm.settings.engines.profiles = [{
-      id: 'profile.ui-test', name: 'UI Test Engine', engineId: 'ui-test-engine', engineVersion: '1.0.0',
+    vm.settings.engines.profiles = Array.from({ length: 14 }, (_, index) => ({
+      id: index === 0 ? 'profile.ui-test' : `profile.ui-test-${index}`,
+      name: index === 0 ? 'UI Test Engine' : `Additional UI Test Engine ${index}`,
+      engineId: 'ui-test-engine', engineVersion: '1.0.0',
       enginePath: 'C:\\ui-test\\engine.exe', engineCommand: ['C:\\ui-test\\engine.exe'], engineCwd: '',
       builtIn: false, available: true, autoName: false, weights: [], device: 'cpu', options: { sampleCount: 2 },
-    }]
+    }))
     vm.settings.engines.outputAssignments['opponent-shanten'] = 'profile.ui-test'
     vm.openEngineWindow()
   })
   await page.locator('.engine-window').waitFor()
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.showEngineWindow), true)
+  const engineCheckboxStyles = await page.locator('.engine-output-assignment').first().evaluate(item => {
+    const control = item.querySelector('.settings-checkbox-control')
+    const label = item.querySelector('.settings-checkbox-label')
+    if (!control || !label) throw new Error('engine output assignment is missing its shared checkbox structure')
+    return {
+      controlWidth: control.getBoundingClientRect().width,
+      labelFontSize: Number.parseFloat(getComputedStyle(label).fontSize),
+    }
+  })
+  assert.ok(Math.abs(engineCheckboxStyles.controlWidth - analysisMenuStyles.controlWidth) < 0.01, 'analysis menu and engine assignment reuse one checkbox size')
+  assert.ok(engineCheckboxStyles.labelFontSize < analysisMenuStyles.labelFontSize, 'shared checkbox structure preserves context-specific text hierarchy')
+  const engineWindowMetrics = await page.evaluate(() => {
+    const windowElement = document.querySelector('.engine-window')
+    const list = document.querySelector('.engine-profile-list')
+    const detail = document.querySelector('.engine-profile-detail')
+    if (!(windowElement instanceof HTMLElement) || !(list instanceof HTMLElement) || !(detail instanceof HTMLElement)) return null
+    const windowRect = windowElement.getBoundingClientRect()
+    list.scrollTop = list.scrollHeight
+    return {
+      windowWidth: windowRect.width,
+      windowHeight: windowRect.height,
+      windowBottom: windowRect.bottom,
+      viewportHeight: window.innerHeight,
+      listClientHeight: list.clientHeight,
+      listScrollHeight: list.scrollHeight,
+      listScrollTop: list.scrollTop,
+      listOverflowY: getComputedStyle(list).overflowY,
+      detailOverflowY: getComputedStyle(detail).overflowY,
+    }
+  })
+  assert.ok(engineWindowMetrics.windowHeight >= 600, 'engine manager uses the taller working shape')
+  assert.ok(engineWindowMetrics.windowHeight / engineWindowMetrics.windowWidth >= 0.8, 'engine manager is not disproportionately short')
+  assert.ok(engineWindowMetrics.windowBottom <= engineWindowMetrics.viewportHeight, 'engine manager stays inside the viewport')
+  assert.ok(engineWindowMetrics.listScrollHeight > engineWindowMetrics.listClientHeight, 'long engine lists overflow their dedicated list area')
+  assert.ok(engineWindowMetrics.listScrollTop > 0, 'the engine profile list can be scrolled')
+  assert.equal(engineWindowMetrics.listOverflowY, 'auto', 'the engine profile list owns its vertical scrollbar')
+  assert.equal(engineWindowMetrics.detailOverflowY, 'auto', 'engine details retain their independent vertical scrollbar')
+  if (process.env.RMS_ENGINE_UI_CHECK_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_ENGINE_UI_CHECK_SCREENSHOT })
+  }
   await page.locator('.engine-profile-detail input[type="text"]').first().fill('Renamed UI Test Engine')
   const numericOption = page.locator('.engine-profile-detail input[inputmode="numeric"]')
   await numericOption.fill('9')
@@ -237,6 +549,181 @@ try {
     '1',
     'auto-analysis progress details stay visible without hover',
   )
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    window.originalSpecialActionFixture = {
+      legalActions: JSON.parse(JSON.stringify(vm.gameView.legalActions)),
+      analysis: JSON.parse(JSON.stringify(vm.gameView.analysis)),
+    }
+    vm.gameView.legalActions = [
+      { id: 'pon-ui-test', candidateId: 'pon-ui-test', type: 'pon', variant: 'pon', actor: 0, target: 1, pai: '5m', consumed: ['5m', '5m'] },
+      { id: 'skip-ui-test', candidateId: 'skip-ui-test', type: 'none', variant: 'none', actor: 0 },
+    ]
+    vm.gameView.analysis = {
+      model: 'ui-test-decision',
+      seat: 0,
+      bestAction: { type: 'none', variant: 'none' },
+      reactionEntries: [
+        { candidateId: 'pon-ui-test', type: 'pon', variant: 'pon', label: 'pon', value: 0.08, bar: 0.08 },
+        { candidateId: 'skip-ui-test', type: 'none', variant: 'none', label: 'skip', value: 0.92, bar: 0.92, isBest: true },
+      ],
+    }
+  })
+  const specialActionOptions = page.locator('.special-action-option')
+  await specialActionOptions.nth(1).waitFor()
+  await specialActionOptions.nth(1).evaluate(element => element.classList.add('special-next-main'))
+  await page.waitForTimeout(150)
+  const specialActionGeometry = await page.locator('.special-action-board').evaluate(board => {
+    const options = [...board.querySelectorAll('.special-action-option')]
+    const trackBottoms = options.map(option => option.querySelector('.special-action-bar-track').getBoundingClientRect().bottom)
+    const fillStyles = options.map(option => {
+      const fill = option.querySelector('.special-action-bar-fill')
+      const style = getComputedStyle(fill)
+      return {
+        transform: style.transform,
+        transformOriginY: Number.parseFloat(style.transformOrigin.split(' ')[1]),
+        height: fill.offsetHeight,
+      }
+    })
+    const label = options[1].querySelector('.special-action-label')
+    const labelRect = label.getBoundingClientRect()
+    const range = document.createRange()
+    range.selectNodeContents(label)
+    const textRect = range.getBoundingClientRect()
+    const fontSize = Number.parseFloat(getComputedStyle(label).fontSize)
+    const marker = options[1].querySelector('.choice-best-marker')
+    const markerRect = marker.getBoundingClientRect()
+    return {
+      trackBottoms,
+      fillStyles,
+      fontSize,
+      marker: {
+        width: markerRect.width,
+        height: markerRect.height,
+        clipPath: getComputedStyle(marker).clipPath,
+      },
+      gaps: {
+        left: textRect.left - labelRect.left,
+        right: labelRect.right - textRect.right,
+        top: textRect.top - labelRect.top,
+        bottom: labelRect.bottom - textRect.bottom,
+      },
+    }
+  })
+  assert.ok(
+    Math.max(...specialActionGeometry.trackBottoms) - Math.min(...specialActionGeometry.trackBottoms) < 0.01,
+    'special-action recommendation tracks share one exact bottom edge',
+  )
+  assert.ok(
+    specialActionGeometry.fillStyles.every(({ transform, transformOriginY, height }) => (
+      transform.startsWith('matrix(') && Math.abs(transformOriginY - height) < 0.5
+    )),
+    'special-action fills scale from the shared bottom edge without moving their fixed tracks',
+  )
+  assert.ok(
+    specialActionGeometry.gaps.left >= specialActionGeometry.fontSize * 0.25
+      && specialActionGeometry.gaps.right >= specialActionGeometry.fontSize * 0.25,
+    'next-action outlines retain readable horizontal space around their labels',
+  )
+  assert.ok(
+    Math.abs(specialActionGeometry.gaps.top - specialActionGeometry.gaps.bottom) <= specialActionGeometry.fontSize * 0.12,
+    `next-action labels remain visually centered inside their outline box: ${JSON.stringify(specialActionGeometry.gaps)}`,
+  )
+  assert.ok(
+    specialActionGeometry.marker.width > specialActionGeometry.marker.height
+      && specialActionGeometry.marker.clipPath.startsWith('polygon('),
+    `the preferred-action marker is a clear downward triangle: ${JSON.stringify(specialActionGeometry.marker)}`,
+  )
+  if (process.env.RMS_SPECIAL_ACTION_SCREENSHOT) {
+    await page.locator('.special-action-stage').screenshot({ path: process.env.RMS_SPECIAL_ACTION_SCREENSHOT })
+  }
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    vm.gameView.legalActions = window.originalSpecialActionFixture.legalActions
+    vm.gameView.analysis = window.originalSpecialActionFixture.analysis
+    vm.gameView.tree = {
+      rootNodeId: 'node-1',
+      currentNodeId: 'node-1',
+      mainLeafNodeId: 'node-2',
+      currentRoundRootId: 'node-1',
+      revision: 1,
+      nodes: [
+        { id: 'node-1', parentId: null, children: ['node-2'], mainChildId: 'node-2', depth: 0, roundDepth: 0, type: 'root', action: null, isCurrent: true },
+        { id: 'node-2', parentId: 'node-1', children: [], mainChildId: null, depth: 1, roundDepth: 1, type: 'action', action: { type: 'discard', actor: 0, pai: '1m' }, isCurrent: false },
+      ],
+      rounds: [],
+    }
+    delete window.originalSpecialActionFixture
+  })
+  const treeHitRegion = page.locator('.tree-hit-region').last()
+  await treeHitRegion.hover()
+  assert.equal(await page.locator('.tree-hover-indicator').count(), 1, 'the hovered branch node receives one crisp indicator')
+  assert.equal(await page.locator('.tree-axis-label.is-hovered').count(), 1, 'branch labels share the active node hover feedback')
+  assert.notEqual(
+    await page.locator('.tree-axis-label.is-hovered').evaluate(element => getComputedStyle(element).boxShadow),
+    'none',
+    'the hovered branch row uses a clear outline instead of a faint brightness filter',
+  )
+  if (process.env.RMS_BRANCH_HOVER_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_BRANCH_HOVER_SCREENSHOT })
+  }
+  await page.mouse.move(0, 0)
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    vm.gameView.tree.currentRoundRootId = 'round-1'
+    vm.gameView.tree.rounds = [
+      {
+        id: 'round-1', parentRoundId: null, childRoundIds: ['round-2'], mainNextRoundId: 'round-2',
+        depth: 0, roundIndex: 0, bakaze: 'E', kyoku: 1, honba: 0, kyotaku: 0,
+        scores: [25000, 25000, 25000, 25000], tailScores: [25000, 25000, 25000, 25000],
+        phase: 'draw', tailPhase: 'draw', resultInfo: null, matchEndInfo: null, isCurrent: true,
+      },
+      {
+        id: 'round-2', parentRoundId: 'round-1', childRoundIds: [], mainNextRoundId: null,
+        depth: 1, roundIndex: 1, bakaze: 'E', kyoku: 2, honba: 0, kyotaku: 0,
+        scores: [27000, 24000, 25000, 24000], tailScores: [27000, 24000, 25000, 24000],
+        phase: 'draw', tailPhase: 'draw', resultInfo: null, matchEndInfo: null, isCurrent: false,
+      },
+    ]
+  })
+  await page.locator('.info-round').click()
+  const roundMapHitRegion = page.locator('.round-map-hit-region').last()
+  await roundMapHitRegion.hover()
+  assert.equal(await page.locator('.round-map-hover-indicator').count(), 1, 'the hovered round-map node receives one crisp indicator')
+  assert.equal(await page.locator('.round-map-axis-label.is-hovered').count(), 1, 'the round label shares its node hover feedback')
+  assert.notEqual(
+    await page.locator('.round-map-axis-label.is-hovered').evaluate(element => getComputedStyle(element).boxShadow),
+    'none',
+    'the hovered round label uses the same clear outline as the branch tree',
+  )
+  const roundMapHoverGeometry = await page.locator('.round-map-svg').evaluate(svg => {
+    const indicator = svg.querySelector('.round-map-hover-indicator')
+    const dots = [...svg.querySelectorAll('.round-map-dot')]
+    const hoveredDot = dots.find(dot => (
+      dot.getAttribute('cx') === indicator?.getAttribute('cx')
+      && dot.getAttribute('cy') === indicator?.getAttribute('cy')
+    ))
+    if (!indicator || !hoveredDot) throw new Error('round-map hover indicator is not aligned to a node')
+    const style = getComputedStyle(indicator)
+    return {
+      dotRadius: Number(hoveredDot.getAttribute('r')),
+      indicatorRadius: Number(indicator.getAttribute('r')),
+      fill: style.fill,
+      stroke: style.stroke,
+    }
+  })
+  assert.ok(roundMapHoverGeometry.indicatorRadius > roundMapHoverGeometry.dotRadius, 'the round-map hover outline surrounds the node instead of recoloring it')
+  assert.notEqual(roundMapHoverGeometry.fill, 'none', 'the round-map hover indicator keeps the branch-tree pale fill')
+  assert.notEqual(roundMapHoverGeometry.stroke, 'none', 'the round-map hover indicator keeps the branch-tree crisp outline')
+  if (process.env.RMS_ROUND_MAP_HOVER_SCREENSHOT) {
+    await page.locator('.round-map-window').screenshot({ path: process.env.RMS_ROUND_MAP_HOVER_SCREENSHOT })
+  }
+  await page.locator('.round-map-window .floating-panel-close').click()
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    vm.gameView.tree.currentRoundRootId = 'node-1'
+    vm.gameView.tree.rounds = []
+  })
   for (const operation of ['saveGame', 'saveGameAs']) {
     await page.evaluate(async operation => {
       const check = window.analysisCheck
@@ -441,7 +928,8 @@ try {
 
   // Mouse clicks retain normal focus, but must not pin a hover-only tooltip.
   await page.evaluate(() => {
-    window.analysisCheck.vm.gameView.table.hands = Array.from({ length: 4 }, () => Array(13).fill('1m'))
+    const hand = ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p']
+    window.analysisCheck.vm.gameView.table.hands = Array.from({ length: 4 }, () => [...hand])
   })
   const handButtons = page.locator('.opponent-hand-toggle')
   const hint = page.locator('[id^="ui-hover-tooltip-"]')
@@ -483,7 +971,31 @@ try {
   await page.setViewportSize({ width: 1400, height: 1000 })
   await page.evaluate(() => {
     const vm = window.analysisCheck.vm
-    window.analysisCheck.publish(window.analysisCheck.result())
+    const result = window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1)
+    for (const player of result.outputs['opponent-dora-count'].players) {
+      player.prediction.distribution = [
+        { value: 0, probability: 0.25 },
+        { value: 1, probability: 0.2 },
+        { value: 2, probability: 0.15 },
+        { value: 3, probability: 0.12 },
+        { value: 4, probability: 0.1 },
+        { value: 5, probability: 0.08 },
+        { value: 6, probability: 0.06 },
+        { value: '7+', probability: 0.04 },
+      ]
+    }
+    for (const player of result.outputs['opponent-score'].players) {
+      player.prediction.distribution = [
+        { value: 1000, probability: 0.22 },
+        { value: 2000, probability: 0.19 },
+        { value: 3900, probability: 0.17 },
+        { value: 7700, probability: 0.16 },
+        { value: 8000, probability: 0.14 },
+        { value: 12000, probability: 0.11 },
+        { value: 128000, probability: 0.01 },
+      ]
+    }
+    window.analysisCheck.publish(result)
     vm.settings.display.workspaceLayout = {
       ...vm.workspaceLayout,
       analysisVisible: true,
@@ -499,24 +1011,246 @@ try {
     const dora = section.querySelector('.analysis-dora-distribution')
     const score = section.querySelector('.analysis-score-distribution')
     const grid = section.querySelector('.analysis-opponent-prediction-grid')
-    const doraStyle = dora ? getComputedStyle(dora) : null
-    const scoreStyle = score ? getComputedStyle(score) : null
+    const predictions = [...section.querySelectorAll('.analysis-opponent-prediction')]
+    const sectionBounds = section.getBoundingClientRect()
+    const gridBounds = grid?.getBoundingClientRect()
     return {
-      sectionHeight: section.getBoundingClientRect().height,
-      gridHeight: grid?.getBoundingClientRect().height || 0,
+      sectionHeight: sectionBounds.height,
+      gridHeight: gridBounds?.height || 0,
+      unusedBottomHeight: gridBounds ? sectionBounds.bottom - gridBounds.bottom : 0,
       doraHeight: dora?.getBoundingClientRect().height || 0,
       scoreHeight: score?.getBoundingClientRect().height || 0,
-      doraMaximum: Number.parseFloat(doraStyle?.maxHeight || '0'),
-      scoreMaximum: Number.parseFloat(scoreStyle?.maxHeight || '0'),
+      chartsStayInsideRows: [dora, score].every((chart) => {
+        if (!chart) return true
+        const chartBounds = chart.getBoundingClientRect()
+        const row = predictions.find((prediction) => prediction.contains(chart))
+        const rowBounds = row?.getBoundingClientRect()
+        return Boolean(rowBounds)
+          && chartBounds.top >= rowBounds.top - 0.5
+          && chartBounds.bottom <= rowBounds.bottom + 0.5
+      }),
     }
   })
   await page.locator('.analysis-dora-distribution').first().waitFor()
-  await page.waitForTimeout(100)
+  await page.waitForFunction(() => {
+    const groups = [...document.querySelectorAll('.analysis-score-modes')]
+    return groups.length === 3
+      && groups[0].children.length > 3
+      && groups.every((group) => group.children.length === groups[0].children.length)
+  })
+  const scoreModeCounts = await page.locator('.analysis-score-modes').evaluateAll(groups => (
+    groups.map(group => group.children.length)
+  ))
+  assert.equal(new Set(scoreModeCounts).size, 1, 'all opponents show the same width-derived number of score nominations')
+  assert.ok(scoreModeCounts[0] > 3, 'a roomy panel shows more than the former fixed three score nominations')
+  const scoreModePixelGeometry = await page.locator('.analysis-score-modes').evaluateAll((groups) => {
+    const ratio = window.devicePixelRatio
+    return groups.map((group) => {
+      const cells = [...group.children].map(cell => cell.getBoundingClientRect())
+      return {
+        widths: cells.map(bounds => bounds.width * ratio),
+        gaps: cells.slice(1).map((bounds, index) => (bounds.left - cells[index].right) * ratio),
+      }
+    })
+  })
+  const physicalScoreModeWidths = scoreModePixelGeometry.flatMap(group => group.widths)
+  const physicalScoreModeGaps = scoreModePixelGeometry.flatMap(group => group.gaps)
+  assert.ok(physicalScoreModeWidths.every(width => Math.abs(width - Math.round(width)) < 0.01), 'score nomination widths align to physical pixels')
+  assert.ok(physicalScoreModeGaps.every(gap => Math.abs(gap - Math.round(gap)) < 0.01), 'score nomination gaps align to physical pixels')
+  assert.equal(new Set(physicalScoreModeGaps.map(gap => Math.round(gap))).size, 1, 'every score nomination gap renders at the same physical width')
+  const scoreModeLabels = await page.locator('.analysis-score-modes span').allTextContents()
+  assert.ok(!scoreModeLabels.includes('116'), 'non-dealer score modes exclude dealer-only 11,600 points')
+  assert.ok(!scoreModeLabels.includes('117'), 'non-dealer score modes exclude dealer-only 11,700 points')
+  const orderedScoreModeLabels = await page.locator('.analysis-score-modes').evaluateAll(groups => (
+    groups.map(group => [...group.children].map(element => Number(element.textContent)))
+  ))
+  assert.ok(
+    orderedScoreModeLabels.every(labels => labels.every((value, index) => (
+      index === 0 || labels[index - 1] <= value
+    ))),
+    'the most probable score nominations follow the distribution chart point order',
+  )
+  const scoreSummaries = await page.locator('.analysis-opponent-prediction.is-score-prediction strong').allTextContents()
+  assert.ok(scoreSummaries.every(text => !text.includes(',')), 'mahjong point summaries omit locale thousands separators')
+  await page.waitForFunction(() => [...document.querySelectorAll('.analysis-score-distribution canvas')].every(canvas => (
+    Array.isArray(canvas.rmsDistributionGapPixels) && canvas.rmsDistributionGapPixels.length === 4
+  )))
+  const scoreClusterGaps = await page.locator('.analysis-score-distribution canvas').evaluateAll(canvases => (
+    canvases.map(canvas => canvas.rmsDistributionGapPixels)
+  ))
+  assert.ok(
+    scoreClusterGaps.every(gaps => gaps.length === 4 && gaps.every(Number.isInteger)),
+    'non-dealer score charts render four left-edge tier boundaries on physical pixels',
+  )
   const roomyOpponent = await opponentGeometry()
-  assert.ok(roomyOpponent.doraHeight > 36, 'roomy opponent panel grows the dora distribution beyond its former fixed height')
-  assert.ok(roomyOpponent.scoreHeight > 26.4, 'roomy opponent panel grows the score distribution beyond its former fixed height')
-  assert.ok(roomyOpponent.doraHeight <= roomyOpponent.doraMaximum + 0.6, 'dora distribution respects its visual maximum')
-  assert.ok(roomyOpponent.scoreHeight <= roomyOpponent.scoreMaximum + 0.6, 'score distribution respects its visual maximum')
+  assert.ok(roomyOpponent.doraHeight > 68, 'roomy opponent panel lets the dora distribution grow beyond its former cap')
+  assert.ok(roomyOpponent.scoreHeight > 50, 'roomy opponent panel lets the score distribution grow beyond its former cap')
+  assert.ok(Math.abs(roomyOpponent.unusedBottomHeight) < 1, 'opponent predictions consume the full remaining panel height')
+  assert.equal(roomyOpponent.chartsStayInsideRows, true, 'expanded distributions stay inside their fixed prediction rows')
+  const baselineGuideCounts = await page.evaluate(async () => {
+    const count = () => document.querySelectorAll(
+      '.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line',
+    ).length
+    const samples = [count()]
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    samples.push(count())
+    await new Promise(resolve => setTimeout(resolve, 45))
+    samples.push(count())
+    return samples
+  })
+  assert.ok(
+    baselineGuideCounts.every(count => count === 0),
+    `default-range dora and score guides remain absent throughout frame motion: ${JSON.stringify(baselineGuideCounts)}`,
+  )
+  assert.equal(
+    await page.locator('.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line').count(),
+    0,
+    '30% and 50% guide lines stay hidden while the default ranges are sufficient',
+  )
+  const baselineModeStrengths = await page.locator('.analysis-score-modes span').evaluateAll(elements => (
+    elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))
+  ))
+  assert.ok(baselineModeStrengths.every(Number.isFinite), 'each nominated score carries probability-derived background strength')
+  const scoreCell = page.locator('.analysis-score-distribution .analysis-distribution-cell').first()
+  await scoreCell.hover()
+  await page.locator('.analysis-floating-tooltip').waitFor({ state: 'visible' })
+  assert.equal(await scoreCell.evaluate(element => element.classList.contains('is-hovered')), true, 'the hovered score mode receives a visible row highlight')
+  assert.ok(!(await page.locator('.analysis-floating-tooltip').innerText()).includes(','), 'exact point values in hover details omit locale thousands separators')
+  if (process.env.RMS_SCORE_HOVER_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_SCORE_HOVER_SCREENSHOT })
+  }
+  await page.mouse.move(0, 0)
+  await page.waitForFunction(() => !document.querySelector('.analysis-floating-tooltip'))
+
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    const result = window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1)
+    for (const player of result.outputs['opponent-dora-count'].players) {
+      player.prediction.distribution = [
+        { value: 0, probability: 0.55 },
+        { value: 1, probability: 0.2 },
+        { value: 2, probability: 0.1 },
+        { value: 3, probability: 0.07 },
+        { value: 4, probability: 0.04 },
+        { value: 5, probability: 0.02 },
+        { value: 6, probability: 0.01 },
+        { value: '7+', probability: 0.01 },
+      ]
+    }
+    for (const player of result.outputs['opponent-score'].players) {
+      player.prediction.distribution = [
+        { value: 1000, probability: 0.62 },
+        { value: 2000, probability: 0.2 },
+        { value: 3900, probability: 0.1 },
+        { value: 8000, probability: 0.08 },
+      ]
+    }
+    window.analysisCheck.publish(result)
+  })
+  const adaptiveGuideMotion = await page.evaluate(async () => {
+    const sample = () => {
+      const track = document.querySelector('.analysis-score-distribution .analysis-distribution-track')
+      const bounds = track?.getBoundingClientRect()
+      return bounds && bounds.height > 0
+        ? Number.parseFloat(getComputedStyle(track, '::before').top) / bounds.height
+        : -1
+    }
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    const start = sample()
+    await new Promise(resolve => setTimeout(resolve, 35))
+    const middle = sample()
+    await new Promise(resolve => setTimeout(resolve, 120))
+    return { start, middle, end: sample() }
+  })
+  assert.ok(
+    adaptiveGuideMotion.start >= 0
+      && adaptiveGuideMotion.start < adaptiveGuideMotion.middle
+      && adaptiveGuideMotion.middle < adaptiveGuideMotion.end,
+    `the score reference line enters from the outer scale edge instead of jumping: ${JSON.stringify(adaptiveGuideMotion)}`,
+  )
+  await page.waitForFunction(() => {
+    const doraTrack = document.querySelector('.analysis-dora-distribution .analysis-distribution-track')
+    const scoreTrack = document.querySelector('.analysis-score-distribution .analysis-distribution-track')
+    return doraTrack && scoreTrack
+      && Number.parseFloat(getComputedStyle(doraTrack, '::before').top) > 2
+      && Number.parseFloat(getComputedStyle(scoreTrack, '::before').top) > 2
+  })
+  const adaptiveGuideRatios = await page.locator('.analysis-dora-distribution, .analysis-score-distribution').evaluateAll(charts => charts.slice(0, 2).map(chart => {
+    const track = chart.querySelector('.analysis-distribution-track')
+    const bounds = track?.getBoundingClientRect()
+    return bounds ? Number.parseFloat(getComputedStyle(track, '::before').top) / bounds.height : -1
+  }))
+  assert.ok(Math.abs(adaptiveGuideRatios[0] - (1 - (0.5 / 0.55))) < 0.02, 'the 50% dora guide moves inside an expanded range')
+  assert.ok(Math.abs(adaptiveGuideRatios[1] - (1 - (0.3 / 0.62))) < 0.02, 'the 30% score guide moves inside an expanded range')
+  const adaptiveModeStrengths = await page.locator('.analysis-score-modes').first().locator('span').evaluateAll(elements => (
+    elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))
+  ))
+  assert.ok(adaptiveModeStrengths[0] > adaptiveModeStrengths[1] && adaptiveModeStrengths[1] > adaptiveModeStrengths[2], 'nominated score backgrounds preserve the probability ordering')
+  assert.ok(adaptiveModeStrengths[0] - adaptiveModeStrengths[2] > 30, 'an extreme score prediction remains visibly distinct from lower nominations')
+  if (process.env.RMS_OPPONENT_SCALE_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_OPPONENT_SCALE_SCREENSHOT })
+  }
+
+  const shantenSlice = page.locator('.shanten-chart path').first()
+  await shantenSlice.hover()
+  const shantenOutline = page.locator('.shanten-chart .shanten-hover-outline')
+  await shantenOutline.waitFor({ state: 'visible' })
+  assert.equal(await shantenOutline.getAttribute('d'), await shantenSlice.getAttribute('d'), 'the hovered shanten slice receives its own top-layer outline')
+  assert.equal(await shantenSlice.locator('xpath=following-sibling::*[contains(@class, "shanten-hover-outline")]').count(), 1, 'the shanten hover outline paints after the data slices')
+  assert.equal(await page.locator('.shanten-chart svg').first().evaluate(element => getComputedStyle(element).overflow), 'visible', 'shanten outlines are not clipped by the SVG viewport')
+  if (process.env.RMS_SHANTEN_HOVER_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_SHANTEN_HOVER_SCREENSHOT })
+  }
+  await page.mouse.move(0, 0)
+  await page.evaluate(() => {
+    const vm = window.analysisCheck.vm
+    window.analysisCheck.publish(window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1))
+  })
+  await page.waitForTimeout(160)
+  const roundAnalysisHandoff = await page.evaluate(async () => {
+    const check = window.analysisCheck
+    const { vm } = check
+    const originalTable = vm.gameView.table
+    const originalDealer = originalTable.dealer
+    const nextDealer = [0, 1, 2, 3].find(seat => (
+      seat !== originalDealer && seat !== vm.status.controlledSeat
+    ))
+    const labels = () => [...document.querySelectorAll('.analysis-score-modes span')]
+      .map(element => element.textContent)
+    const beforeLabels = labels()
+    const nextResult = check.resultForNode(vm.gameView.currentNodeId, 2)
+    vm.gameView.table = { ...originalTable, dealer: nextDealer }
+    vm.stageOpponentAnalysisForView(nextResult)
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    const during = {
+      labels: labels(),
+      dealer: vm.displayedAnalysisTable?.dealer,
+    }
+    await new Promise(resolve => setTimeout(resolve, 160))
+    const after = {
+      labels: labels(),
+      dealer: vm.displayedAnalysisTable?.dealer,
+    }
+    vm.gameView.table = originalTable
+    vm.stageOpponentAnalysisForView(check.resultForNode(vm.gameView.currentNodeId, 1))
+    await new Promise(resolve => setTimeout(resolve, 160))
+    return { originalDealer, nextDealer, beforeLabels, during, after }
+  })
+  assert.equal(
+    roundAnalysisHandoff.during.dealer,
+    roundAnalysisHandoff.originalDealer,
+    'a retained analysis keeps the dealer context from the round that produced it',
+  )
+  assert.deepEqual(
+    roundAnalysisHandoff.during.labels,
+    roundAnalysisHandoff.beforeLabels,
+    'score nominations do not jump while the next round analysis is staged',
+  )
+  assert.equal(
+    roundAnalysisHandoff.after.dealer,
+    roundAnalysisHandoff.nextDealer,
+    'the dealer context changes atomically with the next complete analysis',
+  )
   if (process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_OPPONENT_UI_CHECK_SCREENSHOT })
   }
@@ -548,7 +1282,7 @@ try {
   await page.setViewportSize({ width: 1400, height: 1000 })
   await page.evaluate(() => {
     const vm = window.analysisCheck.vm
-    window.analysisCheck.publish(window.analysisCheck.result())
+    window.analysisCheck.publish(window.analysisCheck.result(2))
     vm.settings.display.workspaceLayout = {
       ...vm.workspaceLayout,
       analysisVisible: true,
@@ -570,6 +1304,7 @@ try {
     const firstBars = grid.querySelector('.analysis-risk-bars')
     const scale = grid.querySelector('.analysis-risk-scale')
     const sequence = grid.querySelector('.analysis-tile-sequence')
+    const rowCanvases = [...grid.querySelectorAll('.analysis-risk-row-canvas')]
     const body = grid.closest('.analysis-dock-body')
     return {
       gridWidth: grid.getBoundingClientRect().width,
@@ -582,6 +1317,14 @@ try {
       faceWidth: firstFace?.getBoundingClientRect().width || 0,
       barsHeight: firstBars?.getBoundingClientRect().height || 0,
       sequenceWidth: sequence?.getBoundingClientRect().width || 0,
+      guideBounds: rowCanvases.map(canvas => canvas.rmsRiskGuideBounds || null),
+      guideExpectedWidths: rowCanvases.map((canvas, index) => {
+        const rowTiles = [...(rows[index]?.querySelectorAll('.analysis-risk-tile') || [])]
+        if (!rowTiles.length) return 0
+        const first = rowTiles[0].getBoundingClientRect()
+        const last = rowTiles.at(-1).getBoundingClientRect()
+        return Math.round((last.right - first.left) * (canvas.width / canvas.getBoundingClientRect().width))
+      }),
       scaleHeight: scale?.getBoundingClientRect().height || 0,
       scaleRight: scale?.getBoundingClientRect().right || 0,
       gridRight: grid.getBoundingClientRect().right,
@@ -591,6 +1334,9 @@ try {
     }
   })
   const roomyRisk = await riskGeometry()
+  if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC && process.env.RMS_UI_ELECTRON) {
+    console.log(`Electron roomy risk geometry: ${JSON.stringify(roomyRisk)}`)
+  }
   assert.equal(roomyRisk.rowWidths.length, 4)
   assert.ok(roomyRisk.rowWidths.every(width => Math.abs(width - roomyRisk.gridWidth) < 0.6), 'all four rows align to the panel width')
   assert.ok(Math.max(...roomyRisk.rowHeights) - Math.min(...roomyRisk.rowHeights) < 0.6, 'four rows share one visual ratio')
@@ -599,6 +1345,18 @@ try {
   assert.ok(roomyRisk.barsHeight > roomyRisk.faceHeight * 1.15, 'bars expand into height not used by capped tiles')
   assert.ok(roomyRisk.scaleHeight > 0 && roomyRisk.scaleRight <= roomyRisk.gridRight + 0.6, 'the scale stays alongside the bars')
   assert.ok(roomyRisk.rowBorders.every(width => width === '0px'), 'risk rows have no divider rules')
+  assert.ok(roomyRisk.guideBounds.every(Boolean), 'an adaptive deal-in scale draws the 20% reference line')
+  assert.ok(roomyRisk.guideBounds.every((bounds, index) => (
+    bounds.left === 0
+    && Math.abs(bounds.right - roomyRisk.guideExpectedWidths[index]) <= 1
+  )), `each 20% reference line is continuous across its complete tile row: ${JSON.stringify({
+    guideBounds: roomyRisk.guideBounds,
+    guideExpectedWidths: roomyRisk.guideExpectedWidths,
+  })}`)
+  const riskLane = page.locator('.analysis-risk-bars > i').first()
+  await riskLane.hover()
+  assert.notEqual(await riskLane.evaluate(element => getComputedStyle(element, '::after').borderTopColor), 'rgba(0, 0, 0, 0)', 'the hovered deal-in lane receives the shared analysis highlight')
+  await page.mouse.move(0, 0)
 
   await page.setViewportSize({ width: 1100, height: 1000 })
   await page.waitForTimeout(100)
@@ -653,6 +1411,36 @@ try {
   const groupedCountGrid = page.locator('.analysis-count-grid')
   await groupedCountGrid.waitFor()
   await page.waitForTimeout(150)
+  const analysisTrackColors = await page.evaluate(() => {
+    const normalize = (value) => {
+      const probe = document.createElement('i')
+      probe.style.backgroundColor = value
+      document.body.append(probe)
+      const color = getComputedStyle(probe).backgroundColor
+      probe.remove()
+      return color
+    }
+    const background = selector => {
+      const element = document.querySelector(selector)
+      return element ? getComputedStyle(element).backgroundColor : ''
+    }
+    const countGrid = document.querySelector('.analysis-count-grid')
+    const bodyStyle = getComputedStyle(document.body)
+    return {
+      expected: normalize(bodyStyle.getPropertyValue('--analysis-chart-track-surface')),
+      risk: background('.analysis-risk-bars > i'),
+      count: countGrid ? normalize(getComputedStyle(countGrid).getPropertyValue('--analysis-count-kamicha-0')) : '',
+      opponent: background('.analysis-distribution-track'),
+      outcome: background('.analysis-outcome-bar'),
+      offense: background('.analysis-offense-track'),
+      delta: background('.analysis-delta-cell'),
+      placement: background('.analysis-placement-bar'),
+    }
+  })
+  for (const [track, color] of Object.entries(analysisTrackColors)) {
+    if (track === 'expected') continue
+    assert.equal(color, analysisTrackColors.expected, `${track} uses the shared analysis track surface`)
+  }
   const splitMetrics = await page.evaluate(() => {
     const visibleBounds = selector => {
       const grid = document.querySelector(selector)
@@ -677,6 +1465,16 @@ try {
   assert.ok(splitMetrics.risk.tileWidth <= splitMetrics.risk.fontSize * 3 + 0.6, 'risk tiles stay within the 3em interface limit')
   assert.ok(splitMetrics.counts.tileWidth <= splitMetrics.counts.fontSize * 3 + 0.6, 'grouped count tiles stay within the 3em interface limit')
   assert.ok(splitMetrics.counts.tileWidth < 60, 'grouped count tiles are height-limited in a wide, short panel')
+  const groupedLegendRowOrder = await page.locator('.analysis-count-palette-legend').evaluate((legend) => {
+    const swatch = legend.querySelector('i')?.getBoundingClientRect()
+    const number = legend.querySelector('small')?.getBoundingClientRect()
+    return { swatchTop: swatch?.top || 0, numberTop: number?.top || 0 }
+  })
+  assert.ok(groupedLegendRowOrder.numberTop > groupedLegendRowOrder.swatchTop, 'grouped count legend numbers stay on the lower row')
+  const groupedCountLane = page.locator('.analysis-count-bars > button').first()
+  await groupedCountLane.hover()
+  assert.notEqual(await groupedCountLane.evaluate(element => getComputedStyle(element, '::after').borderTopColor), 'rgba(0, 0, 0, 0)', 'grouped count lanes receive the shared analysis highlight')
+  await page.mouse.move(0, 0)
   if (process.env.RMS_SPLIT_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_SPLIT_UI_CHECK_SCREENSHOT })
   }
@@ -687,8 +1485,136 @@ try {
   await page.mouse.move(0, 0)
   await page.evaluate(() => { window.analysisCheck.vm.analysisCountLayout = 'source-rows' })
   await target().waitFor()
+  const sourceLegendGeometry = await page.locator('.analysis-count-source-legend-group').evaluateAll(groups => groups.map((group) => {
+    const label = group.querySelector('strong')?.getBoundingClientRect()
+    const swatches = [...group.querySelectorAll('i')].map(swatch => swatch.getBoundingClientRect())
+    return {
+      labelToOwnSwatches: label && swatches.length ? swatches[0].left - label.right : Number.POSITIVE_INFINITY,
+      internalSwatchGaps: swatches.slice(1).map((swatch, index) => swatch.left - swatches[index].right),
+    }
+  }))
+  assert.equal(sourceLegendGeometry.length, 4, 'the source legend keeps one compact group for each source')
+  assert.ok(sourceLegendGeometry.every(group => group.labelToOwnSwatches >= 0 && group.labelToOwnSwatches <= 5), 'each source label stays attached to its own color scale')
+  assert.ok(sourceLegendGeometry.flatMap(group => group.internalSwatchGaps).every(gap => gap >= 0 && gap <= 4), 'each five-step color scale reads as one unit')
+  const sourceLegendRowOrder = await page.locator('.analysis-count-source-legend-group').evaluateAll(groups => groups.map((group) => {
+    const swatch = group.querySelector('i')?.getBoundingClientRect()
+    const number = group.querySelector('small')?.getBoundingClientRect()
+    return { swatchTop: swatch?.top || 0, numberTop: number?.top || 0 }
+  }))
+  assert.ok(sourceLegendRowOrder.every(row => row.numberTop > row.swatchTop), 'count legend numbers stay on the lower row')
+  const baselineToggle = page.locator('.analysis-count-baseline-toggle')
+  assert.equal(await baselineToggle.isEnabled(), true, 'the theoretical baseline is available when a table is loaded')
+  const modelSignature = await page.locator('.analysis-count-source-row-canvas').first().evaluate(canvas => canvas.rmsCountRenderSignature)
+  await baselineToggle.click()
+  await page.waitForFunction(() => (
+    document.querySelector('.analysis-count-baseline-toggle')?.getAttribute('aria-pressed') === 'true'
+  ))
+  await page.waitForTimeout(150)
+  const baselineSignature = await page.locator('.analysis-count-source-row-canvas').first().evaluate(canvas => canvas.rmsCountRenderSignature)
+  assert.notEqual(baselineSignature, modelSignature, 'the theoretical baseline replaces the model distribution')
+  await page.evaluate(() => {
+    window.analysisCheck.vm.gameView.table.pendingDiscard = {
+      actor: 1, pai: '1s', tsumogiri: true, targetActor: 2, riichi: false,
+    }
+  })
+  await page.waitForFunction(previous => (
+    document.querySelector('.analysis-count-source-row-canvas')?.rmsCountRenderSignature !== previous
+  ), baselineSignature)
+  await page.waitForTimeout(150)
+  await page.evaluate(() => { window.analysisCheck.vm.gameView.table.pendingDiscard = null })
+  await page.waitForFunction(expected => (
+    document.querySelector('.analysis-count-source-row-canvas')?.rmsCountRenderSignature === expected
+  ), baselineSignature)
+
+  // Backward frame navigation restores a pending discard to its hand. The
+  // returning tile must remain hidden in the new hand until the river ghost
+  // reaches it; otherwise it flashes in the former gap and duplicates itself.
+  const reverseDiscardFlight = await page.evaluate(async () => {
+    const { vm } = window.analysisCheck
+    const originalView = JSON.parse(JSON.stringify(vm.gameView))
+    const actor = vm.status.controlledSeat
+    const returnedTile = '5m'
+    const remainingHand = ['1m', '2m', '3m', '4m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p']
+    const pendingView = JSON.parse(JSON.stringify(originalView))
+    const parentId = 'reverse-discard-parent'
+    const childId = 'reverse-discard-child'
+    pendingView.currentNodeId = childId
+    pendingView.tree = {
+      rootNodeId: parentId,
+      currentNodeId: childId,
+      mainLeafNodeId: childId,
+      currentRoundRootId: parentId,
+      revision: 1,
+      nodes: [
+        { id: parentId, parentId: null, children: [childId], mainChildId: childId, depth: 0, roundDepth: 0, type: 'root', action: null, isCurrent: false },
+        { id: childId, parentId, children: [], mainChildId: null, depth: 1, roundDepth: 1, type: 'action', action: { type: 'discard', actor, pai: returnedTile }, isCurrent: true },
+      ],
+      rounds: [],
+    }
+    pendingView.table.hands[actor] = remainingHand
+    pendingView.table.rivers[actor] = []
+    pendingView.table.pendingRiichiDiscard = null
+    pendingView.table.pendingDiscard = {
+      actor, pai: returnedTile, tsumogiri: false, targetActor: actor, riichi: false,
+    }
+    pendingView.table.actionHistory = [
+      { type: 'tsumo', actor, pai: returnedTile },
+      { type: 'dahai', actor, pai: returnedTile },
+    ]
+    vm.gameView.currentNodeId = pendingView.currentNodeId
+    vm.gameView.tree = pendingView.tree
+    vm.gameView.table = pendingView.table
+    await new Promise(resolve => requestAnimationFrame(resolve))
+
+    const restoredView = JSON.parse(JSON.stringify(pendingView))
+    restoredView.currentNodeId = parentId
+    restoredView.tree.currentNodeId = parentId
+    restoredView.tree.nodes[0].isCurrent = true
+    restoredView.tree.nodes[1].isCurrent = false
+    restoredView.table.pendingDiscard = null
+    restoredView.table.hands[actor] = ['1m', '2m', '3m', '4m', returnedTile, '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p']
+    restoredView.table.rivers[actor] = [returnedTile]
+    const originalJump = window.studioAPI.jumpToNode
+    window.studioAPI.jumpToNode = async () => ({
+      state: JSON.parse(JSON.stringify(vm.status)), view: restoredView,
+    })
+    await vm.jumpToNode(parentId)
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    const targets = [...document.querySelectorAll(`[data-hand-seat="${actor}"]`)]
+      .filter(element => !element.classList.contains('hand-discard-gap'))
+    const returnedSlot = targets.find(element => element.querySelector('img')?.getAttribute('alt') === returnedTile)
+    const duringFlight = {
+      ghost: Boolean(document.querySelector('.discard-return-ghost')),
+      returnedSlotHidden: returnedSlot ? getComputedStyle(returnedSlot).visibility === 'hidden' : false,
+    }
+    await new Promise(resolve => setTimeout(resolve, 320))
+    const settledReturnedSlot = [...document.querySelectorAll(`[data-hand-seat="${actor}"]`)]
+      .find(element => element.querySelector('img')?.getAttribute('alt') === returnedTile)
+    const afterFlight = {
+      ghost: Boolean(document.querySelector('.discard-return-ghost')),
+      returnedSlotHidden: settledReturnedSlot ? getComputedStyle(settledReturnedSlot).visibility === 'hidden' : true,
+    }
+    vm.gameView.currentNodeId = originalView.currentNodeId
+    vm.gameView.tree = originalView.tree
+    vm.gameView.table = originalView.table
+    window.studioAPI.jumpToNode = originalJump
+    return { duringFlight, afterFlight }
+  })
+  assert.equal(reverseDiscardFlight.duringFlight.ghost, true, 'backward discard navigation creates one returning river ghost')
+  assert.equal(reverseDiscardFlight.duringFlight.returnedSlotHidden, true, 'the returned hand slot stays hidden during its reverse flight')
+  assert.equal(reverseDiscardFlight.afterFlight.ghost, false, 'the returning ghost is removed after it reaches the hand')
+  assert.equal(reverseDiscardFlight.afterFlight.returnedSlotHidden, false, 'the restored hand tile becomes visible after the reverse flight')
+  if (process.env.RMS_COUNT_BASELINE_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_COUNT_BASELINE_SCREENSHOT })
+  }
+  await baselineToggle.click()
+  await page.waitForFunction(() => document.querySelector('.analysis-count-baseline-toggle')?.getAttribute('aria-pressed') === 'false')
+  if (process.env.RMS_COUNT_LEGEND_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_COUNT_LEGEND_SCREENSHOT })
+  }
   await target().hover()
   await tooltip.waitFor({ state: 'visible' })
+  assert.notEqual(await target().locator('.analysis-count-source-bar').evaluate(element => getComputedStyle(element, '::after').borderTopColor), 'rgba(0, 0, 0, 0)', 'the hovered count lane receives the shared analysis highlight')
   const tileArtwork = await page.evaluate(() => {
     const read = selector => {
       const element = document.querySelector(selector)
@@ -885,16 +1811,136 @@ try {
     })
   }
 
-  // A cached node change lets table motion finish first, then replaces each
-  // visible analysis panel through compositor-owned view snapshots.
-  await page.setViewportSize({ width: 1400, height: 1000 })
+  // Mutually exclusive outcome details share one 100% stacked bar. The rows
+  // below it identify segments and preserve exact values without separate bars.
+  await page.evaluate(() => {
+    const { vm } = window.analysisCheck
+    vm.settings.display.language = 'zh-CN'
+    const result = window.analysisCheck.result()
+    result.outputs['kyoku-outcome'] = {
+      outcomes: [
+        { type: 'draw', probability: 0.10 },
+        { type: 'tsumo', winner: 0, probability: 0.10 },
+        { type: 'ron', winners: [1], target: 0, probability: 0.28 },
+        { type: 'ron', winners: [2], target: 0, probability: 0.20 },
+        { type: 'ron', winners: [3], target: 0, probability: 0.17 },
+        { type: 'ron', winners: [1, 2], target: 0, probability: 0.07 },
+        { type: 'ron', winners: [1, 3], target: 0, probability: 0.05 },
+        { type: 'ron', winners: [2, 3], target: 0, probability: 0.03 },
+      ],
+    }
+    result.outputs['match-placement'] = {
+      players: [0, 1, 2, 3].map(seat => ({
+        seat,
+        prediction: {
+          expectedValue: 2.1,
+          distribution: [
+            { value: 4, probability: 0.05 },
+            { value: 3, probability: 0.15 },
+            { value: 2, probability: 0.30 },
+            { value: 1, probability: 0.50 },
+          ],
+        },
+      })),
+    }
+    window.analysisCheck.publish(result)
+  })
+  const selfDealInSegment = page.locator('.analysis-offense-row').first().locator('.analysis-offense-segment.is-deal-in')
+  await selfDealInSegment.hover()
+  const selfOffenseTrack = page.locator('.analysis-offense-row').first().locator('.analysis-offense-track')
+  const dealInHoverGeometry = await selfOffenseTrack.evaluate((element) => ({
+    trackWidth: element.getBoundingClientRect().width,
+    hoverWidth: Number.parseFloat(getComputedStyle(element, '::after').width),
+  }))
+  assert.ok(Math.abs(dealInHoverGeometry.hoverWidth - (dealInHoverGeometry.trackWidth * 0.8)) < 1, 'deal-in hover covers only the actual probability bar')
+  if (process.env.RMS_OFFENSE_HOVER_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_OFFENSE_HOVER_SCREENSHOT })
+  }
+  const outcomeTooltip = page.locator('.analysis-floating-tooltip.is-outcome-detail')
+  await outcomeTooltip.waitFor({ state: 'visible' })
+  const outcomeTooltipGeometry = await outcomeTooltip.evaluate((element) => {
+    const bar = element.querySelector('.analysis-outcome-detail-bar')
+    const rows = [...element.querySelectorAll('.ui-hover-tooltip-row.has-segment')]
+    const segments = [...(bar?.children || [])].map(segment => segment.getBoundingClientRect())
+    const values = rows.map(row => row.lastElementChild?.getBoundingClientRect()).filter(Boolean)
+    return {
+      rowCount: rows.length,
+      barCount: element.querySelectorAll('.analysis-outcome-detail-bar').length,
+      barWidth: bar?.getBoundingClientRect().width || 0,
+      segmentWidths: segments.map(segment => segment.width),
+      labels: rows.map(row => row.firstElementChild?.textContent || ''),
+      swatchCount: element.querySelectorAll('.analysis-outcome-detail-swatch').length,
+      valueRightEdges: values.map(value => value.right),
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+    }
+  })
+  assert.equal(outcomeTooltipGeometry.rowCount, 6, 'all mutually exclusive deal-in details remain visible')
+  assert.equal(outcomeTooltipGeometry.barCount, 1, 'mutually exclusive details share one probability bar')
+  assert.ok(Math.abs(outcomeTooltipGeometry.segmentWidths.reduce((sum, width) => sum + width, 0) - outcomeTooltipGeometry.barWidth) < 1, 'outcome segments fill one 100% bar')
+  assert.ok(outcomeTooltipGeometry.segmentWidths[0] > outcomeTooltipGeometry.segmentWidths[1], 'segment widths preserve the probability ordering')
+  assert.equal(outcomeTooltipGeometry.swatchCount, 6, 'each detail row identifies its segment')
+  assert.ok(outcomeTooltipGeometry.labels.some(label => label.includes('＋')), 'multiple winners are shown as a concise combination')
+  assert.ok(Math.max(...outcomeTooltipGeometry.valueRightEdges) - Math.min(...outcomeTooltipGeometry.valueRightEdges) < 0.6, 'exact probability values share one right edge')
+  assert.ok(outcomeTooltipGeometry.scrollWidth <= outcomeTooltipGeometry.clientWidth + 1, 'outcome detail rows do not overflow the tooltip')
+  if (process.env.RMS_OUTCOME_TOOLTIP_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_OUTCOME_TOOLTIP_SCREENSHOT })
+  }
+  await page.mouse.move(0, 0)
+  await page.waitForFunction(() => !document.querySelector('.analysis-floating-tooltip'))
+
+  const placementBar = page.locator('.analysis-placement-bar').first()
+  const placementSegments = placementBar.locator(':scope > span')
+  assert.equal(await placementSegments.count(), 4)
+  assert.equal(await placementSegments.nth(0).locator('small').count(), 0, 'a placement segment without enough probability share omits its label')
+  assert.equal(await placementBar.locator('small').count(), 3, 'roomy placement segments display their percentages directly')
+  const placementLabelGeometry = await placementBar.locator('small').evaluateAll(labels => labels.map(label => {
+    const labelBounds = label.getBoundingClientRect()
+    const segmentBounds = label.parentElement.getBoundingClientRect()
+    return {
+      left: labelBounds.left,
+      right: labelBounds.right,
+      segmentLeft: segmentBounds.left,
+      segmentRight: segmentBounds.right,
+    }
+  }))
+  assert.ok(placementLabelGeometry.every(item => item.left >= item.segmentLeft - 0.6 && item.right <= item.segmentRight + 0.6), 'placement percentages stay inside their segments')
+
+  const highlightChecks = [
+    { hover: page.locator('.analysis-outcome-bar > span').first(), surface: page.locator('.analysis-outcome-bar > span').first() },
+    { hover: page.locator('.analysis-offense-row').first().locator('.analysis-offense-segment.is-deal-in'), surface: page.locator('.analysis-offense-row').first().locator('.analysis-offense-track') },
+    { hover: page.locator('.analysis-delta-cell').first(), surface: page.locator('.analysis-delta-cell').first() },
+    { hover: placementBar, surface: placementBar },
+  ]
+  for (const { hover, surface } of highlightChecks) {
+    await hover.hover()
+    assert.notEqual(await surface.evaluate(element => getComputedStyle(element, '::after').borderTopColor), 'rgba(0, 0, 0, 0)', 'interactive game-analysis bars share the same hover feedback')
+  }
+  if (process.env.RMS_ANALYSIS_HOVER_SCREENSHOT) {
+    await page.screenshot({ path: process.env.RMS_ANALYSIS_HOVER_SCREENSHOT })
+  }
+  await page.mouse.move(0, 0)
+  }
+
+  // A cached node change lets table motion finish before the complete next
+  // analysis presentation is committed. The opt-in realistic diagnostic uses
+  // the public example's full outputs and all four analysis panels.
+  await page.setViewportSize(realisticPerformance
+    ? { width: 2560, height: 1392 }
+    : { width: 1400, height: 1000 })
   await page.keyboard.press('Escape')
   await page.waitForFunction(() => !document.querySelector('.count-prediction-tooltip, .analysis-floating-tooltip'))
   await page.evaluate(() => {
     const check = window.analysisCheck
     const { vm } = check
-    const hand = ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p']
-    vm.gameView.table.hands[vm.status.controlledSeat] = hand
+    const crowdedTable = window.rmsRealisticCrowdedTable
+    if (crowdedTable) {
+      vm.gameView.table = structuredClone(crowdedTable)
+      vm.gameView.table.currentActor = vm.status.controlledSeat
+      vm.gameView.table.phase = 'discard'
+      vm.gameView.table.pendingDiscard = null
+    }
+    const hand = vm.gameView.table.hands[vm.status.controlledSeat]
     vm.gameView.legalActions = hand.map((pai, index) => ({
       id: `discard-${index}`,
       type: 'dahai',
@@ -916,42 +1962,138 @@ try {
         isBest: index === hand.length - 1,
       })),
     }
-    const initial = check.resultForNode(vm.gameView.currentNodeId, 1)
+    const realisticInitial = check.realisticResultForNode(0, vm.gameView.currentNodeId)
+    const initial = realisticInitial || check.resultForNode(vm.gameView.currentNodeId, 1)
     check.publish(initial)
-    vm.settings.display.workspaceLayout = {
-      ...vm.workspaceLayout,
-      analysisVisible: true,
-      consoleVisible: false,
-      layout: {
-        type: 'split', direction: 'horizontal', weights: [2, 1],
-        children: [
-          { type: 'item', id: 'table' },
-          { type: 'split', direction: 'vertical', weights: [1, 1], children: [
-            { type: 'item', id: 'analysis-opponents' },
-            { type: 'item', id: 'analysis-risk' },
-          ] },
-        ],
-      },
-      analysisPanels: { opponents: true, game: false, risk: true, counts: false },
-    }
+    vm.settings.display.workspaceLayout = realisticInitial
+      ? {
+          ...vm.workspaceLayout,
+          analysisVisible: true,
+          consoleVisible: false,
+          layout: {
+            type: 'split', direction: 'horizontal', weights: [2.2, 1, 1],
+            children: [
+              { type: 'item', id: 'table' },
+              { type: 'split', direction: 'vertical', weights: [1, 1], children: [
+                { type: 'item', id: 'analysis-opponents' },
+                { type: 'item', id: 'analysis-risk' },
+              ] },
+              { type: 'split', direction: 'vertical', weights: [1.4, 1], children: [
+                { type: 'item', id: 'analysis-counts' },
+                { type: 'item', id: 'analysis-game' },
+              ] },
+            ],
+          },
+          analysisPanels: { opponents: true, game: true, risk: true, counts: true },
+        }
+      : {
+          ...vm.workspaceLayout,
+          analysisVisible: true,
+          consoleVisible: false,
+          layout: {
+            type: 'split', direction: 'horizontal', weights: [2, 1],
+            children: [
+              { type: 'item', id: 'table' },
+              { type: 'split', direction: 'vertical', weights: [1, 1], children: [
+                { type: 'item', id: 'analysis-opponents' },
+                { type: 'item', id: 'analysis-risk' },
+              ] },
+            ],
+          },
+          analysisPanels: { opponents: true, game: false, risk: true, counts: false },
+        }
   })
   await page.locator('.shanten-chart path').first().waitFor()
-  await page.locator('.analysis-risk-bars > i > span').first().waitFor()
-  await page.locator('.grid-main .choice-bar-fill').first().waitFor()
+  await page.locator('.analysis-risk-row-canvas').first().waitFor()
+  if (realisticPerformance) {
+    await page.locator('.analysis-count-grid').waitFor()
+    await page.locator('.analysis-player-section').waitFor()
+  }
+  await page.locator('.grid-main .table-recommendation-canvas').waitFor()
+  await page.locator('.grid-main .table-ron-risk-canvas').waitFor()
+  const tableMarkerGeometry = await page.locator('.recommendation-geometry-marker').first().evaluate((marker) => {
+    const rect = marker.getBoundingClientRect()
+    const laneRect = marker.parentElement?.getBoundingClientRect()
+    return { width: rect.width, height: rect.height, laneWidth: laneRect?.width || 0 }
+  })
+  assert.ok(
+    tableMarkerGeometry.width > tableMarkerGeometry.height,
+    `the hand recommendation canvas measures the shared downward-triangle geometry: ${JSON.stringify(tableMarkerGeometry)}`,
+  )
+  assert.ok(
+    tableMarkerGeometry.laneWidth > 0
+      && tableMarkerGeometry.width / tableMarkerGeometry.laneWidth <= 0.71
+      && tableMarkerGeometry.height / tableMarkerGeometry.width <= 0.56,
+    `the preferred marker remains a restrained pointer rather than extending the bar: ${JSON.stringify(tableMarkerGeometry)}`,
+  )
   await page.waitForTimeout(200)
+  await page.waitForFunction(() => document.getAnimations().every(animation => (
+    animation.playState === 'finished'
+      || !(animation.effect?.target instanceof Element)
+      || !animation.effect.target.closest('.analysis-panel-live')
+  )))
   const permanentLayerHints = await page.evaluate(() => [
-    ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back), .grid-main .choice-bar-upper, .grid-main .choice-bar-fill, .grid-main .ron-risk-fill'),
+    ...document.querySelectorAll('.grid-main .tileImg:not(.discard-flight-back)'),
   ].filter(element => getComputedStyle(element).willChange.includes('transform')).length)
   assert.equal(permanentLayerHints, 0, 'repeated table primitives do not reserve permanent compositor layers')
-  const navigationMotion = await page.evaluate(async () => {
+  const analysisCssMotionDisabled = Boolean(process.env.RMS_UI_EXPERIMENT_NO_ANALYSIS_CSS_MOTION)
+  if (analysisCssMotionDisabled) {
+    await page.addStyleTag({ content: '.analysis-panel-live * { transition-duration: 0s !important; }' })
+  }
+  const analysisMotionExperiment = analysisCssMotionDisabled
+  const cdpSession = await page.context().newCDPSession(page)
+  await cdpSession.send('Performance.enable')
+  const traceEnabled = Boolean(process.env.RMS_UI_TRACE)
+  let traceComplete
+  if (traceEnabled) {
+    traceComplete = new Promise(resolve => cdpSession.once('Tracing.tracingComplete', resolve))
+    await cdpSession.send('Tracing.start', {
+      categories: [
+        'blink',
+        'cc',
+        'devtools.timeline',
+        'disabled-by-default-devtools.timeline',
+        'disabled-by-default-devtools.timeline.frame',
+        'gpu',
+      ].join(','),
+      transferMode: 'ReturnAsStream',
+    })
+  }
+  const performanceBefore = await cdpSession.send('Performance.getMetrics')
+  const navigationMotion = await page.evaluate(async (collectMotionSamples) => {
     const check = window.analysisCheck
     const { vm } = check
     const originalJump = window.studioAPI.jumpToNode
     const originalRead = window.studioAPI.getAnalysis
     const nextNodeId = `${vm.gameView.currentNodeId}-performance`
-    const nextResult = check.resultForNode(nextNodeId, 2)
+    const nextResult = check.realisticResultForNode(1, nextNodeId) || check.resultForNode(nextNodeId, 2)
+    const currentNodeId = vm.gameView.currentNodeId
+    vm.gameView.tree = {
+      rootNodeId: currentNodeId,
+      currentNodeId,
+      mainLeafNodeId: nextNodeId,
+      currentRoundRootId: currentNodeId,
+      revision: 1,
+      nodes: [
+        { id: currentNodeId, parentId: null, children: [nextNodeId], mainChildId: nextNodeId, depth: 0, roundDepth: 0, type: 'root', action: null, isCurrent: true },
+        { id: nextNodeId, parentId: currentNodeId, children: [], mainChildId: null, depth: 1, roundDepth: 1, type: 'action', action: { type: 'discard', actor: vm.status.controlledSeat, pai: '1m' }, isCurrent: false },
+      ],
+      rounds: [],
+    }
+    // Let Vue publish the replacement tree before exercising the actual wheel
+    // handler; the measured interval starts only after this fixture setup.
+    await new Promise(resolve => requestAnimationFrame(resolve))
     window.studioAPI.getAnalysis = async () => nextResult
+    let wheelRequestAt = null
+    let wheelNavigationArmed = false
     window.studioAPI.jumpToNode = async () => {
+      if (!wheelNavigationArmed) {
+        return {
+          state: JSON.parse(JSON.stringify(vm.status)),
+          view: JSON.parse(JSON.stringify(vm.gameView)),
+        }
+      }
+      wheelRequestAt = performance.now()
       const view = JSON.parse(JSON.stringify(vm.gameView))
       view.currentNodeId = nextNodeId
       view.opponentAnalysis = nextResult
@@ -969,8 +2111,70 @@ try {
       }))
       return { state: JSON.parse(JSON.stringify(vm.status)), view }
     }
+    // Use the public navigation path to synchronize its private wheel cursor
+    // with this fixture before timing the wheel event itself.
+    await vm.jumpToNode(currentNodeId)
+    wheelNavigationArmed = true
     const frameTimes = []
     const longTasks = []
+    const tableMotionSamples = []
+    const tableRonRiskGuideSamples = []
+    const analysisMotionSamples = []
+    const captureDistributionGeometry = () => {
+      const distributions = [...document.querySelectorAll(
+        '.analysis-panel-live .analysis-dora-distribution, .analysis-panel-live .analysis-score-distribution',
+      )]
+      const canvases = [...document.querySelectorAll('.analysis-panel-live .analysis-distribution-canvas')]
+      return {
+        distributionHeights: distributions.map(element => element.getBoundingClientRect().height),
+        trackHeights: distributions.map(distribution => (
+          [...distribution.querySelectorAll('.analysis-distribution-track')]
+            .map(element => element.getBoundingClientRect().height)
+        )),
+        bottomOverflow: canvases.map((canvas) => {
+          const canvasRect = canvas.getBoundingClientRect()
+          const distributionRect = canvas.parentElement?.getBoundingClientRect()
+          return distributionRect ? canvasRect.bottom - distributionRect.bottom : 0
+        }),
+        renderSignatures: canvases.map(canvas => canvas.rmsDistributionRenderSignature || ''),
+      }
+    }
+    const captureTableRonRiskGeometry = () => {
+      const root = document.querySelector('.grid-main .ron-risk-bars')
+      const canvas = root?.querySelector('.table-ron-risk-canvas')
+      if (!(root instanceof HTMLElement) || !(canvas instanceof HTMLCanvasElement)) return null
+      const rootRect = root.getBoundingClientRect()
+      const canvasRect = canvas.getBoundingClientRect()
+      const slotRects = [...root.querySelectorAll('.ron-risk-slot')].map(slot => slot.getBoundingClientRect())
+      const expectedGuideWidth = slotRects.length
+        ? Math.round((slotRects.at(-1).right - slotRects[0].left) * (canvas.width / canvasRect.width))
+        : 0
+      return {
+        rootHeight: rootRect.height,
+        canvasHeight: canvasRect.height,
+        overflow: {
+          top: rootRect.top - canvasRect.top,
+          right: canvasRect.right - rootRect.right,
+          bottom: canvasRect.bottom - rootRect.bottom,
+          left: rootRect.left - canvasRect.left,
+        },
+        renderSignature: canvas.rmsRonRiskRenderSignature || '',
+        guideBounds: canvas.rmsRonRiskGuideBounds || null,
+        expectedGuideWidth,
+      }
+    }
+    const captureCountCanvasSignature = () => [
+      ...document.querySelectorAll(
+        '.analysis-count-source-row-canvas, .analysis-count-row-canvas',
+      ),
+    ].map(canvas => canvas.rmsCountRenderSignature || '').join('|')
+    const captureGameCanvasSignature = () => (
+      document.querySelector('.analysis-game-canvas')?.rmsGameAnalysisRenderSignature || ''
+    )
+    const oldPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
+    const oldRiskCanvas = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
+    const oldCountCanvas = captureCountCanvasSignature()
+    const oldGameCanvas = captureGameCanvasSignature()
     const frameSample = new Promise(resolve => {
       const startedAt = performance.now()
       const observer = typeof PerformanceObserver === 'function'
@@ -981,6 +2185,39 @@ try {
       try { observer?.observe({ type: 'longtask' }) } catch { /* unsupported */ }
       const sample = timestamp => {
         frameTimes.push(timestamp)
+        if (collectMotionSamples) {
+          const tableRiskCanvas = document.querySelector('.grid-main .table-ron-risk-canvas')
+          if (tableRiskCanvas?.rmsRonRiskGuideBounds) {
+            tableRonRiskGuideSamples.push({
+              ...tableRiskCanvas.rmsRonRiskGuideBounds,
+              canvasHeight: tableRiskCanvas.height,
+            })
+          }
+          const activeAnimations = document.getAnimations().filter(animation => animation.playState !== 'finished')
+          const tableAnimation = activeAnimations.find(animation => (
+            animation.effect?.target instanceof Element
+            && Boolean(animation.effect.target.closest('.grid-main'))
+          ))
+          if (tableAnimation && typeof tableAnimation.currentTime === 'number') {
+            tableMotionSamples.push({ timestamp, currentTime: tableAnimation.currentTime })
+          }
+          const analysisAnimation = activeAnimations.find(animation => (
+            animation.effect?.target instanceof Element
+            && Boolean(animation.effect.target.closest('.analysis-panel-live'))
+          ))
+          const riskSignature = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
+          const countSignature = captureCountCanvasSignature()
+          const gameSignature = captureGameCanvasSignature()
+          if (analysisAnimation && typeof analysisAnimation.currentTime === 'number') {
+            analysisMotionSamples.push({ timestamp, currentTime: analysisAnimation.currentTime, riskSignature, countSignature, gameSignature })
+          } else if (
+            (riskSignature && riskSignature !== oldRiskCanvas)
+            || (countSignature && countSignature !== oldCountCanvas)
+            || (gameSignature && gameSignature !== oldGameCanvas)
+          ) {
+            analysisMotionSamples.push({ timestamp, currentTime: null, riskSignature, countSignature, gameSignature })
+          }
+        }
         if (timestamp - startedAt < 300) requestAnimationFrame(sample)
         else {
           observer?.disconnect()
@@ -989,8 +2226,25 @@ try {
       }
       requestAnimationFrame(sample)
     })
-    const oldPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
-    await vm.jumpToNode(nextNodeId)
+    const distributionBefore = captureDistributionGeometry()
+    const tableRonRiskBefore = captureTableRonRiskGeometry()
+    const tableStage = document.querySelector('.table-stage')
+    if (!tableStage) throw new Error('Table stage is unavailable for wheel navigation')
+    const wheelDispatchedAt = performance.now()
+    tableStage.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true, cancelable: true }))
+    const wheelDeadline = wheelDispatchedAt + 1000
+    while (vm.gameView.currentNodeId !== nextNodeId && performance.now() < wheelDeadline) {
+      await new Promise(resolve => requestAnimationFrame(resolve))
+    }
+    const wheelViewAppliedAt = performance.now()
+    if (vm.gameView.currentNodeId !== nextNodeId) throw new Error(`Wheel navigation did not apply the next node: ${JSON.stringify({
+      currentNodeId: vm.gameView.currentNodeId,
+      nextNodeId,
+      mode: vm.status.mode,
+      requestObserved: wheelRequestAt !== null,
+      treeCurrentNodeId: vm.gameView.tree?.currentNodeId,
+      nodes: vm.gameView.tree?.nodes?.map(node => node.id),
+    })}`)
     const immediatePiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
     const tablePhasePromise = new Promise(resolve => setTimeout(() => {
       const activeAnimations = document.getAnimations().filter(animation => animation.playState !== 'finished')
@@ -1011,18 +2265,55 @@ try {
         .map(animation => animation.effect?.target)
       const analysisDataAnimations = animatedTargets
         .filter(target => target instanceof Element && Boolean(target.closest('.analysis-panel-live')))
+      const tableDataAnimations = animatedTargets
+        .filter(target => target instanceof Element && Boolean(target.closest('.grid-main')))
+      const describeAnimationTargets = targets => Object.entries(targets.reduce((counts, target) => {
+        const key = target.classList.length ? [...target.classList].join('.') : target.tagName.toLowerCase()
+        counts[key] = (counts[key] || 0) + 1
+        return counts
+      }, {})).sort((left, right) => right[1] - left[1])
+      const animationTargets = describeAnimationTargets(analysisDataAnimations)
+      const panelAnimations = document.getAnimations()
+        .filter(animation => (
+          animation.playState !== 'finished'
+          && animation.effect?.target instanceof Element
+          && animation.effect.target.classList.contains('analysis-panel-live')
+        ))
+        .map(animation => ({
+          duration: animation.effect.getTiming().duration,
+          easing: animation.effect.getTiming().easing,
+          properties: [...new Set(animation.effect.getKeyframes().flatMap(frame => (
+            Object.keys(frame).filter(key => !['offset', 'computedOffset', 'easing', 'composite'].includes(key))
+          )))].sort(),
+        }))
       const transitionDurations = [
-        ...document.querySelectorAll('.analysis-panel-live .analysis-risk-bars > i > span, .analysis-panel-live .analysis-dora-distribution em, .analysis-panel-live .analysis-score-distribution i > span'),
+        ...document.querySelectorAll(
+          '.analysis-panel-live .analysis-outcome-bar > span, '
+          + '.analysis-panel-live .analysis-offense-segment, '
+          + '.analysis-panel-live .analysis-offense-value, '
+          + '.analysis-panel-live .analysis-delta-cell > span, '
+          + '.analysis-panel-live .analysis-placement-bar > span',
+        ),
       ].map(element => getComputedStyle(element).transitionDuration)
       resolve({
         tableSuppressed: document.querySelector('.grid-main')?.classList.contains('reset-without-motion') || false,
         panelsSuppressed: [...document.querySelectorAll('.analysis-panel-content')]
           .every(element => element.classList.contains('reduce-motion')),
+        visiblePanelCount: document.querySelectorAll('.analysis-panel-live').length,
         analysisDataAnimationCount: analysisDataAnimations.length,
+        animationTargets,
+        panelAnimations,
+        tableDataAnimationCount: tableDataAnimations.length,
+        tableAnimationTargets: describeAnimationTargets(tableDataAnimations),
         transitionDurations,
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
+        riskCanvas: document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '',
+        countCanvas: captureCountCanvasSignature(),
+        gameCanvas: captureGameCanvasSignature(),
+        distributionGeometry: captureDistributionGeometry(),
+        tableRonRiskGeometry: captureTableRonRiskGeometry(),
       })
-    }, 175))
+    }, 210))
     const [tablePhase, during] = await Promise.all([tablePhasePromise, duringPromise])
     const after = await new Promise(resolve => setTimeout(() => {
       resolve({
@@ -1032,6 +2323,11 @@ try {
           && Boolean(animation.effect.target.closest('.analysis-panel-live'))
         )).length,
         piePath: document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || '',
+        riskCanvas: document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '',
+        countCanvas: captureCountCanvasSignature(),
+        gameCanvas: captureGameCanvasSignature(),
+        distributionGeometry: captureDistributionGeometry(),
+        tableRonRiskGeometry: captureTableRonRiskGeometry(),
       })
     }, 140))
     window.studioAPI.jumpToNode = originalJump
@@ -1045,7 +2341,17 @@ try {
       .map((time, index) => time - samples.frameTimes[index])
     return {
       oldPiePath,
+      oldRiskCanvas,
+      oldCountCanvas,
+      oldGameCanvas,
       immediatePiePath,
+      distributionBefore,
+      tableRonRiskBefore,
+      tableRonRiskGuideSamples,
+      wheelNavigation: {
+        requestLatency: wheelRequestAt === null ? null : wheelRequestAt - wheelDispatchedAt,
+        viewLatency: wheelViewAppliedAt - wheelDispatchedAt,
+      },
       tablePhase,
       during,
       after,
@@ -1055,35 +2361,364 @@ try {
         medianFrameInterval: frameIntervals.slice().sort((a, b) => a - b)[Math.floor(frameIntervals.length / 2)] || null,
         worstFrameInterval: frameIntervals.length ? Math.max(...frameIntervals) : null,
         worstMotionFrameInterval: motionFrameIntervals.length ? Math.max(...motionFrameIntervals) : null,
+        delayedFrames: frameIntervals.map((interval, index) => ({
+          interval,
+          elapsed: samples.frameTimes[index + 1] - samples.startedAt,
+        })).filter(sample => sample.interval > 20),
         longTasks: samples.longTasks.filter(task => (
           task.startTime >= samples.startedAt && task.startTime <= sampleEndedAt
         )),
+        tableMotionSamples,
+        analysisMotionSamples,
       },
     }
-  })
+  }, true)
+  const performanceAfter = await cdpSession.send('Performance.getMetrics')
+  let traceSummary = null
+  if (traceEnabled) {
+    await cdpSession.send('Tracing.end')
+    const { stream } = await traceComplete
+    let traceJson = ''
+    for (;;) {
+      const chunk = await cdpSession.send('IO.read', { handle: stream })
+      traceJson += chunk.data
+      if (chunk.eof) break
+    }
+    await cdpSession.send('IO.close', { handle: stream })
+    const traceEvents = JSON.parse(traceJson).traceEvents || []
+    const durations = traceEvents.filter(event => event.ph === 'X' && Number(event.dur) > 0)
+    const totals = new Map()
+    for (const event of durations) {
+      const current = totals.get(event.name) || { name: event.name, totalMs: 0, maxMs: 0, count: 0 }
+      const durationMs = Number(event.dur) / 1000
+      current.totalMs += durationMs
+      current.maxMs = Math.max(current.maxMs, durationMs)
+      current.count += 1
+      totals.set(event.name, current)
+    }
+    traceSummary = {
+      topByTotal: [...totals.values()].sort((left, right) => right.totalMs - left.totalMs).slice(0, 24),
+      longestEvents: durations
+        .map(event => ({ name: event.name, durationMs: Number(event.dur) / 1000, thread: event.tid }))
+        .filter(event => event.durationMs >= 4)
+        .sort((left, right) => right.durationMs - left.durationMs)
+        .slice(0, 24),
+    }
+  }
+  const beforeMetrics = Object.fromEntries(performanceBefore.metrics.map(({ name, value }) => [name, value]))
+  const performanceDelta = Object.fromEntries([
+    'LayoutCount',
+    'RecalcStyleCount',
+    'LayoutDuration',
+    'RecalcStyleDuration',
+    'ScriptDuration',
+    'TaskDuration',
+    'JSHeapUsedSize',
+  ].map((name) => {
+    const nextValue = performanceAfter.metrics.find((metric) => metric.name === name)?.value || 0
+    return [name, nextValue - (beforeMetrics[name] || 0)]
+  }))
+  await cdpSession.detach()
+  if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) {
+    console.log(`Frame-switch performance: ${JSON.stringify(navigationMotion.performance)}`)
+    console.log(`Frame-switch browser work: ${JSON.stringify(performanceDelta)}`)
+    if (traceSummary) console.log(`Frame-switch trace: ${JSON.stringify(traceSummary)}`)
+    console.log(`Navigation motion: ${JSON.stringify({
+      tablePhase: navigationMotion.tablePhase,
+      during: {
+        panelsSuppressed: navigationMotion.during.panelsSuppressed,
+        visiblePanelCount: navigationMotion.during.visiblePanelCount,
+        analysisDataAnimationCount: navigationMotion.during.analysisDataAnimationCount,
+        animationTargets: navigationMotion.during.animationTargets,
+        panelAnimations: navigationMotion.during.panelAnimations,
+      },
+    })}`)
+  }
   assert.equal(navigationMotion.immediatePiePath, navigationMotion.oldPiePath, 'cached analysis waits until table motion has finished')
+  assert.ok(
+    navigationMotion.wheelNavigation.requestLatency !== null
+      && navigationMotion.wheelNavigation.requestLatency < 20,
+    `wheel navigation dispatches without an artificial delay: ${JSON.stringify(navigationMotion.wheelNavigation)}`,
+  )
+  assert.ok(
+    navigationMotion.wheelNavigation.viewLatency < 100,
+    `wheel navigation applies the available node before visual motion begins: ${JSON.stringify(navigationMotion.wheelNavigation)}`,
+  )
   assert.ok(navigationMotion.tablePhase.tableAnimations > 0, 'the representative navigation runs real table motion')
   assert.equal(navigationMotion.tablePhase.analysisAnimations, 0, 'analysis feedback does not overlap the table motion window')
   assert.equal(navigationMotion.during.tableSuppressed, false, 'ordinary table motion remains available during navigation')
-  assert.equal(navigationMotion.during.panelsSuppressed, false, 'ordinary analysis feedback remains available during navigation')
-  if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) console.log('Navigation motion:', JSON.stringify(navigationMotion.during))
-  assert.ok(navigationMotion.during.analysisDataAnimationCount > 0, 'analysis values animate after the table motion window')
-  assert.ok(
-    navigationMotion.during.transitionDurations.length > 0
-      && navigationMotion.during.transitionDurations.every(duration => duration === '0.11s'),
-    'prediction primitives use the established 110ms motion duration',
-  )
-  assert.equal(navigationMotion.after.activeDataAnimations, 0, 'analysis value motion finishes within the shared motion duration')
-  assert.notEqual(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart interpolates its values instead of replacing the pie at once')
-  assert.equal(
-    await page.locator('.grid-main .choice-bar-fill').first().evaluate(element => getComputedStyle(element).transitionDuration),
-    '0.11s',
-    'table recommendation bars use the established 110ms motion duration',
-  )
+  assert.equal(navigationMotion.during.panelsSuppressed, false, 'analysis values animate without invalidating every panel descendant')
   if (process.env.RMS_UI_PERFORMANCE_DIAGNOSTIC) {
-    console.log(`Frame-switch performance: ${JSON.stringify(navigationMotion.performance)}`)
+    const durationCounts = navigationMotion.during.transitionDurations.reduce((counts, duration) => {
+      counts[duration] = (counts[duration] || 0) + 1
+      return counts
+    }, {})
+    console.log('Navigation motion details:', JSON.stringify({
+      tableAnimationTargets: navigationMotion.during.tableAnimationTargets,
+      animationTargets: navigationMotion.during.animationTargets,
+      panelAnimations: navigationMotion.during.panelAnimations,
+      transitionDurations: durationCounts,
+    }))
+  }
+  if (!analysisMotionExperiment) {
+    assert.equal(navigationMotion.during.panelAnimations.length, 0, 'analysis panels do not flash through a whole-panel opacity handoff')
+    assert.ok(
+      navigationMotion.during.transitionDurations.every(duration => duration === '0s'),
+      'game-analysis bars avoid per-value CSS layout and compositor animations',
+    )
+    assert.ok(
+      new Set(navigationMotion.performance.analysisMotionSamples.map(sample => (
+        `${sample.riskSignature}|${sample.countSignature}|${sample.gameSignature}`
+      ))).size >= 2,
+      'analysis canvases expose multiple intermediate frames instead of replacing the result at once',
+    )
+  }
+  assert.equal(navigationMotion.after.activeDataAnimations, 0, 'analysis value motion finishes within the shared motion duration')
+  assert.deepEqual(
+    navigationMotion.during.distributionGeometry.distributionHeights,
+    navigationMotion.distributionBefore.distributionHeights,
+    'dora distribution height remains fixed while its values animate',
+  )
+  assert.deepEqual(
+    navigationMotion.after.distributionGeometry.distributionHeights,
+    navigationMotion.distributionBefore.distributionHeights,
+    'dora distribution height remains fixed after its values settle',
+  )
+  for (const [phase, geometry] of [
+    ['during', navigationMotion.during.distributionGeometry],
+    ['after', navigationMotion.after.distributionGeometry],
+  ]) {
+    assert.ok(
+      geometry.trackHeights.every((tracks, index) => (
+        tracks.length > 0
+        && tracks.every(height => Math.abs(height - tracks[0]) < 0.01)
+        && Math.abs(tracks[0] - navigationMotion.distributionBefore.trackHeights[index][0]) < 0.01
+      )),
+      `every dora and score track keeps its allocated height ${phase === 'during' ? 'while values animate' : 'after values settle'}`,
+    )
+  }
+  assert.ok(
+    navigationMotion.during.distributionGeometry.bottomOverflow.every(value => Math.abs(value) < 0.01),
+    'dora fills remain clipped to the fixed track during animation',
+  )
+  assert.notDeepEqual(
+    navigationMotion.after.distributionGeometry.renderSignatures,
+    navigationMotion.distributionBefore.renderSignatures,
+    'fixed dora and score canvases draw the next distribution instead of retaining stale pixels',
+  )
+  assert.equal(
+    navigationMotion.during.tableRonRiskGeometry.rootHeight,
+    navigationMotion.tableRonRiskBefore.rootHeight,
+    'table deal-in bar height remains fixed while its values animate',
+  )
+  assert.equal(
+    navigationMotion.after.tableRonRiskGeometry.rootHeight,
+    navigationMotion.tableRonRiskBefore.rootHeight,
+    'table deal-in bar height remains fixed after its values settle',
+  )
+  assert.deepEqual(
+    navigationMotion.during.tableRonRiskGeometry.overflow,
+    { top: 0, right: 0, bottom: 0, left: 0 },
+    'table deal-in drawing remains clipped to its fixed layout box',
+  )
+  assert.notEqual(
+    navigationMotion.after.tableRonRiskGeometry.renderSignature,
+    navigationMotion.tableRonRiskBefore.renderSignature,
+    'table deal-in canvas draws the next probabilities instead of retaining stale pixels',
+  )
+  assert.ok(
+    navigationMotion.after.tableRonRiskGeometry.guideBounds,
+    'an adaptive table deal-in scale draws the 20% reference line',
+  )
+  assert.ok(
+    Math.abs(
+      (navigationMotion.after.tableRonRiskGeometry.guideBounds.right
+        - navigationMotion.after.tableRonRiskGeometry.guideBounds.left)
+      - navigationMotion.after.tableRonRiskGeometry.expectedGuideWidth,
+    ) <= 1,
+    'the table 20% reference line remains continuous across drawn-tile and discard gaps',
+  )
+  assert.ok(
+    navigationMotion.tableRonRiskGuideSamples.length >= 2
+    && navigationMotion.tableRonRiskGuideSamples[0].top
+      > navigationMotion.tableRonRiskGuideSamples.at(-1).top,
+    'the table 20% reference line enters from the outer edge toward its adaptive-scale position',
+  )
+  assert.notEqual(navigationMotion.during.piePath, navigationMotion.oldPiePath, 'the staged shanten chart contains the next result')
+  assert.notEqual(navigationMotion.after.piePath, navigationMotion.oldPiePath, 'the shanten chart finishes the next animated result')
+  assert.notEqual(navigationMotion.after.piePath, navigationMotion.during.piePath, 'the shanten chart exposes an intermediate animated frame')
+  assert.notEqual(navigationMotion.during.riskCanvas, navigationMotion.oldRiskCanvas, 'the staged deal-in chart draws the next values on its fixed canvas')
+  assert.notEqual(navigationMotion.after.riskCanvas, navigationMotion.oldRiskCanvas, 'the deal-in chart finishes the next animated values')
+  assert.notEqual(navigationMotion.after.riskCanvas, navigationMotion.during.riskCanvas, 'the deal-in chart exposes an intermediate animated frame')
+  if (realisticPerformance) {
+    assert.notEqual(navigationMotion.during.countCanvas, navigationMotion.oldCountCanvas, 'the staged count chart draws the next distributions on its fixed canvas')
+    assert.notEqual(navigationMotion.after.countCanvas, navigationMotion.oldCountCanvas, 'count distributions finish the next animated values')
+    assert.notEqual(navigationMotion.after.countCanvas, navigationMotion.during.countCanvas, 'count distributions expose an intermediate animated frame')
+  }
+  if (navigationMotion.oldGameCanvas || navigationMotion.after.gameCanvas) {
+    assert.notEqual(navigationMotion.after.gameCanvas, navigationMotion.oldGameCanvas, 'the game-analysis canvas draws the next result')
+  }
+  assert.equal(
+    await page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--ui-motion-duration').trim()),
+    '110ms',
+    'the shared UI motion duration remains 110ms',
+  )
+  assert.equal(
+    await page.locator('body').evaluate(element => getComputedStyle(element).getPropertyValue('--ui-motion-easing').trim()),
+    'cubic-bezier(0.33, 1, 0.68, 1)',
+    'the shared UI motion keeps the established fast-out easing curve',
+  )
+  assert.ok(
+    await page.locator('.grid-main .table-recommendation-canvas').evaluate(canvas => Boolean(canvas.rmsRecommendationRenderSignature)),
+    'the table recommendation canvas renders the settled recommendation values',
+  )
+  if (process.env.RMS_UI_PERFORMANCE_SCREENSHOT) {
+    await page.screenshot({ path: path.resolve(process.env.RMS_UI_PERFORMANCE_SCREENSHOT) })
   }
 
+  const stressSwitches = Math.max(0, Math.floor(Number(process.env.RMS_UI_STRESS_SWITCHES) || 0))
+  if (stressSwitches) {
+    const stressPerformance = await page.evaluate(async (switchCount) => {
+      const check = window.analysisCheck
+      const { vm } = check
+      const originalJump = window.studioAPI.jumpToNode
+      const originalRead = window.studioAPI.getAnalysis
+      const baseView = JSON.parse(JSON.stringify(vm.gameView))
+      const baseStatus = JSON.parse(JSON.stringify(vm.status))
+      const actor = vm.status.controlledSeat
+      const hand = ['1m', '2m', '3m', '4m', '5m', '6m', '7m', '8m', '9m', '1p', '2p', '3p', '4p', '5p']
+      const frameTimes = []
+      const longTasks = []
+      const applyDurations = []
+      const firstFrameDurations = []
+      let maximumActiveAnimations = 0
+      let sampling = true
+      const observer = typeof PerformanceObserver === 'function'
+        ? new PerformanceObserver(list => {
+            longTasks.push(...list.getEntries().map(entry => ({
+              startTime: entry.startTime,
+              duration: entry.duration,
+            })))
+          })
+        : null
+      try { observer?.observe({ type: 'longtask' }) } catch { /* unsupported */ }
+      const sampleFrame = (timestamp) => {
+        frameTimes.push(timestamp)
+        maximumActiveAnimations = Math.max(
+          maximumActiveAnimations,
+          document.getAnimations().filter(animation => animation.playState !== 'finished').length,
+        )
+        if (sampling) requestAnimationFrame(sampleFrame)
+      }
+      requestAnimationFrame(sampleFrame)
+      const heapBefore = performance.memory?.usedJSHeapSize ?? null
+      try {
+        for (let index = 0; index < switchCount; index += 1) {
+          const nodeId = `stress-node-${index}`
+          const result = check.realisticResultForNode(index % 2, nodeId)
+            || check.resultForNode(nodeId, (index % 3) + 1)
+          window.studioAPI.getAnalysis = async () => result
+          window.studioAPI.jumpToNode = async () => {
+            const view = structuredClone(baseView)
+            view.currentNodeId = nodeId
+            view.opponentAnalysis = result
+            view.table.hands[actor] = hand.slice(0, -1)
+            view.table.rivers[actor] = [...(view.table.rivers[actor] || []), hand.at(-1)]
+            view.table.pendingDiscard = {
+              actor,
+              pai: hand.at(-1),
+              tsumogiri: true,
+              targetActor: actor,
+            }
+            return { state: structuredClone(baseStatus), view }
+          }
+          const startedAt = performance.now()
+          await vm.jumpToNode(nodeId)
+          applyDurations.push(performance.now() - startedAt)
+          const firstFrameAt = await new Promise(resolve => requestAnimationFrame(resolve))
+          firstFrameDurations.push(firstFrameAt - startedAt)
+          await new Promise(resolve => setTimeout(resolve, 250))
+        }
+      } finally {
+        window.studioAPI.jumpToNode = originalJump
+        window.studioAPI.getAnalysis = originalRead
+        sampling = false
+        await new Promise(resolve => requestAnimationFrame(resolve))
+        observer?.disconnect()
+      }
+      const intervals = frameTimes.slice(1).map((time, index) => time - frameTimes[index])
+      const orderedApply = [...applyDurations].sort((left, right) => left - right)
+      const orderedFirstFrame = [...firstFrameDurations].sort((left, right) => left - right)
+      const activeAnimationsImmediatelyAfter = document.getAnimations()
+        .filter(animation => animation.playState !== 'finished').length
+      await new Promise(resolve => setTimeout(resolve, 300))
+      return {
+        switchCount,
+        frameCount: frameTimes.length,
+        medianFrameInterval: intervals.slice().sort((left, right) => left - right)[Math.floor(intervals.length / 2)] || null,
+        worstFrameInterval: intervals.length ? Math.max(...intervals) : null,
+        intervalsOver50ms: intervals.filter(interval => interval > 50),
+        longTasks,
+        applyMs: {
+          median: orderedApply[Math.floor(orderedApply.length / 2)] || null,
+          p95: orderedApply[Math.floor(orderedApply.length * 0.95)] || null,
+          max: orderedApply.at(-1) || null,
+        },
+        firstFrameMs: {
+          median: orderedFirstFrame[Math.floor(orderedFirstFrame.length / 2)] || null,
+          p95: orderedFirstFrame[Math.floor(orderedFirstFrame.length * 0.95)] || null,
+          max: orderedFirstFrame.at(-1) || null,
+        },
+        maximumActiveAnimations,
+        activeAnimationsImmediatelyAfter,
+        activeAnimationsAfterSettling: document.getAnimations().filter(animation => animation.playState !== 'finished').length,
+        domNodes: document.getElementsByTagName('*').length,
+        heapBefore,
+        heapAfter: performance.memory?.usedJSHeapSize ?? null,
+      }
+    }, stressSwitches)
+    console.log(`Repeated frame switches: ${JSON.stringify(stressPerformance)}`)
+  }
+
+  const idleDiagnosticMs = Math.max(0, Number(process.env.RMS_UI_IDLE_DIAGNOSTIC_MS) || 0)
+  if (idleDiagnosticMs) {
+    const idlePerformance = await page.evaluate(async (durationMs) => {
+      const frameTimes = []
+      const longTasks = []
+      const startedAt = performance.now()
+      const observer = typeof PerformanceObserver === 'function'
+        ? new PerformanceObserver(list => {
+            longTasks.push(...list.getEntries().map(entry => ({
+              startTime: entry.startTime,
+              duration: entry.duration,
+            })))
+          })
+        : null
+      try { observer?.observe({ type: 'longtask' }) } catch { /* unsupported */ }
+      await new Promise(resolve => {
+        const sample = (timestamp) => {
+          frameTimes.push(timestamp)
+          if (performance.now() - startedAt < durationMs) requestAnimationFrame(sample)
+          else resolve()
+        }
+        requestAnimationFrame(sample)
+      })
+      observer?.disconnect()
+      const intervals = frameTimes.slice(1).map((time, index) => time - frameTimes[index])
+      return {
+        durationMs: performance.now() - startedAt,
+        frameCount: frameTimes.length,
+        medianFrameInterval: intervals.slice().sort((left, right) => left - right)[Math.floor(intervals.length / 2)] || null,
+        worstFrameInterval: intervals.length ? Math.max(...intervals) : null,
+        intervalsOver50ms: intervals.filter(interval => interval > 50),
+        longTasks,
+        runtimeMetricReads: window.analysisCheck.runtimeMetricReads,
+      }
+    }, idleDiagnosticMs)
+    console.log(`Idle performance: ${JSON.stringify(idlePerformance)}`)
+  }
+
+  if (!performanceOnly) {
   // A slow result retains the previous analysis. Loading feedback appears only
   // after the delay and disappears when the complete next result is presented.
   await page.evaluate(async () => {
@@ -1101,6 +2736,7 @@ try {
       return { state: JSON.parse(JSON.stringify(vm.status)), view }
     }
     check.oldSlowPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
+    check.oldSlowRiskCanvas = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
     await vm.jumpToNode(check.slowNodeId)
   })
   await page.waitForFunction(() => typeof window.analysisCheck.resolveSlowRead === 'function')
@@ -1112,7 +2748,11 @@ try {
     'slow analysis keeps the previous result visible',
   )
   await page.waitForTimeout(200)
-  assert.equal(await page.locator('.analysis-loading-overlay').count(), 2, 'each visible analysis panel shows delayed loading feedback')
+  assert.equal(
+    await page.locator('.analysis-loading-overlay').count(),
+    realisticPerformance ? 4 : 2,
+    'each visible analysis panel shows delayed loading feedback',
+  )
   if (process.env.RMS_ANALYSIS_LOADING_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_ANALYSIS_LOADING_SCREENSHOT })
   }
@@ -1121,10 +2761,14 @@ try {
     check.resolveSlowRead(check.slowResult)
   })
   await page.waitForFunction(() => document.querySelectorAll('.analysis-loading-overlay').length === 0)
-  await page.waitForFunction(() => document.getAnimations().some(animation => (
-    animation.effect?.target instanceof Element
-    && Boolean(animation.effect.target.closest('.analysis-panel-live'))
-  )))
+  await page.waitForFunction(() => (
+    document.getAnimations().some(animation => (
+      animation.effect?.target instanceof Element
+      && Boolean(animation.effect.target.closest('.analysis-panel-live'))
+    ))
+    || (document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '')
+      !== window.analysisCheck.oldSlowRiskCanvas
+  ))
   await page.waitForTimeout(140)
   assert.equal(await page.evaluate(() => document.getAnimations().filter(animation => (
     animation.playState !== 'finished'
@@ -1138,8 +2782,11 @@ try {
   })
 
   await checkWorkspaceDock(page)
+  }
   assert.deepEqual(errors, [])
-  console.log('Analysis UI: events, hover, navigation motion, cache, geometry, artwork and workspace docking passed.')
+  console.log(performanceOnly
+    ? 'Analysis UI performance scenario passed.'
+    : 'Analysis UI: events, hover, navigation motion, cache, geometry, artwork and workspace docking passed.')
 } catch (error) {
   if (process.env.GITHUB_ACTIONS) {
     const detail = error instanceof Error ? error.stack || error.message : String(error)
@@ -1152,5 +2799,6 @@ try {
   throw error
 } finally {
   await browser?.close()
-  await server.close()
+  await electronApp?.close()
+  await server?.close()
 }

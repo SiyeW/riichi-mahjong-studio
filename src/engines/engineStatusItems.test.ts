@@ -57,3 +57,29 @@ test('engine status projection combines opponent timing and errors with error pr
 
   assert.deepEqual(items, [{ id: 'engine-1', label: 'Reader：model failed', state: 'error' }])
 })
+
+test('engine status label stays stable while automatic analysis moves between seats', () => {
+  const buildItems = (decision: string[]) => buildEngineStatusItems({
+    profiles: [profile],
+    status: {
+      controlledSeat: 0,
+      modelActivity: {
+        decision,
+        opponentAnalysis: 'idle',
+        errors: { decision: [null, null, null, null], opponentAnalysis: null },
+      },
+      modelPerformance: { decision: [12, 14, 16, 18], opponentAnalysis: 0 },
+    } as unknown as StudioStatus,
+    loadingProfileId: '',
+    loadErrors: {},
+    runtimeState: (_profile, kind) => kind === 'decision' ? { ready: true, unloaded: false } : null,
+    runtimeKinds: () => ['decision'],
+    t,
+  })
+
+  const ownSeat = buildItems(['running', 'idle', 'idle', 'idle'])
+  const oppositeSeat = buildItems(['idle', 'idle', 'running', 'idle'])
+
+  assert.deepEqual(ownSeat, [{ id: 'engine-1', label: 'Reader 15.0ms', state: 'running' }])
+  assert.deepEqual(oppositeSeat, ownSeat)
+})

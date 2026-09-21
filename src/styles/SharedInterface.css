@@ -177,6 +177,33 @@
   font-weight: 600;
 }
 
+.exit-saving-overlay {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 24, 30, 0.72);
+}
+
+.exit-saving-card {
+  display: grid;
+  min-width: min(22rem, calc(100vw - 2rem));
+  gap: calc(0.35rem * var(--chrome-scale));
+  padding: calc(0.85rem * var(--chrome-scale)) calc(1rem * var(--chrome-scale));
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  background: var(--surface-overlay);
+  font-size: var(--ui-text-body);
+  line-height: 1.35;
+}
+
+.exit-saving-card > strong {
+  color: var(--text-main);
+  font-size: var(--ui-text-heading);
+  font-weight: 600;
+}
+
 .ui-hover-tooltip-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -375,6 +402,31 @@
 .settings-checkbox-label {
   font-size: var(--ui-text-control);
   line-height: 1.2;
+}
+
+.settings-checkbox-compact {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex-direction: row;
+  gap: calc(0.34rem * var(--ui-scale));
+  min-height: auto;
+  padding: calc(0.18rem * var(--ui-scale)) calc(0.24rem * var(--ui-scale));
+  border: 0;
+  background: transparent;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.settings-checkbox-compact .settings-checkbox-control {
+  width: calc(0.95rem * var(--ui-scale));
+  height: calc(0.95rem * var(--ui-scale));
+}
+
+.settings-checkbox-compact .settings-checkbox-label {
+  color: var(--text-dim);
+  font-size: var(--ui-text-caption);
+  transition: color var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .settings-checkbox-with-description {

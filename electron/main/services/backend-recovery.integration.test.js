@@ -29,7 +29,7 @@ test('real backend crash restores an unsaved comment and selected node from the 
     const send = backend.sendRequest
     backend.sendRequest = async (...args) => {
       const response = await send(...args)
-      if (args[0] === 'export_game_record') checkpointFinished()
+      if (args[0] === 'export_recovery_checkpoint') checkpointFinished()
       return response
     }
     const session = createBackendSession(backend, {

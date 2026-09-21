@@ -1,4 +1,8 @@
 const zlib = require('node:zlib')
+const { promisify } = require('node:util')
+const { compactAnalysisCaches, expandAnalysisCaches } = require('./analysis-cache-storage')
+
+const gzip = promisify(zlib.gzip)
 
 const RECOVERY_RECORD_KIND = 'unsaved-exit'
 
@@ -11,10 +15,15 @@ function encodeGameRecord(record, compressed = true) {
   return compressed ? zlib.gzipSync(json, { level: 6 }) : json
 }
 
+async function encodeGameRecordAsync(record, compressed = true) {
+  const json = Buffer.from(JSON.stringify(record), 'utf8')
+  return compressed ? gzip(json, { level: 6 }) : json
+}
+
 function decodeGameRecord(input) {
   const buffer = Buffer.isBuffer(input) ? input : Buffer.from(input)
   const json = isGzipBuffer(buffer) ? zlib.gunzipSync(buffer) : buffer
-  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json))
+  return expandAnalysisCaches(JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(json)))
 }
 
 function prepareGameRecordForWrite(record, options = {}) {
@@ -35,10 +44,10 @@ function prepareGameRecordForWrite(record, options = {}) {
       schemaVersion: 3,
     }
   }
-  return {
+  return compactAnalysisCaches({
     ...record,
     metadata,
-  }
+  })
 }
 
 function isRecoveryGameRecord(record) {
@@ -55,6 +64,7 @@ module.exports = {
   RECOVERY_RECORD_KIND,
   decodeGameRecord,
   encodeGameRecord,
+  encodeGameRecordAsync,
   getRecoverySourcePath,
   isGzipBuffer,
   isRecoveryGameRecord,

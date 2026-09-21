@@ -3,6 +3,7 @@ import type { PerceptualSurfaceBinding } from './perceptualSurface.ts'
 import type { CountSourceKey } from './analysisCountPalette.ts'
 import type { AnalysisRecord } from './useAnalysisOutputs.ts'
 import type { AnalysisPanelSection } from './contracts/workspace.ts'
+import type { TableState } from './contracts/game.ts'
 
 export type AnalysisOpponent = {
   key: Exclude<CountSourceKey, 'wall'>
@@ -21,6 +22,7 @@ export interface AnalysisPanelDataProps {
 }
 
 export interface AnalysisPanelProps extends AnalysisPanelDataProps {
+  table: TableState | null
   section: AnalysisPanelSection
   shantenColors: string[]
   shantenLabels: string[]

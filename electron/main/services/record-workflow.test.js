@@ -109,5 +109,42 @@ test('opening a record starts in the portable records folder', async (context) =
 
   assert.equal(await workflow.openGame(), null)
   assert.equal(openOptions.defaultPath, path.join(portableDirectory, 'records'))
+  assert.deepEqual(openOptions.filters[0].extensions, ['mjstudio', 'mjtrain', 'json'])
   assert.equal(fs.existsSync(openOptions.defaultPath), true)
+})
+
+test('exit recovery uses the checkpoint-aware export path without marking the record saved', async (context) => {
+  const portableDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-recovery-workflow-'))
+  context.after(() => fs.rmSync(portableDirectory, { recursive: true, force: true }))
+  const gameFileStore = createGameFileStore(portableDirectory)
+  gameFileStore.beginRecord({ dirty: true, nodeId: 'node-1' })
+  const calls = []
+  const workflow = createRecordWorkflow({
+    app: { getVersion: () => '1.2.3' },
+    appOptions: {},
+    dialog: {},
+    backendGateway: {
+      exportGameRecord: async () => { throw new Error('ordinary export should not be used for recovery') },
+      exportRecoveryGameRecord: async () => {
+        calls.push('recovery')
+        return {
+          record: { game: { gameId: 'game-a', nodes: {} } },
+          state: { gameLoaded: true },
+          view: { currentNodeId: 'node-1' },
+        }
+      },
+    },
+    gameFileStore,
+    getMainWindow: () => null,
+    t: (key) => key,
+  })
+
+  const result = await workflow.writeRecoveryGameRecord()
+  assert.deepEqual(calls, ['recovery'])
+  assert.equal(result.path, gameFileStore.getRecoveryPath())
+  assert.equal(gameFileStore.isDirty(), true)
+  assert.deepEqual(decodeGameRecord(fs.readFileSync(result.path)).metadata.recovery, {
+    kind: 'unsaved-exit',
+    schemaVersion: 3,
+  })
 })

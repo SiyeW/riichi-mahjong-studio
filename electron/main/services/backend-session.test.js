@@ -12,7 +12,9 @@ function fixture(loaded = true, checkpointOptions = {}) {
     restart() { this.running = true; calls.push('restart') },
     async sendRequest(command, payload) {
       calls.push(command)
-      if (command === 'export_game_record') return { record, state: { analysisVisibility: { opponentAnalysis: true } } }
+      if (command === 'export_game_record' || command === 'export_recovery_checkpoint') {
+        return { record, state: { analysisVisibility: { opponentAnalysis: true } } }
+      }
       if (command === 'import_game_record') {
         assert.deepEqual(payload.record, record)
         if (backend.failImport) throw new Error('import failed')
@@ -189,4 +191,46 @@ test('derived analysis cache events do not repeatedly export the recovery record
 
   session.handleEvent({ type: 'record_changed', change: 'user_authored_change' })
   assert.equal(scheduled.length, 1)
+})
+
+test('recovery export reuses a fresh checkpoint until derived analysis changes', async () => {
+  let capture
+  const { session, calls } = fixture(true, {
+    schedule(callback) { capture = callback; return 1 },
+    cancel() {},
+  })
+  await session.sendRequest('create_game')
+  capture()
+  await new Promise(resolve => setImmediate(resolve))
+  const exportsAfterCheckpoint = calls.filter(call => call === 'export_game_record').length
+
+  const reused = await session.exportGameRecord({ reuseCheckpoint: true })
+  assert.equal(reused.reusedCheckpoint, true)
+  assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint)
+
+  session.handleEvent({ type: 'record_changed', change: 'opponent_analysis_cache' })
+  const refreshed = await session.exportGameRecord({ reuseCheckpoint: true })
+  assert.equal(refreshed.reusedCheckpoint, false)
+  assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint + 1)
+
+  const reusedAgain = await session.exportGameRecord({ reuseCheckpoint: true })
+  assert.equal(reusedAgain.reusedCheckpoint, true)
+  assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint + 1)
+})
+
+test('pending authored changes prevent recovery checkpoint reuse', async () => {
+  const scheduled = []
+  const { session, calls } = fixture(true, {
+    schedule(callback) { scheduled.push(callback); return scheduled.length },
+    cancel() {},
+  })
+  await session.sendRequest('create_game')
+  scheduled.shift()()
+  await new Promise(resolve => setImmediate(resolve))
+  const exportsAfterCheckpoint = calls.filter(call => call === 'export_game_record').length
+
+  session.handleEvent({ type: 'record_changed', change: 'user_authored_change' })
+  const refreshed = await session.exportGameRecord({ reuseCheckpoint: true })
+  assert.equal(refreshed.reusedCheckpoint, false)
+  assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint + 1)
 })

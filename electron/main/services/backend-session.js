@@ -17,9 +17,10 @@ function createBackendSession(backend, checkpointOptions = {}) {
   let recovery = null
   let stopped = false
   let generation = 0
+  let derivedRecordDirty = false
   const checkpoint = createSessionCheckpoint({
     ...checkpointOptions,
-    exportRecord: () => backend.sendRequest('export_game_record', { checkpoint: true }),
+    exportRecord: () => backend.sendRequest('export_recovery_checkpoint'),
     isRunning: () => !stopped && !restarting && backend.isRunning(),
   })
 
@@ -28,10 +29,9 @@ function createBackendSession(backend, checkpointOptions = {}) {
       stopped = true
       generation += 1
       checkpoint.stop()
-    } else if (event.type === 'record_changed'
-      && !DERIVED_RECORD_CHANGES.has(event.change)
-      && !restarting && !stopped) {
-      checkpoint.changed()
+    } else if (event.type === 'record_changed' && !restarting && !stopped) {
+      if (DERIVED_RECORD_CHANGES.has(event.change)) derivedRecordDirty = true
+      else checkpoint.changed()
     }
   }
 
@@ -43,6 +43,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
       const command = args[0]
       if (['create_game', 'close_game', 'import_game_record', 'import_mortal_report', 'import_custom_tenhou'].includes(command)) {
         checkpoint.reset()
+        derivedRecordDirty = false
       }
       // Status/metrics have independent Python executors and can arrive after
       // a newer game command. They must not invalidate a current checkpoint.
@@ -61,6 +62,29 @@ function createBackendSession(backend, checkpointOptions = {}) {
     pending.add(request)
     request.then(() => pending.delete(request), () => pending.delete(request))
     return request
+  }
+
+  async function exportGameRecord({ reuseCheckpoint = false } = {}) {
+    const saved = reuseCheckpoint && !derivedRecordDirty ? checkpoint.getFresh() : null
+    if (saved?.record) {
+      return {
+        record: saved.record,
+        state: { gameLoaded: true, analysisVisibility: saved.visibility },
+        view: {
+          gameId: saved.record.game?.gameId,
+          currentNodeId: saved.record.game?.currentNodeId,
+        },
+        reusedCheckpoint: true,
+      }
+    }
+
+    const response = await sendRequest('export_game_record')
+    checkpoint.rememberFresh({
+      record: response.record,
+      visibility: response.state?.analysisVisibility,
+    })
+    derivedRecordDirty = false
+    return { ...response, reusedCheckpoint: false }
   }
 
   function restart() {
@@ -110,7 +134,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
     return restarting
   }
 
-  return { sendRequest, restart, handleEvent, needsRecovery: () => stopped || Boolean(recovery),
+  return { sendRequest, exportGameRecord, restart, handleEvent, needsRecovery: () => stopped || Boolean(recovery),
     hasCheckpoint: () => Boolean(recovery?.record || checkpoint.get()?.record) }
 }
 

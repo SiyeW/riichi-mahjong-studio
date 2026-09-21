@@ -85,22 +85,6 @@ class RecordWorkspaceCommands:
         command: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        if payload.get("checkpoint") is True:
-            return {
-                "request_id": request_id,
-                "command": command,
-                "record": self._record_session.serialize(),
-                "state": {
-                    "analysisVisibility": {
-                        "decisionRecommendations": bool(
-                            self._state.get("decisionRecommendationsEnabled", True)
-                        ),
-                        "opponentAnalysis": bool(
-                            self._state.get("opponentAnalysisEnabled", False)
-                        ),
-                    },
-                },
-            }
         return self._view_builder.build_response(
             request_id,
             command,

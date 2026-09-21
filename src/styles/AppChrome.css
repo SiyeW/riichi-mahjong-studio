@@ -170,15 +170,15 @@
   position: absolute;
   z-index: 1200;
   top: 100%;
-  right: 0;
+  left: 0;
   display: grid;
-  gap: calc(0.18rem * var(--chrome-scale));
+  gap: calc(0.06rem * var(--chrome-scale));
   min-width: max-content;
-  padding: calc(0.3rem * var(--chrome-scale));
+  padding: calc(0.22rem * var(--chrome-scale));
   border: 1px solid var(--border-default);
   border-radius: calc(0.2rem * var(--chrome-scale));
-  background: var(--surface-overlay);
-  box-shadow: 0 calc(0.4rem * var(--chrome-scale)) calc(1.1rem * var(--chrome-scale)) rgba(0, 0, 0, 0.38);
+  background: var(--surface-floating);
+  box-shadow: 0 calc(0.2rem * var(--chrome-scale)) calc(0.5rem * var(--chrome-scale)) rgba(0, 0, 0, 0.32);
   opacity: 0;
   visibility: hidden;
   transform: translateY(calc(-0.2rem * var(--chrome-scale)));
@@ -196,11 +196,39 @@
   transition-delay: 0s;
 }
 
-.toolbar .toolbar-panel-menu-items button {
+.toolbar .toolbar-panel-menu-item {
+  box-sizing: border-box;
   width: 100%;
-  padding: calc(0.3rem * var(--ui-scale)) calc(0.72rem * var(--ui-scale));
-  text-align: left;
+  border-radius: calc(0.12rem * var(--ui-scale));
+  box-shadow: none;
   white-space: nowrap;
+  transition:
+    background var(--ui-motion-duration) var(--ui-motion-easing),
+    box-shadow var(--ui-motion-duration) var(--ui-motion-easing);
+}
+
+.toolbar .toolbar-panel-menu-item .settings-checkbox-label {
+  font-size: var(--ui-text-control);
+}
+
+.toolbar .toolbar-panel-menu-item:has(input:checked) .settings-checkbox-label {
+  color: var(--text-main);
+}
+
+.toolbar .toolbar-panel-menu-item:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.toolbar .toolbar-panel-menu-item:hover:not(:has(input:disabled)),
+.toolbar .toolbar-panel-menu-item:has(input:focus-visible) {
+  background: rgba(228, 241, 237, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(228, 241, 237, 0.28);
+}
+
+.toolbar .toolbar-panel-menu-item:hover:not(:has(input:disabled)) .settings-checkbox-label,
+.toolbar .toolbar-panel-menu-item:has(input:focus-visible) .settings-checkbox-label {
+  color: var(--text-main);
 }
 
 .startup-banner {

@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { test } = require('node:test')
-const { writeFileAtomically } = require('./atomic-file')
+const { writeFileAtomically, writeFileAtomicallyAsync } = require('./atomic-file')
 
 function fixture(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-atomic-write-'))
@@ -21,6 +21,13 @@ test('atomic writes replace existing files and create new files without leftover
   writeFileAtomically(binary, Buffer.from([0, 255, 128]))
   assert.deepEqual(fs.readFileSync(binary), Buffer.from([0, 255, 128]))
   assert.deepEqual(fs.readdirSync(directory).sort(), ['record.bin', 'record.json'])
+})
+
+test('asynchronous atomic writes replace files only after durable completion', async (t) => {
+  const { directory, target } = fixture(t)
+  await writeFileAtomicallyAsync(target, '非同期の記録🀄')
+  assert.equal(fs.readFileSync(target, 'utf8'), '非同期の記録🀄')
+  assert.deepEqual(fs.readdirSync(directory), ['record.json'])
 })
 
 for (const stage of ['writeFileSync', 'fsyncSync', 'renameSync']) {

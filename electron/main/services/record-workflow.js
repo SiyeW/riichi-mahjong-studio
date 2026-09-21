@@ -1,6 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const { writeFileAtomically } = require('../state/atomic-file')
+const { writeFileAtomicallyAsync } = require('../state/atomic-file')
 const { withCurrentRecord } = require('../state/record-operation')
 const { loadSettings } = require('../state/settings')
 const {
@@ -11,7 +11,7 @@ const {
 } = require('../state/game-file-store')
 const {
   decodeGameRecord,
-  encodeGameRecord,
+  encodeGameRecordAsync,
   getRecoverySourcePath,
   isRecoveryGameRecord,
   prepareGameRecordForWrite,
@@ -55,16 +55,18 @@ function createRecordWorkflow({
       markSaved = true,
       recovery = false,
       rememberPath = true,
+      exportRecord = () => backendGateway.exportGameRecord(),
     } = options
     const exportedRevision = gameFileStore.getRevision()
-    const response = await withCurrentRecord(gameFileStore, () => backendGateway.exportGameRecord())
+    const response = await withCurrentRecord(gameFileStore, exportRecord)
     const record = prepareGameRecordForWrite(response.record, {
       appVersion: app.getVersion(),
       recovery,
     })
     fs.mkdirSync(path.dirname(targetPath), { recursive: true })
     const useCompression = path.extname(targetPath).toLowerCase() !== '.json'
-    writeFileAtomically(targetPath, encodeGameRecord(record, useCompression))
+    const encoded = await encodeGameRecordAsync(record, useCompression)
+    await writeFileAtomicallyAsync(targetPath, encoded)
     if (recovery) gameFileStore.writeRecoverySourcePath(gameFileStore.getCurrentPath())
     if (rememberPath) gameFileStore.setCurrentPath(targetPath)
     if (markSaved) gameFileStore.markSaved(exportedRevision)
@@ -83,6 +85,7 @@ function createRecordWorkflow({
       markSaved: false,
       recovery: true,
       rememberPath: false,
+      exportRecord: () => backendGateway.exportRecoveryGameRecord(),
     })
   }
 

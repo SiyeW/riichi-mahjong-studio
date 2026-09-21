@@ -22,8 +22,9 @@ body {
   --bar-group-width: calc(var(--tile-img-w) * 0.844);
   --decision-bar-width: calc(var(--tile-img-w) * 0.317);
   --ron-bar-width: calc(var(--bar-group-width) * 0.333333);
-  --choice-best-marker-gap: calc(var(--zoom) * 2px);
-  --choice-best-marker-size: calc(var(--decision-bar-width) * 0.45);
+  --choice-best-marker-gap: calc(var(--zoom) * 1.5px);
+  --choice-best-marker-width: calc(var(--decision-bar-width) * 0.7);
+  --choice-best-marker-height: calc(var(--decision-bar-width) * 0.38);
   --ui-motion-duration: 110ms;
   --ui-motion-easing: cubic-bezier(0.33, 1, 0.68, 1);
   --river-track-span: calc(var(--zoom) * 360px);
@@ -47,6 +48,7 @@ body {
   --surface-control-pending: rgba(4, 55, 66, 0.96);
   --surface-danger: rgba(112, 39, 31, 0.96);
   --surface-control-danger: rgba(145, 55, 45, 0.92);
+  --analysis-chart-track-surface: rgb(20 72 81);
   --surface-floating: #073e48;
   --surface-field: rgba(255, 255, 255, 0.95);
   --field-text: #153237;
@@ -103,8 +105,9 @@ body {
   --bar-group-width: calc(var(--tile-img-w) * 0.844);
   --decision-bar-width: calc(var(--tile-img-w) * 0.317);
   --ron-bar-width: calc(var(--bar-group-width) * 0.333333);
-  --choice-best-marker-gap: calc(var(--zoom) * 2px);
-  --choice-best-marker-size: calc(var(--decision-bar-width) * 0.45);
+  --choice-best-marker-gap: calc(var(--zoom) * 1.5px);
+  --choice-best-marker-width: calc(var(--decision-bar-width) * 0.7);
+  --choice-best-marker-height: calc(var(--decision-bar-width) * 0.38);
   --river-track-span: calc(var(--zoom) * 360px);
   --river-visible-span: calc(6 * var(--tile-w));
   --center-square-span: var(--river-visible-span);

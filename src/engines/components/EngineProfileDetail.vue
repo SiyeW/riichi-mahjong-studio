@@ -14,7 +14,7 @@
     <div class="engine-weight-field">
       <span>{{ t('engine.output') }}</span>
       <div class="engine-output-options">
-        <label v-for="output in detail.outputs" :key="output.id" class="settings-checkbox engine-output-assignment">
+        <label v-for="output in detail.outputs" :key="output.id" class="settings-checkbox settings-checkbox-compact engine-output-assignment">
           <input type="checkbox" :checked="output.assigned" :disabled="detail.locked" @change="emit('output', output.id, ($event.target as HTMLInputElement).checked)" />
           <span class="settings-checkbox-control" aria-hidden="true"></span>
           <span class="settings-checkbox-label">{{ output.label }}</span>
@@ -158,26 +158,8 @@ async function emitOption(key: string, event: Event) {
   cursor: default;
 }
 
-.engine-output-assignment.settings-checkbox {
-  min-height: auto;
-  padding: calc(0.18rem * var(--floating-panel-scale)) calc(0.24rem * var(--floating-panel-scale));
-  border: none;
-  background: transparent;
-  gap: calc(0.34rem * var(--floating-panel-scale));
-}
-
 .engine-output-assignment:has(input:disabled) {
   cursor: default;
-}
-
-.engine-output-assignment .settings-checkbox-control {
-  width: calc(0.95rem * var(--floating-panel-scale));
-  height: calc(0.95rem * var(--floating-panel-scale));
-}
-
-.engine-output-assignment .settings-checkbox-label {
-  color: var(--text-dim);
-  font-size: var(--ui-text-caption);
 }
 
 .engine-legal-field {

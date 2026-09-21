@@ -1,9 +1,9 @@
-import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch, type Ref } from 'vue'
 import { acceptsAnalysisEpoch } from './analysisEpoch.ts'
 import { decisionPositionKey } from './analysisPosition.ts'
 import type { TranslationParams } from './i18n'
 import type { StudioSettings } from './contracts/settings'
-import type { GameView } from './contracts/game'
+import type { GameView, TableState } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 import { normalizeTrainingMode } from './trainingSettings.ts'
 import { getUiMotionDurationMs } from './uiMotion.ts'
@@ -65,6 +65,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   const shantenRawJson = computed(() => JSON.stringify(shantenRawData.value, null, 2))
   const shantenStatus = ref('—')
   const displayedOpponentAnalysis = ref<Record<string, unknown> | null>(null)
+  const displayedAnalysisTable = shallowRef<TableState | null>(null)
+  const displayedAnalysisControlledSeat = ref(status.controlledSeat)
   const opponentAnalysisPending = ref(false)
   const opponentAnalysisLoadingVisible = ref(false)
   const clearingAnalysisCaches = ref(false)
@@ -146,7 +148,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
       && (activity === 'running' || gameView.opponentAnalysis?.status === 'loading')
   })
   const analysisOpponents = computed(() => {
-    const controlledSeat = status.controlledSeat
+    const controlledSeat = displayedAnalysisControlledSeat.value
     const opponents = [
       { key: 'kamicha', seat: (controlledSeat + 3) % 4, label: t('seat.kamicha') },
       { key: 'toimen', seat: (controlledSeat + 2) % 4, label: t('seat.toimen') },
@@ -202,6 +204,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     shantenRawData.value = {}
     shantenStatus.value = '—'
     displayedOpponentAnalysis.value = null
+    displayedAnalysisTable.value = null
+    displayedAnalysisControlledSeat.value = status.controlledSeat
     finishOpponentAnalysisPending()
   }
 
@@ -280,6 +284,12 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     ronWaitPredData.value = hasPredRonWait ? { ...predRonWait } : {}
     shantenGTData.value = hasGtOpponents ? { ...gtOpponents } : {}
     ronWaitGTData.value = hasGtRonWait ? { ...gtRonWait } : {}
+    // Keep the result and the table state that gives it meaning in one
+    // presentation snapshot. During a round transition the live table already
+    // belongs to the next round while the previous result is deliberately
+    // retained for the short handoff window.
+    displayedAnalysisTable.value = gameView.table
+    displayedAnalysisControlledSeat.value = status.controlledSeat
     displayedOpponentAnalysis.value = result
     finishOpponentAnalysisPending()
     return true
@@ -541,6 +551,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     clearingAnalysisCaches,
     decisionRecommendationsEnabled,
     displayedOpponentAnalysis,
+    displayedAnalysisTable,
+    displayedAnalysisControlledSeat,
     effectiveDecisionRecommendationsEnabled,
     fetchAnalysisOnce,
     hasOpponentGroundTruth,

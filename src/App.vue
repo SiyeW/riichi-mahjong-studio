@@ -100,15 +100,23 @@
               :disabled="!gameView.table"
             >{{ t('toolbar.analysis') }}</button>
             <span class="toolbar-panel-menu-items" role="menu" :aria-label="t('toolbar.analysis')">
-              <button
+              <label
                 v-for="definition in ANALYSIS_PANEL_DEFINITIONS"
                 :key="definition.id"
+                class="settings-checkbox settings-checkbox-compact toolbar-panel-menu-item"
                 role="menuitemcheckbox"
                 :aria-checked="analysisPanelIsSelected(definition.id)"
-                :class="{ active: analysisPanelIsSelected(definition.id) }"
-                :disabled="!gameView.table"
-                @click.stop="toggleAnalysisPanel(definition.key)"
-              >{{ t(definition.labelKey) }}</button>
+                @click.stop
+              >
+                <input
+                  type="checkbox"
+                  :checked="analysisPanelIsSelected(definition.id)"
+                  :disabled="!gameView.table"
+                  @change="toggleAnalysisPanel(definition.key)"
+                />
+                <span class="settings-checkbox-control" aria-hidden="true"></span>
+                <span class="settings-checkbox-label">{{ t(definition.labelKey) }}</span>
+              </label>
             </span>
           </span>
           <button
@@ -133,6 +141,13 @@
       <button :disabled="backendRetrying" @click="retryBackend">
         {{ t(backendRetrying ? 'recovery.working' : backendRecoveryNeeded ? (backendHasCheckpoint ? 'recovery.restore' : 'recovery.restart') : 'common.retry') }}
       </button>
+    </div>
+
+    <div v-if="closeState.active" class="exit-saving-overlay" role="status" aria-live="assertive">
+      <div class="exit-saving-card">
+        <strong>{{ closingExitLabel }}</strong>
+        <span>{{ t('close.keepOpen') }}</span>
+      </div>
     </div>
 
     <main
@@ -184,10 +199,7 @@
                       @click="submitAction(action)"
                     >
                       <span class="special-action-bar-track" :class="{ 'recommendation-hidden': !showTrainingRecommendations }">
-                        <span
-                          class="special-action-bar-upper"
-                          :style="barUpperStyle(resolveDisplayedActionBar(action))"
-                        />
+                        <span class="choice-best-marker" aria-hidden="true" />
                         <span
                           class="special-action-bar-fill"
                           :style="barFillStyle(resolveDisplayedActionBar(action))"
@@ -209,40 +221,24 @@
               </div>
               <span class="grid-hand pov-p0 grid-hand-p0" v-if="southView">
                 <span class="bottom-player-rail">
-                  <div
+                  <TableRecommendationBars
                     v-if="southDiscardBarSlots.length"
-                    class="discard-bars"
-                    :class="{
-                      'recommendation-toggle': canToggleDecisionRecommendations,
-                      'recommendation-hidden': !showTrainingRecommendations || !discardActions.length,
-                    }"
-                    :role="canToggleDecisionRecommendations ? 'button' : undefined"
-                    :tabindex="canToggleDecisionRecommendations ? 0 : undefined"
-                    :aria-pressed="canToggleDecisionRecommendations ? decisionRecommendationsEnabled : undefined"
-                    :aria-label="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')) : undefined"
-                    v-ui-tooltip="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')) : undefined"
-                    @click.stop="toggleDecisionRecommendations"
-                    @keydown.enter.prevent="toggleDecisionRecommendations"
-                    @keydown.space.prevent="toggleDecisionRecommendations"
-                  >
-                    <div
-                      v-for="(slot, index) in southDiscardBarSlots"
-                      :key="'dbar-'+index"
-                      class="discard-bar-slot"
-                      :class="{ best: showTrainingRecommendations && slot.isBest, 'discard-bar-next-main': !slot.isGap && tileNextMoveClass(slot.tile, slot.isDrawn) === 'tile-next-main', 'discard-bar-next-side': !slot.isGap && tileNextMoveClass(slot.tile, slot.isDrawn) === 'tile-next-side', 'is-drawn': slot.isDrawn }"
-                    >
-                      <span v-if="!slot.isGap" class="choice-bar-lane">
-                        <span class="choice-bar-upper" :style="barUpperStyle(resolveDisplayedDiscardSlotBar(slot))" />
-                        <span class="choice-bar-fill" :style="barFillStyle(resolveDisplayedDiscardSlotBar(slot))" />
-                      </span>
-                    </div>
-                  </div>
+                    :slots="southRecommendationBarSlots"
+                    :visible="showTrainingRecommendations && Boolean(discardActions.length)"
+                    :reduce-motion="reduceMotionEnabled"
+                    :can-toggle="canToggleDecisionRecommendations"
+                    :enabled="decisionRecommendationsEnabled"
+                    :toggle-label="decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')"
+                    :tooltip-label="decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')"
+                    @toggle="toggleDecisionRecommendations"
+                  />
                   <span class="hand-row">
                     <span class="pov-p0 hand-closed-p0" @contextmenu.prevent="onSouthHandContextMenu">
                       <div
                         v-for="(tile, index) in southDisplayHandParts.closed"
-                        :key="'p0h-'+index"
+                        :key="tileOccurrenceRenderKey(southDisplayHandParts.closed, index, 'p0h')"
                         :class="['tileDiv', { 'hand-discard-gap': tile === HAND_DISCARD_GAP }]"
+                        :data-hand-seat="southView.seat"
                         :data-hand-gap-seat="tile === HAND_DISCARD_GAP ? southView.seat : undefined"
                       >
                         <img
@@ -258,6 +254,7 @@
                       <div
                         v-if="southDisplayHandParts.drawn"
                         :class="['tileDiv', 'is-drawn', { 'hand-discard-gap': southDisplayHandParts.drawn === HAND_DISCARD_GAP }]"
+                        :data-hand-seat="southView.seat"
                         :data-hand-gap-seat="southDisplayHandParts.drawn === HAND_DISCARD_GAP ? southView.seat : undefined"
                       >
                         <img
@@ -295,48 +292,18 @@
                     </span>
                   </span>
                   <!-- 自家手牌对应的三家放铳率，从手牌下沿向下显示。 -->
-                  <div
-                    class="discard-bars ron-risk-bars"
-                    :class="{
-                      'recommendation-toggle': canToggleDecisionRecommendations,
-                    }"
-                    :role="canToggleDecisionRecommendations ? 'button' : undefined"
-                    :tabindex="canToggleDecisionRecommendations ? 0 : undefined"
-                    :aria-pressed="canToggleDecisionRecommendations ? decisionRecommendationsEnabled : undefined"
-                    :aria-label="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')) : undefined"
-                    v-ui-tooltip="canToggleDecisionRecommendations ? (decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')) : undefined"
-                    @click.stop="toggleDecisionRecommendations"
-                    @keydown.enter.prevent="toggleDecisionRecommendations"
-                    @keydown.space.prevent="toggleDecisionRecommendations"
-                  >
-                    <div
-                      v-for="slot in southRonRiskSlots"
-                      :key="`ron-risk-${slot.index}`"
-                      class="discard-bar-slot ron-risk-slot"
-                      :class="{
-                        'is-drawn': slot.isDrawn,
-                        'has-adaptive-threshold': showTrainingRecommendations && showSouthRonRiskThreshold && !slot.isGap,
-                        'connect-left': slot.connectLeft,
-                        'connect-right': slot.connectRight,
-                      }"
-                      :style="showTrainingRecommendations && showSouthRonRiskThreshold && !slot.isGap
-                        ? { '--ron-risk-threshold-top': southRonRiskBarHeight(RON_BAR_ADAPTIVE_MIN) }
-                        : undefined"
-                    >
-                      <span
-                        v-if="showTrainingRecommendations && !slot.isGap"
-                        class="ron-risk-lanes"
-                        aria-hidden="true"
-                      >
-                        <span v-for="risk in slot.risks" :key="risk.key" class="ron-risk-track">
-                          <span
-                            :class="['ron-risk-fill', `ron-bar-${risk.key}`]"
-                            :style="{ transform: `scaleY(${southRonRiskBarScale(risk.probability)})` }"
-                          />
-                        </span>
-                      </span>
-                    </div>
-                  </div>
+                  <TableRonRiskBars
+                    :slots="southRonRiskSlots"
+                    :adaptive-max="southRonRiskAdaptiveMax"
+                    :show-threshold="showSouthRonRiskThreshold"
+                    :visible="showTrainingRecommendations"
+                    :reduce-motion="reduceMotionEnabled"
+                    :can-toggle="canToggleDecisionRecommendations"
+                    :enabled="decisionRecommendationsEnabled"
+                    :toggle-label="decisionRecommendationsEnabled ? t('toolbar.hideRecommendations') : t('toolbar.showRecommendations')"
+                    :tooltip-label="decisionRecommendationsEnabled ? t('toolbar.hide') : t('toolbar.show')"
+                    @toggle="toggleDecisionRecommendations"
+                  />
                 </span>
               </span>
               <div class="south-bottom-buffer"></div>
@@ -416,8 +383,9 @@
         :shanten-labels="SHANTEN_LABELS"
         :shanten-short-labels="SHANTEN_SHORT_LABELS"
         :reduce-motion="reduceMotionEnabled || suppressAnalysisTransitions"
-        :controlled-seat="status.controlledSeat"
-        :dealer="gameView.table?.dealer ?? 0"
+        :controlled-seat="displayedAnalysisControlledSeat"
+        :dealer="displayedAnalysisTable?.dealer ?? gameView.table?.dealer ?? 0"
+        :table="displayedAnalysisTable ?? gameView.table"
         :tile-image-src="tileImageSrc"
         :tile-face-label="tileFaceLabel"
         :has-opponent-ground-truth="hasOpponentGroundTruth"
@@ -743,16 +711,12 @@ import { usePlayPrefetch } from './usePlayPrefetch'
 import { useTablePresentation } from './useTablePresentation'
 import { useTableViewport } from './useTableViewport'
 import { useTileArtwork } from './useTileArtwork'
+import { tileOccurrenceRenderKey } from './tileOccurrenceRenderKey'
 import {
   SHANTEN_SHORT_LABELS,
   analysisResultHasRows,
   useAnalysisSession,
 } from './useAnalysisSession'
-import {
-  DEFAULT_PROBABILITY_SCALE,
-  probabilityScalePercent,
-  probabilityScaleRatio,
-} from './analysisProbabilityScale'
 import AnalysisDockModule from './components/AnalysisDockModule.vue'
 import AboutDialog from './components/AboutDialog.vue'
 import AutomaticAnalysisPanel from './components/AutomaticAnalysisPanel.vue'
@@ -771,6 +735,8 @@ import SettingsDialog from './components/SettingsDialog.vue'
 import TableActionAnnouncement from './components/TableActionAnnouncement.vue'
 import TableCenterInfo from './components/TableCenterInfo.vue'
 import TableOpponentHands, { type OpponentHandPresentation } from './components/TableOpponentHands.vue'
+import TableRecommendationBars from './components/TableRecommendationBars.vue'
+import TableRonRiskBars from './components/TableRonRiskBars.vue'
 import TableRivers from './components/TableRivers.vue'
 import WallViewWindow from './components/WallViewWindow.vue'
 import { useI18n } from './i18n'
@@ -876,13 +842,6 @@ const floatingPanelZ = reactive<Record<FloatingPanelName, number>>({
 let floatingPanelZCounter = 1000
 function focusFloatingPanel(panel: FloatingPanelName) {
   floatingPanelZ[panel] = ++floatingPanelZCounter
-}
-const RON_BAR_ADAPTIVE_MIN = DEFAULT_PROBABILITY_SCALE
-function southRonRiskBarHeight(prob: number): string {
-  return probabilityScalePercent(prob, southRonRiskAdaptiveMax.value)
-}
-function southRonRiskBarScale(prob: number): number {
-  return probabilityScaleRatio(prob, southRonRiskAdaptiveMax.value)
 }
 // Shared drag state for floating analysis panels.
 let floatingPanelDragPos: { x: number; y: number } | null = null
@@ -1008,6 +967,8 @@ const {
   clearingAnalysisCaches,
   decisionRecommendationsEnabled,
   displayedOpponentAnalysis,
+  displayedAnalysisTable,
+  displayedAnalysisControlledSeat,
   effectiveDecisionRecommendationsEnabled,
   fetchAnalysisOnce,
   hasOpponentGroundTruth,
@@ -1124,6 +1085,11 @@ const bootstrapError = ref('')
 const backendRecoveryNeeded = ref(false)
 const backendHasCheckpoint = ref(false)
 const backendRetrying = ref(false)
+const closeState = reactive<{
+  active: boolean
+  stage: 'preparing' | 'flushing' | 'recovery' | ''
+}>({ active: false, stage: '' })
+const closingExitLabel = computed(() => t(`close.${closeState.stage || 'preparing'}`))
 
 async function retryBackend() {
   if (backendRetrying.value || !window.studioAPI) return
@@ -1318,7 +1284,6 @@ const {
 const {
   actionDisplayTiles,
   barFillStyle,
-  barUpperStyle,
   findQuickPassAction,
   findQuickTsumogiriAction,
   formatActionValue,
@@ -1385,6 +1350,13 @@ const opponentHandPresentations = computed<OpponentHandPresentation[]>(() => [
   { view: northView.value, handParts: northDisplayHandParts.value },
   { view: westView.value, handParts: westDisplayHandParts.value },
 ].filter((seat): seat is OpponentHandPresentation => Boolean(seat.view)))
+
+const southRecommendationBarSlots = computed(() => southDiscardBarSlots.value.map(slot => ({
+  value: resolveDisplayedDiscardSlotBar(slot),
+  isBest: showTrainingRecommendations.value && slot.isBest,
+  isDrawn: slot.isDrawn,
+  isGap: slot.isGap,
+})))
 
 const {
   ROUND_BASE_X,
@@ -1935,6 +1907,10 @@ useDesktopBridgeSubscriptions({
   pythonEvent: handlePythonEvent,
   recordDirtyChanged: handleRecordDirtyChanged,
   uiZoomShortcut: (direction) => { void changeUiScale(direction) },
+  closeState: (state) => {
+    closeState.active = Boolean(state.active)
+    closeState.stage = state.stage || ''
+  },
   beforeClose: () => flushBeforeClose(
     flushNodeComment,
     flushEngineAutosave,
@@ -1967,8 +1943,11 @@ if (import.meta.env.MODE === 'ui-test') {
     analysisCountLayout,
     showPerceptualColorDebugger,
     bootstrapError,
+    closeState,
     tileArtworkReady,
     opponentAnalysisIsLoading,
+    displayedAnalysisTable,
+    stageOpponentAnalysisForView,
     showWallView,
     wallTiles,
     showEngineWindow,

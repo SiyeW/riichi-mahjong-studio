@@ -52,10 +52,10 @@ export function useGameAnalysisData(
     return segments.map((segment) => ({ ...segment, displayProbability: segment.probability / total }))
   })
   const playerSeatOrder = computed(() => [
-    (props.controlledSeat + 3) % 4,
     props.controlledSeat,
-    (props.controlledSeat + 1) % 4,
+    (props.controlledSeat + 3) % 4,
     (props.controlledSeat + 2) % 4,
+    (props.controlledSeat + 1) % 4,
   ])
   const playerRows = computed(() => playerSeatOrder.value.map((seat) => {
     const outcome = kyokuOutcome.value.players.find((player) => player.seat === seat)!
@@ -85,5 +85,5 @@ export function useGameAnalysisData(
   const maxAbsoluteDelta = computed(() => symmetricDeltaScale(
     playerRows.value.map((player) => player.kyokuDelta),
   ))
-  return { ...formatting, outcomeSegments, playerRows, maxAbsoluteDelta, windLabel }
+  return { ...formatting, outcomeSegments, playerRows, maxAbsoluteDelta, relativeLabel }
 }

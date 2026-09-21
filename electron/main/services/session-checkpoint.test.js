@@ -76,6 +76,35 @@ test('cursor and visibility changes patch the completed snapshot without another
   assert.equal(f.timers.size, 0)
 })
 
+test('only a settled checkpoint without pending changes is reusable', async () => {
+  const f = fixture()
+  assert.equal(f.checkpoint.getFresh(), null)
+
+  f.checkpoint.changed()
+  assert.equal(f.checkpoint.getFresh(), null)
+  f.fire()
+  f.requests[0].resolve(f.response('a'))
+  await turn()
+  assert.equal(f.checkpoint.getFresh(), f.checkpoint.get())
+
+  f.checkpoint.changed()
+  assert.equal(f.checkpoint.getFresh(), null)
+})
+
+test('a foreground export supersedes scheduled and in-flight checkpoints', async () => {
+  const f = fixture()
+  f.checkpoint.changed()
+  f.fire()
+  const foreground = { record: { game: { gameId: 'a', currentNodeId: 'new' } }, visibility: { opponentAnalysis: true } }
+  assert.equal(f.checkpoint.rememberFresh(foreground), true)
+  assert.equal(f.checkpoint.getFresh(), null, 'the older in-flight export must settle before reuse')
+
+  f.requests[0].resolve(f.response('a'))
+  await turn()
+  assert.equal(f.checkpoint.getFresh(), foreground)
+  assert.equal(f.checkpoint.get().record.game.currentNodeId, 'new')
+})
+
 test('switching games clears the old checkpoint and ignores its delayed export', async () => {
   const f = fixture()
   f.checkpoint.changed(); f.fire()

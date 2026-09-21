@@ -70,7 +70,10 @@ function createBackendService(options = {}) {
         return backendSession.sendRequest('get_game_view')
       },
       exportGameRecord() {
-        return backendSession.sendRequest('export_game_record')
+        return backendSession.exportGameRecord()
+      },
+      exportRecoveryGameRecord() {
+        return backendSession.exportGameRecord({ reuseCheckpoint: true })
       },
       describeEngine(profile) {
         return backendSession.sendRequest('describe_engine', profile, 30_000)

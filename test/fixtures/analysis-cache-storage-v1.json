@@ -1,0 +1,23 @@
+{
+  "source": {
+    "finite": [0, 1.4975917395076976e-7, 0.6132425665855408, -2500.5],
+    "nested": {
+      "value": 4,
+      "probability": 0,
+      "label": "1m",
+      "available": true,
+      "missing": null
+    },
+    "repeated": [
+      { "value": 1, "label": "1m" },
+      { "value": 2, "label": "1m" }
+    ]
+  },
+  "packed": {
+    "strings": ["finite", "nested", "value", "probability", "label", "1m", "available", "missing", "repeated"],
+    "tokens": "BgMABQQDAwMDAQYFAgMDAwQEBQYCBwAIBQIGAgIDBAQFBgICAwQEBQ==",
+    "numbers": "AAAAoK8ZhD4AAADgrp/jPwAAAAAAiaPAAAAAAAAAEEAAAAAAAADwPwAAAAAAAABA",
+    "numberCount": 8,
+    "exactZero": "IQ=="
+  }
+}

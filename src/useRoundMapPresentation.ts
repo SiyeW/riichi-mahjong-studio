@@ -7,6 +7,7 @@ type Translate = (key: string, params?: Record<string, string | number>) => stri
 
 export interface RoundMapDotLayout {
   id: string
+  rowKey: string
   x: number
   y: number
   fill: string
@@ -489,6 +490,7 @@ export function useRoundMapPresentation(options: {
       const placement = placements.get(node.id)!
       return {
         id: node.id,
+        rowKey: roundSlotKey(node),
         x: placement.x,
         y: placement.y,
         fill: 'hsl(188, 35%, 44%)',

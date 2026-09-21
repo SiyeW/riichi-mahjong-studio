@@ -76,4 +76,9 @@ contextBridge.exposeInMainWorld('studioAPI', {
     ipcRenderer.on('record:before-close', handler)
     return () => ipcRenderer.removeListener('record:before-close', handler)
   },
+  onCloseState: (callback) => {
+    const handler = (_event, state) => callback(state)
+    ipcRenderer.on('record:close-state', handler)
+    return () => ipcRenderer.removeListener('record:close-state', handler)
+  },
 })

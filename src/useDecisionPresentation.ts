@@ -213,11 +213,11 @@ export function useDecisionEntryPresentation(options: {
       : null
     const text = fractionDigits === null
       ? new Intl.NumberFormat('en-US', {
-          useGrouping: metric.format === 'points',
+          useGrouping: false,
           maximumSignificantDigits: 15,
         }).format(displayedValue)
       : new Intl.NumberFormat('en-US', {
-          useGrouping: metric.format === 'points',
+          useGrouping: false,
           minimumFractionDigits: fractionDigits,
           maximumFractionDigits: fractionDigits,
         }).format(displayedValue)
@@ -353,11 +353,8 @@ export function useDecisionActionPresentation(options: {
   }
 
   function barFillStyle(value: number) {
-    return { transform: `scaleY(${clampBarScale(value)})` }
-  }
-
-  function barUpperStyle(value: number) {
-    return { transform: `scaleY(${1 - clampBarScale(value)})` }
+    const scale = clampBarScale(value)
+    return { transform: `scaleY(${scale})` }
   }
 
   function isBestAction(action?: GameAction): boolean {
@@ -369,7 +366,6 @@ export function useDecisionActionPresentation(options: {
   return {
     actionDisplayTiles,
     barFillStyle,
-    barUpperStyle,
     findQuickPassAction,
     findQuickTsumogiriAction,
     formatActionValue,

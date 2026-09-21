@@ -35,6 +35,7 @@ class ServiceRuntimeTests(unittest.TestCase):
             "get_runtime_metrics",
             "describe_engine",
             "reload_engines",
+            "export_recovery_checkpoint",
             "get_game_view",
         ]
         for index, command in enumerate(commands):

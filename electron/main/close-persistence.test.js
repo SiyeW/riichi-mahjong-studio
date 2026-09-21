@@ -57,15 +57,15 @@ test('send failure and renderer destruction clean up pending flush requests', as
 
 test('recovery disabled still flushes the renderer', async () => {
   const calls = []
-  await persistBeforeClose(async () => calls.push('flush'), () => false, async () => calls.push('recovery'))
-  assert.deepEqual(calls, ['flush'])
+  await persistBeforeClose(async () => calls.push('flush'), () => false, async () => calls.push('recovery'), stage => calls.push(stage))
+  assert.deepEqual(calls, ['flushing', 'flush'])
 })
 
 test('recovery eligibility is checked after pending edits are saved', async () => {
   let dirty = false
   const calls = []
-  await persistBeforeClose(async () => { dirty = true; calls.push('flush') }, () => dirty, async () => calls.push('recovery'))
-  assert.deepEqual(calls, ['flush', 'recovery'])
+  await persistBeforeClose(async () => { dirty = true; calls.push('flush') }, () => dirty, async () => calls.push('recovery'), stage => calls.push(stage))
+  assert.deepEqual(calls, ['flushing', 'flush', 'recovery', 'recovery'])
 })
 
 test('flush failure never proceeds to recovery', async () => {

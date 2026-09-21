@@ -35,9 +35,14 @@
               :key="row.depth"
               type="button"
               class="tree-axis-label"
-              :class="{ 'is-controlled': row.isControlledAction }"
+              :class="{
+                'is-controlled': row.isControlledAction,
+                'is-hovered': hoveredNodeId === row.nodeId,
+              }"
               :style="{ top: `${row.y}px` }"
               v-ui-tooltip="row.label"
+              @mouseenter="emit('update:hovered-node-id', row.nodeId)"
+              @mouseleave="emit('update:hovered-node-id', null)"
               @click="emit('jump-to-node', row.nodeId)"
             >
               {{ row.label }}
@@ -76,6 +81,25 @@
             />
             <template v-for="dot in visibleTreeDots" :key="dot.id">
               <rect
+                v-if="hoveredNodeId === dot.id && dot.shape === 'square'"
+                :x="dot.x - (treeSquareRadius(dot) * 1.45)"
+                :y="dot.y - (treeSquareRadius(dot) * 1.45)"
+                :width="treeSquareRadius(dot) * 2.9"
+                :height="treeSquareRadius(dot) * 2.9"
+                :rx="treeSquareCornerRadius * 1.45"
+                :ry="treeSquareCornerRadius * 1.45"
+                :stroke-width="treeSquareRadius(dot) * 0.2"
+                class="tree-hover-indicator"
+              />
+              <circle
+                v-else-if="hoveredNodeId === dot.id"
+                :cx="dot.x"
+                :cy="dot.y"
+                :r="treeDotRadius(dot) * 1.45"
+                :stroke-width="treeDotRadius(dot) * 0.2"
+                class="tree-hover-indicator"
+              />
+              <rect
                 v-if="dot.shape === 'square'"
                 :x="dot.x - treeSquareRadius(dot)"
                 :y="dot.y - treeSquareRadius(dot)"
@@ -83,7 +107,7 @@
                 :height="treeSquareRadius(dot) * 2"
                 :rx="treeSquareCornerRadius"
                 :ry="treeSquareCornerRadius"
-                :class="['tree-dot', 'is-square', isCurrentTreeDot(dot) ? 'is-current' : '', dot.isMainline ? 'is-mainline' : '', hoveredNodeId === dot.id ? 'is-hovered' : '']"
+                :class="['tree-dot', 'is-square', isCurrentTreeDot(dot) ? 'is-current' : '', dot.isMainline ? 'is-mainline' : '']"
                 :fill="dot.fill"
                 :stroke="isCurrentTreeDot(dot) ? 'white' : (dot.isMainline ? 'rgba(220,244,240,0.45)' : 'none')"
                 :stroke-width="treeDotStrokeWidth(dot)"
@@ -93,7 +117,7 @@
                 :cx="dot.x"
                 :cy="dot.y"
                 :r="treeDotRadius(dot)"
-                :class="['tree-dot', isCurrentTreeDot(dot) ? 'is-current' : '', dot.isMainline ? 'is-mainline' : '', hoveredNodeId === dot.id ? 'is-hovered' : '']"
+                :class="['tree-dot', isCurrentTreeDot(dot) ? 'is-current' : '', dot.isMainline ? 'is-mainline' : '']"
                 :fill="dot.fill"
                 :stroke="isCurrentTreeDot(dot) ? 'white' : (dot.isMainline ? 'rgba(220,244,240,0.45)' : 'none')"
                 :stroke-width="treeDotStrokeWidth(dot)"
@@ -375,15 +399,17 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
-  transition: color var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
 .tree-axis-label.is-controlled {
   color: rgba(224, 239, 236, 0.82);
 }
 
-.tree-axis-label:hover {
+.tree-axis-label:hover,
+.tree-axis-label.is-hovered {
+  background: rgba(228, 241, 237, 0.1);
   color: var(--text-main);
+  box-shadow: inset 0 0 0 1px rgba(228, 241, 237, 0.72);
 }
 
 .tree-svg {
@@ -395,13 +421,12 @@ onBeforeUnmount(() => {
 
 .tree-dot {
   pointer-events: none;
-  transition:
-    filter var(--ui-motion-duration) var(--ui-motion-easing),
-    transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.tree-dot.is-hovered {
-  filter: brightness(1.25);
+.tree-hover-indicator {
+  fill: rgba(228, 241, 237, 0.1);
+  stroke: rgba(228, 241, 237, 0.72);
+  pointer-events: none;
 }
 
 .tree-hit-region {

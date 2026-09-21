@@ -13,17 +13,29 @@
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
+.analysis-count-toolbar {
+  display: flex;
+  align-items: stretch;
+  justify-self: start;
+  gap: calc(0.35rem * var(--floating-panel-scale));
+  width: 100%;
+  min-width: 0;
+}
+
 .analysis-count-layout-toggle {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  justify-self: start;
+  flex: 1 1 calc(13rem * var(--floating-panel-scale));
   gap: 1px;
   width: min(calc(13rem * var(--floating-panel-scale)), 100%);
+  max-width: calc(13rem * var(--floating-panel-scale));
+  min-width: 0;
   padding: 1px;
   background: var(--border-accent);
 }
 
-.analysis-count-layout-toggle button {
+.analysis-count-layout-toggle button,
+.analysis-count-baseline-toggle {
   min-width: 0;
   padding:
     calc(0.1rem * var(--floating-panel-scale))
@@ -39,13 +51,26 @@
   white-space: nowrap;
 }
 
-.analysis-count-layout-toggle button:hover {
+.analysis-count-layout-toggle button:hover,
+.analysis-count-baseline-toggle:hover:not(:disabled) {
   background: #0b5260;
 }
 
-.analysis-count-layout-toggle button.active {
+.analysis-count-layout-toggle button.active,
+.analysis-count-baseline-toggle.active {
   color: #fff;
   background: #137a3d;
+}
+
+.analysis-count-baseline-toggle {
+  flex: 0 1 auto;
+  padding-inline: calc(0.65rem * var(--floating-panel-scale));
+  border: 1px solid var(--border-accent);
+}
+
+.analysis-count-baseline-toggle:disabled {
+  color: rgba(197, 217, 221, 0.42);
+  cursor: default;
 }
 
 .analysis-count-source-layout {
@@ -71,6 +96,7 @@
 }
 
 .analysis-count-source-sequence {
+  position: relative;
   display: flex;
   flex: 0 0 var(--analysis-count-source-content-width, 100%);
   gap: var(--analysis-count-tile-gap, 1px);
@@ -78,7 +104,19 @@
   min-height: 0;
 }
 
+.analysis-count-source-row-canvas {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 .analysis-count-source-tile {
+  position: relative;
+  z-index: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   flex: 0 0 var(--analysis-count-source-tile-width, 0.75rem);
@@ -91,6 +129,12 @@
   border: 0;
   background: transparent;
   cursor: default;
+  outline: none;
+}
+
+.analysis-count-source-tile:hover,
+.analysis-count-source-tile:focus-visible {
+  z-index: 2;
 }
 
 .analysis-count-source-tile.is-group-start {
@@ -98,18 +142,30 @@
 }
 
 .analysis-count-source-bar {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: var(--analysis-count-bar-min-height, 0px);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.04);
+  background: transparent;
 }
 
-.analysis-count-source-bar > i {
-  display: block;
-  flex: 0 0 auto;
-  width: 100%;
-  min-height: 0;
+.analysis-count-source-bar::after,
+.analysis-count-bars > button::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  content: '';
+  pointer-events: none;
+}
+
+.analysis-count-source-tile:hover .analysis-count-source-bar::after,
+.analysis-count-source-tile:focus-visible .analysis-count-source-bar::after,
+.analysis-count-bars > button:hover::after,
+.analysis-count-bars > button:focus-visible::after {
+  border-color: rgba(228, 241, 237, 0.72);
+  background: rgba(228, 241, 237, 0.1);
 }
 
 .analysis-count-source-tile > img {
@@ -175,7 +231,7 @@
 
 .analysis-count-row-canvas {
   position: absolute;
-  z-index: 0;
+  z-index: 1;
   top: 0;
   left: 0;
   display: block;
@@ -186,7 +242,7 @@
 
 .analysis-count-bars > button {
   position: relative;
-  z-index: 1;
+  z-index: 0;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
@@ -199,6 +255,12 @@
   border: 0;
   background: transparent;
   cursor: default;
+  outline: none;
+}
+
+.analysis-count-bars > button:hover,
+.analysis-count-bars > button:focus-visible {
+  z-index: 2;
 }
 
 .analysis-count-legends {
@@ -247,9 +309,12 @@
 }
 
 .analysis-count-source-legend {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: calc(0.55rem * var(--floating-panel-scale));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap:
+    calc(0.18rem * var(--floating-panel-scale))
+    calc(0.8rem * var(--floating-panel-scale));
   min-width: 0;
   padding: 0 calc(0.65rem * var(--floating-panel-scale));
 }
@@ -257,12 +322,13 @@
 .analysis-count-source-legend-group {
   display: grid;
   grid-template-columns:
-    minmax(0, 1fr)
+    max-content
     repeat(5, calc(0.64rem * var(--floating-panel-scale)));
   gap:
     calc(0.1rem * var(--floating-panel-scale))
     calc(0.12rem * var(--floating-panel-scale));
   align-items: center;
+  flex: 0 0 auto;
   min-width: 0;
 }
 

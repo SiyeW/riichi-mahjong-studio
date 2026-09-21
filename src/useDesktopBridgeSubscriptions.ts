@@ -9,6 +9,7 @@ interface DesktopBridgeHandlers {
   recordDirtyChanged: (dirty: boolean) => void
   uiZoomShortcut: (direction: UiZoomDirection) => void
   beforeClose: () => void | Promise<void>
+  closeState: (state: { active: boolean, stage: 'preparing' | 'flushing' | 'recovery' | '' }) => void
 }
 
 export function subscribeDesktopBridge(
@@ -21,6 +22,7 @@ export function subscribeDesktopBridge(
     api.onRecordDirtyChanged?.(handlers.recordDirtyChanged),
     api.onUiZoomShortcut?.(handlers.uiZoomShortcut),
     api.onBeforeClose?.(handlers.beforeClose),
+    api.onCloseState?.(handlers.closeState),
   ].filter((callback): callback is () => void => typeof callback === 'function')
   let active = true
   return () => {

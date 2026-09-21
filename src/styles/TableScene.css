@@ -45,7 +45,7 @@
   --grid-top-row: calc((2 * var(--tile-h)) + (var(--zoom) * 2px));
   --grid-river-row: calc((4 * var(--tile-w)) - (var(--zoom) * 1px));
   --side-hand-lane-span: calc(var(--grid-top-row) + (2 * var(--grid-river-row)) + var(--grid-center-col));
-  --recommendation-bar-height: calc((var(--tile-h) * 1.14) - var(--choice-best-marker-size) - var(--choice-best-marker-gap));
+  --recommendation-bar-height: calc((var(--tile-h) * 1.14) - var(--choice-best-marker-height) - var(--choice-best-marker-gap));
   --south-recommendation-row-height: calc(var(--tile-h) * 1.14);
   --south-hand-edge-gap: calc(var(--zoom) * 6px);
   --grid-bottom-row: calc(
@@ -177,7 +177,7 @@
   position: relative;
   display: grid;
   grid-template-rows:
-    calc(var(--recommendation-bar-height) + var(--choice-best-marker-size) + var(--choice-best-marker-gap))
+    calc(var(--recommendation-bar-height) + var(--choice-best-marker-height) + var(--choice-best-marker-gap))
     calc(var(--zoom) * 20px)
     calc(var(--tile-img-h) * 0.7);
   justify-items: center;
@@ -242,14 +242,13 @@
   align-self: end;
 }
 
-.special-action-bar-track::after {
-  content: "";
+.choice-best-marker {
   position: absolute;
   left: 50%;
   bottom: calc(100% + var(--choice-best-marker-gap));
-  width: var(--choice-best-marker-size);
-  height: var(--choice-best-marker-size);
-  border-radius: 999px;
+  width: var(--choice-best-marker-width);
+  height: var(--choice-best-marker-height);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
   transform: translateX(-50%);
   opacity: 0;
   background: var(--decision-recommendation-color);
@@ -258,36 +257,35 @@
     background-color var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
-.special-action-option.best .special-action-bar-track::after {
+.special-action-option.best .choice-best-marker {
   opacity: 1;
 }
 
-.special-action-bar-upper,
 .special-action-bar-fill {
   position: absolute;
   left: 0;
   height: 100%;
   width: 100%;
   display: block;
+  transform-origin: bottom center;
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.special-action-bar-upper {
-  top: 0;
-  background: var(--bar-empty-bg);
-  transform-origin: top center;
 }
 
 .special-action-bar-fill {
   bottom: 0;
   background: var(--decision-recommendation-color);
-  transform-origin: bottom center;
 }
 
 .special-action-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  block-size: 100%;
   min-height: 0;
+  padding: 0.03em 0.3em 0;
   font-size: var(--table-text-action);
-  line-height: calc(var(--zoom) * 20px);
+  line-height: 1;
   color: var(--text-main);
   text-align: center;
   white-space: nowrap;
@@ -320,7 +318,7 @@
   margin: 0;
   min-height: calc(var(--tile-h) * 1.14);
   justify-content: flex-start;
-  padding-top: calc(var(--choice-best-marker-size) + var(--choice-best-marker-gap));
+  padding-top: calc(var(--choice-best-marker-height) + var(--choice-best-marker-gap));
   box-sizing: border-box;
 }
 
@@ -343,135 +341,38 @@
   margin-left: calc(0.4 * var(--tile-w));
 }
 
-.discard-bar-slot.best .choice-bar-lane::after {
-  opacity: 1;
-}
-
 .choice-bar-lane {
   position: relative;
   width: var(--decision-bar-width);
   height: var(--discard-bar-lane-height);
   display: block;
+  background: var(--bar-empty-bg);
 }
 
-.choice-bar-lane::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: calc(100% + var(--choice-best-marker-gap));
-  width: var(--choice-best-marker-size);
-  height: var(--choice-best-marker-size);
-  border-radius: 999px;
-  transform: translateX(-50%);
-  opacity: 0;
-  background: var(--decision-recommendation-color);
-  transition:
-    opacity var(--ui-motion-duration) var(--ui-motion-easing),
-    background-color var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.choice-bar-upper,
 .choice-bar-fill {
   position: absolute;
   left: 0;
   width: 100%;
   height: 100%;
   display: block;
+  transform-origin: bottom center;
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.choice-bar-upper {
-  top: 0;
-  background: var(--bar-empty-bg);
-  transform-origin: top center;
 }
 
 .choice-bar-fill {
   bottom: 0;
   background: var(--decision-recommendation-color);
-  transform-origin: bottom center;
 }
 
 @starting-style {
-  .discard-bars:not(.recommendation-hidden) .choice-bar-upper {
-    transform: scaleY(1) !important;
-  }
-
   .discard-bars:not(.recommendation-hidden) .choice-bar-fill {
     transform: scaleY(0) !important;
   }
 }
 
-.discard-bars.ron-risk-bars {
-  height: var(--discard-bar-lane-height);
-  min-height: var(--discard-bar-lane-height);
-  padding-top: 0;
-  align-items: flex-start;
-}
-
-.ron-risk-slot {
-  position: relative;
-  height: 100%;
-  align-items: flex-start;
-}
-
-.ron-risk-slot.has-adaptive-threshold::before {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  top: var(--ron-risk-threshold-top);
-  left: calc((var(--tile-w) - var(--bar-group-width)) / 2);
-  right: calc((var(--tile-w) - var(--bar-group-width)) / 2);
-  border-top: calc(var(--tile-w) * 0.025) solid rgba(198, 214, 211, 0.42);
-  transition: top var(--ui-motion-duration) var(--ui-motion-easing);
-  pointer-events: none;
-}
-
-.ron-risk-slot.has-adaptive-threshold.connect-left::before {
-  left: 0;
-}
-
-.ron-risk-slot.has-adaptive-threshold.connect-right::before {
-  right: 0;
-}
-
-.ron-risk-lanes {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  width: var(--bar-group-width);
-  height: 100%;
-  align-items: flex-start;
-  overflow: hidden;
-}
-
-.ron-risk-track {
-  position: relative;
-  z-index: 1;
-  display: block;
-  flex: 0 0 var(--ron-bar-width);
-  width: var(--ron-bar-width);
-  height: 100%;
-  overflow: visible;
-}
-
-.ron-risk-fill {
-  display: block;
-  width: calc(100% + 1px);
-  height: 100%;
-  margin-left: -0.5px;
-  transform-origin: top center;
-  transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.grid-main.reset-without-motion .special-action-bar-track::after,
-.grid-main.reset-without-motion .special-action-bar-upper,
+.grid-main.reset-without-motion .choice-best-marker,
 .grid-main.reset-without-motion .special-action-bar-fill,
-.grid-main.reset-without-motion .choice-bar-lane::after,
-.grid-main.reset-without-motion .choice-bar-upper,
-.grid-main.reset-without-motion .choice-bar-fill,
-.grid-main.reset-without-motion .ron-risk-slot.has-adaptive-threshold::before,
-.grid-main.reset-without-motion .ron-risk-fill {
+.grid-main.reset-without-motion .choice-bar-fill {
   transition: none;
 }
 

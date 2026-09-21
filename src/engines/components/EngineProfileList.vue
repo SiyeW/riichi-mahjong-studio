@@ -18,24 +18,26 @@
         {{ output.label }}
       </button>
     </div>
-    <div
-      v-for="profile in profiles"
-      :key="profile.id"
-      class="engine-profile-item"
-      :class="profile.classes"
-      @click="emit('select', profile.id)"
-    >
-      <span>{{ profile.name || t('common.unnamedEngine') }}</span>
-      <small>{{ profile.subtitle }}</small>
-      <button
-        v-if="profile.showAction"
-        class="engine-load-button"
-        :class="{ unload: profile.loaded }"
-        :disabled="busy"
-        @click.stop="emit('action', profile.id)"
+    <div class="engine-profile-list">
+      <div
+        v-for="profile in profiles"
+        :key="profile.id"
+        class="engine-profile-item"
+        :class="profile.classes"
+        @click="emit('select', profile.id)"
       >
-        {{ profile.loaded ? t('engine.unload') : t('engine.load') }}
-      </button>
+        <span>{{ profile.name || t('common.unnamedEngine') }}</span>
+        <small>{{ profile.subtitle }}</small>
+        <button
+          v-if="profile.showAction"
+          class="engine-load-button"
+          :class="{ unload: profile.loaded }"
+          :disabled="busy"
+          @click.stop="emit('action', profile.id)"
+        >
+          {{ profile.loaded ? t('engine.unload') : t('engine.load') }}
+        </button>
+      </div>
     </div>
     <div class="engine-list-actions">
       <button :disabled="!canMoveUp" @click="emit('move', -1)">{{ t('engine.moveUp') }}</button>
@@ -86,6 +88,19 @@ const { t } = useI18n()
   flex-direction: column;
   gap: calc(0.38rem * var(--floating-panel-scale));
   min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.engine-profile-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: calc(0.38rem * var(--floating-panel-scale));
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .engine-output-filters {
@@ -297,7 +312,6 @@ const { t } = useI18n()
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(calc(4.8rem * var(--floating-panel-scale)), auto);
   gap: calc(0.25rem * var(--floating-panel-scale));
-  margin-top: auto;
 }
 
 .engine-list-actions button {

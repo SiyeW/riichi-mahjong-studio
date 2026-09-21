@@ -17,6 +17,7 @@ class CommandTransport:
         view_builder: Any,
         engine_management: Any,
         collect_runtime_metrics: Callable[[], dict[str, int]],
+        export_recovery_checkpoint: Callable[[Any, str], dict[str, Any]],
         dispatch_stateful: Callable[[Any, str, dict[str, Any]], dict[str, Any]],
         emit: Callable[[dict[str, Any]], None],
         now_iso: Callable[[], str],
@@ -25,6 +26,7 @@ class CommandTransport:
         self._view_builder = view_builder
         self._engine_management = engine_management
         self._collect_runtime_metrics = collect_runtime_metrics
+        self._export_recovery_checkpoint = export_recovery_checkpoint
         self._dispatch_stateful = dispatch_stateful
         self._emit = emit
         self._now_iso = now_iso
@@ -72,6 +74,8 @@ class CommandTransport:
                 "metrics": self._collect_runtime_metrics(),
                 "timestamp": self._now_iso(),
             }
+        if command == "export_recovery_checkpoint":
+            return self._export_recovery_checkpoint(request_id, command)
         if command == "describe_engine":
             return {
                 "request_id": request_id,
