@@ -6,7 +6,7 @@
 
 ## 中文
 
-![Riichi Mahjong Studio 中文界面](docs/images/riichi-mahjong-studio-zh-CN.png)
+![Riichi Mahjong Studio 中文界面](docs/images/riichi-mahjong-studio-zh-CN.webp)
 
 ### 立直麻将研究室
 
@@ -127,7 +127,7 @@ Studio 通过 [Riichi Engine Protocol](https://github.com/SiyeW/riichi-engine-pr
 
 ## 日本語
 
-![立直麻雀スタジオ 日本語画面](docs/images/riichi-mahjong-studio-ja-JP.png)
+![立直麻雀スタジオ 日本語画面](docs/images/riichi-mahjong-studio-ja-JP.webp)
 
 ### 立直麻雀スタジオ
 
@@ -248,7 +248,7 @@ Studio は [Riichi Engine Protocol](https://github.com/SiyeW/riichi-engine-proto
 
 ## English
 
-![Riichi Mahjong Studio English interface](docs/images/riichi-mahjong-studio-en-US.png)
+![Riichi Mahjong Studio English interface](docs/images/riichi-mahjong-studio-en-US.webp)
 
 ### Riichi Mahjong Studio
 
