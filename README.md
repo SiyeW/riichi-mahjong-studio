@@ -2,6 +2,11 @@
 
 ### [中文](#中文) | [日本語](#日本語) | [English](#english)
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/SiyeW/riichi-mahjong-studio?include_prereleases)](https://github.com/SiyeW/riichi-mahjong-studio/releases)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D4?logo=windows11&logoColor=white)
+[![CI](https://github.com/SiyeW/riichi-mahjong-studio/actions/workflows/ci.yml/badge.svg)](https://github.com/SiyeW/riichi-mahjong-studio/actions/workflows/ci.yml)
+
 ---
 
 ## 中文
