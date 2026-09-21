@@ -9,6 +9,8 @@
 
 ---
 
+<div lang="zh-CN">
+
 ## 中文
 
 ![Riichi Mahjong Studio 中文界面](docs/images/riichi-mahjong-studio-zh-CN.webp)
@@ -128,7 +130,11 @@ Studio 通过 [Riichi Engine Protocol](https://github.com/SiyeW/riichi-engine-pr
 
 第三方代码、素材和外部组件适用各自的许可条款，详见[第三方声明](THIRD_PARTY_NOTICES.md)。
 
+</div>
+
 ---
+
+<div lang="ja">
 
 ## 日本語
 
@@ -249,7 +255,11 @@ Studio は [Riichi Engine Protocol](https://github.com/SiyeW/riichi-engine-proto
 
 サードパーティーのコード、素材、外部コンポーネントには、それぞれのライセンスが適用されます。詳細は[サードパーティーに関する表記](THIRD_PARTY_NOTICES.md)を参照してください。
 
+</div>
+
 ---
+
+<div lang="en">
 
 ## English
 
@@ -369,3 +379,5 @@ See the [Riichi Engine Protocol](https://github.com/SiyeW/riichi-engine-protocol
 The main application is licensed under the [Apache License 2.0](LICENSE).
 
 Third-party code, assets, and external components are subject to their respective licenses. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for details.
+
+</div>
