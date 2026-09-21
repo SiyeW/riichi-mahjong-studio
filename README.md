@@ -275,7 +275,7 @@ A desktop application for Riichi Mahjong game-record study and game practice. It
 * Practice from a complete wall in Game Mode, with the other players controlled by engines
 * Install external engines through the Riichi Engine Protocol and use different engines for different analysis outputs
 * Display action recommendations, opponent shanten, deal-in risk, concealed-hand and wall predictions, hand value, and outcome predictions according to the capabilities of the loaded engines
-* Import [Mortal Online Analysis](https://mjai.ekyu.moe/en.html) reports and [Tenhou custom game records](https://tenhou.net/6/)
+* Import [Mortal Online Analysis](https://mjai.ekyu.moe/) reports and [Tenhou custom game records](https://tenhou.net/6/)
 * Save games, study branches, and annotations in `.mjstudio` files and share them with others
 * Use custom sound packs
 * Use the interface in Simplified Chinese, Japanese, or English
@@ -317,7 +317,7 @@ When entering Game Mode from an imported record, Studio can also reconstruct the
 
 Studio currently supports:
 
-* [Mortal Online Analysis](https://mjai.ekyu.moe/en.html) reports
+* [Mortal Online Analysis](https://mjai.ekyu.moe/) reports
 * [Tenhou custom game records](https://tenhou.net/6/) by URL or content
 
 After importing a game, you can review it directly, add annotations, create study branches, or enter Game Mode from one of its positions.
