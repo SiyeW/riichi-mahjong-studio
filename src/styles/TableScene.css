@@ -283,7 +283,7 @@
   box-sizing: border-box;
   block-size: 100%;
   min-height: 0;
-  padding: 0 0.3em 0.03em;
+  padding: 0.03em 0.3em 0;
   font-size: var(--table-text-action);
   line-height: 1;
   color: var(--text-main);
