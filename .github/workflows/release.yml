@@ -101,7 +101,7 @@ jobs:
           $commonArguments = @(
             '--verify-tag'
             '--target', $env:GITHUB_SHA
-            '--title', "Riichi Mahjong Studio $version"
+            '--title', $version
             '--notes-file', 'release\artifacts\RELEASE_NOTES.md'
           )
           if ($version.Contains('-')) {
