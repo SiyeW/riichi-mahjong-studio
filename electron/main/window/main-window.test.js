@@ -10,10 +10,12 @@ test('zoom shortcuts accept platform modifiers and reject unrelated input', () =
   assert.equal(resolveZoomShortcut({ type: 'keyDown', control: true, meta: false, alt: true, code: 'Equal' }), null)
 })
 
-test('main window owns construction, first display, and close persistence', async () => {
+test('main window saves size after resize and does not rewrite settings on close', async () => {
   let constructedOptions
   let savedSettings
+  let settingsSaveCount = 0
   let closeHandler
+  let resizeSave
   const windowEvents = new Map()
   const webEvents = new Map()
   const calls = []
@@ -58,7 +60,7 @@ test('main window owns construction, first display, and close persistence', asyn
     writeRecoveryGameRecord: async () => calls.push(['writeRecoveryGameRecord']),
     t: (key) => key,
     loadSettingsImpl: () => structuredClone(settings),
-    saveSettingsImpl: (value) => { savedSettings = value },
+    saveSettingsImpl: (value) => { savedSettings = value; settingsSaveCount += 1 },
     requestRendererFlushImpl: async (...args) => calls.push(['requestRendererFlush', ...args]),
     persistBeforeCloseImpl: async (flush, shouldRecover, recover, onStage) => {
       onStage('flushing')
@@ -68,6 +70,8 @@ test('main window owns construction, first display, and close persistence', asyn
         await recover()
       }
     },
+    setTimeoutImpl: (callback) => { resizeSave = callback; return 1 },
+    clearTimeoutImpl: () => {},
   })
 
   assert.equal(constructedOptions.width, 1200)
@@ -80,6 +84,10 @@ test('main window owns construction, first display, and close persistence', asyn
     ['maximize'],
     ['show'],
   ])
+  windowEvents.get('resize')()
+  resizeSave()
+  assert.deepEqual(savedSettings.window, { width: 1400, height: 900 })
+  assert.equal(settingsSaveCount, 1)
 
   let prevented = false
   closeHandler({ preventDefault: () => { prevented = true } })
@@ -87,6 +95,7 @@ test('main window owns construction, first display, and close persistence', asyn
 
   assert.equal(prevented, true)
   assert.deepEqual(savedSettings.window, { width: 1400, height: 900 })
+  assert.equal(settingsSaveCount, 1)
   assert.deepEqual(calls.slice(4), [
     ['send', 'record:close-state', { active: true, stage: 'preparing' }],
     ['send', 'record:close-state', { active: true, stage: 'flushing' }],

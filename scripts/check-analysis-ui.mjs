@@ -225,6 +225,7 @@ try {
       // Dedicated responsive checks below still exercise every supported language.
       vm.settings.display.language = 'zh-CN'
       window.studioAPI = {
+        notifyBootstrapComplete: () => {},
         getSettings: async () => JSON.parse(JSON.stringify(vm.settings)),
         getStatus: async () => JSON.parse(JSON.stringify(vm.status)),
         getRuntimeMetrics: async () => {

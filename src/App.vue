@@ -1724,6 +1724,7 @@ async function prepareRendererForDisplay() {
   const bootstrapRefresh = refreshBootstrapState()
   await prepareTileArtwork()
   await bootstrapRefresh
+  window.studioAPI?.notifyBootstrapComplete()
 }
 
 async function toggleMode() {

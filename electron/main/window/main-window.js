@@ -84,8 +84,28 @@ function createMainWindow({
     console.warn(`[renderer] load failed (${code}: ${description}) for ${validatedUrl}`)
     scheduleRendererRetry()
   })
+  let windowResizeTimer = null
+  let savedWindowSize = [settings.window.width, settings.window.height]
+  window.on('resize', () => {
+    if (windowResizeTimer !== null) clearTimeoutImpl(windowResizeTimer)
+    windowResizeTimer = setTimeoutImpl(() => {
+      windowResizeTimer = null
+      if (window.isDestroyed()) return
+      const [width, height] = window.getSize()
+      if (width === savedWindowSize[0] && height === savedWindowSize[1]) return
+      try {
+        const latest = loadSettingsImpl(appOptions)
+        latest.window = { ...latest.window, width, height }
+        saveSettingsImpl(latest, appOptions)
+        savedWindowSize = [width, height]
+      } catch (error) {
+        console.warn('[settings] failed to save window size:', error)
+      }
+    }, 250)
+  })
   window.on('closed', () => {
     if (rendererRetryTimer !== null) clearTimeoutImpl(rendererRetryTimer)
+    if (windowResizeTimer !== null) clearTimeoutImpl(windowResizeTimer)
   })
   loadRenderer()
 
@@ -101,14 +121,6 @@ function createMainWindow({
     closeInProgress = true
     publishCloseState(true, 'preparing')
     void (async () => {
-      try {
-        const latest = loadSettingsImpl(appOptions)
-        const [width, height] = window.getSize()
-        latest.window = { ...latest.window, width, height }
-        saveSettingsImpl(latest, appOptions)
-      } catch (error) {
-        console.warn('[settings] failed to save window state during close:', error)
-      }
       try {
         await persistBeforeCloseImpl(
           () => requestRendererFlushImpl(window, ipcMain, t('native.closeSaveTimeout')),

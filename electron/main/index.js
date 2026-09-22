@@ -26,6 +26,7 @@ const {
 } = require('./state/game-file-store')
 const { createTranslator } = require('./i18n')
 const { createMainWindow } = require('./window/main-window')
+const { registerStartupEngineRestore } = require('./services/startup-engine-restore')
 
 const projectRoot = path.resolve(__dirname, '..', '..')
 const isDev = !app.isPackaged
@@ -105,7 +106,6 @@ function startStartupServices() {
   }
   startupServicesStarted = true
   backend.startAll()
-  void engineIpcController.restoreLoadedProfiles()
 }
 
 function openMainWindow() {
@@ -126,6 +126,7 @@ function openMainWindow() {
 }
 
 function registerIpcHandlers() {
+  registerStartupEngineRestore(ipcMain, () => engineIpcController.restoreLoadedProfiles())
   registerSettingsIpc(ipcMain, appOptions)
   registerApplicationIpc({
     ipcMain,

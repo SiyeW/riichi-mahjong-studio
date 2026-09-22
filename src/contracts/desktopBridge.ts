@@ -37,6 +37,7 @@ export interface DesktopBridge {
     state: StudioStatus
     settings: StudioSettings
   }>
+  notifyBootstrapComplete: () => void
   getStatus: () => Promise<StudioStatus>
   getRuntimeMetrics: () => Promise<RuntimeMetrics>
   getGameView: () => Promise<BackendResponse>
