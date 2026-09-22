@@ -25,6 +25,8 @@ function createMainWindow({
   saveSettingsImpl = saveSettings,
   requestRendererFlushImpl = requestRendererFlush,
   persistBeforeCloseImpl = persistBeforeClose,
+  setTimeoutImpl = setTimeout,
+  clearTimeoutImpl = clearTimeout,
 }) {
   const settings = loadSettingsImpl(appOptions)
   const window = new BrowserWindow({
@@ -57,8 +59,35 @@ function createMainWindow({
   window.once('ready-to-show', showWindow)
   window.webContents.once('did-finish-load', showWindow)
 
-  if (isDev) void window.loadURL(rendererUrl)
-  else void window.loadFile(path.join(projectRoot, 'dist', 'index.html'))
+  let rendererRetryTimer = null
+  let rendererLoadInProgress = false
+  const loadRenderer = () => {
+    if (window.isDestroyed() || rendererLoadInProgress) return
+    rendererLoadInProgress = true
+    const load = isDev
+      ? window.loadURL(rendererUrl)
+      : window.loadFile(path.join(projectRoot, 'dist', 'index.html'))
+    void Promise.resolve(load).catch((error) => {
+      console.error('[renderer] failed to load:', error)
+      scheduleRendererRetry()
+    }).finally(() => { rendererLoadInProgress = false })
+  }
+  const scheduleRendererRetry = () => {
+    if (!isDev || rendererRetryTimer !== null || window.isDestroyed()) return
+    rendererRetryTimer = setTimeoutImpl(() => {
+      rendererRetryTimer = null
+      loadRenderer()
+    }, 1000)
+  }
+  window.webContents.on('did-fail-load', (_event, code, description, validatedUrl, isMainFrame) => {
+    if (!isMainFrame || code === -3) return
+    console.warn(`[renderer] load failed (${code}: ${description}) for ${validatedUrl}`)
+    scheduleRendererRetry()
+  })
+  window.on('closed', () => {
+    if (rendererRetryTimer !== null) clearTimeoutImpl(rendererRetryTimer)
+  })
+  loadRenderer()
 
   let closeAllowed = false
   let closeInProgress = false

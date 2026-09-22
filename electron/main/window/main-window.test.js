@@ -96,3 +96,54 @@ test('main window owns construction, first display, and close persistence', asyn
     ['close'],
   ])
 })
+
+test('development window retries a failed main-frame load and cancels pending retry on close', async () => {
+  const webEvents = new Map()
+  const windowEvents = new Map()
+  const loads = []
+  const timers = []
+  class BrowserWindow {
+    constructor() {
+      this.webContents = {
+        on: (name, handler) => webEvents.set(name, handler),
+        once: (name, handler) => webEvents.set(name, handler),
+        setZoomFactor() {},
+      }
+    }
+    isDestroyed() { return false }
+    isVisible() { return false }
+    loadURL(url) { loads.push(url); return Promise.resolve() }
+    on(name, handler) { windowEvents.set(name, handler) }
+    once(name, handler) { windowEvents.set(name, handler) }
+    maximize() {}
+    show() {}
+  }
+  createMainWindow({
+    BrowserWindow,
+    dialog: {},
+    ipcMain: {},
+    appOptions: {},
+    projectRoot: 'D:\\project',
+    isDev: true,
+    rendererUrl: 'http://127.0.0.1:5173',
+    gameFileStore: {},
+    writeRecoveryGameRecord: async () => {},
+    t: (key) => key,
+    loadSettingsImpl: () => ({ window: { width: 1200, height: 800 } }),
+    setTimeoutImpl: (callback) => { timers.push(callback); return timers.length },
+    clearTimeoutImpl: (id) => { timers[id - 1] = null },
+  })
+
+  assert.equal(loads.length, 1)
+  webEvents.get('did-fail-load')(null, -105, 'ERR_NAME_NOT_RESOLVED', 'http://127.0.0.1:5173/', false)
+  assert.equal(timers.length, 0)
+  webEvents.get('did-fail-load')(null, -102, 'ERR_CONNECTION_REFUSED', 'http://127.0.0.1:5173/', true)
+  assert.equal(timers.length, 1)
+  await new Promise((resolve) => setImmediate(resolve))
+  timers[0]()
+  assert.equal(loads.length, 2)
+  webEvents.get('did-fail-load')(null, -102, 'ERR_CONNECTION_REFUSED', 'http://127.0.0.1:5173/', true)
+  assert.equal(timers.length, 2)
+  windowEvents.get('closed')()
+  assert.equal(timers[1], null)
+})
