@@ -374,6 +374,24 @@ class PlayPrefetchTest(unittest.TestCase):
         self.assertTrue(result["waiting"])
         self.assertEqual(game, before)
 
+    def test_terminal_draft_node_is_not_sent_to_opponent_engine(self):
+        game = service.STATE["game"]
+        draft_game = play_prefetch_runtime.create_draft(game)
+        context = self._install_context(draft_game)
+        node_id = draft_game["currentNodeId"]
+        node = draft_game["nodes"][node_id]
+        node["snapshot"]["phase"] = "game_end"
+        node["action"] = {"type": "hora", "actor": 0, "target": 0}
+        service.STATE["opponentAnalysisEnabled"] = True
+
+        with mock.patch.object(
+            service.OPPONENT_PREDICTIONS, "request_background_predict"
+        ) as request:
+            service.PLAY_PREFETCH._schedule_opponent(context, node_id)
+
+        request.assert_not_called()
+        self.assertNotIn(node_id, context["opponentPending"])
+
     def test_play_state_payload_skips_hidden_auto_analysis_timeline(self):
         with mock.patch.object(service.AUTO_ANALYSIS, "_ensure_timeline_locked") as ensure_timeline:
             payload = service.VIEW_BUILDER.build_state_payload(

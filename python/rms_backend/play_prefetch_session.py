@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .auto_analysis_plan import is_terminal_analysis_node
 from . import play_prefetch_runtime
 from .analysis_cache import (
     OPPONENT_ANALYSIS_CACHE_FIELD,
@@ -200,6 +201,9 @@ class PlayPrefetchSession:
 
     def _schedule_opponent(self, context, draft_node_id):
         if not self.state.get("opponentAnalysisEnabled"):
+            return
+        node = context["draftGame"].get("nodes", {}).get(draft_node_id)
+        if not isinstance(node, dict) or is_terminal_analysis_node(node):
             return
         with self.runtime.lock:
             if (

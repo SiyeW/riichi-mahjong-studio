@@ -159,6 +159,8 @@ class AutoAnalysisSession:
                 round_root_map,
             ):
                 node = game["nodes"][node_id]
+                if auto_analysis_plan.is_terminal_analysis_node(node):
+                    continue
                 snapshot = node.get("snapshot") or {}
                 self.dependencies.sync_snapshot(snapshot)
                 phase = snapshot.get("phase")

@@ -3,6 +3,17 @@ from collections import deque
 from .analysis_cache import OPPONENT_ANALYSIS_CACHE_FIELD
 
 
+def is_terminal_analysis_node(node):
+    """A resolved round has an outcome, not another predictive position."""
+    if not isinstance(node, dict):
+        return False
+    snapshot = node.get("snapshot") or {}
+    action = node.get("action") or {}
+    return snapshot.get("phase") == "game_end" or action.get("type") in {
+        "hora", "ryukyoku", "end_kyoku",
+    }
+
+
 def build_round_root_map(game):
     nodes = game.get("nodes", {})
     root_map = {}

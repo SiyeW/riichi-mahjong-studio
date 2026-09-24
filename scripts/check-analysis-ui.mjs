@@ -807,6 +807,26 @@ try {
   await target().hover()
   await tooltip.waitFor({ state: 'visible' })
 
+  // A resolved round has no next prediction: do not retain the previous chart.
+  const beforeTerminal = await readCount()
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    const previous = check.result()
+    check.vm.stageOpponentAnalysisForView({
+      status: 'terminal', context: previous.context,
+      predictions: {}, ground_truth: {},
+    })
+  })
+  await page.waitForFunction(() => window.analysisCheck.vm.displayedAnalysisTable === null)
+  assert.equal(await tooltip.count(), 0)
+  assert.equal(await page.evaluate(() => window.analysisCheck.vm.gameView.opponentAnalysis.status), 'terminal')
+  assert.equal(await readCount(), beforeTerminal, 'terminal result must not request a new prediction')
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    check.vm.stageOpponentAnalysisForView(check.result(), { withoutMotion: true })
+  })
+  await page.waitForFunction(() => window.analysisCheck.vm.displayedAnalysisTable !== null)
+
   // Navigation performs one new read and dismisses the previous position's hover.
   const beforeNavigation = await readCount()
   await page.evaluate(() => { window.analysisCheck.vm.gameView.currentNodeId = 'node-2' })

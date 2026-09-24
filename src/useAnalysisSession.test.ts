@@ -12,4 +12,5 @@ test('analysis session does not fabricate rows from empty payloads', () => {
   assert.equal(analysisResultHasRows(null), false)
   assert.equal(analysisResultHasRows({}), false)
   assert.equal(analysisResultHasRows({ outputs: {}, predictions: { opponents: {} } }), false)
+  assert.equal(analysisResultHasRows({ status: 'terminal', predictions: {}, ground_truth: {} }), false)
 })

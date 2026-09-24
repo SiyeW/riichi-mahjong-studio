@@ -152,6 +152,46 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         self.assertEqual(passive_kinds, ["opponent"])
 
+    def test_resolved_hora_node_has_no_new_prediction(self):
+        game = service.create_empty_game(222223)
+        start_id = game["currentNodeId"]
+        start_node = game["nodes"][start_id]
+        terminal_id = "n_terminal"
+        terminal_snapshot = copy.deepcopy(start_node["snapshot"])
+        terminal_snapshot["phase"] = "game_end"
+        start_node["children"] = [terminal_id]
+        start_node["mainChildId"] = terminal_id
+        game["nodes"][terminal_id] = {
+            "id": terminal_id, "type": "action", "parentId": start_id,
+            "children": [], "mainChildId": None,
+            "action": {"type": "hora", "actor": 0, "target": 0},
+            "snapshot": terminal_snapshot, "analysisCache": {},
+            "depth": int(start_node["depth"]) + 1,
+        }
+        items = service.AUTO_ANALYSIS.build_plan(
+            game, 0, service.ENGINE_MANAGEMENT.action_weight_path()
+        )
+        self.assertFalse(any(item["nodeId"] == terminal_id for item in items))
+        previous = (
+            service.STATE.get("game"), service.STATE.get("gameLoaded"),
+            service.STATE.get("opponentAnalysisEnabled"),
+        )
+        service.STATE.update({
+            "game": game, "gameLoaded": True,
+            "opponentAnalysisEnabled": True,
+        })
+        game["currentNodeId"] = terminal_id
+        try:
+            self.assertTrue(service.OPPONENT_ANALYSIS.current_context()["terminal"])
+            with mock.patch.object(
+                service.OPPONENT_PREDICTIONS, "request_predict"
+            ) as request:
+                self.assertFalse(service.OPPONENT_ANALYSIS.request_current())
+                request.assert_not_called()
+            self.assertEqual(service.OPPONENT_ANALYSIS.current()["status"], "terminal")
+        finally:
+            service.STATE["game"], service.STATE["gameLoaded"], service.STATE["opponentAnalysisEnabled"] = previous
+
     def test_unavailable_models_are_left_uncached_without_failures(self):
         game = service.create_empty_game(229944)
         service.STATE["game"] = game

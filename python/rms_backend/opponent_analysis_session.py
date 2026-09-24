@@ -6,6 +6,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Callable, MutableMapping, Optional
 
+from .auto_analysis_plan import is_terminal_analysis_node
 from .analysis_cache import (
     OPPONENT_ANALYSIS_CACHE_FIELD,
     attach_analysis_context,
@@ -72,6 +73,7 @@ class OpponentAnalysisSession:
         node_id = game.get("currentNodeId")
         if node_id not in game.get("nodes", {}):
             return None
+        terminal = is_terminal_analysis_node(game["nodes"][node_id])
         seat = int(self.state["controlledSeat"])
         input_mode = self.input_mode()
         return {
@@ -81,6 +83,7 @@ class OpponentAnalysisSession:
             "inputMode": input_mode,
             "cacheKey": self.cache_key(seat),
             "cacheEpoch": self.engine_management.opponent_cache_epoch,
+            "terminal": terminal,
         }
 
     def cache_result(self, result: Any, *, require_current: bool) -> bool:
@@ -110,6 +113,7 @@ class OpponentAnalysisSession:
         cache_key = str(context.get("cacheKey") or "")
         if (
             not isinstance(node, dict)
+            or is_terminal_analysis_node(node)
             or not cache_key
             or cache_key != self.cache_key(seat)
         ):
@@ -161,6 +165,8 @@ class OpponentAnalysisSession:
             context = self.current_context()
             if context is None:
                 return False
+            if context.get("terminal"):
+                return False
             self.predictions.set_latest_context(context)
             game = self.state["game"]
             node = game["nodes"][context["nodeId"]]
@@ -207,6 +213,11 @@ class OpponentAnalysisSession:
         context = self.current_context()
         if context is None:
             return {"status": "unavailable", "predictions": {}, "ground_truth": {}}
+        if context.get("terminal"):
+            return {
+                "status": "terminal", "predictions": {}, "ground_truth": {},
+                "context": context,
+            }
 
         latest = self.predictions.get_latest()
         latest_context = latest.get("context") if isinstance(latest, dict) else None

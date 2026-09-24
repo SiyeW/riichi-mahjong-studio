@@ -336,6 +336,10 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   ): boolean {
     if (!analysisResultMatchesCurrentPosition(result)) return false
     gameView.opponentAnalysis = result
+    if (result.status === 'terminal') {
+      clearOpponentAnalysisWithoutMotion()
+      return true
+    }
     const withoutMotion = Boolean(presentationOptions.withoutMotion)
     pendingAnalysisPresentation = {
       result,
@@ -355,6 +359,10 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     if (stageOptions.withoutMotion || stageOptions.resetDisplay) analysisPresentationNotBefore = 0
     else beginAnalysisPresentationWindow()
     gameView.opponentAnalysis = result || null
+    if (result?.status === 'terminal') {
+      clearOpponentAnalysisWithoutMotion()
+      return
+    }
     if (!result) {
       if (opponentAnalysisNeeded.value && gameView.table && !opponentAnalysisPermanentlyUnavailable.value) {
         beginOpponentAnalysisPending()
