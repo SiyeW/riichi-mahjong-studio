@@ -678,9 +678,11 @@ try {
     columns: getComputedStyle(element).gridTemplateColumns.split(' ').length,
     width: element.getBoundingClientRect().width,
     scrollWidth: element.scrollWidth,
+    clippedLabels: [...element.querySelectorAll('.engine-output-label')].filter(label => label.scrollWidth > label.clientWidth + 1).map(label => label.textContent),
   }))
   assert.ok(wideFilterLayout.columns > narrowFilterLayout.columns, 'widening the engine list fits more output filters on each row')
   assert.ok(wideFilterLayout.scrollWidth <= wideFilterLayout.width + 1, 'wide output filters do not overflow')
+  assert.deepEqual(wideFilterLayout.clippedLabels, [], 'wide engine list does not add columns until every output label fits')
   await engineBody.evaluate((element, previous) => element.style.setProperty('--engine-list-width', previous), priorListWidth)
   const engineWindowMetrics = await page.evaluate(() => {
     const windowElement = document.querySelector('.engine-window')

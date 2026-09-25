@@ -1,6 +1,6 @@
 <template>
   <div class="engine-profile-column">
-    <div class="engine-output-filters" :aria-label="t('engine.filterByOutput')">
+    <div ref="outputFiltersElement" class="engine-output-filters" :style="{ '--engine-filter-columns': filterColumns }" :aria-label="t('engine.filterByOutput')">
       <button
         v-for="output in outputs"
         :key="output.id"
@@ -47,7 +47,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   EngineOutputFilterItem,
   EngineProfileListItem,
@@ -73,6 +73,44 @@ const statusSurface = computed<PerceptualSurfaceBinding>(() => ({
   tuning: props.perceptualSurface.tuning,
   statusOnly: true,
 }))
+
+const outputFiltersElement = ref<HTMLElement | null>(null)
+const filterColumns = ref(3)
+let outputFilterResizeObserver: ResizeObserver | null = null
+
+function updateFilterColumns() {
+  const container = outputFiltersElement.value
+  if (!container) return
+  const buttons = [...container.querySelectorAll<HTMLElement>('.engine-output-filter')]
+  if (!buttons.length) return
+  const context = document.createElement('canvas').getContext('2d')
+  if (!context) return
+  const gap = Number.parseFloat(getComputedStyle(container).columnGap) || 0
+  const requiredWidth = Math.max(...buttons.map((button) => {
+    const label = button.querySelector<HTMLElement>('.engine-output-label')
+    if (!label) return 0
+    const buttonStyle = getComputedStyle(button)
+    const labelStyle = getComputedStyle(label)
+    context.font = labelStyle.font
+    const letterSpacing = Number.parseFloat(labelStyle.letterSpacing) || 0
+    return context.measureText(label.textContent || '').width
+      + letterSpacing * Math.max(0, (label.textContent || '').length - 1)
+      + Number.parseFloat(buttonStyle.paddingLeft)
+      + Number.parseFloat(buttonStyle.paddingRight)
+      + Number.parseFloat(buttonStyle.borderLeftWidth)
+      + Number.parseFloat(buttonStyle.borderRightWidth)
+      + 2
+  }))
+  filterColumns.value = Math.max(3, Math.min(buttons.length, Math.floor((container.clientWidth + gap) / (requiredWidth + gap))))
+}
+
+onMounted(() => {
+  outputFilterResizeObserver = new ResizeObserver(updateFilterColumns)
+  if (outputFiltersElement.value) outputFilterResizeObserver.observe(outputFiltersElement.value)
+  updateFilterColumns()
+})
+onBeforeUnmount(() => outputFilterResizeObserver?.disconnect())
+watch(() => props.outputs.map(output => output.label).join('\0'), () => nextTick(updateFilterColumns), { flush: 'post' })
 
 const emit = defineEmits<{
   add: []
@@ -118,7 +156,7 @@ function statusLabel(status: EngineLoadStatus): string {
 
 .engine-output-filters {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(calc(4rem * var(--floating-panel-scale)), 30%), 1fr));
+  grid-template-columns: repeat(var(--engine-filter-columns), minmax(0, 1fr));
   gap: calc(0.24rem * var(--floating-panel-scale));
   padding-bottom: calc(0.38rem * var(--floating-panel-scale));
   border-bottom: 1px solid var(--border-subtle);
