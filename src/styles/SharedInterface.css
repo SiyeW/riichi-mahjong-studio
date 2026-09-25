@@ -178,7 +178,7 @@
   margin: 0;
   border: 0;
   outline: 1px solid var(--border-strong);
-  overflow: auto;
+  overflow: visible;
   overflow-wrap: anywhere;
   white-space: normal;
   text-align: left;

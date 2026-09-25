@@ -629,6 +629,28 @@ try {
   if (process.env.RMS_ENGINE_OUTPUT_REVEAL_SCREENSHOT) {
     await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_OUTPUT_REVEAL_SCREENSHOT })
   }
+  const engineBody = page.locator('.engine-manager-body')
+  const priorListWidth = await engineBody.evaluate(element => element.style.getPropertyValue('--engine-list-width'))
+  await engineBody.evaluate(element => element.style.setProperty('--engine-list-width', '208px'))
+  const shantenOutput = page.locator('.engine-output-filter').nth(1)
+  assert.equal(await shantenOutput.locator('.engine-output-label').evaluate(element => element.scrollWidth > element.clientWidth), true, 'the narrow fixture clips the shanten filter label')
+  await shantenOutput.hover()
+  const shantenReveal = page.locator('.ui-hover-tooltip-portal.is-inline-reveal')
+  await shantenReveal.waitFor({ state: 'visible' })
+  const shortRevealGeometry = await shantenReveal.evaluate(element => ({
+    label: element.textContent,
+    width: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    height: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    overflow: getComputedStyle(element).overflow,
+  }))
+  assert.ok(shortRevealGeometry.scrollWidth <= shortRevealGeometry.width && shortRevealGeometry.scrollHeight <= shortRevealGeometry.height, `short inline reveal must not show native scrollbars: ${JSON.stringify(shortRevealGeometry)}`)
+  assert.equal(shortRevealGeometry.overflow, 'visible', 'inline text reveal never becomes a scroll container')
+  if (process.env.RMS_ENGINE_SHORT_REVEAL_SCREENSHOT) {
+    await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_SHORT_REVEAL_SCREENSHOT })
+  }
+  await engineBody.evaluate((element, previous) => element.style.setProperty('--engine-list-width', previous), priorListWidth)
   const engineWindowMetrics = await page.evaluate(() => {
     const windowElement = document.querySelector('.engine-window')
     const list = document.querySelector('.engine-profile-list')
