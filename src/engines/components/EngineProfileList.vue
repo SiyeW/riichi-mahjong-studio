@@ -9,6 +9,7 @@
         :data-status="output.status || undefined"
         :aria-label="output.status ? `${output.label} · ${statusLabel(output.status)}` : output.label"
         :aria-pressed="output.selected"
+        v-perceptual-surface="statusSurface"
         v-ui-tooltip="output.label"
         @click="emit('toggle-output', output.id)"
       >
@@ -25,6 +26,7 @@
         :data-status="profile.status"
         :aria-label="`${profile.name || t('common.unnamedEngine')} · ${statusLabel(profile.status)}`"
         :aria-pressed="profile.selected"
+        v-perceptual-surface="statusSurface"
         v-ui-tooltip="profile.name || t('common.unnamedEngine')"
         @click="emit('select', profile.id)"
       >
@@ -45,6 +47,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type {
   EngineOutputFilterItem,
   EngineProfileListItem,
@@ -52,8 +55,9 @@ import type {
 } from '../presentation.ts'
 import type { SupportedEngineOutputId } from '../useEngineCatalog.ts'
 import { useI18n } from '../../i18n.ts'
+import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../../perceptualSurface.ts'
 
-defineProps<{
+const props = defineProps<{
   canDelete: boolean
   canDuplicate: boolean
   canMoveDown: boolean
@@ -61,7 +65,14 @@ defineProps<{
   deleteConfirmation: boolean
   outputs: EngineOutputFilterItem[]
   profiles: EngineProfileListItem[]
+  perceptualSurface: PerceptualSurfaceBinding
 }>()
+
+const statusSurface = computed<PerceptualSurfaceBinding>(() => ({
+  palette: props.perceptualSurface.palette,
+  tuning: props.perceptualSurface.tuning,
+  statusOnly: true,
+}))
 
 const emit = defineEmits<{
   add: []

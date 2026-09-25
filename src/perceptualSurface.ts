@@ -24,6 +24,7 @@ export type PerceptualSurfaceTuning = Readonly<{
 export type PerceptualSurfaceBinding = Readonly<{
   palette: PerceptualColorPalette
   tuning: PerceptualSurfaceTuning
+  statusOnly?: boolean
   surfaceOverride?: RgbColor
   surfaceLayerVariables?: readonly string[]
   debugLabel?: string
@@ -39,16 +40,24 @@ export const DEFAULT_PERCEPTUAL_SURFACE_TUNING: PerceptualSurfaceTuning = Object
 // Keeping it as the transform's neutral point makes every tuning coefficient
 // leave that reference appearance unchanged.
 export const PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND: RgbColor = [18, 66, 75]
+export const ENGINE_STATUS_CALIBRATION_BACKGROUND: RgbColor = [2, 25, 30]
 
 // Keep load-state meaning independent of the selectable player color scheme.
 // Lit anchors match the shared status colors in styles.css; the unlit lamp is
 // deliberately darker so it does not compete with an active state.
 const STATUS_COLORS = {
-  unloaded: [70, 90, 91],
+  unloaded: [68, 90, 92],
   loaded: [76, 175, 80],
   loading: [242, 174, 61],
   error: [228, 91, 85],
 } as const satisfies Record<string, RgbColor>
+
+const ENGINE_STATUS_VARIABLES = [
+  '--engine-status-unloaded',
+  '--engine-status-loaded',
+  '--engine-status-loading',
+  '--engine-status-error',
+] as const
 
 const PERCEPTUAL_SURFACE_VARIABLES = [
   '--decision-recommendation-color',
@@ -65,19 +74,17 @@ const PERCEPTUAL_SURFACE_VARIABLES = [
   '--analysis-rank-2-color',
   '--analysis-rank-3-color',
   '--analysis-rank-4-color',
-  '--engine-status-unloaded',
-  '--engine-status-loaded',
-  '--engine-status-loading',
-  '--engine-status-error',
+  ...ENGINE_STATUS_VARIABLES,
 ] as const
 
 function surfaceAdjustedColor(
   color: RgbColor,
   surface: RgbColor,
   tuning: PerceptualSurfaceTuning,
+  calibrationSurface: RgbColor = PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
 ): RgbColor {
   const canonical = rgbToOklab(color)
-  const calibration = rgbToOklab(PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND)
+  const calibration = rgbToOklab(calibrationSurface)
   const background = rgbToOklab(surface)
   const lightnessDelta = calibration.l - background.l
   const aDelta = calibration.a - background.a
@@ -91,6 +98,18 @@ function surfaceAdjustedColor(
     a: adjustedA * chromaMultiplier,
     b: adjustedB * chromaMultiplier,
   })
+}
+
+export function engineStatusVariables(
+  surface: RgbColor,
+  tuning: PerceptualSurfaceTuning = DEFAULT_PERCEPTUAL_SURFACE_TUNING,
+): Record<(typeof ENGINE_STATUS_VARIABLES)[number], string> {
+  return {
+    '--engine-status-unloaded': rgbString(surfaceAdjustedColor(STATUS_COLORS.unloaded, surface, tuning, ENGINE_STATUS_CALIBRATION_BACKGROUND)),
+    '--engine-status-loaded': rgbString(surfaceAdjustedColor(STATUS_COLORS.loaded, surface, tuning, ENGINE_STATUS_CALIBRATION_BACKGROUND)),
+    '--engine-status-loading': rgbString(surfaceAdjustedColor(STATUS_COLORS.loading, surface, tuning, ENGINE_STATUS_CALIBRATION_BACKGROUND)),
+    '--engine-status-error': rgbString(surfaceAdjustedColor(STATUS_COLORS.error, surface, tuning, ENGINE_STATUS_CALIBRATION_BACKGROUND)),
+  }
 }
 
 export function perceptualSurfaceVariables(
@@ -119,10 +138,7 @@ export function perceptualSurfaceVariables(
     '--analysis-rank-2-color': rgbString(mixOklab(kamicha, placementFirst, 2 / 3)),
     '--analysis-rank-3-color': rgbString(mixOklab(kamicha, placementFirst, 1 / 3)),
     '--analysis-rank-4-color': rgbString(kamicha),
-    '--engine-status-unloaded': rgbString(surfaceAdjustedColor(STATUS_COLORS.unloaded, surface, tuning)),
-    '--engine-status-loaded': rgbString(surfaceAdjustedColor(STATUS_COLORS.loaded, surface, tuning)),
-    '--engine-status-loading': rgbString(surfaceAdjustedColor(STATUS_COLORS.loading, surface, tuning)),
-    '--engine-status-error': rgbString(surfaceAdjustedColor(STATUS_COLORS.error, surface, tuning)),
+    ...engineStatusVariables(surface, tuning),
   }
 }
 
@@ -187,14 +203,14 @@ function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceS
     element,
     state.binding.surfaceLayerVariables,
   )
-  const variables = perceptualSurfaceVariables(
-    state.binding.palette,
-    surface,
-    state.binding.tuning,
-  )
+  const variables: Partial<Record<(typeof PERCEPTUAL_SURFACE_VARIABLES)[number], string>> = state.binding.statusOnly
+    ? engineStatusVariables(surface, state.binding.tuning)
+    : perceptualSurfaceVariables(state.binding.palette, surface, state.binding.tuning)
+  const variableNames = state.binding.statusOnly ? ENGINE_STATUS_VARIABLES : PERCEPTUAL_SURFACE_VARIABLES
   let changed = false
-  for (const variable of PERCEPTUAL_SURFACE_VARIABLES) {
+  for (const variable of variableNames) {
     const value = variables[variable]
+    if (value === undefined) continue
     if (element.style.getPropertyValue(variable) === value) continue
     element.style.setProperty(variable, value)
     changed = true

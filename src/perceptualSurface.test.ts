@@ -3,6 +3,8 @@ import test from 'node:test'
 import {
   compositeBackgroundColors,
   DEFAULT_PERCEPTUAL_SURFACE_TUNING,
+  ENGINE_STATUS_CALIBRATION_BACKGROUND,
+  engineStatusVariables,
   PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
   perceptualSurfaceVariables,
   type PerceptualColorPalette,
@@ -55,11 +57,15 @@ test('calibration surface reproduces canonical analysis colors', () => {
   assert.equal(variables['--ron-toimen-color'], 'rgb(211 154 58)')
   assert.equal(variables['--ron-shimocha-color'], 'rgb(76 175 80)')
   assert.equal(variables['--analysis-self-deal-in-color'], 'rgb(201 85 77)')
+})
+
+test('engine lamps reproduce their approved colors on the dark reference surface', () => {
+  const variables = engineStatusVariables(ENGINE_STATUS_CALIBRATION_BACKGROUND)
   assert.equal(variables['--engine-status-loaded'], 'rgb(76 175 80)')
   assert.equal(variables['--engine-status-loading'], 'rgb(242 174 61)')
   assert.equal(variables['--engine-status-error'], 'rgb(228 91 85)')
-  assert.equal(variables['--engine-status-unloaded'], 'rgb(70 90 91)')
-  const unlitLightness = rgbToOklab([70, 90, 91]).l
+  assert.equal(variables['--engine-status-unloaded'], 'rgb(68 90 92)')
+  const unlitLightness = rgbToOklab([68, 90, 92]).l
   for (const status of ['loaded', 'loading', 'error'] as const) {
     const lit = parseCssColor(variables[`--engine-status-${status}`], [0, 0, 0])
     assert.ok(rgbToOklab(lit).l > unlitLightness)
@@ -67,10 +73,11 @@ test('calibration surface reproduces canonical analysis colors', () => {
 })
 
 test('engine load-state colors adapt to the local surface without changing semantic hues', () => {
-  const variables = perceptualSurfaceVariables(palette, [9, 72, 85])
+  const variables = engineStatusVariables([9, 72, 85])
   assert.notEqual(variables['--engine-status-loaded'], 'rgb(76 175 80)')
   assert.notEqual(variables['--engine-status-loading'], 'rgb(242 174 61)')
   assert.notEqual(variables['--engine-status-error'], 'rgb(228 91 85)')
+  assert.notEqual(variables['--engine-status-unloaded'], 'rgb(68 90 92)')
   const loaded = parseCssColor(variables['--engine-status-loaded'], [0, 0, 0])
   assert.ok(loaded[1] > loaded[0] && loaded[1] > loaded[2])
 })

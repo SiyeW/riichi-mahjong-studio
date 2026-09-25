@@ -27,6 +27,7 @@
         :delete-confirmation="deleteConfirmation"
         :outputs="outputs"
         :profiles="profiles"
+        :perceptual-surface="perceptualSurface"
         @add="emit('add')"
         @delete="emit('delete')"
         @duplicate="emit('duplicate')"

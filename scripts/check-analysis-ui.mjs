@@ -548,6 +548,19 @@ try {
     assert.equal(item.indicators[2].color, item.indicators[3].color, 'loading and unloading use the same transition color')
     assert.ok(item.indicators.every(indicator => indicator.width === indicator.height), 'status lamps stay circular')
   }
+  await page.waitForFunction(() => [...document.querySelectorAll('.engine-profile-item')].slice(0, 2)
+    .every(item => item.dataset.perceptualSurfaceColor))
+  const engineLampSurfaces = await page.locator('.engine-profile-item').evaluateAll(items => items.slice(0, 2).map(item => ({
+    surface: item.dataset.perceptualSurfaceColor,
+    unloaded: getComputedStyle(item).getPropertyValue('--engine-status-unloaded').trim(),
+    lamp: getComputedStyle(item, '::after').backgroundColor,
+  })))
+  assert.notEqual(engineLampSurfaces[0].surface, engineLampSurfaces[1].surface, 'selected and unselected lamps measure their own rendered backgrounds')
+  assert.notEqual(engineLampSurfaces[0].unloaded, engineLampSurfaces[1].unloaded, 'unlit lamp color is compensated for each local background')
+  assert.equal(engineLampSurfaces[1].lamp, engineLampSurfaces[1].unloaded.replaceAll(' ', ', '), 'the inactive lamp uses its local status variable')
+  if (process.env.RMS_ENGINE_LAMP_SCREENSHOT) {
+    await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_LAMP_SCREENSHOT })
+  }
   const engineCheckboxStyles = await page.locator('.engine-output-assignment').first().evaluate(item => {
     const control = item.querySelector('.settings-checkbox-control')
     const label = item.querySelector('.settings-checkbox-label')
