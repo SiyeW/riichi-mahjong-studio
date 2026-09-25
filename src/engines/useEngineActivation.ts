@@ -18,6 +18,7 @@ export function createEngineActivationState() {
     loadingProfileId: ref(''),
     unloadingProfileId: ref(''),
     loadErrors: reactive<Record<string, string>>({}),
+    unloadErrors: reactive<Record<string, string>>({}),
   }
 }
 
@@ -27,7 +28,6 @@ interface EngineActivationOptions {
   settingsDraft: StudioSettings
   status: StudioStatus
   profiles: Readonly<Ref<EngineProfile[]>>
-  activeProfile: Readonly<Ref<EngineProfile | null>>
   opponentOutputIds: readonly string[]
   draft: EngineSettingsDraft
   t: Translate
@@ -74,6 +74,7 @@ export function useEngineActivation(
 
   function profileConfigurationLocked(profile: EngineProfile): boolean {
     return profileIsLoaded(profile) || profileIsLoading(profile)
+      || state.unloadingProfileId.value === profile.id
   }
 
   function outputRuntimeKind(outputId: SupportedEngineOutputId): EngineRuntimeKind {
@@ -106,7 +107,8 @@ export function useEngineActivation(
     return Boolean(runtimeState && !runtimeState.ready && !runtimeState.unloaded)
   }
 
-  function profileStatus(profile: EngineProfile): 'loaded' | 'loading' | 'error' | 'unloaded' {
+  function profileStatus(profile: EngineProfile): 'loaded' | 'loading' | 'unloading' | 'error' | 'unloaded' {
+    if (state.unloadingProfileId.value === profile.id) return 'unloading'
     const runtimeGroups = runtime.profileRuntimeKinds(profile)
     if (state.loadErrors[profile.id] || runtimeGroups.some((kind) => (
       runtime.profileMatchesRuntime(profile, kind)
@@ -114,19 +116,6 @@ export function useEngineActivation(
     ))) return 'error'
     if (profileIsLoading(profile)) return 'loading'
     return profileIsLoaded(profile) ? 'loaded' : 'unloaded'
-  }
-
-  function profileSubtitle(profile: EngineProfile): string {
-    // The state alone cannot tell two builds of one engine apart, which is the
-    // first thing to know when a profile stops loading after a rebuild.
-    const version = String(profile.engineVersion || '').trim()
-    const withVersion = (state: string) => (version ? `${state} · ${version}` : state)
-    const status = profileStatus(profile)
-    if (status === 'error') return withVersion(options.t('engine.status.failed'))
-    if (status === 'loading') return withVersion(options.t('engine.status.loading'))
-    if (status === 'loaded') return withVersion(options.t('engine.status.loaded'))
-    if (!runtime.profileRuntimeKinds(profile).some((kind) => runtime.profileMatchesRuntime(profile, kind))) return version
-    return withVersion(options.t('engine.status.notLoaded'))
   }
 
   function profileError(profile: EngineProfile | null): string {
@@ -138,7 +127,7 @@ export function useEngineActivation(
       : ''
   }
 
-  function shouldShowActionButton(profile: EngineProfile): boolean {
+  function canActivateProfile(profile: EngineProfile): boolean {
     const outputIds = options.loadOutputs(profile)
     return profileIsLoaded(profile)
       || (!profileIsLoading(profile)
@@ -154,6 +143,7 @@ export function useEngineActivation(
     state.loadingProfileId.value = profileId
     options.draft.message.value = ''
     delete state.loadErrors[profileId]
+    delete state.unloadErrors[profileId]
     try {
       options.assignOutputsForLoading(profile)
       if (!await options.draft.flush()) return
@@ -192,10 +182,11 @@ export function useEngineActivation(
   async function unload(profileId: string) {
     const bridge = options.bridge()
     if (!bridge?.unloadEngine || state.loadingProfileId.value || state.unloadingProfileId.value) return
-    const profile = options.activeProfile.value
-    if (profile?.id !== profileId || !profileIsLoaded(profile)) return
+    const profile = options.profiles.value.find((item) => item.id === profileId)
+    if (!profile || !profileIsLoaded(profile)) return
     state.unloadingProfileId.value = profileId
     options.draft.message.value = ''
+    delete state.unloadErrors[profileId]
     try {
       if (!await options.draft.flush()) return
       const unloadRevision = options.draft.currentRevision()
@@ -212,8 +203,9 @@ export function useEngineActivation(
       }
       options.draft.message.value = options.t('engine.unloaded')
     } catch (error) {
+      state.unloadErrors[profileId] = error instanceof Error ? error.message : String(error)
       options.draft.message.value = options.t('engine.unloadFailed', {
-        message: error instanceof Error ? error.message : String(error),
+        message: state.unloadErrors[profileId],
       })
     } finally {
       state.unloadingProfileId.value = ''
@@ -251,8 +243,7 @@ export function useEngineActivation(
     profileError,
     profileIsLoaded,
     profileIsLoading,
-    profileSubtitle,
-    shouldShowActionButton,
+    canActivateProfile,
     statusItems,
     unload,
   }

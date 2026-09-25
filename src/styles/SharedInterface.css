@@ -168,7 +168,7 @@
 
 .ui-hover-tooltip-portal {
   position: fixed;
-  z-index: 100;
+  z-index: 10000;
 }
 
 .ui-hover-tooltip > strong {

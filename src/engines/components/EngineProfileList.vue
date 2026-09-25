@@ -9,32 +9,28 @@
         :data-status="output.status || undefined"
         :aria-label="output.status ? `${output.label} · ${statusLabel(output.status)}` : output.label"
         :aria-pressed="output.selected"
+        v-ui-tooltip="output.label"
         @click="emit('toggle-output', output.id)"
       >
         {{ output.label }}
       </button>
     </div>
     <div class="engine-profile-list">
-      <div
+      <button
         v-for="profile in profiles"
         :key="profile.id"
+        type="button"
         class="engine-profile-item"
         :class="{ selected: profile.selected }"
         :data-status="profile.status"
+        :aria-label="`${profile.name || t('common.unnamedEngine')} · ${statusLabel(profile.status)}`"
+        :aria-pressed="profile.selected"
+        v-ui-tooltip="profile.name || t('common.unnamedEngine')"
         @click="emit('select', profile.id)"
       >
         <span>{{ profile.name || t('common.unnamedEngine') }}</span>
-        <small>{{ profile.subtitle }}</small>
-        <button
-          v-if="profile.showAction"
-          class="engine-load-button"
-          :class="{ unload: profile.loaded }"
-          :disabled="busy"
-          @click.stop="emit('action', profile.id)"
-        >
-          {{ profile.loaded ? t('engine.unload') : t('engine.load') }}
-        </button>
-      </div>
+        <small v-if="profile.subtitle">{{ profile.subtitle }}</small>
+      </button>
     </div>
     <div class="engine-list-actions">
       <button :disabled="!canMoveUp" @click="emit('move', -1)">{{ t('engine.moveUp') }}</button>
@@ -58,7 +54,6 @@ import type { SupportedEngineOutputId } from '../useEngineCatalog.ts'
 import { useI18n } from '../../i18n.ts'
 
 defineProps<{
-  busy: boolean
   canDelete: boolean
   canDuplicate: boolean
   canMoveDown: boolean
@@ -69,7 +64,6 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{
-  action: [profileId: string]
   add: []
   delete: []
   duplicate: []
@@ -81,6 +75,7 @@ const { t } = useI18n()
 const statusTranslationKeys: Record<EngineLoadStatus, string> = {
   loaded: 'engine.status.loaded',
   loading: 'engine.status.loading',
+  unloading: 'engine.status.unloading',
   error: 'engine.status.failed',
   unloaded: 'engine.status.notLoaded',
 }
@@ -154,7 +149,9 @@ function statusLabel(status: EngineLoadStatus): string {
 }
 
 .engine-output-filter[data-status='loading']::after,
-.engine-profile-item[data-status='loading']::after {
+.engine-output-filter[data-status='unloading']::after,
+.engine-profile-item[data-status='loading']::after,
+.engine-profile-item[data-status='unloading']::after {
   background: var(--engine-status-loading);
 }
 
@@ -192,9 +189,10 @@ function statusLabel(status: EngineLoadStatus): string {
   --engine-indicator-size: calc(0.38rem * var(--floating-panel-scale));
   --engine-indicator-offset: calc(0.4rem * var(--floating-panel-scale));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: calc(0.12rem * var(--floating-panel-scale));
   width: 100%;
+  min-height: calc(3.2rem * var(--floating-panel-scale));
   padding:
     calc(0.48rem * var(--floating-panel-scale))
     calc(0.58rem * var(--floating-panel-scale))
@@ -224,8 +222,13 @@ function statusLabel(status: EngineLoadStatus): string {
 }
 
 .engine-profile-item > span {
-  padding-right: calc(0.55rem * var(--floating-panel-scale));
+  min-width: 0;
+  overflow: hidden;
+  padding-block: 0.08em;
   font-size: var(--ui-text-body);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .engine-profile-item small {
@@ -247,30 +250,6 @@ function statusLabel(status: EngineLoadStatus): string {
 .engine-output-filter.selected,
 .engine-profile-item.selected {
   border-color: var(--engine-state-border);
-}
-
-.engine-load-button {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: center;
-  padding: calc(0.24rem * var(--floating-panel-scale)) calc(0.48rem * var(--floating-panel-scale));
-  border: 1px solid rgba(226, 244, 239, 0.32);
-  border-radius: calc(2px * var(--floating-panel-scale));
-  color: var(--text-main);
-  background: rgba(30, 116, 78, 0.92);
-  font-size: var(--ui-text-caption);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.engine-load-button.unload {
-  background: rgba(88, 105, 105, 0.92);
-}
-
-.engine-profile-item:hover .engine-load-button,
-.engine-load-button:focus-visible {
-  opacity: 1;
 }
 
 .engine-list-actions {

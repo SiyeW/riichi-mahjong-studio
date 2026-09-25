@@ -96,7 +96,7 @@ try {
   await page.addInitScript(() => {
     window.setupRmsAnalysisTest = vm => {
       window.analysisCheck = {
-        vm, reads: 0, epoch: 0, wallReads: 0, runtimeMetricReads: 0, settingsSaves: [],
+        vm, reads: 0, epoch: 0, wallReads: 0, runtimeMetricReads: 0, settingsSaves: [], engineDescribes: [],
         result(expectedValue = 1) {
           return {
             status: 'ready',
@@ -256,19 +256,30 @@ try {
         },
         setAnalysisVisibility: async () => ({ state: JSON.parse(JSON.stringify(vm.status)) }),
         saveSettings: async settings => { check.settingsSaves.push(JSON.parse(JSON.stringify(settings))); return settings },
-        describeEngine: async request => ({
-          protocol: { name: 'riichi-engine-protocol', major: 2, minor: 2 },
-          engine: { id: request.engineId || 'ui-test-engine', name: 'UI Test Engine', version: request.engineVersion || '1.0.0' },
-          outputContracts: [{ id: 'opponent-shanten', methods: ['analysis.get'] }],
-          weightSlots: [],
-          devices: [{ type: 'cpu', title: 'CPU' }],
-          optionsSchema: {
-            type: 'object',
-            properties: {
-              sampleCount: { type: 'integer', minimum: 0, maximum: 4, default: 2 },
+        describeEngine: async request => {
+          check.engineDescribes.push(request.enginePath)
+          if (request.enginePath.endsWith('engine-0.exe') && !check.firstEngineDescribeReleased) {
+            await new Promise(resolve => {
+              check.releaseFirstDescribe = () => {
+                check.firstEngineDescribeReleased = true
+                resolve()
+              }
+            })
+          }
+          return {
+            protocol: { name: 'riichi-engine-protocol', major: 2, minor: 2 },
+            engine: { id: request.engineId || 'ui-test-engine', name: 'UI Test Engine', version: request.engineVersion || '1.0.0' },
+            outputContracts: [{ id: 'opponent-shanten', methods: ['analysis.get'] }],
+            weightSlots: [],
+            devices: [{ type: 'cpu', title: 'CPU' }],
+            optionsSchema: {
+              type: 'object',
+              properties: {
+                sampleCount: { type: 'integer', minimum: 0, maximum: 4, default: 2 },
+              },
             },
-          },
-        }),
+          }
+        },
         toggleVisibleHands: async () => ({ ...JSON.parse(JSON.stringify(vm.status)), visibleHands: !vm.status.visibleHands }),
         getGameView: async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: JSON.parse(JSON.stringify(vm.gameView)) }),
         clearAnalysisCaches: async () => {
@@ -484,16 +495,25 @@ try {
     const vm = window.analysisCheck.vm
     vm.settings.engines.profiles = Array.from({ length: 14 }, (_, index) => ({
       id: index === 0 ? 'profile.ui-test' : `profile.ui-test-${index}`,
-      name: index === 0 ? 'UI Test Engine' : `Additional UI Test Engine ${index}`,
+      name: index === 0 ? 'UI Test Engine' : `Additional UI Test Engine ${index} with a long descriptive name`,
       engineId: 'ui-test-engine', engineVersion: '1.0.0',
-      enginePath: 'C:\\ui-test\\engine.exe', engineCommand: ['C:\\ui-test\\engine.exe'], engineCwd: '',
+      enginePath: `C:\\ui-test\\engine-${index}.exe`, engineCommand: [`C:\\ui-test\\engine-${index}.exe`], engineCwd: '',
       builtIn: false, available: true, autoName: false, weights: [], device: 'cpu', options: { sampleCount: 2 },
     }))
     vm.settings.engines.outputAssignments['opponent-shanten'] = 'profile.ui-test'
     vm.openEngineWindow()
   })
   await page.locator('.engine-window').waitFor()
+  await page.locator('.engine-profile-item').nth(9).click()
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.showEngineWindow), true)
+  await page.waitForFunction(() => window.analysisCheck.engineDescribes.length >= 2)
+  assert.deepEqual(
+    await page.evaluate(() => window.analysisCheck.engineDescribes.slice(0, 2).map(path => path.match(/engine-(\d+)\.exe$/)?.[1])),
+    ['0', '9'],
+    'the selected engine is described ahead of the background queue',
+  )
+  await page.evaluate(() => window.analysisCheck.releaseFirstDescribe())
+  await page.locator('.engine-profile-item').first().click()
   const engineStateStyles = await page.evaluate(() => {
     const selectors = ['.engine-profile-item', '.engine-output-filter[data-status]']
     return selectors.map((selector) => {
@@ -501,7 +521,7 @@ try {
       if (!(item instanceof HTMLElement)) throw new Error(`Missing engine state item: ${selector}`)
       const originalStatus = item.getAttribute('data-status')
       const originallySelected = item.classList.contains('selected')
-      const states = ['unloaded', 'loaded', 'loading', 'error']
+      const states = ['unloaded', 'loaded', 'loading', 'unloading', 'error']
       const backgrounds = []
       const selectedBackgrounds = []
       const indicators = []
@@ -524,7 +544,8 @@ try {
     assert.equal(new Set(item.backgrounds).size, 1, 'load state does not recolor an unselected engine item')
     assert.equal(new Set(item.selectedBackgrounds).size, 1, 'load state does not recolor a selected engine item')
     assert.notEqual(item.backgrounds[0], item.selectedBackgrounds[0], 'selection changes the item background')
-    assert.equal(new Set(item.indicators.map(indicator => indicator.color)).size, 4, 'status lamps distinguish all four states')
+    assert.equal(new Set(item.indicators.map(indicator => indicator.color)).size, 4, 'unloading shares the yellow transition lamp')
+    assert.equal(item.indicators[2].color, item.indicators[3].color, 'loading and unloading use the same transition color')
     assert.ok(item.indicators.every(indicator => indicator.width === indicator.height), 'status lamps stay circular')
   }
   const engineCheckboxStyles = await page.locator('.engine-output-assignment').first().evaluate(item => {
@@ -538,6 +559,26 @@ try {
   })
   assert.ok(Math.abs(engineCheckboxStyles.controlWidth - analysisMenuStyles.controlWidth) < 0.01, 'analysis menu and engine assignment reuse one checkbox size')
   assert.ok(engineCheckboxStyles.labelFontSize < analysisMenuStyles.labelFontSize, 'shared checkbox structure preserves context-specific text hierarchy')
+  assert.equal(await page.locator('.engine-profile-item .engine-load-button').count(), 0, 'list items do not hide a layout-shifting action')
+  assert.equal(await page.locator('.engine-profile-action-button').count(), 1, 'the selected engine has one persistent detail action')
+  const actionColors = await page.locator('.engine-profile-action-button').evaluate(button => ({
+    background: getComputedStyle(button).backgroundColor,
+    text: getComputedStyle(button).color,
+    fieldBackground: getComputedStyle(document.querySelector('.engine-profile-detail input[type="text"]')).backgroundColor,
+  }))
+  assert.notEqual(actionColors.background, actionColors.fieldBackground, 'the action button does not use the light input surface with light text')
+  const longName = page.locator('.engine-profile-item').nth(9)
+  const nameBeforeHover = await longName.locator('span').boundingBox()
+  await longName.hover()
+  await page.locator('.ui-hover-tooltip-portal').waitFor()
+  assert.match(await page.locator('.ui-hover-tooltip-portal').textContent(), /long descriptive name/)
+  const nameAfterHover = await longName.locator('span').boundingBox()
+  assert.equal(nameAfterHover.width, nameBeforeHover.width, 'hovering a long name does not change its width')
+  assert.equal(nameAfterHover.height, nameBeforeHover.height, 'hovering a long name does not change its line count')
+  const doraOutput = page.locator('.engine-output-filter').nth(5)
+  const fullDoraLabel = (await doraOutput.textContent()).trim()
+  await doraOutput.hover()
+  assert.equal(await page.locator('.ui-hover-tooltip-portal').textContent(), fullDoraLabel, 'truncated output labels have a full hover label')
   const engineWindowMetrics = await page.evaluate(() => {
     const windowElement = document.querySelector('.engine-window')
     const list = document.querySelector('.engine-profile-list')
@@ -564,6 +605,28 @@ try {
   assert.ok(engineWindowMetrics.listScrollTop > 0, 'the engine profile list can be scrolled')
   assert.equal(engineWindowMetrics.listOverflowY, 'auto', 'the engine profile list owns its vertical scrollbar')
   assert.equal(engineWindowMetrics.detailOverflowY, 'auto', 'engine details retain their independent vertical scrollbar')
+  await page.locator('.engine-window').evaluate(element => {
+    element.style.left = '100px'
+    element.style.top = '50px'
+    element.style.right = 'auto'
+  })
+  const windowBeforeResize = await page.locator('.engine-window').boundingBox()
+  const corner = await page.locator('.engine-window-resizer').boundingBox()
+  await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(corner.x + corner.width / 2 + 55, corner.y + corner.height / 2 + 40)
+  await page.mouse.up()
+  const windowAfterResize = await page.locator('.engine-window').boundingBox()
+  assert.ok(windowAfterResize.width >= windowBeforeResize.width + 45, 'corner drag grows the window width')
+  assert.ok(windowAfterResize.height >= windowBeforeResize.height + 30, 'corner drag grows the window height')
+  const columnBeforeResize = await page.locator('.engine-profile-column').boundingBox()
+  const divider = await page.locator('.engine-column-resizer').boundingBox()
+  await page.mouse.move(divider.x + divider.width / 2, divider.y + divider.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(divider.x + divider.width / 2 + 36, divider.y + divider.height / 2)
+  await page.mouse.up()
+  const columnAfterResize = await page.locator('.engine-profile-column').boundingBox()
+  assert.ok(columnAfterResize.width >= columnBeforeResize.width + 25, 'divider drag reallocates width to the engine list')
   if (process.env.RMS_ENGINE_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_ENGINE_UI_CHECK_SCREENSHOT })
   }
@@ -578,6 +641,17 @@ try {
     save.engines?.profiles?.[0]?.name === 'Renamed UI Test Engine'
   )))
   assert.equal(await page.locator('.engine-window').count(), 0, 'engine profile owner closes and flushes its editor')
+  const firstEngineReads = await page.evaluate(() => window.analysisCheck.engineDescribes.filter(path => path.endsWith('engine-0.exe')).length)
+  await page.evaluate(() => window.analysisCheck.vm.openEngineWindow())
+  const restoredWindow = await page.locator('.engine-window').boundingBox()
+  assert.ok(Math.abs(restoredWindow.width - windowAfterResize.width) <= 2, 'window width survives reopening')
+  assert.ok(Math.abs(restoredWindow.height - windowAfterResize.height) <= 2, 'window height survives reopening')
+  assert.equal(
+    await page.evaluate(() => window.analysisCheck.engineDescribes.filter(path => path.endsWith('engine-0.exe')).length),
+    firstEngineReads,
+    'reopening uses the cached selected-engine description',
+  )
+  await page.evaluate(() => window.analysisCheck.vm.closeEngineWindow())
   assert.equal(
     await page.locator('.auto-analysis-progress small').evaluate(element => getComputedStyle(element).opacity),
     '1',

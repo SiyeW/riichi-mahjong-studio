@@ -1,6 +1,6 @@
 import type { SupportedEngineOutputId } from './useEngineCatalog.ts'
 
-export type EngineLoadStatus = 'loaded' | 'loading' | 'error' | 'unloaded'
+export type EngineLoadStatus = 'loaded' | 'loading' | 'unloading' | 'error' | 'unloaded'
 
 export interface EngineOutputFilterItem {
   id: SupportedEngineOutputId
@@ -15,12 +15,14 @@ export interface EngineProfileListItem {
   subtitle: string
   selected: boolean
   status: EngineLoadStatus
-  showAction: boolean
-  loaded: boolean
 }
 
 export interface EngineProfileDetailView {
   id: string
+  status: EngineLoadStatus
+  canActivate: boolean
+  actionError: string
+  actionHint: string
   name: string
   suggestedName: string
   locked: boolean
