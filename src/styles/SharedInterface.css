@@ -171,6 +171,19 @@
   z-index: 10000;
 }
 
+.ui-hover-tooltip-portal.is-inline-reveal {
+  display: block;
+  box-sizing: border-box;
+  width: max-content;
+  margin: 0;
+  border: 0;
+  outline: 1px solid var(--border-strong);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: left;
+}
+
 .ui-hover-tooltip > strong {
   color: var(--text-main);
   font-size: var(--ui-text-body);

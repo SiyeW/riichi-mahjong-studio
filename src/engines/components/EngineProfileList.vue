@@ -10,10 +10,10 @@
         :aria-label="output.status ? `${output.label} · ${statusLabel(output.status)}` : output.label"
         :aria-pressed="output.selected"
         v-perceptual-surface="statusSurface"
-        v-ui-tooltip="output.label"
+        v-ui-tooltip="{ text: output.label, revealTarget: '.engine-output-label' }"
         @click="emit('toggle-output', output.id)"
       >
-        {{ output.label }}
+        <span class="engine-output-label">{{ output.label }}</span>
       </button>
     </div>
     <div class="engine-profile-list">
@@ -27,10 +27,10 @@
         :aria-label="`${profile.name || t('common.unnamedEngine')} · ${statusLabel(profile.status)}`"
         :aria-pressed="profile.selected"
         v-perceptual-surface="statusSurface"
-        v-ui-tooltip="profile.name || t('common.unnamedEngine')"
+        v-ui-tooltip="{ text: profile.name || t('common.unnamedEngine'), revealTarget: '.engine-profile-name' }"
         @click="emit('select', profile.id)"
       >
-        <span>{{ profile.name || t('common.unnamedEngine') }}</span>
+        <span class="engine-profile-name">{{ profile.name || t('common.unnamedEngine') }}</span>
         <small v-if="profile.subtitle">{{ profile.subtitle }}</small>
       </button>
     </div>
@@ -140,6 +140,14 @@ function statusLabel(status: EngineLoadStatus): string {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.engine-output-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .engine-output-filter[data-status]::after,

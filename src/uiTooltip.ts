@@ -1,6 +1,11 @@
 import type { Directive, DirectiveBinding } from 'vue'
+import { rgbString } from './perceptualColor.ts'
+import { effectiveBackgroundColor } from './perceptualSurface.ts'
 
-type TooltipValue = string | null | undefined | false
+type TooltipValue = string | null | undefined | false | Readonly<{
+  text: string
+  revealTarget: string
+}>
 
 type TooltipState = {
   value: TooltipValue
@@ -20,7 +25,13 @@ const states = new WeakMap<HTMLElement, TooltipState>()
 let tooltipSequence = 0
 
 function tooltipText(value: TooltipValue): string {
-  return typeof value === 'string' ? value.trim() : ''
+  return (typeof value === 'string' ? value : value && value.text ? value.text : '').trim()
+}
+
+function revealTarget(element: HTMLElement, value: TooltipValue): HTMLElement | null {
+  if (!value || typeof value !== 'object') return null
+  const target = element.querySelector(value.revealTarget)
+  return target instanceof HTMLElement ? target : null
 }
 
 function removeTooltip(state: TooltipState) {
@@ -35,6 +46,35 @@ function removeTooltip(state: TooltipState) {
 function positionTooltip(element: HTMLElement, state: TooltipState) {
   const tooltip = state.tooltip
   if (!tooltip) return
+  const target = revealTarget(element, state.value)
+  if (target) {
+    const anchor = target.getBoundingClientRect()
+    const style = getComputedStyle(target)
+    tooltip.classList.add('is-inline-reveal')
+    tooltip.style.left = `${anchor.left}px`
+    tooltip.style.top = `${anchor.top}px`
+    tooltip.style.minWidth = `${anchor.width}px`
+    tooltip.style.maxWidth = `${Math.max(anchor.width, window.innerWidth - anchor.left - 8)}px`
+    tooltip.style.maxHeight = `${Math.max(anchor.height, window.innerHeight - anchor.top - 8)}px`
+    tooltip.style.font = style.font
+    tooltip.style.lineHeight = style.lineHeight
+    tooltip.style.letterSpacing = style.letterSpacing
+    tooltip.style.padding = style.padding
+    tooltip.style.color = style.color
+    tooltip.style.backgroundColor = rgbString(effectiveBackgroundColor(element))
+    tooltip.style.visibility = 'visible'
+    return
+  }
+  tooltip.classList.remove('is-inline-reveal')
+  tooltip.style.minWidth = ''
+  tooltip.style.maxWidth = ''
+  tooltip.style.maxHeight = ''
+  tooltip.style.font = ''
+  tooltip.style.lineHeight = ''
+  tooltip.style.letterSpacing = ''
+  tooltip.style.padding = ''
+  tooltip.style.color = ''
+  tooltip.style.backgroundColor = ''
   const anchor = element.getBoundingClientRect()
   const width = tooltip.offsetWidth
   const height = tooltip.offsetHeight
@@ -65,7 +105,9 @@ function schedulePosition(element: HTMLElement, state: TooltipState) {
 
 function showTooltip(element: HTMLElement, state: TooltipState) {
   const text = tooltipText(state.value)
-  if (!text) {
+  const target = revealTarget(element, state.value)
+  if (!text || (typeof state.value === 'object' && state.value && !target)
+    || (target && target.scrollWidth <= target.clientWidth)) {
     removeTooltip(state)
     return
   }
@@ -112,7 +154,7 @@ function mountTooltip(element: HTMLElement, binding: DirectiveBinding<TooltipVal
       state.keyboardFocusInside = false
       if (!state.pointerInside) removeTooltip(state)
     },
-    onViewportChange: () => schedulePosition(element, state),
+    onViewportChange: () => showTooltip(element, state),
   }
   element.addEventListener('pointerenter', state.onPointerEnter)
   element.addEventListener('pointerleave', state.onPointerLeave)
