@@ -39,7 +39,7 @@
       <div v-if="detail" class="engine-profile-detail-column">
         <div class="engine-profile-action">
           <button
-            class="engine-profile-action-button"
+            class="ui-control-button engine-profile-action-button"
             :disabled="busy || detail.status === 'loading' || detail.status === 'unloading' || !detail.canActivate"
             @click="emit('action', detail.id)"
           >{{ actionLabel(detail) }}</button>
@@ -287,21 +287,6 @@ function startWindowResize(event: PointerEvent) {
 .engine-profile-action-button {
   width: 100%;
   height: calc(2.3rem * var(--floating-panel-scale));
-  border: 1px solid var(--border-strong);
-  border-radius: calc(2px * var(--floating-panel-scale));
-  color: var(--text-main);
-  background: var(--surface-control);
-  font-size: var(--ui-text-body);
-  cursor: pointer;
-}
-
-.engine-profile-action-button:hover:not(:disabled) {
-  background: var(--surface-control-hover);
-}
-
-.engine-profile-action-button:disabled {
-  color: var(--text-muted);
-  cursor: default;
 }
 
 .engine-action-message {

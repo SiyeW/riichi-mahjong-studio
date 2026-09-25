@@ -107,7 +107,8 @@
 .toolbar button,
 .seat-buttons button,
 .settings-modal button,
-.settings-modal-actions button {
+.settings-modal-actions button,
+.ui-control-button {
   border: 1px solid var(--border-dark);
   background: var(--surface-control);
   color: var(--text-main);
@@ -119,14 +120,16 @@
 }
 
 .settings-modal button:hover:not(:disabled),
-.settings-modal-actions button:hover:not(:disabled) {
+.settings-modal-actions button:hover:not(:disabled),
+.ui-control-button:hover:not(:disabled) {
   background: var(--surface-control-hover);
 }
 
 .toolbar button:disabled,
 .seat-buttons button:disabled,
 .settings-modal button:disabled,
-.settings-modal-actions button:disabled {
+.settings-modal-actions button:disabled,
+.ui-control-button:disabled {
   cursor: not-allowed;
   opacity: 0.48;
 }

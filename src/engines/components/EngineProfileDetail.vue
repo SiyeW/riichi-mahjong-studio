@@ -180,17 +180,23 @@ async function emitOption(key: string, event: Event) {
 
 .engine-legal-actions button {
   padding: calc(0.3rem * var(--floating-panel-scale)) calc(0.48rem * var(--floating-panel-scale));
-  border: 1px solid rgba(140, 195, 188, 0.3);
-  border-radius: calc(2px * var(--floating-panel-scale));
-  color: rgba(220, 250, 243, 0.96);
-  background: rgba(23, 83, 78, 0.58);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius-control);
+  color: var(--text-dim);
+  background: var(--surface-control);
   font-size: var(--ui-text-caption);
+  text-align: left;
   cursor: pointer;
 }
 
 .engine-legal-actions button:hover:not(:disabled) {
-  border-color: rgba(159, 226, 213, 0.62);
-  background: rgba(28, 105, 94, 0.72);
+  color: var(--text-main);
+  background: var(--surface-control-hover);
+}
+
+.engine-legal-actions button:disabled {
+  color: var(--text-muted);
+  cursor: default;
 }
 
 .engine-inline-status {
