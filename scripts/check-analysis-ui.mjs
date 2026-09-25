@@ -601,6 +601,21 @@ try {
   })
   assert.ok(nameRevealBox.y < nameAfterHover.y && nameRevealBox.x < nameAfterHover.x, 'the reveal frame extends above and left of the original text box')
   assert.ok(Math.abs(nameTextOrigins.revealedLeft - nameTextOrigins.originalLeft) < 0.6 && Math.abs(nameTextOrigins.revealedTop - nameTextOrigins.originalTop) < 0.6, 'the full name glyphs stay over the clipped text')
+  const longRevealGeometry = await nameReveal.evaluate(element => ({
+    width: element.getBoundingClientRect().width,
+    height: element.getBoundingClientRect().height,
+    lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+    fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+    paddingTop: Number.parseFloat(getComputedStyle(element).paddingTop),
+    paddingBottom: Number.parseFloat(getComputedStyle(element).paddingBottom),
+    scrollWidth: element.scrollWidth,
+    scrollHeight: element.scrollHeight,
+    clientWidth: element.clientWidth,
+    clientHeight: element.clientHeight,
+  }))
+  assert.ok(longRevealGeometry.width <= longRevealGeometry.fontSize * 24 + 1, 'long names wrap within the inline reveal reading width')
+  assert.ok(longRevealGeometry.height - longRevealGeometry.paddingTop - longRevealGeometry.paddingBottom > longRevealGeometry.lineHeight * 1.5, 'long names reveal on multiple lines')
+  assert.ok(longRevealGeometry.scrollWidth <= longRevealGeometry.clientWidth && longRevealGeometry.scrollHeight <= longRevealGeometry.clientHeight, 'wrapped inline reveal does not clip its content')
   if (process.env.RMS_ENGINE_NAME_REVEAL_SCREENSHOT) {
     await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_NAME_REVEAL_SCREENSHOT })
   }

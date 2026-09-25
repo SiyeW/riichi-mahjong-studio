@@ -59,7 +59,7 @@ function positionTooltip(element: HTMLElement, state: TooltipState) {
     tooltip.style.left = `${anchor.left - extraLeft}px`
     tooltip.style.top = `${anchor.top - extraTop}px`
     tooltip.style.minWidth = `${anchor.width + extraLeft + extraRight}px`
-    tooltip.style.maxWidth = `${Math.max(anchor.width + extraLeft + extraRight, window.innerWidth - anchor.left + extraLeft - 8)}px`
+    tooltip.style.maxWidth = `${Math.max(anchor.width + extraLeft + extraRight, Math.min(fontSize * 24, window.innerWidth - anchor.left + extraLeft - 8))}px`
     tooltip.style.font = style.font
     tooltip.style.lineHeight = style.lineHeight
     tooltip.style.letterSpacing = style.letterSpacing
