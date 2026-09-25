@@ -12,6 +12,7 @@ import type { StudioSettings } from '../contracts/settings.ts'
 import type { StudioStatus } from '../contracts/runtime.ts'
 import type { DesktopBridge } from '../contracts/desktopBridge.ts'
 import type {
+  EngineLoadStatus,
   EngineOutputFilterItem,
   EngineProfileDetailView,
   EngineProfileListItem,
@@ -199,7 +200,7 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     outputAssignmentIsLoaded: engineOutputAssignmentIsLoaded,
     outputAssignmentIsLoading: engineOutputAssignmentIsLoading,
     markConfiguredEngineStarting,
-    profileClasses: runtimeProfileClasses,
+    profileStatus: runtimeProfileStatus,
     profileConfigurationLocked,
     profileError,
     profileIsLoaded,
@@ -224,10 +225,6 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     assignOutputsForLoading: assignSupportedOutputsForLoading,
     requiredWeightsReady,
   }, activationState)
-
-  function engineProfileClasses(profile: EngineProfile) {
-    return runtimeProfileClasses(profile, profile.id === activeEngineProfile.value?.id)
-  }
 
   const engineFooterMessage = computed(() => {
     return profileError(activeEngineProfile.value) || engineSaveMessage.value
@@ -453,13 +450,17 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     return engineDraft.flush()
   }
 
+  function engineOutputStatus(outputId: SupportedEngineOutputId): EngineLoadStatus | null {
+    if (!settingsDraft.engines.outputAssignments[outputId]) return null
+    if (engineOutputAssignmentHasError(outputId)) return 'error'
+    if (engineOutputAssignmentIsLoading(outputId)) return 'loading'
+    return engineOutputAssignmentIsLoaded(outputId) ? 'loaded' : 'unloaded'
+  }
+
   const engineOutputFilterItems = computed<EngineOutputFilterItem[]>(() => (
     SUPPORTED_ENGINE_OUTPUTS.value.map((output) => ({
       ...output,
-      assigned: Boolean(settingsDraft.engines.outputAssignments[output.id]),
-      loaded: engineOutputAssignmentIsLoaded(output.id),
-      loading: engineOutputAssignmentIsLoading(output.id),
-      error: engineOutputAssignmentHasError(output.id),
+      status: engineOutputStatus(output.id),
       selected: engineOutputFilter.value === output.id,
     }))
   ))
@@ -468,7 +469,8 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
       id: profile.id,
       name: profile.name,
       subtitle: engineProfileSubtitle(profile),
-      classes: engineProfileClasses(profile),
+      selected: profile.id === activeEngineProfile.value?.id,
+      status: runtimeProfileStatus(profile),
       showAction: shouldShowEngineActionButton(profile),
       loaded: profileIsLoaded(profile),
     }))

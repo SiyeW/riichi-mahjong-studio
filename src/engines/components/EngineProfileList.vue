@@ -5,13 +5,9 @@
         v-for="output in outputs"
         :key="output.id"
         class="engine-output-filter"
-        :class="{
-          assigned: output.assigned,
-          loaded: output.loaded,
-          loading: output.loading,
-          error: output.error,
-          selected: output.selected,
-        }"
+        :class="{ selected: output.selected }"
+        :data-status="output.status || undefined"
+        :aria-label="output.status ? `${output.label} · ${statusLabel(output.status)}` : output.label"
         :aria-pressed="output.selected"
         @click="emit('toggle-output', output.id)"
       >
@@ -23,7 +19,8 @@
         v-for="profile in profiles"
         :key="profile.id"
         class="engine-profile-item"
-        :class="profile.classes"
+        :class="{ selected: profile.selected }"
+        :data-status="profile.status"
         @click="emit('select', profile.id)"
       >
         <span>{{ profile.name || t('common.unnamedEngine') }}</span>
@@ -55,6 +52,7 @@
 import type {
   EngineOutputFilterItem,
   EngineProfileListItem,
+  EngineLoadStatus,
 } from '../presentation.ts'
 import type { SupportedEngineOutputId } from '../useEngineCatalog.ts'
 import { useI18n } from '../../i18n.ts'
@@ -80,6 +78,15 @@ const emit = defineEmits<{
   'toggle-output': [outputId: SupportedEngineOutputId]
 }>()
 const { t } = useI18n()
+const statusTranslationKeys: Record<EngineLoadStatus, string> = {
+  loaded: 'engine.status.loaded',
+  loading: 'engine.status.loading',
+  error: 'engine.status.failed',
+  unloaded: 'engine.status.notLoaded',
+}
+function statusLabel(status: EngineLoadStatus): string {
+  return t(statusTranslationKeys[status])
+}
 </script>
 
 <style scoped>
@@ -113,8 +120,10 @@ const { t } = useI18n()
 
 .engine-output-filter {
   position: relative;
+  --engine-indicator-size: calc(0.28rem * var(--floating-panel-scale));
+  --engine-indicator-offset: calc(0.22rem * var(--floating-panel-scale));
   min-width: 0;
-  padding: calc(0.32rem * var(--floating-panel-scale)) calc(0.42rem * var(--floating-panel-scale));
+  padding: calc(0.32rem * var(--floating-panel-scale)) calc(0.9rem * var(--floating-panel-scale)) calc(0.32rem * var(--floating-panel-scale)) calc(0.42rem * var(--floating-panel-scale));
   overflow: hidden;
   border: 1px solid var(--engine-state-idle-border);
   border-radius: calc(2px * var(--floating-panel-scale));
@@ -127,29 +136,36 @@ const { t } = useI18n()
   cursor: pointer;
 }
 
-.engine-output-filter.assigned {
-  color: var(--text-dim);
-  background: var(--engine-state-unloaded-bg);
+.engine-output-filter[data-status]::after,
+.engine-profile-item[data-status]::after {
+  position: absolute;
+  top: var(--engine-indicator-offset);
+  right: var(--engine-indicator-offset);
+  width: var(--engine-indicator-size);
+  height: var(--engine-indicator-size);
+  border-radius: 50%;
+  background: var(--engine-status-unloaded);
+  content: '';
 }
 
-.engine-output-filter.loaded {
-  color: var(--text-main);
-  background: var(--engine-state-loaded-bg);
+.engine-output-filter[data-status='loaded']::after,
+.engine-profile-item[data-status='loaded']::after {
+  background: var(--engine-status-loaded);
 }
 
-.engine-output-filter.loading {
-  color: var(--text-dim);
-  background: var(--engine-state-loading-bg);
+.engine-output-filter[data-status='loading']::after,
+.engine-profile-item[data-status='loading']::after {
+  background: var(--engine-status-loading);
 }
 
-.engine-output-filter.error {
-  color: var(--text-main);
-  background: var(--engine-state-error-bg);
+.engine-output-filter[data-status='error']::after,
+.engine-profile-item[data-status='error']::after {
+  background: var(--engine-status-error);
 }
 
 .engine-output-filter.selected {
   color: var(--text-main);
-  background: var(--engine-state-idle-selected-bg);
+  background: var(--engine-state-selected-bg);
 }
 
 .engine-output-filter.selected::before {
@@ -162,29 +178,19 @@ const { t } = useI18n()
   content: '';
 }
 
-.engine-output-filter.assigned.selected {
-  background: var(--engine-state-unloaded-selected-bg);
-}
-
-.engine-output-filter.loaded.selected {
-  background: var(--engine-state-loaded-selected-bg);
-}
-
-.engine-output-filter.loading.selected {
-  background: var(--engine-state-loading-selected-bg);
-}
-
-.engine-output-filter.error.selected {
-  background: var(--engine-state-error-selected-bg);
-}
-
 .engine-output-filter:hover {
   color: var(--text-main);
-  filter: brightness(1.08);
+  border-color: var(--border-strong);
+}
+
+.engine-profile-item:hover {
+  border-color: var(--border-strong);
 }
 
 .engine-profile-item {
   position: relative;
+  --engine-indicator-size: calc(0.38rem * var(--floating-panel-scale));
+  --engine-indicator-offset: calc(0.4rem * var(--floating-panel-scale));
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: calc(0.12rem * var(--floating-panel-scale));
@@ -218,6 +224,7 @@ const { t } = useI18n()
 }
 
 .engine-profile-item > span {
+  padding-right: calc(0.55rem * var(--floating-panel-scale));
   font-size: var(--ui-text-body);
 }
 
@@ -228,58 +235,16 @@ const { t } = useI18n()
   text-overflow: ellipsis;
 }
 
-.engine-profile-item.loaded {
-  color: var(--text-main);
-  background: var(--engine-state-loaded-bg);
-}
-
-.engine-profile-item.loading {
-  background: var(--engine-state-loading-bg);
-}
-
-.engine-profile-item.error {
-  background: var(--engine-state-error-bg);
-}
-
-.engine-profile-item.unloaded {
-  color: var(--text-dim);
-  background: var(--engine-state-unloaded-bg);
-}
-
 .engine-profile-item.selected {
   color: var(--text-main);
-  background: var(--engine-state-idle-selected-bg);
+  background: var(--engine-state-selected-bg);
 }
 
 .engine-profile-item.selected::before {
   background: var(--text-main);
 }
 
-.engine-profile-item.selected.unloaded {
-  background: var(--engine-state-unloaded-selected-bg);
-}
-
-.engine-profile-item.selected.loaded {
-  background: var(--engine-state-loaded-selected-bg);
-}
-
-.engine-profile-item.selected.loading {
-  background: var(--engine-state-loading-selected-bg);
-}
-
-.engine-profile-item.selected.error {
-  background: var(--engine-state-error-selected-bg);
-}
-
-.engine-output-filter.assigned,
-.engine-output-filter.loaded,
-.engine-output-filter.loading,
-.engine-output-filter.error,
 .engine-output-filter.selected,
-.engine-profile-item.loaded,
-.engine-profile-item.loading,
-.engine-profile-item.error,
-.engine-profile-item.unloaded,
 .engine-profile-item.selected {
   border-color: var(--engine-state-border);
 }

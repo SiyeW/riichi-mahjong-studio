@@ -100,6 +100,10 @@ test('activation owns the save, bridge, status, and runtime capture sequence', a
     requiredWeightsReady: () => true,
   }, state)
 
+  assert.equal(activation.profileStatus(activeProfile.value), 'unloaded')
+  state.loadingProfileId.value = engineProfile.id
+  assert.equal(activation.profileStatus(activeProfile.value), 'loading')
+  state.loadingProfileId.value = ''
   await activation.load(engineProfile.id)
 
   assert.equal(activated.length, 1)
@@ -107,5 +111,11 @@ test('activation owns the save, bridge, status, and runtime capture sequence', a
   assert.equal(state.loadingProfileId.value, '')
   assert.equal(draft.message.value, 'engine.loaded')
   assert.equal(activation.profileIsLoaded(activeProfile.value), true)
+  assert.equal(activation.profileStatus(activeProfile.value), 'loaded')
+  state.loadErrors[engineProfile.id] = 'weight failed'
+  assert.equal(activation.profileStatus(activeProfile.value), 'error')
+  delete state.loadErrors[engineProfile.id]
+  currentStatus.modelRuntime.decision = { profileId: engineProfile.id, ready: false, unloaded: true }
+  assert.equal(activation.profileStatus(activeProfile.value), 'unloaded')
   scope.stop()
 })

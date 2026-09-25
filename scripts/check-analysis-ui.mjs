@@ -494,6 +494,39 @@ try {
   })
   await page.locator('.engine-window').waitFor()
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.showEngineWindow), true)
+  const engineStateStyles = await page.evaluate(() => {
+    const selectors = ['.engine-profile-item', '.engine-output-filter[data-status]']
+    return selectors.map((selector) => {
+      const item = document.querySelector(selector)
+      if (!(item instanceof HTMLElement)) throw new Error(`Missing engine state item: ${selector}`)
+      const originalStatus = item.getAttribute('data-status')
+      const originallySelected = item.classList.contains('selected')
+      const states = ['unloaded', 'loaded', 'loading', 'error']
+      const backgrounds = []
+      const selectedBackgrounds = []
+      const indicators = []
+      for (const state of states) {
+        item.setAttribute('data-status', state)
+        item.classList.remove('selected')
+        backgrounds.push(getComputedStyle(item).backgroundColor)
+        item.classList.add('selected')
+        selectedBackgrounds.push(getComputedStyle(item).backgroundColor)
+        const indicator = getComputedStyle(item, '::after')
+        indicators.push({ color: indicator.backgroundColor, width: indicator.width, height: indicator.height })
+      }
+      if (originalStatus === null) item.removeAttribute('data-status')
+      else item.setAttribute('data-status', originalStatus)
+      item.classList.toggle('selected', originallySelected)
+      return { backgrounds, selectedBackgrounds, indicators }
+    })
+  })
+  for (const item of engineStateStyles) {
+    assert.equal(new Set(item.backgrounds).size, 1, 'load state does not recolor an unselected engine item')
+    assert.equal(new Set(item.selectedBackgrounds).size, 1, 'load state does not recolor a selected engine item')
+    assert.notEqual(item.backgrounds[0], item.selectedBackgrounds[0], 'selection changes the item background')
+    assert.equal(new Set(item.indicators.map(indicator => indicator.color)).size, 4, 'status lamps distinguish all four states')
+    assert.ok(item.indicators.every(indicator => indicator.width === indicator.height), 'status lamps stay circular')
+  }
   const engineCheckboxStyles = await page.locator('.engine-output-assignment').first().evaluate(item => {
     const control = item.querySelector('.settings-checkbox-control')
     const label = item.querySelector('.settings-checkbox-label')

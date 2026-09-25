@@ -100,15 +100,11 @@ const { t } = useI18n()
 .engine-window {
   --engine-control-height: calc(2rem * var(--floating-panel-scale));
   --engine-state-idle-bg: rgba(0, 27, 32, 0.34);
-  --engine-state-unloaded-bg: rgba(57, 72, 74, 0.42);
-  --engine-state-loaded-bg: rgba(23, 105, 70, 0.42);
-  --engine-state-loading-bg: rgba(117, 75, 18, 0.46);
-  --engine-state-error-bg: rgba(105, 26, 24, 0.48);
-  --engine-state-idle-selected-bg: rgba(8, 80, 94, 0.94);
-  --engine-state-unloaded-selected-bg: rgba(76, 92, 94, 0.82);
-  --engine-state-loaded-selected-bg: rgba(23, 122, 70, 0.88);
-  --engine-state-loading-selected-bg: rgba(117, 75, 18, 0.82);
-  --engine-state-error-selected-bg: rgba(105, 26, 24, 0.82);
+  --engine-state-selected-bg: rgba(8, 80, 94, 0.94);
+  --engine-status-unloaded: rgba(170, 186, 184, 0.72);
+  --engine-status-loaded: rgb(119, 231, 185);
+  --engine-status-loading: rgb(237, 185, 91);
+  --engine-status-error: rgb(227, 115, 105);
   --engine-state-border: var(--border-dark);
   --engine-state-idle-border: rgba(112, 136, 136, 0.22);
   display: flex;

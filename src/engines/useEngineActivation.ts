@@ -106,24 +106,14 @@ export function useEngineActivation(
     return Boolean(runtimeState && !runtimeState.ready && !runtimeState.unloaded)
   }
 
-  function profileClasses(profile: EngineProfile, selected: boolean) {
+  function profileStatus(profile: EngineProfile): 'loaded' | 'loading' | 'error' | 'unloaded' {
     const runtimeGroups = runtime.profileRuntimeKinds(profile)
-    const loaded = profileIsLoaded(profile)
-    const matchesRuntime = runtimeGroups.some((kind) => runtime.profileMatchesRuntime(profile, kind))
-    return {
-      selected,
-      loaded,
-      loading: profileIsLoading(profile),
-      unloaded: matchesRuntime && runtimeGroups.every((kind) => (
-        runtime.profileRuntimeState(profile, kind)?.unloaded === true
-      )),
-      error: Boolean(state.loadErrors[profile.id])
-        || runtimeGroups.some((kind) => (
-          runtime.profileMatchesRuntime(profile, kind)
-          && Boolean(runtime.runtimeEngineError(kind, profile))
-        )),
-      unavailable: !profile.enginePath || options.assignedOutputs(profile).length === 0,
-    }
+    if (state.loadErrors[profile.id] || runtimeGroups.some((kind) => (
+      runtime.profileMatchesRuntime(profile, kind)
+      && Boolean(runtime.runtimeEngineError(kind, profile))
+    ))) return 'error'
+    if (profileIsLoading(profile)) return 'loading'
+    return profileIsLoaded(profile) ? 'loaded' : 'unloaded'
   }
 
   function profileSubtitle(profile: EngineProfile): string {
@@ -131,18 +121,12 @@ export function useEngineActivation(
     // first thing to know when a profile stops loading after a rebuild.
     const version = String(profile.engineVersion || '').trim()
     const withVersion = (state: string) => (version ? `${state} · ${version}` : state)
-    if (profile.id === state.loadingProfileId.value) return withVersion(options.t('engine.status.loading'))
-    if (state.loadErrors[profile.id]) return withVersion(options.t('engine.status.failed'))
-    const runtimeGroups = runtime.profileRuntimeKinds(profile)
-    if (!runtimeGroups.some((kind) => runtime.profileMatchesRuntime(profile, kind))) return version
-    if (runtimeGroups.some((kind) => runtime.runtimeEngineError(kind, profile))) {
-      return withVersion(options.t('engine.status.failed'))
-    }
-    if (runtimeGroups.every((kind) => runtime.profileRuntimeState(profile, kind)?.unloaded === true)) {
-      return withVersion(options.t('engine.status.notLoaded'))
-    }
-    if (!profileIsLoaded(profile)) return withVersion(options.t('engine.status.loading'))
-    return withVersion(options.t('engine.status.loaded'))
+    const status = profileStatus(profile)
+    if (status === 'error') return withVersion(options.t('engine.status.failed'))
+    if (status === 'loading') return withVersion(options.t('engine.status.loading'))
+    if (status === 'loaded') return withVersion(options.t('engine.status.loaded'))
+    if (!runtime.profileRuntimeKinds(profile).some((kind) => runtime.profileMatchesRuntime(profile, kind))) return version
+    return withVersion(options.t('engine.status.notLoaded'))
   }
 
   function profileError(profile: EngineProfile | null): string {
@@ -262,7 +246,7 @@ export function useEngineActivation(
     outputAssignmentHasError,
     outputAssignmentIsLoaded,
     outputAssignmentIsLoading,
-    profileClasses,
+    profileStatus,
     profileConfigurationLocked,
     profileError,
     profileIsLoaded,
