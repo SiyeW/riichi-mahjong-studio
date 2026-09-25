@@ -869,6 +869,22 @@ try {
     delete window.originalSpecialActionFixture
   })
   const treeHitRegion = page.locator('.tree-hit-region').last()
+  const treeScroll = page.locator('.tree-scroll-svg')
+  const treeHeightHandle = page.locator('.tree-height-resizer')
+  assert.equal(await treeScroll.evaluate(element => element.style.height), '', 'branch tree keeps its existing default height before manual resizing')
+  const treeHeightBefore = (await treeScroll.boundingBox()).height
+  await treeHeightHandle.scrollIntoViewIfNeeded()
+  const treeHandleBox = await treeHeightHandle.boundingBox()
+  await page.mouse.move(treeHandleBox.x + treeHandleBox.width / 2, treeHandleBox.y + treeHandleBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(treeHandleBox.x + treeHandleBox.width / 2, treeHandleBox.y + treeHandleBox.height / 2 + 80, { steps: 4 })
+  await page.mouse.up()
+  const treeHeightAfterDrag = (await treeScroll.boundingBox()).height
+  assert.ok(treeHeightAfterDrag > treeHeightBefore + 50, 'dragging the branch tree divider increases its viewport height')
+  await treeHeightHandle.focus()
+  await page.keyboard.press('ArrowUp')
+  assert.ok((await treeScroll.boundingBox()).height < treeHeightAfterDrag - 10, 'keyboard adjustment decreases branch tree height')
+  assert.ok(Number(await page.evaluate(() => localStorage.getItem('rms.branch-tree-height'))) > 0, 'manual branch tree height is retained')
   await treeHitRegion.hover()
   assert.equal(await page.locator('.tree-hover-indicator').count(), 1, 'the hovered branch node receives one crisp indicator')
   assert.equal(await page.locator('.tree-axis-label.is-hovered').count(), 1, 'branch labels share the active node hover feedback')

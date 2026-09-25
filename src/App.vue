@@ -464,6 +464,7 @@
           @export="openCustomTenhouExport"
           @jump-to-node="jumpToNode"
           @tree-scroll="onTreeScroll"
+          @resized="updateTreeViewport"
           @suspend-auto-follow="suspendTreeAutoFollow"
           @resume-auto-follow="resumeTreeAutoFollow"
           @expanded="updateTreeViewport"

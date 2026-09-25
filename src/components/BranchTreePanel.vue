@@ -21,6 +21,7 @@
         v-if="treeDots.length"
         :ref="captureTreeScrollElement"
         class="tree-scroll tree-scroll-svg"
+        :style="treeScrollHeight === null ? undefined : { height: `${treeScrollHeight}px`, maxHeight: 'none' }"
         @pointerenter="emit('suspend-auto-follow')"
         @pointerleave="emit('resume-auto-follow')"
         @scroll="handleTreeScroll"
@@ -126,6 +127,16 @@
           </svg>
         </div>
       </div>
+      <div
+        v-if="treeDots.length"
+        class="tree-height-resizer"
+        role="separator"
+        tabindex="0"
+        aria-orientation="horizontal"
+        :aria-label="t('tree.title')"
+        @pointerdown="startTreeResize"
+        @keydown="resizeTreeWithKeyboard"
+      />
       <p v-else class="empty-copy">—</p>
       <textarea
         v-if="currentNodeId"
@@ -184,6 +195,7 @@ const emit = defineEmits<{
   export: []
   'jump-to-node': [nodeId: string]
   'tree-scroll': []
+  resized: []
   'suspend-auto-follow': []
   'resume-auto-follow': []
   'expanded': []
@@ -197,8 +209,53 @@ const { t } = useI18n()
 const collapsed = ref(false)
 const panelElement = ref<HTMLElement | null>(null)
 const nodeCommentElement = ref<HTMLTextAreaElement | null>(null)
+const treeScrollElement = ref<HTMLElement | null>(null)
+const treeScrollHeight = ref<number | null>(null)
+const treeHeightStorageKey = 'rms.branch-tree-height'
 let nodeCommentResizeObserver: ResizeObserver | null = null
 let observedPanelWidth = -1
+
+function setTreeHeight(height: number) {
+  const panel = panelElement.value
+  const scale = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ui-scale')) || 1
+  const minimum = 4 * Number.parseFloat(getComputedStyle(document.documentElement).fontSize) * scale
+  const maximum = Math.max(minimum, window.innerHeight - (panel?.getBoundingClientRect().top || 0) - minimum)
+  treeScrollHeight.value = Math.round(Math.max(minimum, Math.min(maximum, height)))
+  void nextTick(() => emit('resized'))
+}
+
+function saveTreeHeight() {
+  try {
+    if (treeScrollHeight.value !== null) localStorage.setItem(treeHeightStorageKey, String(treeScrollHeight.value))
+  } catch {
+    // Resizing remains usable if local storage is unavailable.
+  }
+}
+
+function startTreeResize(event: PointerEvent) {
+  const scroll = treeScrollElement.value
+  if (event.button !== 0 || !scroll) return
+  event.preventDefault()
+  const handle = event.currentTarget as HTMLElement
+  const startHeight = scroll.getBoundingClientRect().height
+  const startY = event.clientY
+  handle.setPointerCapture(event.pointerId)
+  handle.onpointermove = move => setTreeHeight(startHeight + move.clientY - startY)
+  handle.onpointerup = handle.onpointercancel = () => {
+    saveTreeHeight()
+    handle.onpointermove = null
+    handle.onpointerup = null
+    handle.onpointercancel = null
+  }
+}
+
+function resizeTreeWithKeyboard(event: KeyboardEvent) {
+  const scroll = treeScrollElement.value
+  if (!scroll || !['ArrowUp', 'ArrowDown'].includes(event.key)) return
+  event.preventDefault()
+  setTreeHeight(scroll.getBoundingClientRect().height + (event.key === 'ArrowDown' ? 16 : -16))
+  saveTreeHeight()
+}
 
 function resizeNodeComment() {
   void nextTick(() => {
@@ -232,6 +289,7 @@ function handleTreeScroll() {
 }
 
 function captureTreeScrollElement(value: Element | ComponentPublicInstance | null) {
+  treeScrollElement.value = value instanceof HTMLElement ? value : null
   props.registerTreeScrollElement(value instanceof Element ? value : null)
 }
 
@@ -245,6 +303,12 @@ function handleNodeCommentInput(event: Event) {
 watch(() => props.nodeComment, resizeNodeComment)
 
 onMounted(() => {
+  try {
+    const saved = Number(localStorage.getItem(treeHeightStorageKey))
+    if (Number.isFinite(saved) && saved > 0) setTreeHeight(saved)
+  } catch {
+    // The default tree height remains in effect if storage is unavailable.
+  }
   nodeCommentResizeObserver = new ResizeObserver((entries) => {
     const width = entries[0]?.contentRect.width ?? -1
     if (Math.abs(width - observedPanelWidth) < 0.5) return
@@ -317,6 +381,27 @@ onBeforeUnmount(() => {
 .tree-scroll-svg {
   background: var(--tree-surface-bg);
   border: 1px solid rgba(140, 195, 185, 0.10);
+}
+
+.tree-height-resizer {
+  height: calc(0.45rem * var(--chrome-scale));
+  margin-top: calc(0.12rem * var(--chrome-scale));
+  cursor: row-resize;
+  touch-action: none;
+}
+
+.tree-height-resizer::after {
+  display: block;
+  width: calc(2rem * var(--chrome-scale));
+  height: 1px;
+  margin: calc(0.2rem * var(--chrome-scale)) auto 0;
+  background: var(--border-subtle);
+  content: '';
+}
+
+.tree-height-resizer:hover::after,
+.tree-height-resizer:focus-visible::after {
+  background: var(--border-strong);
 }
 
 .node-comment {
