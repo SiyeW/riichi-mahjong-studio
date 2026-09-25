@@ -619,6 +619,7 @@
     <EngineManagerWindow
       v-if="showEngineWindow"
       :scale="uiScale"
+      :perceptual-surface="activePerceptualSurfaceBinding"
       :z-index="floatingPanelZ.engine"
       :footer-message="engineFooterMessage"
       :busy="Boolean(loadingEngineProfileId || unloadingEngineProfileId)"

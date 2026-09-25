@@ -1,5 +1,6 @@
 <template>
   <section
+    v-perceptual-surface="perceptualSurface"
     class="analysis-float-panel engine-window"
     :style="{ '--floating-panel-scale': scale, zIndex }"
     @mousedown="emit('focus')"
@@ -54,11 +55,13 @@ import type {
 } from '../presentation.ts'
 import type { SupportedEngineOutputId } from '../useEngineCatalog.ts'
 import { useI18n } from '../../i18n.ts'
+import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../../perceptualSurface.ts'
 import EngineProfileDetail from './EngineProfileDetail.vue'
 import EngineProfileList from './EngineProfileList.vue'
 
 defineProps<{
   scale: number
+  perceptualSurface: PerceptualSurfaceBinding
   zIndex: number
   footerMessage: string
   busy: boolean
@@ -101,10 +104,6 @@ const { t } = useI18n()
   --engine-control-height: calc(2rem * var(--floating-panel-scale));
   --engine-state-idle-bg: rgba(0, 27, 32, 0.34);
   --engine-state-selected-bg: rgba(8, 80, 94, 0.94);
-  --engine-status-unloaded: rgba(170, 186, 184, 0.72);
-  --engine-status-loaded: rgb(119, 231, 185);
-  --engine-status-loading: rgb(237, 185, 91);
-  --engine-status-error: rgb(227, 115, 105);
   --engine-state-border: var(--border-dark);
   --engine-state-idle-border: rgba(112, 136, 136, 0.22);
   display: flex;

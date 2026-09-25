@@ -40,6 +40,16 @@ export const DEFAULT_PERCEPTUAL_SURFACE_TUNING: PerceptualSurfaceTuning = Object
 // leave that reference appearance unchanged.
 export const PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND: RgbColor = [18, 66, 75]
 
+// Keep load-state meaning independent of the selectable player color scheme.
+// Lit anchors match the shared status colors in styles.css; the unlit lamp is
+// deliberately darker so it does not compete with an active state.
+const STATUS_COLORS = {
+  unloaded: [70, 90, 91],
+  loaded: [76, 175, 80],
+  loading: [242, 174, 61],
+  error: [228, 91, 85],
+} as const satisfies Record<string, RgbColor>
+
 const PERCEPTUAL_SURFACE_VARIABLES = [
   '--decision-recommendation-color',
   '--ron-kamicha-color',
@@ -55,6 +65,10 @@ const PERCEPTUAL_SURFACE_VARIABLES = [
   '--analysis-rank-2-color',
   '--analysis-rank-3-color',
   '--analysis-rank-4-color',
+  '--engine-status-unloaded',
+  '--engine-status-loaded',
+  '--engine-status-loading',
+  '--engine-status-error',
 ] as const
 
 function surfaceAdjustedColor(
@@ -105,6 +119,10 @@ export function perceptualSurfaceVariables(
     '--analysis-rank-2-color': rgbString(mixOklab(kamicha, placementFirst, 2 / 3)),
     '--analysis-rank-3-color': rgbString(mixOklab(kamicha, placementFirst, 1 / 3)),
     '--analysis-rank-4-color': rgbString(kamicha),
+    '--engine-status-unloaded': rgbString(surfaceAdjustedColor(STATUS_COLORS.unloaded, surface, tuning)),
+    '--engine-status-loaded': rgbString(surfaceAdjustedColor(STATUS_COLORS.loaded, surface, tuning)),
+    '--engine-status-loading': rgbString(surfaceAdjustedColor(STATUS_COLORS.loading, surface, tuning)),
+    '--engine-status-error': rgbString(surfaceAdjustedColor(STATUS_COLORS.error, surface, tuning)),
   }
 }
 
