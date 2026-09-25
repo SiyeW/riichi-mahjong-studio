@@ -590,7 +590,17 @@ try {
   assert.match(await nameReveal.textContent(), /long descriptive name/)
   const nameAfterHover = await longName.locator('.engine-profile-name').boundingBox()
   const nameRevealBox = await nameReveal.boundingBox()
-  assert.ok(Math.abs(nameRevealBox.x - nameAfterHover.x) < 0.6 && Math.abs(nameRevealBox.y - nameAfterHover.y) < 0.6, 'the full name starts exactly over the clipped text')
+  const nameTextOrigins = await longName.locator('.engine-profile-name').evaluate(element => {
+    const reveal = document.querySelector('.ui-hover-tooltip-portal.is-inline-reveal')
+    return {
+      originalTop: element.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(element).paddingTop),
+      revealedTop: reveal.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(reveal).paddingTop),
+      originalLeft: element.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(element).paddingLeft),
+      revealedLeft: reveal.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(reveal).paddingLeft),
+    }
+  })
+  assert.ok(nameRevealBox.y < nameAfterHover.y && nameRevealBox.x < nameAfterHover.x, 'the reveal frame extends above and left of the original text box')
+  assert.ok(Math.abs(nameTextOrigins.revealedLeft - nameTextOrigins.originalLeft) < 0.6 && Math.abs(nameTextOrigins.revealedTop - nameTextOrigins.originalTop) < 0.6, 'the full name glyphs stay over the clipped text')
   if (process.env.RMS_ENGINE_NAME_REVEAL_SCREENSHOT) {
     await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_NAME_REVEAL_SCREENSHOT })
   }
@@ -605,7 +615,17 @@ try {
   assert.equal(await nameReveal.textContent(), fullDoraLabel, 'truncated output labels reveal their full text')
   const doraLabelBox = await doraLabel.boundingBox()
   const doraRevealBox = await nameReveal.boundingBox()
-  assert.ok(Math.abs(doraRevealBox.x - doraLabelBox.x) < 0.6 && Math.abs(doraRevealBox.y - doraLabelBox.y) < 0.6, 'the output reveal starts over the original label')
+  const doraTextOrigins = await doraLabel.evaluate(element => {
+    const reveal = document.querySelector('.ui-hover-tooltip-portal.is-inline-reveal')
+    return {
+      originalTop: element.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(element).paddingTop),
+      revealedTop: reveal.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(reveal).paddingTop),
+      originalLeft: element.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(element).paddingLeft),
+      revealedLeft: reveal.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(reveal).paddingLeft),
+    }
+  })
+  assert.ok(doraRevealBox.y < doraLabelBox.y && doraRevealBox.x < doraLabelBox.x, 'the output reveal has room above and left of its glyphs')
+  assert.ok(Math.abs(doraTextOrigins.revealedLeft - doraTextOrigins.originalLeft) < 0.6 && Math.abs(doraTextOrigins.revealedTop - doraTextOrigins.originalTop) < 0.6, 'the output glyphs stay over the original label')
   if (process.env.RMS_ENGINE_OUTPUT_REVEAL_SCREENSHOT) {
     await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_OUTPUT_REVEAL_SCREENSHOT })
   }

@@ -50,16 +50,23 @@ function positionTooltip(element: HTMLElement, state: TooltipState) {
   if (target) {
     const anchor = target.getBoundingClientRect()
     const style = getComputedStyle(target)
+    const fontSize = Number.parseFloat(style.fontSize) || 0
+    const extraTop = Math.max(0, Math.min(fontSize * 0.12, anchor.top - 8))
+    const extraLeft = Math.max(0, Math.min(fontSize * 0.18, anchor.left - 8))
+    const extraRight = fontSize * 0.18
     tooltip.classList.add('is-inline-reveal')
-    tooltip.style.left = `${anchor.left}px`
-    tooltip.style.top = `${anchor.top}px`
-    tooltip.style.minWidth = `${anchor.width}px`
-    tooltip.style.maxWidth = `${Math.max(anchor.width, window.innerWidth - anchor.left - 8)}px`
-    tooltip.style.maxHeight = `${Math.max(anchor.height, window.innerHeight - anchor.top - 8)}px`
+    tooltip.style.left = `${anchor.left - extraLeft}px`
+    tooltip.style.top = `${anchor.top - extraTop}px`
+    tooltip.style.minWidth = `${anchor.width + extraLeft + extraRight}px`
+    tooltip.style.maxWidth = `${Math.max(anchor.width + extraLeft + extraRight, window.innerWidth - anchor.left + extraLeft - 8)}px`
+    tooltip.style.maxHeight = `${Math.max(anchor.height + extraTop, window.innerHeight - anchor.top + extraTop - 8)}px`
     tooltip.style.font = style.font
     tooltip.style.lineHeight = style.lineHeight
     tooltip.style.letterSpacing = style.letterSpacing
     tooltip.style.padding = style.padding
+    tooltip.style.paddingTop = `${(Number.parseFloat(style.paddingTop) || 0) + extraTop}px`
+    tooltip.style.paddingRight = `${(Number.parseFloat(style.paddingRight) || 0) + extraRight}px`
+    tooltip.style.paddingLeft = `${(Number.parseFloat(style.paddingLeft) || 0) + extraLeft}px`
     tooltip.style.color = style.color
     tooltip.style.backgroundColor = rgbString(effectiveBackgroundColor(element))
     tooltip.style.visibility = 'visible'
@@ -73,6 +80,9 @@ function positionTooltip(element: HTMLElement, state: TooltipState) {
   tooltip.style.lineHeight = ''
   tooltip.style.letterSpacing = ''
   tooltip.style.padding = ''
+  tooltip.style.paddingTop = ''
+  tooltip.style.paddingRight = ''
+  tooltip.style.paddingLeft = ''
   tooltip.style.color = ''
   tooltip.style.backgroundColor = ''
   const anchor = element.getBoundingClientRect()
