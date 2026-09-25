@@ -118,7 +118,7 @@ function statusLabel(status: EngineLoadStatus): string {
 
 .engine-output-filters {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(calc(4rem * var(--floating-panel-scale)), 30%), 1fr));
   gap: calc(0.24rem * var(--floating-panel-scale));
   padding-bottom: calc(0.38rem * var(--floating-panel-scale));
   border-bottom: 1px solid var(--border-subtle);

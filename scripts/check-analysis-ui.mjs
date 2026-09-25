@@ -647,6 +647,13 @@ try {
   const engineBody = page.locator('.engine-manager-body')
   const priorListWidth = await engineBody.evaluate(element => element.style.getPropertyValue('--engine-list-width'))
   await engineBody.evaluate(element => element.style.setProperty('--engine-list-width', '208px'))
+  const narrowFilterLayout = await page.locator('.engine-output-filters').evaluate(element => ({
+    columns: getComputedStyle(element).gridTemplateColumns.split(' ').length,
+    width: element.getBoundingClientRect().width,
+    scrollWidth: element.scrollWidth,
+  }))
+  assert.equal(narrowFilterLayout.columns, 3, 'narrow engine list keeps at least three output filters per row')
+  assert.ok(narrowFilterLayout.scrollWidth <= narrowFilterLayout.width + 1, 'narrow output filters do not overflow')
   const shantenOutput = page.locator('.engine-output-filter').nth(1)
   assert.equal(await shantenOutput.locator('.engine-output-label').evaluate(element => element.scrollWidth > element.clientWidth), true, 'the narrow fixture clips the shanten filter label')
   await shantenOutput.hover()
@@ -665,6 +672,15 @@ try {
   if (process.env.RMS_ENGINE_SHORT_REVEAL_SCREENSHOT) {
     await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_SHORT_REVEAL_SCREENSHOT })
   }
+  await engineBody.evaluate((element, previous) => element.style.setProperty('--engine-list-width', previous), priorListWidth)
+  await engineBody.evaluate(element => element.style.setProperty('--engine-list-width', '480px'))
+  const wideFilterLayout = await page.locator('.engine-output-filters').evaluate(element => ({
+    columns: getComputedStyle(element).gridTemplateColumns.split(' ').length,
+    width: element.getBoundingClientRect().width,
+    scrollWidth: element.scrollWidth,
+  }))
+  assert.ok(wideFilterLayout.columns > narrowFilterLayout.columns, 'widening the engine list fits more output filters on each row')
+  assert.ok(wideFilterLayout.scrollWidth <= wideFilterLayout.width + 1, 'wide output filters do not overflow')
   await engineBody.evaluate((element, previous) => element.style.setProperty('--engine-list-width', previous), priorListWidth)
   const engineWindowMetrics = await page.evaluate(() => {
     const windowElement = document.querySelector('.engine-window')
