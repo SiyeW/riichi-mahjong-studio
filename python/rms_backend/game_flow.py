@@ -449,7 +449,7 @@ class GameFlow:
             self.dependencies.promote_mainline(game, child_id)
             return
 
-        if snapshot.get("riichiDiscardState") == "ankan_choice":
+        if snapshot.get("riichiAccepted", [False] * 4)[actor]:
             skip_action = next(
                 (
                     copy.deepcopy(candidate)
@@ -463,7 +463,7 @@ class GameFlow:
                 skip_action["decisionOnly"] = True
                 skip_action["source"] = "ai"
                 skip_snapshot = copy.deepcopy(snapshot)
-                skip_snapshot["riichiDiscardState"] = None
+                skip_snapshot["riichiDiscardState"] = "tsumogiri"
                 snapshot_state.persist(skip_snapshot)
                 parent_id = game["currentNodeId"]
                 skip_id = self.dependencies.create_node(game, parent_id, skip_action, skip_snapshot)
@@ -681,6 +681,9 @@ class GameFlow:
 
         if actor == self.dependencies.controlled_seat() and current_snapshot["phase"] == "discard":
             if current_snapshot.get("riichiAccepted", [False, False, False, False])[actor]:
+                if current_snapshot.get("riichiDiscardState") == "tsumogiri":
+                    self.process_riichi_auto_tsumogiri(game, current_snapshot, actor)
+                    return
                 if actor_just_drew(current_snapshot, actor) and can_declare_tsumo(current_snapshot, actor):
                     self.dependencies.debug(f"[FLOW] advance_game_flow WAIT_USER riichi tsumo available actor={actor}")
                     return

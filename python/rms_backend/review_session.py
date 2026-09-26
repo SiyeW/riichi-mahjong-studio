@@ -766,7 +766,6 @@ class ReviewSession:
         actor = int(parent_snapshot.get("currentActor", -1))
         if (
             parent_snapshot.get("phase") != "discard"
-            or parent_snapshot.get("riichiDiscardState") != "ankan_choice"
             or actor != self.state["controlledSeat"]
         ):
             raise ValueError("Skip is only legal during the controlled riichi ankan choice.")
@@ -784,7 +783,7 @@ class ReviewSession:
         action["decisionOnly"] = True
         action["source"] = "user"
         next_snapshot = copy.deepcopy(parent_snapshot)
-        next_snapshot["riichiDiscardState"] = None
+        next_snapshot["riichiDiscardState"] = "tsumogiri"
         snapshot_state.persist(next_snapshot)
         child_id = self.dependencies.create_node(game, parent_id, action, next_snapshot)
 

@@ -125,8 +125,6 @@ class GameplayCommands:
                 str(payload.get("variant") or "")
             )
         elif action_type == "none":
-            if snapshot.get("riichiDiscardState") != "ankan_choice":
-                raise ValueError("Skip is only legal during riichi ankan choice.")
             self._review_session.submit_riichi_ankan_skip()
         else:
             raise ValueError(

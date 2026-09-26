@@ -21,7 +21,13 @@ class LegalActionProvider:
         self._cache = {}
 
     def for_node(self, game, node_id, controlled_seat=None):
-        snapshot = game["nodes"][node_id]["snapshot"]
+        node = game["nodes"][node_id]
+        # Older records did not mark the intermediate, already-chosen pass
+        # snapshot. It is not a second chance to choose the kan.
+        action = node.get("action") or {}
+        if action.get("decisionOnly") and action.get("variant") == "skip_ankan":
+            return []
+        snapshot = node["snapshot"]
         seat = self._resolve_seat(controlled_seat)
         if not self._research_mode():
             return self._build_actions(snapshot, controlled_seat=seat)
