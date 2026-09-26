@@ -332,7 +332,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     if (!analysisResultMatchesCurrentPosition(result)) return false
     gameView.opponentAnalysis = result
     if (result.status === 'terminal') {
-      clearOpponentAnalysisWithoutMotion()
+      cancelScheduledAnalysisPresentation()
+      applyAnalysisResult(result, { withoutMotion: true, clearWhenEmpty: true })
       return true
     }
     const withoutMotion = Boolean(presentationOptions.withoutMotion)
@@ -355,7 +356,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     else beginAnalysisPresentationWindow()
     gameView.opponentAnalysis = result || null
     if (result?.status === 'terminal') {
-      clearOpponentAnalysisWithoutMotion()
+      scheduleAnalysisPresentation(result, { withoutMotion: true, clearWhenEmpty: true })
       return
     }
     if (!result) {

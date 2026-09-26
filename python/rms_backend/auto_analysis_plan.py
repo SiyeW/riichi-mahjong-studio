@@ -9,9 +9,40 @@ def is_terminal_analysis_node(node):
         return False
     snapshot = node.get("snapshot") or {}
     action = node.get("action") or {}
-    return snapshot.get("phase") == "game_end" or action.get("type") in {
-        "hora", "ryukyoku", "end_kyoku",
-    }
+    terminal_events = {"hora", "ryukyoku", "end_kyoku", "round_result", "match_end", "end_game"}
+    if snapshot.get("phase") in {"game_end", "round_result", "match_end"}:
+        return True
+    if action.get("type") in terminal_events:
+        return True
+    # Declaration/settlement nodes can carry a different UI action while their
+    # model input already contains the outcome. Match that input's lifecycle.
+    for event in reversed(snapshot.get("actionHistory") or []):
+        if event.get("type") == "start_kyoku":
+            return False
+        if event.get("type") in terminal_events:
+            return True
+    return False
+
+
+def preceding_prediction_node(game, node_id):
+    """Resolve a terminal display to its own branch's last position this round."""
+    nodes = game.get("nodes", {})
+    node = nodes.get(node_id)
+    if not isinstance(node, dict):
+        return None
+    snapshot = node.get("snapshot") or {}
+    round_key = (snapshot.get("roundIndex"), snapshot.get("honba"))
+    seen = set()
+    while isinstance(node, dict) and node_id not in seen:
+        seen.add(node_id)
+        snapshot = node.get("snapshot") or {}
+        if node.get("type") == "root" or (snapshot.get("roundIndex"), snapshot.get("honba")) != round_key:
+            return None
+        if not is_terminal_analysis_node(node):
+            return node
+        node_id = node.get("parentId")
+        node = nodes.get(node_id)
+    return None
 
 
 def build_round_root_map(game):

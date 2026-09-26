@@ -6,7 +6,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Callable, MutableMapping, Optional
 
-from .auto_analysis_plan import is_terminal_analysis_node
+from .auto_analysis_plan import is_terminal_analysis_node, preceding_prediction_node
 from .analysis_cache import (
     OPPONENT_ANALYSIS_CACHE_FIELD,
     attach_analysis_context,
@@ -214,6 +214,16 @@ class OpponentAnalysisSession:
         if context is None:
             return {"status": "unavailable", "predictions": {}, "ground_truth": {}}
         if context.get("terminal"):
+            node = preceding_prediction_node(self.state["game"], context["nodeId"])
+            cached = (node or {}).get(OPPONENT_ANALYSIS_CACHE_FIELD, {}).get(context["cacheKey"])
+            if not isinstance(cached, dict) and node is not None:
+                cached = find_stale_cache_entry(
+                    self.state["game"], node, context["cacheKey"], OPPONENT_ANALYSIS_CACHE_FIELD,
+                )
+            if isinstance(cached, dict) and cached.get("status") == "ready":
+                result = attach_analysis_context(cached, context)
+                result["status"] = "terminal"
+                return result
             return {
                 "status": "terminal", "predictions": {}, "ground_truth": {},
                 "context": context,

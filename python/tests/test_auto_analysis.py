@@ -189,6 +189,19 @@ class AutoAnalysisPlanTest(unittest.TestCase):
                 self.assertFalse(service.OPPONENT_ANALYSIS.request_current())
                 request.assert_not_called()
             self.assertEqual(service.OPPONENT_ANALYSIS.current()["status"], "terminal")
+            cache_key = service.OPPONENT_ANALYSIS.cache_key()
+            cached = {"status": "ready", "predictions": {"opponents": {"kamicha": [0.2, 0.8]}}}
+            start_node["opponentAnalysisCache"] = {cache_key: cached}
+            with mock.patch.object(service.OPPONENT_PREDICTIONS, "request_predict") as request:
+                for phase in ("game_end", "round_result", "match_end"):
+                    terminal_snapshot["phase"] = phase
+                    result = service.OPPONENT_ANALYSIS.current()
+                    self.assertEqual(result["status"], "terminal")
+                    self.assertEqual(result["predictions"], cached["predictions"])
+                    self.assertEqual(result["context"]["nodeId"], terminal_id)
+                request.assert_not_called()
+            self.assertEqual(cached["status"], "ready")
+            self.assertNotIn("context", cached)
         finally:
             service.STATE["game"], service.STATE["gameLoaded"], service.STATE["opponentAnalysisEnabled"] = previous
 

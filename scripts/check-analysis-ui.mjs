@@ -1043,8 +1043,16 @@ try {
   await target().hover()
   await tooltip.waitFor({ state: 'visible' })
 
-  // A resolved round has no next prediction: do not retain the previous chart.
+  // Terminal views use their branch's preceding cached result without prediction.
   const beforeTerminal = await readCount()
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    check.vm.stageOpponentAnalysisForView({ ...check.result(1.75), status: 'terminal' })
+  })
+  await page.waitForFunction(() => document.querySelector('.count-tooltip-estimate')?.textContent.includes('1.75'))
+  assert.equal(await page.evaluate(() => window.analysisCheck.vm.displayedAnalysisTable !== null), true)
+  assert.equal(await readCount(), beforeTerminal)
+  // Without that cache, do not substitute whatever unrelated chart was visible.
   await page.evaluate(() => {
     const check = window.analysisCheck
     const previous = check.result()

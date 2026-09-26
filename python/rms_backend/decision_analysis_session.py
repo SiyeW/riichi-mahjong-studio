@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, MutableMapping, Optional
 
 from .action_recommendation_adapter import analyze_action_choices, analyze_discard_choices
+from .auto_analysis_plan import is_terminal_analysis_node
 from .analysis_cache import (
     cache_key_context,
     decision_cache_key,
@@ -276,6 +277,8 @@ class DecisionAnalysisSession:
         current_node: dict[str, Any],
         snapshot: dict[str, Any],
     ) -> None:
+        if is_terminal_analysis_node(current_node):
+            return
         if not self.state.get("decisionRecommendationsEnabled", True):
             return
         if snapshot.get("phase") not in (
@@ -423,6 +426,8 @@ class DecisionAnalysisSession:
         snapshot: dict[str, Any],
         legal_actions: list[dict[str, Any]],
     ) -> Optional[dict[str, Any]]:
+        if is_terminal_analysis_node(current_node):
+            return None
         if not self.state.get("decisionRecommendationsEnabled", True):
             return None
         if not legal_actions:
@@ -459,6 +464,8 @@ class DecisionAnalysisSession:
         snapshot: dict[str, Any],
         legal_actions: list[dict[str, Any]],
     ) -> Optional[dict[str, Any]]:
+        if is_terminal_analysis_node(current_node):
+            return None
         if not self.state.get("decisionRecommendationsEnabled", True):
             return None
         if not legal_actions:
