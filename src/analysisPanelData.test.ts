@@ -38,6 +38,9 @@ function fixture(analysis: AnalysisRecord | null = null) {
 test('empty analysis keeps predictions absent and preserves player order', () => {
   const { opponent, game } = fixture()
   assert.deepEqual(game.playerRows.value.map(player => player.seat), [0, 3, 2, 1])
+  assert.deepEqual(game.outcomeSegments.value.map(segment => segment.key), [
+    'self-win', 'self-deal-in', 'horizontal', 'draw',
+  ])
   assert.ok(game.outcomeSegments.value.every(segment => segment.probability === 0))
   assert.ok(opponent.opponentCards.value.every(player => player.doraPrediction.scalarValue === null))
   assert.equal(game.maxAbsoluteDelta.value, 6000)

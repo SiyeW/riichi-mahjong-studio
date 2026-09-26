@@ -265,10 +265,10 @@ function measureCanvasGeometry() {
     deltas: deltas.map(element => relativeRect(element, rootRect, ratio)),
     placements: placements.map(element => relativeRect(element, rootRect, ratio)),
     outcomeColors: outcome ? [
-      variable(outcome, '--analysis-draw-color'),
       variable(outcome, '--analysis-self-win-color'),
       variable(outcome, '--analysis-self-deal-in-color'),
       variable(outcome, '--analysis-horizontal-color'),
+      variable(outcome, '--analysis-draw-color'),
     ] : [],
     offenseColors: offense.map(element => ({
       win: variable(element, '--analysis-self-win-color'),
