@@ -1,5 +1,4 @@
 const { spawn } = require('node:child_process')
-const { StringDecoder } = require('node:string_decoder')
 
 function stringifyProtocolMessage(payload) {
   return JSON.stringify(payload).replace(/[\u0080-\uFFFF]/g, (character) => (
@@ -23,18 +22,6 @@ function createBackendProcess({
   const pendingRequests = new Map()
   const queuedRequests = new Map()
   let onUnsolicitedEvent = null
-
-  function isDebugLine(line) {
-    try {
-      const payload = JSON.parse(line)
-      if (payload && typeof payload === 'object' && 'request_id' in payload) {
-        return false
-      }
-    } catch {
-      return true
-    }
-    return true
-  }
 
   function rejectPendingRequests(error) {
     pendingRequests.forEach(({ reject }) => reject(error))
@@ -99,8 +86,8 @@ function createBackendProcess({
       return
     }
     child = spawnedChild
-    let processStdoutBuffer = ''
-    const stdoutDecoder = new StringDecoder('utf8')
+    let lineChunks = []
+    let lineBytes = 0
 
     spawnedChild.on('error', (err) => {
       if (child !== spawnedChild) return
@@ -122,22 +109,21 @@ function createBackendProcess({
 
     spawnedChild.stdout.on('data', (chunk) => {
       if (child !== spawnedChild) return
-      const text = stdoutDecoder.write(chunk)
-      processStdoutBuffer += text
-
-      let newlineIndex = processStdoutBuffer.indexOf('\n')
-      while (newlineIndex >= 0 && child === spawnedChild) {
-        const line = processStdoutBuffer.slice(0, newlineIndex).trim()
-        processStdoutBuffer = processStdoutBuffer.slice(newlineIndex + 1)
-
-        if (line) {
-          if (isDebugLine(line)) {
-            process.stdout.write(`[${name}] ${line}\n`)
-          }
-          handleOutputLine(line)
-        }
-
-        newlineIndex = processStdoutBuffer.indexOf('\n')
+      // Search each byte once. Joining a growing string and rescanning it for
+      // every chunk makes multi-megabyte record responses quadratic.
+      let offset = 0
+      while (offset < chunk.length && child === spawnedChild) {
+        const newline = chunk.indexOf(10, offset)
+        const end = newline < 0 ? chunk.length : newline
+        const part = chunk.subarray(offset, end)
+        lineChunks.push(part)
+        lineBytes += part.length
+        if (newline < 0) break
+        const line = Buffer.concat(lineChunks, lineBytes).toString('utf8').trim()
+        lineChunks = []
+        lineBytes = 0
+        if (line) handleOutputLine(line)
+        offset = newline + 1
       }
     })
 
@@ -162,7 +148,11 @@ function createBackendProcess({
       payload = JSON.parse(line)
     } catch {
       // The backend may also print diagnostic lines.
+      process.stdout.write(`[${name}] ${line}\n`)
       return
+    }
+    if (!payload || typeof payload !== 'object' || !('request_id' in payload)) {
+      process.stdout.write(`[${name}] ${line}\n`)
     }
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return
     try {

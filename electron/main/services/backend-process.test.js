@@ -76,6 +76,21 @@ test('multibyte text survives arbitrary stdout chunk boundaries', async () => {
   backend.stop()
 })
 
+test('large split replies and subsequent lines are delivered once and in order', async () => {
+  const { backend, children, events } = fixture()
+  const request = backend.sendRequest('record')
+  children[0].output({ type: 'service_ready' })
+  const value = '🀄'.repeat(300_000)
+  const bytes = Buffer.from(JSON.stringify({ request_id: children[0].messages[0].request_id, value })
+    + '\r\n\n' + JSON.stringify({ type: 'after-record' }) + '\n')
+  for (let offset = 0; offset < bytes.length; offset += 8191) {
+    children[0].stdout.emit('data', bytes.subarray(offset, offset + 8191))
+  }
+  assert.equal((await request).value, value)
+  assert.deepEqual(events.map(event => event.type), ['service_ready', 'after-record'])
+  backend.stop()
+})
+
 test('restarting inside an event callback discards remaining lines from that process', () => {
   const { backend, children } = fixture()
   const received = []

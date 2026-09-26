@@ -719,12 +719,22 @@ def _export_recovery_checkpoint(request_id, command):
     }
 
 
+def _export_game_record(request_id, command):
+    with _STATE_LOCK:
+        prepared = RECORD_SESSION.prepare_export()
+        response = VIEW_BUILDER.build_response(request_id, command)
+    # Do not hold the gameplay lock while packing all cached predictions.
+    response["record"] = RECORD_SESSION.serialize_prepared_export(prepared)
+    return response
+
+
 COMMAND_TRANSPORT = command_transport.CommandTransport(
     state_lock=_STATE_LOCK,
     view_builder=VIEW_BUILDER,
     engine_management=ENGINE_MANAGEMENT,
     collect_runtime_metrics=runtime_metrics.collect_runtime_memory_metrics,
     export_recovery_checkpoint=_export_recovery_checkpoint,
+    export_game_record=_export_game_record,
     dispatch_stateful=STATEFUL_COMMANDS.dispatch,
     emit=emit,
     now_iso=now_iso,

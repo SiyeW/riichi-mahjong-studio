@@ -1,5 +1,6 @@
 import copy
 import json
+import struct
 from pathlib import Path
 import unittest
 
@@ -66,7 +67,36 @@ class AnalysisCacheStorageTests(unittest.TestCase):
         self.assertIn(ANALYSIS_CACHE_STORAGE_FIELD, record)
         self.assertNotIn("analysisCache", record["game"]["nodes"]["a"])
         expand_record_analysis_caches(record)
+        source['game']['nodes']['b']['opponentAnalysisCache']['model']['outputs'][
+            'opponent-deal-in-probability']['players'][0]['tiles']['2m'] = struct.unpack(
+                '<f', struct.pack('<f', 1.4975917395076976e-7))[0]
         self.assertEqual(record, source)
+
+    def test_display_precision_only_changes_probabilities_and_preserves_endpoints(self):
+        source = {
+            'probability': 0.123456789,
+            'expectedValue': 1234.56789123,
+            'tiles': {
+                '1m': 1.23456789e-12, '2m': 0, '3m': 1,
+                '4m': {'expectedValue': 0.123456789, 'distribution': [
+                    {'value': 0.123456789, 'probability': 0.765432198},
+                ]},
+            },
+            'winProbability': 0.999999999999,
+            'drawProbability': 1e-44,
+        }
+        packed = pack_json(source, display_probabilities=True)
+        restored = unpack_json(packed)
+        self.assertAlmostEqual(restored['probability'], source['probability'], delta=1e-8)
+        self.assertEqual(restored['expectedValue'], source['expectedValue'])
+        self.assertAlmostEqual(restored['tiles']['1m'], source['tiles']['1m'], delta=1e-19)
+        self.assertEqual(restored['tiles']['2m'], 0)
+        self.assertEqual(restored['tiles']['3m'], 1)
+        self.assertEqual(restored['tiles']['4m']['expectedValue'], 0.123456789)
+        self.assertEqual(restored['tiles']['4m']['distribution'][0]['value'], 0.123456789)
+        self.assertLess(restored['winProbability'], 1)
+        self.assertEqual(restored['drawProbability'], 1e-44)
+        self.assertEqual(source['probability'], 0.123456789)
 
     def test_unknown_storage_versions_are_rejected(self):
         record = {"game": {"nodes": {"a": {"analysisCache": {"result": 1}}}}}

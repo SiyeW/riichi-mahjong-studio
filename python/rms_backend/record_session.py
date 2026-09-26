@@ -128,16 +128,29 @@ class RecordSession:
         game, state = prepared
         return serialize_game_record_parts(copy.deepcopy(game), copy.deepcopy(state))
 
+    def prepare_export(self) -> tuple[Game, dict[str, Any]]:
+        """Capture a coherent full save while holding the state lock.
+
+        Published analysis results are replaced, never edited in place. Detach
+        their mutable key maps, not millions of immutable probability values.
+        Authored game data is copied here so later edits cannot change the save.
+        """
+        game, state = self.prepare_recovery_checkpoint()
+        game = copy.deepcopy(game)
+        live_nodes = self._state["game"]["nodes"]
+        for node_id, node in game["nodes"].items():
+            for field in ("analysisCache", "opponentAnalysisCache"):
+                cache = live_nodes[node_id].get(field)
+                if isinstance(cache, dict):
+                    node[field] = dict(cache)
+        return game, state
+
+    @staticmethod
+    def serialize_prepared_export(prepared: tuple[Game, dict[str, Any]]) -> dict:
+        return serialize_game_record_parts(*prepared)
+
     def serialize(self) -> dict:
-        self.ensure_loaded()
-        game_copy = copy.deepcopy(self._state["game"])
-        state_copy = {
-            "mode": self._state["mode"],
-            "controlledSeat": self._state["controlledSeat"],
-            "pendingSeatSwitch": self._state["pendingSeatSwitch"],
-            "visibleHands": self._state["visibleHands"],
-        }
-        return serialize_game_record_parts(game_copy, state_copy)
+        return self.serialize_prepared_export(self.prepare_export())
 
     def load(self, record: Any) -> None:
         if not isinstance(record, dict):

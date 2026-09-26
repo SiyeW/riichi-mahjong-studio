@@ -117,13 +117,53 @@ class CheckpointExportTests(unittest.TestCase):
         serialize.assert_called_once_with(prepared)
 
     def test_normal_export_keeps_the_existing_response(self):
-        with patch.object(service.RECORD_SESSION, 'serialize', return_value={'game': {}}), \
+        with patch.object(service.RECORD_SESSION, 'prepare_export', return_value=({}, {})), \
+             patch.object(service.RECORD_SESSION, 'serialize_prepared_export', return_value={'game': {}}), \
              patch.object(service.VIEW_BUILDER, 'build_response', return_value={'view': 'unchanged'}) as build:
-            result = service.STATEFUL_COMMANDS.dispatch(
-                'request', 'export_game_record', {}
-            )
-        self.assertEqual(result, {'view': 'unchanged'})
+            result = service._export_game_record('request', 'export_game_record')
+        self.assertEqual(result, {'view': 'unchanged', 'record': {'game': {}}})
         build.assert_called_once()
+
+    def test_full_save_detaches_edits_and_cache_maps_before_packing(self):
+        game = service.create_empty_game(123456)
+        node_id = game['currentNodeId']
+        node = game['nodes'][node_id]
+        result = {'probabilities': [0, 1e-12, 0.999999999999]}
+        node['comment'] = 'before'
+        node['analysisCache'] = {'model': result}
+        with patch.dict(service.STATE, {'game': game, 'gameLoaded': True}):
+            prepared = service.RECORD_SESSION.prepare_export()
+            # Publishing and pruning entries must not change a pending save.
+            node['analysisCache']['model'] = {'probabilities': [1, 0, 0]}
+            node['analysisCache'].clear()
+            node['comment'] = 'after'
+            node['snapshot']['scores'][0] += 1000
+            record = service.RECORD_SESSION.serialize_prepared_export(prepared)
+        expand_record_analysis_caches(record)
+        saved = record['game']['nodes'][node_id]
+        self.assertEqual(saved['comment'], 'before')
+        self.assertEqual(saved['analysisCache']['model'], result)
+
+    def test_full_save_packs_outside_the_gameplay_lock(self):
+        import threading
+        acquired = []
+
+        def serialize(_prepared):
+            def probe():
+                locked = service._STATE_LOCK.acquire(timeout=0.5)
+                acquired.append(locked)
+                if locked:
+                    service._STATE_LOCK.release()
+            thread = threading.Thread(target=probe)
+            thread.start()
+            thread.join()
+            return {}
+
+        with patch.object(service.RECORD_SESSION, 'prepare_export', return_value=({}, {})), \
+             patch.object(service.RECORD_SESSION, 'serialize_prepared_export', side_effect=serialize), \
+             patch.object(service.VIEW_BUILDER, 'build_response', return_value={}):
+            service._export_game_record('request', 'export_game_record')
+        self.assertEqual(acquired, [True])
 
 
 if __name__ == '__main__':

@@ -691,6 +691,7 @@ import {
   useDecisionEntryPresentation,
 } from './useDecisionPresentation'
 import { useDesktopBridgeSubscriptions } from './useDesktopBridgeSubscriptions'
+import type { CloseState } from './contracts/desktopBridge'
 import { useRecordSession } from './useRecordSession'
 import { localizedResultTitle } from './useRoundResultPresentation'
 import { useRuntimeMetrics } from './useRuntimeMetrics'
@@ -1067,10 +1068,7 @@ const bootstrapError = ref('')
 const backendRecoveryNeeded = ref(false)
 const backendHasCheckpoint = ref(false)
 const backendRetrying = ref(false)
-const closeState = reactive<{
-  active: boolean
-  stage: 'preparing' | 'flushing' | 'recovery' | ''
-}>({ active: false, stage: '' })
+const closeState = reactive<CloseState>({ active: false, stage: '' })
 const closingExitLabel = computed(() => t(`close.${closeState.stage || 'preparing'}`))
 
 async function retryBackend() {
@@ -1869,6 +1867,12 @@ useDesktopBridgeSubscriptions({
     flushNodeComment,
     flushEngineAutosave,
     () => engineSaveMessage.value || t('native.closeSaveFailed.message'),
+    async () => {
+      if (status.autoAnalysis.status === 'running' && window.studioAPI) {
+        const response = await window.studioAPI.cancelAutoAnalysis()
+        if (response.state) applyStatus(response.state)
+      }
+    },
   ),
 })
 

@@ -13,11 +13,13 @@ const DERIVED_RECORD_CHANGES = new Set([
 
 function createBackendSession(backend, checkpointOptions = {}) {
   const pending = new Set()
+  const pendingRecordCommands = new Set()
   let restarting = null
   let recovery = null
   let stopped = false
   let generation = 0
   let derivedRecordDirty = false
+  let changeRevision = 0
   const checkpoint = createSessionCheckpoint({
     ...checkpointOptions,
     exportRecord: () => backend.sendRequest('export_recovery_checkpoint'),
@@ -30,6 +32,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
       generation += 1
       checkpoint.stop()
     } else if (event.type === 'record_changed' && !restarting && !stopped) {
+      changeRevision += 1
       if (DERIVED_RECORD_CHANGES.has(event.change)) derivedRecordDirty = true
       else checkpoint.changed()
     }
@@ -60,13 +63,23 @@ function createBackendSession(backend, checkpointOptions = {}) {
       return response
     })
     pending.add(request)
-    request.then(() => pending.delete(request), () => pending.delete(request))
+    const command = args[0]
+    if (!/^(get_|export_|describe_|reload_|unload_)/.test(command)
+      && command !== 'start_auto_analysis' && command !== 'cancel_auto_analysis') {
+      pendingRecordCommands.add(request)
+    }
+    const finished = () => { pending.delete(request); pendingRecordCommands.delete(request) }
+    request.then(finished, finished)
     return request
   }
 
   async function exportGameRecord({ reuseCheckpoint = false } = {}) {
+    // Exports have their own Python executor. Finish already submitted edits
+    // first, so a save cannot overtake a comment still on the command lane.
+    await Promise.all([...pendingRecordCommands])
     const saved = reuseCheckpoint && !derivedRecordDirty ? checkpoint.getFresh() : null
-    if (saved?.record) {
+    // Crash checkpoints intentionally omit caches; they are not full saves.
+    if (saved?.record && saved.includesAnalysis) {
       return {
         record: saved.record,
         state: { gameLoaded: true, analysisVisibility: saved.visibility },
@@ -78,12 +91,16 @@ function createBackendSession(backend, checkpointOptions = {}) {
       }
     }
 
-    const response = await sendRequest('export_game_record')
-    checkpoint.rememberFresh({
-      record: response.record,
-      visibility: response.state?.analysisVisibility,
-    })
-    derivedRecordDirty = false
+    const exportedRevision = changeRevision
+    const response = await sendRequest('export_game_record', {}, 120_000)
+    if (changeRevision === exportedRevision) {
+      checkpoint.rememberFresh({
+        record: response.record,
+        visibility: response.state?.analysisVisibility,
+        includesAnalysis: true,
+      })
+      derivedRecordDirty = false
+    }
     return { ...response, reusedCheckpoint: false }
   }
 

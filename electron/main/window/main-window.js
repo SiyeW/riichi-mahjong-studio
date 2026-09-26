@@ -121,17 +121,28 @@ function createMainWindow({
     closeInProgress = true
     publishCloseState(true, 'preparing')
     void (async () => {
+      let stageStarted = performance.now()
+      let activeStage = 'preparing'
+      const stageChanged = (stage) => {
+        console.info(`[close] ${activeStage}: ${Math.round(performance.now() - stageStarted)} ms`)
+        activeStage = stage
+        stageStarted = performance.now()
+        publishCloseState(true, stage)
+      }
       try {
         await persistBeforeCloseImpl(
-          () => requestRendererFlushImpl(window, ipcMain, t('native.closeSaveTimeout')),
+          () => requestRendererFlushImpl(window, ipcMain, t('native.closeSaveTimeout'), {
+            onSlow: () => stageChanged('waiting'),
+          }),
           () => loadSettingsImpl(appOptions).records?.saveRecoveryOnExit && gameFileStore.isDirty(),
-          writeRecoveryGameRecord,
-          (stage) => publishCloseState(true, stage),
+          () => writeRecoveryGameRecord(stageChanged),
+          stageChanged,
         )
+        console.info(`[close] ${activeStage}: ${Math.round(performance.now() - stageStarted)} ms`)
         closeAllowed = true
         window.close()
       } catch (error) {
-        console.error('[close] failed to save pending changes:', error)
+        console.error(`[close] ${activeStage} failed after ${Math.round(performance.now() - stageStarted)} ms:`, error)
         const result = await dialog.showMessageBox(window, {
           type: 'error',
           title: t('native.closeSaveFailed.title'),

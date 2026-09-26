@@ -1,9 +1,11 @@
-"""Versioned, lossless storage for large derived-analysis caches."""
+"""Versioned binary storage for derived-analysis caches."""
 
 from __future__ import annotations
 
 import base64
+import math
 import struct
+from functools import lru_cache
 
 
 ANALYSIS_CACHE_STORAGE_FIELD = "analysisCacheStorage"
@@ -11,6 +13,21 @@ ANALYSIS_CACHE_STORAGE_VERSION = 1
 ANALYSIS_CACHE_CODEC = "binary-json-f64-v1"
 
 _NULL, _FALSE, _TRUE, _NUMBER, _STRING, _ARRAY, _OBJECT = range(7)
+_PROBABILITY_FIELDS = frozenset((
+    "probability", "winProbability", "dealInProbability", "drawProbability",
+    "furitenOrNoYaku",
+))
+
+
+def _display_probability(value):
+    # Retain relative precision for conditional probabilities and expectations.
+    # Rounding every small event to an absolute percent step would corrupt both.
+    # Binary32 retains about seven significant digits and compresses well in
+    # the existing binary codec. Decimal rounding destroys those repeated low
+    # bits and can make float32 model outputs substantially larger on disk.
+    rounded = struct.unpack('<f', struct.pack('<f', value))[0]
+    # Never turn a possible event into an impossible/certain one.
+    return rounded if 0 < rounded < 1 and abs(rounded - value) <= value * 6e-8 else value
 
 
 def _encode_bitmap(bits):
@@ -28,7 +45,7 @@ def _decode_bitmap(encoded, length):
     return [bool(data[index >> 3] & (1 << (index & 7))) for index in range(length)]
 
 
-def pack_json(value):
+def pack_json(value, *, display_probabilities=False):
     strings = []
     string_indexes = {}
     tokens = bytearray()
@@ -44,22 +61,24 @@ def pack_json(value):
         string_indexes[text] = index
         return index
 
+    @lru_cache(maxsize=4096)
     def variable_unsigned(value):
-        if not isinstance(value, int) or value < 0:
-            raise ValueError("Invalid packed analysis index.")
+        encoded = bytearray()
         while True:
             byte = value & 0x7F
             value >>= 7
-            tokens.append(byte | (0x80 if value else 0))
+            encoded.append(byte | (0x80 if value else 0))
             if not value:
-                return
+                return bytes(encoded)
 
     def token(tag, payload=None):
         tokens.append(tag)
         if payload is not None:
-            variable_unsigned(payload)
+            tokens.extend(variable_unsigned(payload))
 
-    def visit(current):
+    key_tokens = {}
+
+    def visit(current, probability=False):
         if current is None:
             token(_NULL)
         elif current is False:
@@ -68,8 +87,10 @@ def pack_json(value):
             token(_TRUE)
         elif isinstance(current, (int, float)):
             number = float(current)
-            if number != number or number in (float("inf"), float("-inf")):
+            if not math.isfinite(number):
                 raise ValueError("Analysis cache contains a non-finite number.")
+            if display_probabilities and probability and 0 < number < 1:
+                number = _display_probability(number)
             token(_NUMBER)
             is_zero = number == 0
             zero_bits.append(is_zero)
@@ -80,14 +101,19 @@ def pack_json(value):
         elif isinstance(current, (list, tuple)):
             token(_ARRAY, len(current))
             for child in current:
-                visit(child)
+                visit(child, probability)
         elif isinstance(current, dict):
             token(_OBJECT, len(current))
             for key, child in current.items():
                 if not isinstance(key, str):
                     raise ValueError("Analysis cache object keys must be strings.")
-                variable_unsigned(string_index(key))
-                visit(child)
+                encoded_key = key_tokens.get(key)
+                if encoded_key is None:
+                    encoded_key = variable_unsigned(string_index(key))
+                    key_tokens[key] = encoded_key
+                tokens.extend(encoded_key)
+                visit(child, key in _PROBABILITY_FIELDS or key == "tiles"
+                      or (probability and isinstance(child, (int, float))))
         else:
             raise ValueError(f"Unsupported analysis cache value: {type(current).__name__}")
 
@@ -204,14 +230,15 @@ def compact_record_analysis_caches(record):
         record[ANALYSIS_CACHE_STORAGE_FIELD] = {
             "schemaVersion": ANALYSIS_CACHE_STORAGE_VERSION,
             "codec": ANALYSIS_CACHE_CODEC,
+            "probabilityPrecision": "float32",
             "nodeIds": node_ids,
             "decision": {
                 "presence": _encode_bitmap(decision_presence),
-                "values": pack_json(decision_values),
+                "values": pack_json(decision_values, display_probabilities=True),
             },
             "opponent": {
                 "presence": _encode_bitmap(opponent_presence),
-                "values": pack_json(opponent_values),
+                "values": pack_json(opponent_values, display_probabilities=True),
             },
         }
     return record

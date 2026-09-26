@@ -193,7 +193,7 @@ test('derived analysis cache events do not repeatedly export the recovery record
   assert.equal(scheduled.length, 1)
 })
 
-test('recovery export reuses a fresh checkpoint until derived analysis changes', async () => {
+test('recovery export only reuses a full checkpoint until derived analysis changes', async () => {
   let capture
   const { session, calls } = fixture(true, {
     schedule(callback) { capture = callback; return 1 },
@@ -205,17 +205,17 @@ test('recovery export reuses a fresh checkpoint until derived analysis changes',
   const exportsAfterCheckpoint = calls.filter(call => call === 'export_game_record').length
 
   const reused = await session.exportGameRecord({ reuseCheckpoint: true })
-  assert.equal(reused.reusedCheckpoint, true)
-  assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint)
+  assert.equal(reused.reusedCheckpoint, false, 'a lightweight checkpoint omits existing analysis')
+  assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint + 1)
 
   session.handleEvent({ type: 'record_changed', change: 'opponent_analysis_cache' })
   const refreshed = await session.exportGameRecord({ reuseCheckpoint: true })
   assert.equal(refreshed.reusedCheckpoint, false)
-  assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint + 1)
+  assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint + 2)
 
   const reusedAgain = await session.exportGameRecord({ reuseCheckpoint: true })
   assert.equal(reusedAgain.reusedCheckpoint, true)
-  assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint + 1)
+  assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint + 2)
 })
 
 test('pending authored changes prevent recovery checkpoint reuse', async () => {
@@ -233,4 +233,52 @@ test('pending authored changes prevent recovery checkpoint reuse', async () => {
   const refreshed = await session.exportGameRecord({ reuseCheckpoint: true })
   assert.equal(refreshed.reusedCheckpoint, false)
   assert.equal(calls.filter(call => call === 'export_game_record').length, exportsAfterCheckpoint + 1)
+})
+
+test('save waits for submitted edits before entering the independent export lane', async () => {
+  const { backend, session, calls } = fixture()
+  const send = backend.sendRequest
+  let finish
+  backend.sendRequest = (command, ...args) => command === 'set_node_comment'
+    ? new Promise(resolve => { finish = resolve }) : send(command, ...args)
+  const edit = session.sendRequest('set_node_comment')
+  const saving = session.exportGameRecord()
+  await Promise.resolve()
+  assert.equal(calls.includes('export_game_record'), false)
+  finish({})
+  await edit
+  await saving
+  assert.equal(calls.includes('export_game_record'), true)
+})
+
+test('analysis arriving during export is not incorrectly marked saved in the checkpoint', async () => {
+  const { backend, session, calls } = fixture()
+  await session.sendRequest('jump_to_node')
+  const send = backend.sendRequest
+  let finish
+  backend.sendRequest = (command, ...args) => command === 'export_game_record'
+    ? new Promise(resolve => { finish = () => resolve(send(command, ...args)) }) : send(command, ...args)
+  const saving = session.exportGameRecord()
+  await Promise.resolve()
+  session.handleEvent({ type: 'record_changed', change: 'opponent_analysis_cache' })
+  finish()
+  await saving
+  backend.sendRequest = send
+  const next = await session.exportGameRecord()
+  assert.equal(next.reusedCheckpoint, false)
+  assert.equal(calls.filter(call => call === 'export_game_record').length, 2)
+  assert.equal((await session.exportGameRecord({ reuseCheckpoint: true })).reusedCheckpoint, true)
+})
+
+test('save does not wait for unrelated engine inspection', { timeout: 1000 }, async () => {
+  const { backend, session } = fixture()
+  const send = backend.sendRequest
+  let finish
+  backend.sendRequest = (command, ...args) => command === 'describe_engine'
+    ? new Promise(resolve => { finish = resolve }) : send(command, ...args)
+  const inspection = session.sendRequest('describe_engine')
+  const saved = await session.exportGameRecord()
+  assert.ok(saved.record)
+  finish({})
+  await inspection
 })

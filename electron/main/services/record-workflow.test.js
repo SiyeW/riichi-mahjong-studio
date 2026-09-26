@@ -86,6 +86,23 @@ test('saving owns record export, encoding, path tracking, and dirty publication'
   })
 })
 
+test('changing record during encoding cannot mark the replacement saved', async context => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-save-generation-'))
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  const store = createGameFileStore(directory)
+  store.beginRecord({ dirty: true })
+  const workflow = createRecordWorkflow({
+    app: { getVersion: () => 'test' }, appOptions: {}, dialog: {}, gameFileStore: store,
+    backendGateway: { exportRecoveryGameRecord: async () => ({ record: { game: { gameId: 'old' } } }) },
+    getMainWindow: () => null, t: key => key,
+  })
+  await assert.rejects(workflow.writeRecoveryGameRecord(stage => {
+    if (stage === 'encoding') store.beginRecord({ dirty: true })
+  }), /record changed/)
+  assert.equal(store.isDirty(), true)
+  assert.equal(fs.existsSync(store.getRecoveryPath()), false)
+})
+
 test('opening a record starts in the portable records folder', async (context) => {
   const portableDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-open-record-'))
   context.after(() => fs.rmSync(portableDirectory, { recursive: true, force: true }))

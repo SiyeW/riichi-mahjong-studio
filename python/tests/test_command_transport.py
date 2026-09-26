@@ -21,6 +21,7 @@ class CommandTransportTests(unittest.TestCase):
         )
         self.collect_metrics = mock.Mock(return_value={"backendPrivateBytes": 1})
         self.export_checkpoint = mock.Mock(return_value={"command": "checkpoint"})
+        self.export_record = mock.Mock(return_value={"command": "record"})
         self.dispatch_stateful = mock.Mock(return_value={"command": "stateful"})
         self.emit = mock.Mock()
         self.transport = CommandTransport(
@@ -29,6 +30,7 @@ class CommandTransportTests(unittest.TestCase):
             engine_management=self.engine_management,
             collect_runtime_metrics=self.collect_metrics,
             export_recovery_checkpoint=self.export_checkpoint,
+            export_game_record=self.export_record,
             dispatch_stateful=self.dispatch_stateful,
             emit=self.emit,
             now_iso=lambda: "now",
@@ -93,6 +95,11 @@ class CommandTransportTests(unittest.TestCase):
                 "timestamp": "now",
             }
         )
+
+    def test_full_record_export_bypasses_stateful_dispatch(self):
+        self.transport.process('request', 'export_game_record', {})
+        self.export_record.assert_called_once_with('request', 'export_game_record')
+        self.dispatch_stateful.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -17,6 +17,11 @@ export interface RecordFileResult {
   recoveryRecord: boolean
 }
 
+export interface CloseState {
+  active: boolean
+  stage: 'preparing' | 'flushing' | 'waiting' | 'recovery' | 'encoding' | 'writing' | ''
+}
+
 export interface DesktopBridge {
   getSettings: () => Promise<StudioSettings>
   saveSettings: (settings: SettingsPatch) => Promise<StudioSettings>
@@ -132,8 +137,5 @@ export interface DesktopBridge {
   onPythonEvent: (callback: (event: PythonEvent) => void) => () => void
   onRecordDirtyChanged: (callback: (dirty: boolean) => void) => () => void
   onBeforeClose: (callback: () => void | Promise<void>) => () => void
-  onCloseState: (callback: (state: {
-    active: boolean
-    stage: 'preparing' | 'flushing' | 'recovery' | ''
-  }) => void) => () => void
+  onCloseState: (callback: (state: CloseState) => void) => () => void
 }

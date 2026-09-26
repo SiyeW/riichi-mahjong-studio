@@ -1,8 +1,7 @@
 const zlib = require('node:zlib')
-const { promisify } = require('node:util')
+const path = require('node:path')
+const { Worker } = require('node:worker_threads')
 const { compactAnalysisCaches, expandAnalysisCaches } = require('./analysis-cache-storage')
-
-const gzip = promisify(zlib.gzip)
 
 const RECOVERY_RECORD_KIND = 'unsaved-exit'
 
@@ -16,8 +15,20 @@ function encodeGameRecord(record, compressed = true) {
 }
 
 async function encodeGameRecordAsync(record, compressed = true) {
-  const json = Buffer.from(JSON.stringify(record), 'utf8')
-  return compressed ? gzip(json, { level: 6 }) : json
+  // JSON encoding is CPU work too; async gzip alone still freezes the main
+  // process before compression starts. Each save owns its worker until exit.
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(path.join(__dirname, 'game-record-encoder.js'), {
+      workerData: { record, compressed },
+    })
+    let encoded
+    worker.once('message', bytes => { encoded = Buffer.from(bytes) })
+    worker.once('error', reject)
+    worker.once('exit', code => {
+      if (code === 0 && encoded) resolve(encoded)
+      else reject(new Error(`Record encoder exited without a result (code ${code}).`))
+    })
+  })
 }
 
 function decodeGameRecord(input) {

@@ -81,9 +81,6 @@ class StatefulCommandDispatcher:
             "export_custom_tenhou": lambda: self._record.export_custom(
                 request_id, command
             ),
-            "export_game_record": lambda: self._record.export_record(
-                request_id, command, payload
-            ),
             "import_game_record": lambda: self._record.import_record(
                 request_id, command, payload
             ),

@@ -1,5 +1,5 @@
 import { onBeforeUnmount, onMounted } from 'vue'
-import type { DesktopBridge } from './contracts/desktopBridge'
+import type { CloseState, DesktopBridge } from './contracts/desktopBridge'
 import type { PythonEvent } from './contracts/runtime'
 
 type UiZoomDirection = 'in' | 'out' | 'reset'
@@ -9,7 +9,7 @@ interface DesktopBridgeHandlers {
   recordDirtyChanged: (dirty: boolean) => void
   uiZoomShortcut: (direction: UiZoomDirection) => void
   beforeClose: () => void | Promise<void>
-  closeState: (state: { active: boolean, stage: 'preparing' | 'flushing' | 'recovery' | '' }) => void
+  closeState: (state: CloseState) => void
 }
 
 export function subscribeDesktopBridge(

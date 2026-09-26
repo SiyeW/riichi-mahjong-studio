@@ -42,6 +42,7 @@ class ServiceRuntime:
     def request_lane(command: str) -> str:
         return {
             "export_recovery_checkpoint": "checkpoint",
+            "export_game_record": "checkpoint",
             "get_status": "status",
             "get_runtime_metrics": "metrics",
             "describe_engine": "engine_inspection",

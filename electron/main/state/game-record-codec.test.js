@@ -15,6 +15,12 @@ test('asynchronous encoding preserves the synchronous record format', async () =
   const record = { formatVersion: 1, game: { gameId: 'async-test', nodes: { n1: { comment: '🀄' } } } }
   assert.deepEqual(await encodeGameRecordAsync(record), encodeGameRecord(record))
   assert.deepEqual(decodeGameRecord(await encodeGameRecordAsync(record)), record)
+  assert.deepEqual(await encodeGameRecordAsync(record, false), encodeGameRecord(record, false))
+})
+
+test('encoder failures reject without leaving a pending worker', async () => {
+  await assert.rejects(encodeGameRecordAsync({ invalid: 1n }), /BigInt/)
+  await assert.rejects(encodeGameRecordAsync({ invalid: () => {} }), /clone/)
 })
 
 test('new writes compact analysis caches while decoding restores the backend record shape', async () => {

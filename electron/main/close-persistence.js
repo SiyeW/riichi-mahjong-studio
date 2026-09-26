@@ -1,6 +1,8 @@
 let requestSerial = 0
 
-function requestRendererFlush(window, ipcMain, timeoutMessage, timeoutMs = 5000) {
+function requestRendererFlush(window, ipcMain, timeoutMessage, {
+  timeoutMs = 60_000, slowMs = 5000, onSlow = () => {},
+} = {}) {
   if (!window || window.isDestroyed() || window.webContents.isLoading()) return Promise.resolve()
   const contents = window.webContents
   const token = `${Date.now()}-${++requestSerial}`
@@ -10,6 +12,7 @@ function requestRendererFlush(window, ipcMain, timeoutMessage, timeoutMs = 5000)
       if (settled) return
       settled = true
       clearTimeout(timer)
+      clearTimeout(slowTimer)
       ipcMain.removeListener('record:close-ready', onReady)
       contents.removeListener('destroyed', onDestroyed)
       if (error) reject(error)
@@ -21,6 +24,8 @@ function requestRendererFlush(window, ipcMain, timeoutMessage, timeoutMs = 5000)
     }
     const onDestroyed = () => finish(new Error(timeoutMessage))
     const timer = setTimeout(() => finish(new Error(timeoutMessage)), timeoutMs)
+    // Keep accepting the original acknowledgement after the slow-save hint.
+    const slowTimer = setTimeout(onSlow, slowMs)
     ipcMain.on('record:close-ready', onReady)
     contents.once('destroyed', onDestroyed)
     try {

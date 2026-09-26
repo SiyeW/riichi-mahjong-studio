@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
+const { EventEmitter } = require('node:events')
 const { createMainWindow, resolveZoomShortcut } = require('./main-window')
 
 test('zoom shortcuts accept platform modifiers and reject unrelated input', () => {
@@ -61,7 +62,7 @@ test('main window saves size after resize and does not rewrite settings on close
     t: (key) => key,
     loadSettingsImpl: () => structuredClone(settings),
     saveSettingsImpl: (value) => { savedSettings = value; settingsSaveCount += 1 },
-    requestRendererFlushImpl: async (...args) => calls.push(['requestRendererFlush', ...args]),
+    requestRendererFlushImpl: async (...args) => calls.push(['requestRendererFlush', ...args.slice(0, 3)]),
     persistBeforeCloseImpl: async (flush, shouldRecover, recover, onStage) => {
       onStage('flushing')
       await flush()
@@ -155,4 +156,45 @@ test('development window retries a failed main-frame load and cancels pending re
   assert.equal(timers.length, 2)
   windowEvents.get('closed')()
   assert.equal(timers[1], null)
+})
+
+test('canceling a failed close restores interaction and permits a later complete save', async () => {
+  const states = []
+  let closes = 0
+  let flushes = 0
+  let writes = 0
+  class Window extends EventEmitter {
+    constructor() {
+      super()
+      this.webContents = new EventEmitter()
+      this.webContents.setZoomFactor = () => {}
+      this.webContents.send = (channel, payload) => {
+        if (channel === 'record:close-state') states.push(payload)
+      }
+    }
+    isDestroyed() { return false }
+    loadURL() { return Promise.resolve() }
+    close() { closes += 1 }
+  }
+  const window = createMainWindow({
+    BrowserWindow: Window, dialog: { showMessageBox: async () => ({ response: 0 }) },
+    ipcMain: {}, appOptions: {}, projectRoot: process.cwd(), isDev: true, rendererUrl: 'unused',
+    gameFileStore: { isDirty: () => true }, t: key => key,
+    loadSettingsImpl: () => ({ window: { width: 1200, height: 800 }, records: { saveRecoveryOnExit: true } }),
+    requestRendererFlushImpl: async () => { if (++flushes === 1) throw new Error('pending edit failed') },
+    writeRecoveryGameRecord: async onStage => { writes += 1; onStage('encoding'); onStage('writing') },
+  })
+  const requestClose = () => window.emit('close', { preventDefault() {} })
+  requestClose()
+  requestClose()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(flushes, 1, 'duplicate close events must not start another save')
+  assert.equal(writes, 0)
+  assert.equal(closes, 0)
+  assert.deepEqual(states.at(-1), { active: false, stage: '' })
+  requestClose()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(writes, 1)
+  assert.equal(closes, 1)
+  assert.deepEqual(states.slice(-2).map(state => state.stage), ['encoding', 'writing'])
 })

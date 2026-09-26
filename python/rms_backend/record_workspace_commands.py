@@ -79,18 +79,6 @@ class RecordWorkspaceCommands:
             {"customTenhou": self._record_session.export_custom()},
         )
 
-    def export_record(
-        self,
-        request_id: Any,
-        command: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        return self._view_builder.build_response(
-            request_id,
-            command,
-            {"record": self._record_session.serialize()},
-        )
-
     def import_record(
         self,
         request_id: Any,

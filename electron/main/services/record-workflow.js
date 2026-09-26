@@ -56,6 +56,7 @@ function createRecordWorkflow({
       recovery = false,
       rememberPath = true,
       exportRecord = () => backendGateway.exportGameRecord(),
+      onStage = () => {},
     } = options
     const exportedRevision = gameFileStore.getRevision()
     const response = await withCurrentRecord(gameFileStore, exportRecord)
@@ -63,11 +64,18 @@ function createRecordWorkflow({
       appVersion: app.getVersion(),
       recovery,
     })
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true })
-    const useCompression = path.extname(targetPath).toLowerCase() !== '.json'
-    const encoded = await encodeGameRecordAsync(record, useCompression)
-    await writeFileAtomicallyAsync(targetPath, encoded)
-    if (recovery) gameFileStore.writeRecoverySourcePath(gameFileStore.getCurrentPath())
+    const sourcePath = gameFileStore.getCurrentPath()
+    const encoded = await withCurrentRecord(gameFileStore, async () => {
+      onStage('encoding')
+      await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
+      const useCompression = path.extname(targetPath).toLowerCase() !== '.json'
+      return encodeGameRecordAsync(record, useCompression)
+    })
+    await withCurrentRecord(gameFileStore, async () => {
+      onStage('writing')
+      await writeFileAtomicallyAsync(targetPath, encoded)
+    })
+    if (recovery) gameFileStore.writeRecoverySourcePath(sourcePath)
     if (rememberPath) gameFileStore.setCurrentPath(targetPath)
     if (markSaved) gameFileStore.markSaved(exportedRevision)
     const recordDirty = publishRecordDirty(true)
@@ -80,11 +88,12 @@ function createRecordWorkflow({
     }
   }
 
-  function writeRecoveryGameRecord() {
+  function writeRecoveryGameRecord(onStage = () => {}) {
     return writeCurrentGameRecord(gameFileStore.getRecoveryPath(), {
       markSaved: false,
       recovery: true,
       rememberPath: false,
+      onStage,
       exportRecord: () => backendGateway.exportRecoveryGameRecord(),
     })
   }
