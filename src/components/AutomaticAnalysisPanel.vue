@@ -107,7 +107,8 @@ const {
 
 .auto-analysis-menu-items {
   box-sizing: border-box;
-  width: min(calc(18rem * var(--chrome-scale)), calc(100cqw - 1.2rem));
+  width: max-content;
+  max-width: calc(100cqw - 1.2rem);
   min-width: 0;
 }
 
@@ -136,6 +137,9 @@ const {
 }
 
 .auto-analysis-menu-status {
+  box-sizing: border-box;
+  width: 0;
+  min-width: 100%;
   padding: calc(0.25rem * var(--chrome-scale)) calc(0.55rem * var(--chrome-scale));
   color: var(--text-dim);
   font-size: var(--ui-text-caption);

@@ -456,6 +456,21 @@ try {
   const autoAnalysisMenu = page.locator('.auto-analysis-menu')
   await autoAnalysisMenu.locator('.auto-analysis-button').hover()
   assert.equal(await autoAnalysisMenu.locator('.auto-analysis-menu-action').isVisible(), true, 'auto-analysis exposes the cache action on hover')
+  const cacheMenuGeometry = await autoAnalysisMenu.locator('.auto-analysis-menu-items').evaluate(menu => {
+    const action = menu.querySelector('.auto-analysis-menu-action')
+    const text = document.createRange()
+    text.selectNodeContents(action)
+    const actionStyle = getComputedStyle(action)
+    const menuStyle = getComputedStyle(menu)
+    return {
+      actual: menu.getBoundingClientRect().width,
+      content: text.getBoundingClientRect().width
+        + parseFloat(actionStyle.paddingLeft) + parseFloat(actionStyle.paddingRight)
+        + parseFloat(menuStyle.paddingLeft) + parseFloat(menuStyle.paddingRight)
+        + parseFloat(menuStyle.borderLeftWidth) + parseFloat(menuStyle.borderRightWidth),
+    }
+  })
+  assert.ok(cacheMenuGeometry.actual <= cacheMenuGeometry.content + 2, 'single-action menu follows its content width')
   await page.evaluate(() => window.analysisCheck.vm.openWallView())
   assert.equal(
     await page.locator('.analysis-float-panel').evaluate(panel => getComputedStyle(panel).backgroundImage),
@@ -1071,6 +1086,10 @@ try {
   await page.locator('.auto-analysis-menu .auto-analysis-button').hover()
   await page.locator('.auto-analysis-menu-action').click()
   await page.waitForFunction(() => window.analysisCheck.epoch > 0)
+  assert.ok(
+    await page.locator('.auto-analysis-menu-items').evaluate(menu => menu.getBoundingClientRect().width) <= cacheMenuGeometry.actual + 2,
+    'cache result wraps without widening the action menu',
+  )
   await page.evaluate(async () => { const check = window.analysisCheck; check.resolveRead(check.oldResult); await check.pendingRead })
   await page.evaluate(() => {
     const check = window.analysisCheck
