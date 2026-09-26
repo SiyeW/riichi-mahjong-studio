@@ -12,7 +12,7 @@
         </button>
         <span class="hover-action-menu-items auto-analysis-menu-items" role="menu" :aria-label="t('console.autoAnalysis')">
           <button
-            class="auto-analysis-menu-action"
+            class="ui-control-button auto-analysis-menu-action"
             role="menuitem"
             :disabled="!status.gameLoaded || clearingAnalysisCaches"
             @click="clearCache"
@@ -113,27 +113,9 @@ const {
 }
 
 .auto-analysis-menu-action {
+  box-sizing: border-box;
   width: 100%;
-  padding: calc(0.35rem * var(--chrome-scale)) calc(0.55rem * var(--chrome-scale));
-  border: 0;
-  border-radius: calc(0.12rem * var(--ui-scale));
-  background: transparent;
-  color: var(--text-main);
-  font: inherit;
-  font-size: var(--ui-text-control);
   text-align: left;
-  cursor: pointer;
-}
-
-.auto-analysis-menu-action:hover:not(:disabled),
-.auto-analysis-menu-action:focus-visible {
-  background: rgba(228, 241, 237, 0.08);
-  outline: 1px solid rgba(228, 241, 237, 0.28);
-}
-
-.auto-analysis-menu-action:disabled {
-  opacity: 0.48;
-  cursor: not-allowed;
 }
 
 .auto-analysis-menu-status {

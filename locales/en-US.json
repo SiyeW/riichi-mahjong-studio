@@ -223,7 +223,7 @@
   "engine.fileFilter": "Engines",
   "engine.weightFilter": "Model weights",
   "engine.allFilesFilter": "All files",
-  "console.clearCache": "Clear record analysis cache",
+  "console.clearCache": "Clear analysis cache",
   "console.clearingCache": "Clearing...",
   "console.cacheSummary": "Removed {decision} decision-engine entries, {opponent} opponent-analysis entries, and {comparisons} node evaluations from the in-memory record. The record file has not been updated.",
   "console.clearCacheFailed": "Could not clear cache: {message}",

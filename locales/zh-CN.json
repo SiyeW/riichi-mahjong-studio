@@ -223,7 +223,7 @@
   "engine.fileFilter": "引擎",
   "engine.weightFilter": "模型权重",
   "engine.allFilesFilter": "所有文件",
-  "console.clearCache": "清除牌谱分析缓存",
+  "console.clearCache": "清除分析缓存",
   "console.clearingCache": "正在清除...",
   "console.cacheSummary": "已从当前内存牌谱清除决策引擎 {decision} 项、对手分析 {opponent} 项、节点评估 {comparisons} 项；尚未写入牌谱文件。",
   "console.clearCacheFailed": "清除失败：{message}",

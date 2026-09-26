@@ -456,6 +456,13 @@ try {
   const autoAnalysisMenu = page.locator('.auto-analysis-menu')
   await autoAnalysisMenu.locator('.auto-analysis-button').hover()
   assert.equal(await autoAnalysisMenu.locator('.auto-analysis-menu-action').isVisible(), true, 'auto-analysis exposes the cache action on hover')
+  const cacheActionStyles = await autoAnalysisMenu.locator('.auto-analysis-menu-action').evaluate(action => ({
+    background: getComputedStyle(action).backgroundColor,
+    border: getComputedStyle(action).borderTopStyle,
+    menuBackground: getComputedStyle(action.parentElement).backgroundColor,
+  }))
+  assert.equal(cacheActionStyles.border, 'solid', 'cache action uses the shared bordered button treatment')
+  assert.notEqual(cacheActionStyles.background, cacheActionStyles.menuBackground, 'cache action is visibly distinct from its menu surface')
   const cacheMenuGeometry = await autoAnalysisMenu.locator('.auto-analysis-menu-items').evaluate(menu => {
     const action = menu.querySelector('.auto-analysis-menu-action')
     const text = document.createRange()
