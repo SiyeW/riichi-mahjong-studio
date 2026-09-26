@@ -39,7 +39,7 @@ contextBridge.exposeInMainWorld('studioAPI', {
   reconstructWalls: (seed) => ipcRenderer.invoke('game:reconstruct-walls', seed),
   importWall: (tiles) => ipcRenderer.invoke('game:import-wall', tiles),
   getAnalysis: () => ipcRenderer.invoke('analysis:get'),
-  clearAnalysisCaches: () => ipcRenderer.invoke('analysis:clear-caches'),
+  clearAnalysisCaches: () => ipcRenderer.invoke('debug:clear-analysis-caches'),
   startAutoAnalysis: () => ipcRenderer.invoke('analysis:auto-start'),
   cancelAutoAnalysis: () => ipcRenderer.invoke('analysis:auto-cancel'),
   readClipboardText: () => ipcRenderer.invoke('clipboard:read-text'),

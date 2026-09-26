@@ -25,15 +25,15 @@ test('analysis IPC registers the complete analysis channel boundary', () => {
   assert.deepEqual([...handlers.keys()].sort(), [
     'analysis:auto-cancel',
     'analysis:auto-start',
-    'analysis:clear-caches',
     'analysis:get',
     'analysis:visibility',
+    'debug:clear-analysis-caches',
   ])
 })
 
 test('analysis cache clearing marks the record only when persisted analysis changed', async () => {
   const unchanged = fixture({ mortalEntries: 0, opponentEntries: 0, comparisons: 0, pendingReview: false })
-  await unchanged.handlers.get('analysis:clear-caches')()
+  await unchanged.handlers.get('debug:clear-analysis-caches')()
   assert.equal(unchanged.dirtyCalls(), 0)
 
   for (const cleared of [
@@ -43,7 +43,7 @@ test('analysis cache clearing marks the record only when persisted analysis chan
     { pendingReview: true },
   ]) {
     const changed = fixture(cleared)
-    assert.deepEqual(await changed.handlers.get('analysis:clear-caches')(), { cleared })
+    assert.deepEqual(await changed.handlers.get('debug:clear-analysis-caches')(), { cleared })
     assert.equal(changed.dirtyCalls(), 1)
   }
 })

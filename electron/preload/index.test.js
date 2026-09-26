@@ -3,11 +3,13 @@ const fs = require('node:fs')
 const path = require('node:path')
 const test = require('node:test')
 const vm = require('node:vm')
+const { registerAnalysisIpc } = require('../main/ipc/analysis-ipc')
 
 const root = path.resolve(__dirname, '../..')
 
 function loadPreloadBridge() {
   let exposed = null
+  const invoked = []
   const electron = {
     contextBridge: {
       exposeInMainWorld(name, api) {
@@ -15,7 +17,7 @@ function loadPreloadBridge() {
       },
     },
     ipcRenderer: {
-      invoke() {},
+      invoke(channel) { invoked.push(channel) },
       on() {},
       removeListener() {},
       send() {},
@@ -28,7 +30,7 @@ function loadPreloadBridge() {
       throw new Error(`Unexpected preload dependency: ${request}`)
     },
   }, { filename: 'electron/preload/index.cjs' })
-  return exposed
+  return { ...exposed, invoked }
 }
 
 function declaredBridgeMethods() {
@@ -42,4 +44,17 @@ test('preload exposes the complete authoritative desktop bridge', () => {
   const exposed = loadPreloadBridge()
   assert.equal(exposed?.name, 'studioAPI')
   assert.deepEqual(Object.keys(exposed?.api || {}).sort(), declaredBridgeMethods())
+})
+
+test('cache clearing uses a channel registered by the main process', () => {
+  const exposed = loadPreloadBridge()
+  const handlers = new Map()
+  registerAnalysisIpc({
+    ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    backendGateway: {},
+    markRecordDirty() {},
+  })
+  exposed.api.clearAnalysisCaches()
+  assert.equal(exposed.invoked.length, 1)
+  assert.ok(handlers.has(exposed.invoked[0]), `No main-process handler for ${exposed.invoked[0]}`)
 })
