@@ -362,9 +362,9 @@ try {
   })
   await exitSavingOverlay.waitFor({ state: 'detached' })
 
-  await page.locator('.toolbar-panel-menu > button').hover()
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('.toolbar-panel-menu-items')).visibility === 'visible')
-  const analysisMenuStyles = await page.locator('.toolbar-panel-menu-items').evaluate(menu => {
+  await page.locator('.toolbar .hover-action-menu > button').hover()
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.toolbar .hover-action-menu-items')).visibility === 'visible')
+  const analysisMenuStyles = await page.locator('.toolbar .hover-action-menu-items').evaluate(menu => {
     const durationMs = value => {
       const number = Number.parseFloat(value)
       return value.trim().endsWith('ms') ? number : number * 1000
@@ -416,7 +416,7 @@ try {
     `analysis menu label feedback uses the global motion duration: ${JSON.stringify(analysisMenuStyles)}`,
   )
   if (process.env.RMS_ANALYSIS_MENU_SCREENSHOT) {
-    await page.locator('.toolbar-panel-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_SCREENSHOT })
+    await page.locator('.toolbar .hover-action-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_SCREENSHOT })
   }
   if (process.env.RMS_ANALYSIS_MENU_CONTEXT_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_ANALYSIS_MENU_CONTEXT_SCREENSHOT, fullPage: true })
@@ -445,7 +445,7 @@ try {
     'mouse-click focus does not leave the analysis menu hover outline stuck after the pointer leaves',
   )
   if (process.env.RMS_ANALYSIS_MENU_CLICK_SCREENSHOT) {
-    await page.locator('.toolbar-panel-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_CLICK_SCREENSHOT })
+    await page.locator('.toolbar .hover-action-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_CLICK_SCREENSHOT })
   }
   await clickedMenuItem.click()
   assert.equal(await clickedMenuInput.isChecked(), false, 'the analysis menu fixture restores the original panel selection')
@@ -453,23 +453,9 @@ try {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   })
   await page.mouse.move(0, 0)
-  await page.evaluate(() => { window.analysisCheck.vm.showMjaiDebug = true })
-  assert.deepEqual(
-    await page.locator('.mjai-debug-panel').evaluate(panel => ({
-      maxHeight: getComputedStyle(panel).maxHeight,
-      headerPosition: getComputedStyle(panel.querySelector('.settings-modal-header')).position,
-      backgroundImage: getComputedStyle(panel).backgroundImage,
-      headerBackgroundImage: getComputedStyle(panel.querySelector('.settings-modal-header')).backgroundImage,
-    })),
-    { maxHeight: '900px', headerPosition: 'static', backgroundImage: 'none', headerBackgroundImage: 'none' },
-    'MJAI debug dialog keeps its component-owned geometry and uses solid shared surfaces',
-  )
-  await page.locator('.mjai-debug-panel .settings-modal-actions button').last().click()
-  assert.equal(
-    await page.locator('.mjai-debug-panel').count(),
-    0,
-    'MJAI debug dialog closes through its component event',
-  )
+  const autoAnalysisMenu = page.locator('.auto-analysis-menu')
+  await autoAnalysisMenu.locator('.auto-analysis-button').hover()
+  assert.equal(await autoAnalysisMenu.locator('.auto-analysis-menu-action').isVisible(), true, 'auto-analysis exposes the cache action on hover')
   await page.evaluate(() => window.analysisCheck.vm.openWallView())
   assert.equal(
     await page.locator('.analysis-float-panel').evaluate(panel => getComputedStyle(panel).backgroundImage),
@@ -1082,7 +1068,9 @@ try {
     check.oldResult = check.result()
     window.studioAPI.getAnalysis = read
   })
-  await page.evaluate(() => window.analysisCheck.vm.clearLoadedAnalysisCaches())
+  await page.locator('.auto-analysis-menu .auto-analysis-button').hover()
+  await page.locator('.auto-analysis-menu-action').click()
+  await page.waitForFunction(() => window.analysisCheck.epoch > 0)
   await page.evaluate(async () => { const check = window.analysisCheck; check.resolveRead(check.oldResult); await check.pendingRead })
   await page.evaluate(() => {
     const check = window.analysisCheck

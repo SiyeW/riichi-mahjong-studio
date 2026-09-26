@@ -160,14 +160,8 @@ function createBackendService(options = {}) {
       importWall(tiles) {
         return backendSession.sendRequest('import_wall', { tiles })
       },
-      getLatestMjaiDebug() {
-        return backendSession.sendRequest('get_latest_mjai_debug')
-      },
       getAnalysis() {
         return backendSession.sendRequest('get_analysis')
-      },
-      getAnalysisDebug() {
-        return backendSession.sendRequest('get_analysis_debug')
       },
       clearAnalysisCaches() {
         return backendSession.sendRequest('clear_analysis_caches')

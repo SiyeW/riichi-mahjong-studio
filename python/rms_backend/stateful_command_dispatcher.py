@@ -64,13 +64,7 @@ class StatefulCommandDispatcher:
             "describe_engine": lambda: self._analysis.describe(
                 request_id, command, payload
             ),
-            "get_latest_mjai_debug": lambda: self._analysis.latest_action_debug(
-                request_id, command
-            ),
             "get_analysis": lambda: self._analysis.current_opponent_analysis(
-                request_id, command
-            ),
-            "get_analysis_debug": lambda: self._analysis.latest_opponent_debug(
                 request_id, command
             ),
             "clear_analysis_caches": lambda: self._analysis.clear_caches(

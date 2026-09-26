@@ -48,8 +48,6 @@ class AnalysisCommandsTest(unittest.TestCase):
             opponent_analysis=mock.Mock(),
             view_builder=view_builder,
             ensure_game_loaded=ensure_loaded,
-            get_action_debug=mock.Mock(),
-            get_opponent_debug=mock.Mock(),
             now_iso=lambda: "now",
         )
 

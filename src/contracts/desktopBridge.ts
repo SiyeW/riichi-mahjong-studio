@@ -104,9 +104,7 @@ export interface DesktopBridge {
     reconstruction: { seed: number; roundCount: number }
   }>
   importWall: (tiles: string[]) => Promise<BackendResponse>
-  getLatestMjaiDebug: () => Promise<{ debug: Record<string, unknown> }>
   getAnalysis: () => Promise<Record<string, unknown>>
-  getAnalysisDebug: () => Promise<{ debug: Record<string, unknown> }>
   clearAnalysisCaches: () => Promise<{
     state: StudioStatus
     cleared: {

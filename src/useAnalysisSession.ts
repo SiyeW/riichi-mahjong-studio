@@ -61,8 +61,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   const shantenGTData = ref<Record<string, number[]>>({})
   const shantenViewMode = ref<'predictions' | 'ground_truth'>('predictions')
   const suppressAnalysisTransitions = ref(false)
-  const shantenRawData = ref<Record<string, Record<string, unknown>>>({})
-  const shantenRawJson = computed(() => JSON.stringify(shantenRawData.value, null, 2))
   const shantenStatus = ref('—')
   const displayedOpponentAnalysis = ref<Record<string, unknown> | null>(null)
   const displayedAnalysisTable = shallowRef<TableState | null>(null)
@@ -201,7 +199,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     shantenGTData.value = {}
     ronWaitPredData.value = {}
     ronWaitGTData.value = {}
-    shantenRawData.value = {}
     shantenStatus.value = '—'
     displayedOpponentAnalysis.value = null
     displayedAnalysisTable.value = null
@@ -258,9 +255,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   ): boolean {
     if (!analysisResultMatchesCurrentPosition(result)) return false
     gameView.opponentAnalysis = result
-    const raw = result.raw as Record<string, unknown> | undefined
     shantenStatus.value = String(result.status || '?')
-    shantenRawData.value = raw ? raw as Record<string, Record<string, unknown>> : {}
     const predictions = result.predictions as Record<string, unknown> | undefined
     const groundTruth = result.ground_truth as Record<string, unknown> | undefined
     const predOpponents = predictions?.opponents as Record<string, number[]> | undefined
@@ -451,12 +446,14 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   function resetForNewGame() {
+    analysisCacheClearMessage.value = ''
     minimumDecisionCacheEpoch = null
     minimumOpponentCacheEpoch = null
     decisionAnalysisEventCache.clear()
   }
 
   function resetForBackendLifecycle() {
+    analysisCacheClearMessage.value = ''
     minimumDecisionCacheEpoch = null
     minimumOpponentCacheEpoch = null
     invalidateOpponentRead()
@@ -497,16 +494,15 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
       invalidateOpponentRead()
       gameView.opponentAnalysis = null
       clearOpponentAnalysisWithoutMotion()
-      shantenStatus.value = t('debug.cacheCleared')
       const { decisionEntries, opponentEntries, comparisons } = response.cleared
-      analysisCacheClearMessage.value = t('debug.cacheSummary', {
+      analysisCacheClearMessage.value = t('console.cacheSummary', {
         decision: decisionEntries,
         opponent: opponentEntries,
         comparisons,
       })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
-      analysisCacheClearMessage.value = t('debug.clearFailed', { message })
+      analysisCacheClearMessage.value = t('console.clearCacheFailed', { message })
     } finally {
       clearingAnalysisCaches.value = false
     }
@@ -576,8 +572,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     stageOpponentAnalysisForView,
     ronWaitPredData,
     analysisOpponents,
-    shantenRawData,
-    shantenRawJson,
     shantenStatus,
     shantenViewMode,
     showTrainingRecommendations,

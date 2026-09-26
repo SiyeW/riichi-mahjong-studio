@@ -13,7 +13,6 @@ function createFixture({ needsRecovery = false, restartBackend } = {}) {
   registerBackendIpc({
     ipcMain,
     backendGateway: {
-      getLatestMjaiDebug: () => 'debug',
       needsRecovery: () => needsRecovery,
       restartBackend: restartBackend || (async () => ({
         state: { gameLoaded: true },
@@ -33,10 +32,9 @@ function createFixture({ needsRecovery = false, restartBackend } = {}) {
   return { calls, handlers, ipcMain, window }
 }
 
-test('backend IPC registers restart and debug channels', () => {
+test('backend IPC registers the restart channel', () => {
   const { handlers } = createFixture()
-  assert.deepEqual([...handlers.keys()].sort(), ['backend:restart', 'debug:latest-mjai'])
-  assert.equal(handlers.get('debug:latest-mjai')(), 'debug')
+  assert.deepEqual([...handlers.keys()].sort(), ['backend:restart'])
 })
 
 test('ordinary restart flushes pending renderer edits before restoring the session', async () => {

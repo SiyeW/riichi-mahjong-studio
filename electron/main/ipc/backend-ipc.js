@@ -41,7 +41,6 @@ function registerBackendIpc({
     sendPythonEvent({ type: 'service_restored', state: response.state, view: response.view })
     return response
   })
-  ipcMain.handle('debug:latest-mjai', () => backendGateway.getLatestMjaiDebug())
 }
 
 module.exports = { registerBackendIpc }

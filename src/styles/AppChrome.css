@@ -164,12 +164,12 @@
   display: inline-flex;
 }
 
-.toolbar-panel-menu {
+.hover-action-menu {
   position: relative;
   display: inline-flex;
 }
 
-.toolbar-panel-menu-items {
+.hover-action-menu-items {
   position: absolute;
   z-index: 1200;
   top: 100%;
@@ -191,8 +191,8 @@
     visibility 0s linear var(--ui-motion-duration);
 }
 
-.toolbar-panel-menu:hover .toolbar-panel-menu-items,
-.toolbar-panel-menu:focus-within .toolbar-panel-menu-items {
+.hover-action-menu:hover .hover-action-menu-items,
+.hover-action-menu:focus-within .hover-action-menu-items {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);

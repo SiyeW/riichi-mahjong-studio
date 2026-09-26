@@ -17,13 +17,6 @@ from .opponent_prediction_profile import (
 from .opponent_prediction_protocol import OpponentPredictionProtocolAdapter
 from .opponent_prediction_requests import OpponentPredictionRequests
 
-_LATEST_OPPONENT_PREDICTION_MJAI: Dict[str, Any] = {}
-
-
-def get_latest_opponent_prediction_mjai() -> Dict[str, Any]:
-    return dict(_LATEST_OPPONENT_PREDICTION_MJAI)
-
-
 class OpponentPredictionGateway:
     """Run background requests for the assigned opponent prediction outputs."""
 
@@ -444,13 +437,6 @@ class OpponentPredictionGateway:
                 controlled_seat,
                 reveal_all=False,
             )
-        global _LATEST_OPPONENT_PREDICTION_MJAI
-        _LATEST_OPPONENT_PREDICTION_MJAI = {
-            "events": events,
-            "seat": controlled_seat,
-            "visibilityMode": visibility_mode,
-        }
-
         include_ground_truth = bool(
             pending.get("include_ground_truth", True)
         )

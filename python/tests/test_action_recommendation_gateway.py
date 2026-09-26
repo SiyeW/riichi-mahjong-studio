@@ -9,7 +9,6 @@ from rms_backend.action_recommendation_gateway import ActionRecommendationGatewa
 from rms_backend.action_recommendation_adapter import (
     analyze_discard_choices,
     choose_ai_action,
-    get_latest_action_recommendation_debug,
 )
 
 
@@ -232,9 +231,6 @@ class ActionRecommendationGatewayTest(unittest.TestCase):
                     accumulate_thinking=False,
                 )
                 self.assertEqual(action["pai"], "2m")
-                debug = get_latest_action_recommendation_debug()
-                self.assertEqual(debug["caller"], "choose_ai_action")
-                self.assertEqual(debug["result"]["bestCandidateId"], "discard:2m")
             finally:
                 gateway.shutdown()
 

@@ -91,7 +91,7 @@
             <button @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
           </span>
           <button @click="openWallView" :disabled="!gameView.table">{{ t('toolbar.wall') }}</button>
-          <span class="toolbar-panel-menu">
+          <span class="hover-action-menu">
             <button
               :class="{ active: showAnalysisDock }"
               :aria-pressed="showAnalysisDock"
@@ -99,7 +99,7 @@
               @click="toggleAnalysisDock"
               :disabled="!gameView.table"
             >{{ t('toolbar.analysis') }}</button>
-            <span class="toolbar-panel-menu-items" role="menu" :aria-label="t('toolbar.analysis')">
+            <span class="hover-action-menu-items" role="menu" :aria-label="t('toolbar.analysis')">
               <label
                 v-for="definition in ANALYSIS_PANEL_DEFINITIONS"
                 :key="definition.id"
@@ -407,6 +407,9 @@
           v-if="status.mode === 'research'"
           :status="status"
           :apply-status="applyStatus"
+          :cache-clear-message="analysisCacheClearMessage"
+          :clearing-analysis-caches="clearingAnalysisCaches"
+          @clear-cache="clearLoadedAnalysisCaches"
         />
         <QuickSettingsPanel
           :mode="status.mode"
@@ -652,21 +655,6 @@
       @source="openExternalLink"
     />
 
-    <MjaiDebugDialog
-      v-if="showMjaiDebug"
-      :cache-clear-message="analysisCacheClearMessage"
-      :clearing-analysis-caches="clearingAnalysisCaches"
-      :debug-data="mjaiDebugData"
-      :debug-json="mjaiDebugJson"
-      :game-loaded="status.gameLoaded"
-      :has-shanten-raw-data="Boolean(shantenRawData.kamicha)"
-      :analysis-json="analysisDebugJson"
-      :shanten-raw-json="shantenRawJson"
-      :shanten-status="shantenStatus"
-      @clear-cache="clearLoadedAnalysisCaches"
-      @close="showMjaiDebug = false"
-    />
-
     <AboutDialog v-if="showAboutPanel" @close="showAboutPanel = false" />
     <PerceptualColorDebugger
       v-if="showPerceptualColorDebugger"
@@ -728,7 +716,6 @@ import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DecisionEvaluationPanel from './components/DecisionEvaluationPanel.vue'
 import DockLayoutNode from './workspace/DockLayoutNode.vue'
 import EngineManagerWindow from './engines/components/EngineManagerWindow.vue'
-import MjaiDebugDialog from './components/MjaiDebugDialog.vue'
 import QuickSettingsPanel from './components/QuickSettingsPanel.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
@@ -798,11 +785,6 @@ const {
 const showAboutPanel = ref(false)
 const showCustomTenhouExport = ref(false)
 const customTenhouExportRefreshKey = ref(0)
-const showMjaiDebug = ref(false)
-const mjaiDebugData = ref<Record<string, unknown>>({})
-const mjaiDebugJson = computed(() => JSON.stringify(mjaiDebugData.value, null, 2))
-const analysisDebugData = ref<Record<string, unknown>>({})
-const analysisDebugJson = computed(() => JSON.stringify(analysisDebugData.value, null, 2))
 
 const {
   analysisPanelIsSelected,
@@ -986,8 +968,6 @@ const {
   stageOpponentAnalysisForView,
   ronWaitPredData,
   analysisOpponents,
-  shantenRawData,
-  shantenRawJson,
   shantenStatus,
   shantenViewMode,
   showTrainingRecommendations,
@@ -1841,27 +1821,6 @@ const handlePythonEvent = createPythonEventRouter({
   cacheDecisionAnalysis,
 })
 
-async function fetchAndShowMjaiDebug() {
-  showMjaiDebug.value = true
-  analysisCacheClearMessage.value = ''
-  if (window.studioAPI?.getLatestMjaiDebug) {
-    try {
-      const result = await window.studioAPI.getLatestMjaiDebug()
-      mjaiDebugData.value = (result as Record<string, unknown>).debug as Record<string, unknown> || {}
-    } catch {
-      mjaiDebugData.value = { error: 'Failed to fetch mjai debug data' }
-    }
-  }
-  if (window.studioAPI?.getAnalysisDebug) {
-    try {
-      const result = await window.studioAPI.getAnalysisDebug()
-      analysisDebugData.value = (result as Record<string, unknown>).debug as Record<string, unknown> || {}
-    } catch {
-      analysisDebugData.value = { error: 'Failed to fetch opponent analysis debug data' }
-    }
-  }
-}
-
 let lastUiScaleWheelAt = 0
 function onUiScaleWheel(event: WheelEvent) {
   if ((!event.ctrlKey && !event.metaKey) || event.deltaY === 0) return
@@ -1895,14 +1854,6 @@ function onKeyDown(e: KeyboardEvent) {
     e.preventDefault()
     showPerceptualColorDebugger.value = !showPerceptualColorDebugger.value
     return
-  }
-  if (e.key === 'F1') {
-    e.preventDefault()
-    if (showMjaiDebug.value) {
-      showMjaiDebug.value = false
-    } else {
-      void fetchAndShowMjaiDebug()
-    }
   }
 }
 
@@ -1954,7 +1905,6 @@ if (import.meta.env.MODE === 'ui-test') {
     showWallView,
     wallTiles,
     showEngineWindow,
-    showMjaiDebug,
     handlePythonEvent,
     fetchAnalysisOnce,
     jumpToNode,

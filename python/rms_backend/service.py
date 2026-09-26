@@ -37,14 +37,12 @@ from . import wall_reconstruction
 from .action_recommendation_adapter import (
     choose_ai_action,
     get_and_reset_ai_thinking_time_s,
-    get_latest_action_recommendation_debug,
     set_thinking_time_bounds,
 )
 from .action_recommendation_gateway import ActionRecommendationGateway
 from .engine_runtime import EngineRuntimeRegistry
 from .mjai_stream_cache import MjaiStreamCache
 from .opponent_prediction_coordinator import OpponentPredictionCoordinator
-from .opponent_prediction_gateway import get_latest_opponent_prediction_mjai
 from .service_debug import DebugScenarioDependencies, run_debug_scenario
 from .service_helpers import actor_just_drew, now_iso
 from .service_runtime import ServiceRuntime
@@ -664,8 +662,6 @@ ANALYSIS_COMMANDS = analysis_commands.AnalysisCommands(
     opponent_analysis=OPPONENT_ANALYSIS,
     view_builder=VIEW_BUILDER,
     ensure_game_loaded=ensure_game_loaded,
-    get_action_debug=get_latest_action_recommendation_debug,
-    get_opponent_debug=get_latest_opponent_prediction_mjai,
     now_iso=now_iso,
 )
 
