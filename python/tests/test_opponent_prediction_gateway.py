@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import Mock, patch
 
 from rms_backend.opponent_prediction_coordinator import OpponentPredictionCoordinator
 from rms_backend.opponent_prediction_gateway import OpponentPredictionGateway
@@ -6,6 +7,28 @@ from rms_backend.opponent_prediction_protocol import TILE34_NAMES
 
 
 class OpponentOutputCompositionTest(unittest.TestCase):
+    def test_revealed_fallback_builds_a_revealed_stream(self):
+        gateway = object.__new__(OpponentPredictionGateway)
+        gateway._process_client = Mock()
+        gateway._process_client.request.side_effect = RuntimeError("request reached")
+        gateway._analysis_output_references = lambda: [{"id": "opponent-shanten"}]
+        snapshot = {"initialHands": [["1m"] * 13] * 4}
+        with patch(
+            "rms_backend.mjai_stream.build_mjai_stream",
+            return_value=[{"type": "start_kyoku"}],
+        ) as build_stream:
+            with self.assertRaisesRegex(RuntimeError, "request reached"):
+                gateway._execute_prediction(
+                    {
+                        "snapshot": snapshot,
+                        "controlled_seat": 1,
+                        "input_mode": "full-information",
+                        "include_ground_truth": False,
+                    },
+                    initializing=False,
+                )
+        build_stream.assert_called_once_with(snapshot, 1, reveal_all=True)
+
     class _FakeGateway:
         def __init__(self, profile_id):
             self.profile_id = profile_id

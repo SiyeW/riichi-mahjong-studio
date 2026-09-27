@@ -435,7 +435,7 @@ class OpponentPredictionGateway:
             events = build_mjai_stream(
                 snapshot,
                 controlled_seat,
-                reveal_all=False,
+                reveal_all=input_mode == "full-information",
             )
         include_ground_truth = bool(
             pending.get("include_ground_truth", True)
