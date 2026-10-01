@@ -7,6 +7,7 @@ from .seat import normalize_seat
 from .service_helpers import (
     actor_just_drew,
     get_forbidden_discard_families_after_self_furo,
+    get_pon_tiles,
     normalize_tile_family,
     sort_tiles,
     unique_preserving_order,
@@ -321,8 +322,7 @@ def get_legal_kan_actions(snapshot, actor):
         matching_tiles = grouped_hand.get(family) or []
         if not matching_tiles:
             continue
-        pon_tiles = list(meld.get("consumed") or [])
-        consumed = copy.deepcopy((pon_tiles + [matching_tiles[0]])[:3])
+        consumed = get_pon_tiles(meld)
         actions.append(
             {
                 "type": "kakan",

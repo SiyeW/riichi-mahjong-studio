@@ -12,6 +12,7 @@ from .hora_calculation import compute_hora_result
 from .service_helpers import (
     get_reaction_expected_hand_count,
     get_reaction_hand_consumed,
+    get_pon_tiles,
     normalize_tile_family,
     resolve_reaction_hand_consumed,
     sort_tiles,
@@ -380,16 +381,14 @@ class RoundActions:
         snapshot_state.sync(snapshot)
         actor = int(response["actor"])
         pai = str(response.get("pai") or "")
-        self.remove_single_tile(snapshot, actor, pai)
         consumed = None
         for meld in snapshot["melds"][actor]:
-            if meld.get("type") == "pon" and str(meld.get("pai") or "") == pai:
-                consumed = [str(tile) for tile in copy.deepcopy(meld.get("consumed") or [])]
-                while len(consumed) < 3:
-                    consumed.append(pai)
+            if meld.get("type") == "pon" and normalize_tile_family(meld.get("pai")) == normalize_tile_family(pai):
+                consumed = get_pon_tiles(meld)
                 break
         if not consumed:
-            consumed = [pai, pai, pai]
+            raise ValueError("Added kan requires an existing pon.")
+        self.remove_single_tile(snapshot, actor, pai)
         response = copy.deepcopy(response)
         response["consumed"] = consumed
         pending_kan = copy.deepcopy(response)
@@ -416,10 +415,10 @@ class RoundActions:
         pai = str(pending_kan.get("pai") or "")
         upgraded = False
         for meld in snapshot["melds"][actor]:
-            if meld.get("type") == "pon" and str(meld.get("pai") or "") == pai:
+            if meld.get("type") == "pon" and normalize_tile_family(meld.get("pai")) == normalize_tile_family(pai):
                 meld["type"] = "kakan"
                 meld["kakan"] = pai
-                meld["consumed"] = copy.deepcopy(pending_kan.get("consumed") or [pai, pai, pai])
+                meld["consumed"] = copy.deepcopy(pending_kan["consumed"])
                 upgraded = True
                 break
         if not upgraded:

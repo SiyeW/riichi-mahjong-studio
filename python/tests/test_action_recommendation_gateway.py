@@ -4,6 +4,7 @@ import tempfile
 import textwrap
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from rms_backend.action_recommendation_gateway import ActionRecommendationGateway
 from rms_backend.action_recommendation_adapter import (
@@ -13,6 +14,48 @@ from rms_backend.action_recommendation_adapter import (
 
 
 class ActionRecommendationGatewayTest(unittest.TestCase):
+    def test_wire_candidates_preserve_ids_and_executable_variants(self):
+        gateway = ActionRecommendationGateway()
+        gateway._external_engine = True
+        gateway._unloaded = False
+        gateway._client = Mock()
+        legal = [
+            {"id": "old", "type": "dahai", "actor": 0, "pai": "5m"},
+            {"id": "drawn", "type": "dahai", "actor": 0, "pai": "5m", "tsumogiri": True},
+            {"id": "red", "type": "dahai", "actor": 0, "pai": "5mr"},
+            {"id": "chi-normal", "type": "chi", "actor": 0, "pai": "4m",
+             "consumed": ["5m", "6m"], "variant": "chi_low"},
+            {"id": "chi-red", "type": "chi", "actor": 0, "pai": "4m",
+             "consumed": ["5mr", "6m"], "variant": "chi_low"},
+            {"id": "pon", "type": "pon", "actor": 0, "pai": "4m", "consumed": ["4m"] * 2},
+            {"id": "open-kan", "type": "daiminkan", "actor": 0, "pai": "4m", "consumed": ["4m"] * 3},
+            {"id": "closed-kan", "type": "ankan", "actor": 0, "consumed": ["5m"] * 3 + ["5mr"]},
+            {"id": "added-kan", "type": "kakan", "actor": 0, "pai": "5mr", "consumed": ["5m"] * 3},
+            {"id": "ron", "type": "hora", "actor": 0, "pai": "4m", "variant": "hora"},
+            {"id": "skip", "type": "none", "actor": 0, "pai": "5mr", "variant": "skip_ankan"},
+            {"id": "pass", "type": "none", "actor": 0, "variant": "none"},
+        ]
+        gateway._client.request.return_value = {"outputs": [{"id": "action-recommendation",
+            "data": {"bestCandidateId": "chi-red"}}]}
+        with patch.object(gateway, '_ensure_initialized'):
+            result = gateway.analyze_candidates(0, 'unused', 'test',
+                [{"type": "dahai", "actor": 3, "pai": "4m"}], legal)
+        self.assertEqual(result['bestCandidateId'], 'chi-red')
+        method, params = gateway._client.request.call_args.args
+        self.assertEqual(method, 'analysis.run')
+        candidates = params['outputs'][0]['parameters']['candidates']
+        self.assertEqual([c['candidateId'] for c in candidates], [c['id'] for c in legal])
+        wire = {c['candidateId']: c['action'] for c in candidates}
+        self.assertIs(wire['old']['tsumogiri'], False)
+        self.assertIs(wire['drawn']['tsumogiri'], True)
+        self.assertEqual(wire['red']['pai'], '5mr')
+        self.assertNotEqual(wire['chi-normal']['consumed'], wire['chi-red']['consumed'])
+        for key in ('chi-normal', 'chi-red', 'pon', 'open-kan', 'ron'):
+            self.assertEqual(wire[key]['target'], 3)
+        self.assertEqual(wire['skip']['variant'], 'skip-ankan')
+        self.assertEqual(wire['pass'], {'type': 'none', 'actor': 0})
+        self.assertTrue(all('id' not in c['action'] and 'label' not in c['action'] for c in candidates))
+
     def test_generic_contract_uses_declared_recommendation_metric(self):
         result = ActionRecommendationGateway._validate_generic_result(  # pylint: disable=protected-access
             {
@@ -108,6 +151,10 @@ class ActionRecommendationGatewayTest(unittest.TestCase):
                     }
                 elif method == "analysis.run":
                     candidates = params["outputs"][0]["parameters"]["candidates"]
+                    for candidate in candidates:
+                        action = candidate["action"]
+                        assert set(action) == {"type", "actor", "pai", "tsumogiri"}
+                        assert isinstance(action["tsumogiri"], bool)
                     result = {
                         "outputs": [{
                             "id": "action-recommendation",

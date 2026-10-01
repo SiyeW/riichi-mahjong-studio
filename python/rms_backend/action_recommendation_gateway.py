@@ -15,10 +15,11 @@ from .engine_runtime import initialize_engine_client
 from .engine_notification_subscription import EngineNotificationSubscription
 from .engine_assignments import OUTPUT_CONTRACTS_BY_ID
 from .action_recommendation_adapter import resolve_engine_weight_path
+from .protocol_actions import protocol_action
 
 
 class ActionRecommendationGateway:
-    _RESULT_SEMANTICS_VERSION = "action-recommendation-host-v4"
+    _RESULT_SEMANTICS_VERSION = "action-recommendation-host-v5"
     _OUTPUT = dict(OUTPUT_CONTRACTS_BY_ID["action-recommendation"])
 
     def __init__(self) -> None:
@@ -438,15 +439,13 @@ class ActionRecommendationGateway:
         candidates = []
         candidate_ids: set[str] = set()
         for index, action in enumerate(legal_actions):
+            if action.get("actor") != player_id:
+                raise ValueError("legal candidate actor differs from controlled seat")
             candidate_id = str(action.get("id") or f"candidate:{index}")
             if candidate_id in candidate_ids:
                 raise ValueError(f"duplicate legal candidate id: {candidate_id}")
             candidate_ids.add(candidate_id)
-            engine_action = {
-                key: value
-                for key, value in action.items()
-                if key not in ("id", "label")
-            }
+            engine_action = protocol_action(action, mjai_events)
             candidates.append({
                 "candidateId": candidate_id,
                 "action": engine_action,
