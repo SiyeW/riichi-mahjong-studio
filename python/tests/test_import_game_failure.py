@@ -69,6 +69,34 @@ class ImportGameFailureTests(unittest.TestCase):
         self.assertEqual(self.old_game, old_copy)
         self.assertEqual(service.STATE['controlledSeat'], 0)
 
+    def test_borrowed_record_is_not_mutated_and_owned_record_is_not_copied(self):
+        original = copy.deepcopy(self.record)
+        with patch.object(service.RECORD_SESSION.dependencies, 'request_opponent_analysis'), \
+             patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'):
+            service.RECORD_SESSION.load(self.record)
+            self.assertEqual(self.record, original)
+            self.assertIsNot(service.STATE['game'], self.record['game'])
+            service.RECORD_SESSION.load(self.record, take_ownership=True)
+            self.assertIs(service.STATE['game'], self.record['game'])
+
+    def test_failed_file_read_does_not_replace_active_game(self):
+        with patch('rms_backend.record_workspace_commands.read_record_file', side_effect=ValueError('damaged')), \
+             patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime') as reset:
+            with self.assertRaisesRegex(ValueError, 'damaged'):
+                service.RECORD_WORKSPACE_COMMANDS.import_record(1, 'import_game_record', {'path': 'bad'})
+            reset.assert_not_called()
+        self.assert_old_record_preserved()
+
+    def test_file_import_returns_recovery_metadata_after_activation(self):
+        self.record['metadata'] = {'recovery': {'kind': 'unsaved-exit', 'sourcePath': 'source.mjstudio'}}
+        with patch('rms_backend.record_workspace_commands.read_record_file', return_value=self.record), \
+             patch.object(service.RECORD_SESSION.dependencies, 'request_opponent_analysis'), \
+             patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'), \
+             patch.object(service.VIEW_BUILDER, 'build_response', side_effect=lambda _id, _cmd, extra: extra):
+            result = service.RECORD_WORKSPACE_COMMANDS.import_record(1, 'import_game_record', {'path': 'record'})
+        self.assertEqual(result['recordMetadata'], self.record['metadata'])
+        self.assertIs(service.STATE['game'], self.record['game'])
+
     def import_external_record(self, kind, stack, **options):
         candidate = copy.deepcopy(self.record['game'])
         if kind == 'mortal':

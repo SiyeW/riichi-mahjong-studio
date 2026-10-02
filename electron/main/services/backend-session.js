@@ -18,8 +18,6 @@ function createBackendSession(backend, checkpointOptions = {}) {
   let recovery = null
   let stopped = false
   let generation = 0
-  let derivedRecordDirty = false
-  let changeRevision = 0
   const checkpoint = createSessionCheckpoint({
     ...checkpointOptions,
     exportRecord: () => backend.sendRequest('export_recovery_checkpoint'),
@@ -32,9 +30,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
       generation += 1
       checkpoint.stop()
     } else if (event.type === 'record_changed' && !restarting && !stopped) {
-      changeRevision += 1
-      if (DERIVED_RECORD_CHANGES.has(event.change)) derivedRecordDirty = true
-      else checkpoint.changed()
+      if (!DERIVED_RECORD_CHANGES.has(event.change)) checkpoint.changed()
     }
   }
 
@@ -46,7 +42,6 @@ function createBackendSession(backend, checkpointOptions = {}) {
       const command = args[0]
       if (['create_game', 'close_game', 'import_game_record', 'import_mortal_report', 'import_custom_tenhou'].includes(command)) {
         checkpoint.reset()
-        derivedRecordDirty = false
       }
       // Status/metrics have independent Python executors and can arrive after
       // a newer game command. They must not invalidate a current checkpoint.
@@ -73,35 +68,18 @@ function createBackendSession(backend, checkpointOptions = {}) {
     return request
   }
 
-  async function exportGameRecord({ reuseCheckpoint = false } = {}) {
+  async function exportGameRecordToFile(filePath, options = {}) {
     // Exports have their own Python executor. Finish already submitted edits
     // first, so a save cannot overtake a comment still on the command lane.
-    await Promise.all([...pendingRecordCommands])
-    const saved = reuseCheckpoint && !derivedRecordDirty ? checkpoint.getFresh() : null
-    // Crash checkpoints intentionally omit caches; they are not full saves.
-    if (saved?.record && saved.includesAnalysis) {
-      return {
-        record: saved.record,
-        state: { gameLoaded: true, analysisVisibility: saved.visibility },
-        view: {
-          gameId: saved.record.game?.gameId,
-          currentNodeId: saved.record.game?.currentNodeId,
-        },
-        reusedCheckpoint: true,
-      }
+    const resumeCheckpoints = checkpoint.suspend()
+    try {
+      await Promise.all([...pendingRecordCommands])
+      // Full saves always capture current authored data and all caches. Packed
+      // analysis reuse belongs to the backend, not a second main-process record.
+      return await sendRequest('export_game_record', { ...options, path: filePath }, null)
+    } finally {
+      resumeCheckpoints()
     }
-
-    const exportedRevision = changeRevision
-    const response = await sendRequest('export_game_record', {}, 120_000)
-    if (changeRevision === exportedRevision) {
-      checkpoint.rememberFresh({
-        record: response.record,
-        visibility: response.state?.analysisVisibility,
-        includesAnalysis: true,
-      })
-      derivedRecordDirty = false
-    }
-    return { ...response, reusedCheckpoint: false }
   }
 
   function restart() {
@@ -117,7 +95,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
         } else {
           const { state } = await backend.sendRequest('get_status')
           const record = state.gameLoaded
-            ? (await backend.sendRequest('export_game_record')).record
+            ? (await backend.sendRequest('export_game_record', {}, null)).record
             : null
           if (state.gameLoaded && !record) throw new Error('Backend did not export the current game.')
           recovery = { record, visibility: state.analysisVisibility }
@@ -133,7 +111,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
         return result
       }
       let response = recovery.record
-        ? await requestRecovery('import_game_record', { record: recovery.record })
+        ? await requestRecovery('import_game_record', { record: recovery.record }, null)
         : await requestRecovery('get_game_view')
       if (recovery.visibility) {
         await requestRecovery('set_analysis_visibility', recovery.visibility)
@@ -151,7 +129,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
     return restarting
   }
 
-  return { sendRequest, exportGameRecord, restart, handleEvent, needsRecovery: () => stopped || Boolean(recovery),
+  return { sendRequest, exportGameRecordToFile, restart, handleEvent, needsRecovery: () => stopped || Boolean(recovery),
     hasCheckpoint: () => Boolean(recovery?.record || checkpoint.get()?.record) }
 }
 

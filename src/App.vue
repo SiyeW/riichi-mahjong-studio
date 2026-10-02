@@ -60,7 +60,7 @@
             :aria-busy="gameFileOperation === 'open'"
             @click="openGame"
           >{{ t('toolbar.open') }}</button>
-          <button @click="openRecordImportPanel">{{ t('toolbar.import') }}</button>
+          <button :disabled="gameFileOperation !== null" @click="openRecordImportPanel">{{ t('toolbar.import') }}</button>
           <button
             :class="{ 'is-pending': gameFileOperation === 'save' }"
             :disabled="!recordDirty || gameFileOperation !== null"
@@ -1650,6 +1650,7 @@ async function refreshBootstrapState() {
     bootstrapError.value = t('error.desktopBridge')
     return
   }
+  gameFileOperation.value = 'open'
   try {
     // Load settings first — this works even if the Python backend is down
     let nextSettings: StudioSettings
@@ -1689,6 +1690,8 @@ async function refreshBootstrapState() {
     } else {
       bootstrapError.value = t('error.bootstrap', { message })
     }
+  } finally {
+    gameFileOperation.value = null
   }
 }
 

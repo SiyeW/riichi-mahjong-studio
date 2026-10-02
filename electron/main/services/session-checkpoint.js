@@ -8,6 +8,7 @@ function createSessionCheckpoint({ exportRecord, isRunning, delayMs = 750,
   let exporting = false
   let dirty = false
   let exportDurationMs = 0
+  let suspended = 0
 
   function stop() {
     generation += 1
@@ -44,14 +45,14 @@ function createSessionCheckpoint({ exportRecord, isRunning, delayMs = 750,
   }
 
   function arm() {
-    if (!dirty || timer !== null || exporting || !isRunning()) return
+    if (!dirty || timer !== null || exporting || suspended || !isRunning()) return
     // Leave at least four times the export duration for foreground work.
     timer = schedule(() => { timer = null; void capture() }, Math.max(delayMs, exportDurationMs * 4))
     timer?.unref?.()
   }
 
   async function capture() {
-    if (!dirty || !isRunning()) return
+    if (!dirty || suspended || !isRunning()) return
     const startedGeneration = generation
     const startedAt = now()
     exporting = true
@@ -75,11 +76,14 @@ function createSessionCheckpoint({ exportRecord, isRunning, delayMs = 750,
     if (value.record?.game?.gameId === gameId) checkpoint = value
   }
 
-  function rememberFresh(value) {
-    if (value.record?.game?.gameId !== gameId) return false
-    stop()
-    checkpoint = value
-    return true
+  function suspend() {
+    suspended += 1
+    if (timer !== null) cancel(timer)
+    timer = null
+    return () => {
+      suspended -= 1
+      arm()
+    }
   }
 
   function moveCursor(nodeId) {
@@ -96,21 +100,16 @@ function createSessionCheckpoint({ exportRecord, isRunning, delayMs = 750,
     return true
   }
 
-  function getFresh() {
-    return checkpoint && !dirty && timer === null && !exporting ? checkpoint : null
-  }
-
   return {
     observe,
     changed,
     stop,
     reset,
     remember,
-    rememberFresh,
+    suspend,
     moveCursor,
     updateVisibility,
     get: () => checkpoint,
-    getFresh,
   }
 }
 

@@ -719,12 +719,20 @@ def _export_recovery_checkpoint(request_id, command):
     }
 
 
-def _export_game_record(request_id, command):
+def _export_game_record(request_id, command, payload=None):
     with _STATE_LOCK:
         prepared = RECORD_SESSION.prepare_export()
         response = VIEW_BUILDER.build_response(request_id, command)
     # Do not hold the gameplay lock while packing all cached predictions.
-    response["record"] = RECORD_SESSION.serialize_prepared_export(prepared)
+    record = RECORD_SESSION.serialize_prepared_export(prepared)
+    if payload and "path" in payload:
+        prepared.file_writer.write(payload["path"], record,
+                          compressed=payload.get("compressed", True),
+                          app_version=payload.get("appVersion", ""),
+                          recovery=payload.get("recovery", False))
+    else:
+        # In-memory records are only needed for backend crash/restart recovery.
+        response["record"] = record
     return response
 
 

@@ -33,10 +33,14 @@ function createBackendProcess({
     const pending = pendingRequests.get(requestId)
     if (!child || !pending) return
     clearTimeout(pending.startupTimer)
-    pending.responseTimer = setTimeout(() => {
-      pendingRequests.delete(requestId)
-      pending.reject(new Error(`${name} request timed out: ${pending.command}`))
-    }, timeoutMs)
+    // null means an owned operation: keep tracking until a definitive reply or
+    // process failure. A timeout cannot cancel a state-changing file operation.
+    if (timeoutMs !== null) {
+      pending.responseTimer = setTimeout(() => {
+        pendingRequests.delete(requestId)
+        pending.reject(new Error(`${name} request timed out: ${pending.command}`))
+      }, timeoutMs)
+    }
     const target = child
     const failWrite = (error) => {
       if (!error || child !== target || pendingRequests.get(requestId) !== pending) return

@@ -111,23 +111,63 @@ function createMainWindow({
 
   let closeAllowed = false
   let closeInProgress = false
+  let exitRequested = false
+  let closeIsSlow = false
+  let slowClosePrompt = null
   const publishCloseState = (active, stage = '') => {
     if (!window.isDestroyed()) window.webContents.send('record:close-state', { active, stage })
+  }
+  const askAboutSlowClose = () => {
+    if (!closeInProgress || closeAllowed || window.isDestroyed()) return Promise.resolve()
+    if (slowClosePrompt) return slowClosePrompt
+    slowClosePrompt = dialog.showMessageBox(window, {
+      type: 'warning',
+      title: t('native.closeSavePending.title'),
+      message: t('native.closeSavePending.message'),
+      buttons: [t('native.keepWaiting'), t('native.cancelExit'), t('native.exitAnyway')],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(result => {
+      if (result.response === 1) {
+        exitRequested = false
+        publishCloseState(false)
+      } else if (result.response === 2) {
+        closeAllowed = true
+        window.close()
+      } else {
+        exitRequested = true
+        publishCloseState(true, 'waiting')
+      }
+    }).catch(error => { console.error('[close] could not show save choices:', error) })
+      .finally(() => { slowClosePrompt = null })
+    return slowClosePrompt
   }
   window.on('close', (event) => {
     if (closeAllowed) return
     event.preventDefault()
-    if (closeInProgress) return
+    if (closeInProgress) {
+      if (closeIsSlow || !exitRequested) void askAboutSlowClose()
+      return
+    }
     closeInProgress = true
+    exitRequested = true
+    closeIsSlow = false
     publishCloseState(true, 'preparing')
     void (async () => {
+      // This is a choice to keep waiting, not a failed/cancelled save. The
+      // original operation retains ownership until its actual completion.
+      const slowTimer = setTimeoutImpl(() => {
+        closeIsSlow = true
+        void askAboutSlowClose()
+      }, 30_000)
+      slowTimer?.unref?.()
       let stageStarted = performance.now()
       let activeStage = 'preparing'
       const stageChanged = (stage) => {
         console.info(`[close] ${activeStage}: ${Math.round(performance.now() - stageStarted)} ms`)
         activeStage = stage
         stageStarted = performance.now()
-        publishCloseState(true, stage)
+        if (exitRequested) publishCloseState(true, stage)
       }
       try {
         await persistBeforeCloseImpl(
@@ -139,9 +179,15 @@ function createMainWindow({
           stageChanged,
         )
         console.info(`[close] ${activeStage}: ${Math.round(performance.now() - stageStarted)} ms`)
+        clearTimeoutImpl(slowTimer)
+        if (slowClosePrompt) await slowClosePrompt
+        if (!exitRequested || closeAllowed || window.isDestroyed()) return
         closeAllowed = true
         window.close()
       } catch (error) {
+        clearTimeoutImpl(slowTimer)
+        if (slowClosePrompt) await slowClosePrompt
+        if (closeAllowed || window.isDestroyed()) return
         console.error(`[close] ${activeStage} failed after ${Math.round(performance.now() - stageStarted)} ms:`, error)
         const result = await dialog.showMessageBox(window, {
           type: 'error',
@@ -157,8 +203,11 @@ function createMainWindow({
           window.close()
           return
         }
+      } finally {
+        clearTimeoutImpl(slowTimer)
         closeInProgress = false
-        publishCloseState(false)
+        closeIsSlow = false
+        if (!closeAllowed) publishCloseState(false)
       }
     })()
   })

@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from .record_file import read_record_file
+
 
 class RecordWorkspaceCommands:
     def __init__(
@@ -85,8 +87,13 @@ class RecordWorkspaceCommands:
         command: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        self._record_session.load(payload.get("record"))
-        return self._view_builder.build_response(request_id, command)
+        if "path" in payload and "record" in payload:
+            raise ValueError("Supply either a record file path or a record, not both.")
+        record = read_record_file(payload["path"]) if "path" in payload else payload.get("record")
+        self._record_session.load(record, take_ownership=True)
+        return self._view_builder.build_response(request_id, command, {
+            "recordMetadata": record.get("metadata") or {},
+        })
 
     def jump(
         self,

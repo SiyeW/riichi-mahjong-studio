@@ -1,6 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const { writeFileAtomicallyAsync } = require('../state/atomic-file')
+const { randomUUID } = require('node:crypto')
 const { withCurrentRecord } = require('../state/record-operation')
 const { loadSettings } = require('../state/settings')
 const {
@@ -10,11 +10,8 @@ const {
   normalizeRecordSavePath,
 } = require('../state/game-file-store')
 const {
-  decodeGameRecord,
-  encodeGameRecordAsync,
   getRecoverySourcePath,
   isRecoveryGameRecord,
-  prepareGameRecordForWrite,
 } = require('../state/game-record-codec')
 
 function createRecordWorkflow({
@@ -55,25 +52,29 @@ function createRecordWorkflow({
       markSaved = true,
       recovery = false,
       rememberPath = true,
-      exportRecord = () => backendGateway.exportGameRecord(),
       onStage = () => {},
     } = options
     const exportedRevision = gameFileStore.getRevision()
-    const response = await withCurrentRecord(gameFileStore, exportRecord)
-    const record = prepareGameRecordForWrite(response.record, {
-      appVersion: app.getVersion(),
-      recovery,
-    })
     const sourcePath = gameFileStore.getCurrentPath()
-    const encoded = await withCurrentRecord(gameFileStore, async () => {
-      onStage('encoding')
-      await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
-      const useCompression = path.extname(targetPath).toLowerCase() !== '.json'
-      return encodeGameRecordAsync(record, useCompression)
-    })
-    await withCurrentRecord(gameFileStore, async () => {
-      onStage('writing')
-      await writeFileAtomicallyAsync(targetPath, encoded)
+    const response = await withCurrentRecord(gameFileStore, async () => {
+      const stagingPath = `${targetPath}.${randomUUID()}.tmp`
+      try {
+        const result = await withCurrentRecord(gameFileStore, async () => {
+          onStage('encoding')
+          await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
+          return backendGateway.exportGameRecordToFile(stagingPath, {
+            appVersion: app.getVersion(), recovery,
+            compressed: path.extname(targetPath).toLowerCase() !== '.json',
+          })
+        })
+        // The backend has fsynced and closed the complete staging file. Never
+        // publish it if the user has replaced the record during preparation.
+        onStage('writing')
+        await fs.promises.rename(stagingPath, targetPath)
+        return result
+      } finally {
+        await fs.promises.rm(stagingPath, { force: true }).catch(() => {})
+      }
     })
     if (recovery) gameFileStore.writeRecoverySourcePath(sourcePath)
     if (rememberPath) gameFileStore.setCurrentPath(targetPath)
@@ -94,7 +95,6 @@ function createRecordWorkflow({
       recovery: true,
       rememberPath: false,
       onStage,
-      exportRecord: () => backendGateway.exportRecoveryGameRecord(),
     })
   }
 
@@ -116,8 +116,8 @@ function createRecordWorkflow({
   }
 
   async function importGameRecordFile(filePath) {
-    const record = decodeGameRecord(fs.readFileSync(filePath))
-    const response = await backendGateway.importGameRecord(record)
+    const response = await backendGateway.importGameRecordFile(filePath)
+    const record = { metadata: response.recordMetadata }
     const isNativeRecord = isNativeRecordPath(filePath)
     const managedRecoveryRecord = gameFileStore.isRecoveryPath(filePath)
     const recoveryRecord = managedRecoveryRecord || isRecoveryGameRecord(record)

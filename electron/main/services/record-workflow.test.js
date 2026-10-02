@@ -4,7 +4,7 @@ const os = require('node:os')
 const path = require('node:path')
 const test = require('node:test')
 const { createGameFileStore } = require('../state/game-file-store')
-const { decodeGameRecord } = require('../state/game-record-codec')
+const { decodeGameRecord, encodeGameRecord } = require('../state/game-record-codec')
 const { createRecordWorkflow } = require('./record-workflow')
 
 test('record dirty publication is deduplicated and forced record starts still publish', () => {
@@ -37,7 +37,7 @@ test('record dirty publication is deduplicated and forced record starts still pu
   ])
 })
 
-test('saving owns record export, encoding, path tracking, and dirty publication', async (context) => {
+test('saving promotes a backend staging file and tracks the saved revision', async (context) => {
   const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-record-workflow-'))
   context.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }))
 
@@ -51,14 +51,13 @@ test('saving owns record export, encoding, path tracking, and dirty publication'
     appOptions: {},
     dialog: {},
     backendGateway: {
-      exportGameRecord: async () => ({
-        record: {
-          metadata: { models: ['private'], source: 'test' },
-          nodes: [{ id: 'node-1' }],
-        },
-        state: { phase: 'ready' },
-        view: { currentNodeId: 'node-1' },
-      }),
+      exportGameRecordToFile: async (filePath, options) => {
+        assert.notEqual(filePath, targetPath)
+        assert.equal(path.dirname(filePath), path.dirname(targetPath))
+        assert.deepEqual(options, { appVersion: '1.2.3', recovery: false, compressed: true })
+        fs.writeFileSync(filePath, encodeGameRecord({ game: { nodes: { 'node-1': {} } } }))
+        return { state: { phase: 'ready' }, view: { currentNodeId: 'node-1' } }
+      },
     },
     gameFileStore,
     getMainWindow: () => ({
@@ -80,10 +79,8 @@ test('saving owns record export, encoding, path tracking, and dirty publication'
   assert.equal(gameFileStore.getCurrentPath(), targetPath)
   assert.equal(gameFileStore.isDirty(), false)
   assert.deepEqual(messages, [['record:dirty-changed', false]])
-  assert.deepEqual(decodeGameRecord(fs.readFileSync(targetPath)), {
-    metadata: { source: 'test', appVersion: '1.2.3' },
-    nodes: [{ id: 'node-1' }],
-  })
+  assert.deepEqual(decodeGameRecord(fs.readFileSync(targetPath)).game.nodes, { 'node-1': {} })
+  assert.deepEqual(fs.readdirSync(path.dirname(targetPath)), ['round.mjstudio'])
 })
 
 test('changing record during encoding cannot mark the replacement saved', async context => {
@@ -93,14 +90,17 @@ test('changing record during encoding cannot mark the replacement saved', async 
   store.beginRecord({ dirty: true })
   const workflow = createRecordWorkflow({
     app: { getVersion: () => 'test' }, appOptions: {}, dialog: {}, gameFileStore: store,
-    backendGateway: { exportRecoveryGameRecord: async () => ({ record: { game: { gameId: 'old' } } }) },
+    backendGateway: { exportGameRecordToFile: async filePath => {
+      fs.writeFileSync(filePath, 'old record')
+      store.beginRecord({ dirty: true })
+      return {}
+    } },
     getMainWindow: () => null, t: key => key,
   })
-  await assert.rejects(workflow.writeRecoveryGameRecord(stage => {
-    if (stage === 'encoding') store.beginRecord({ dirty: true })
-  }), /record changed/)
+  await assert.rejects(workflow.writeRecoveryGameRecord(), /record changed/)
   assert.equal(store.isDirty(), true)
   assert.equal(fs.existsSync(store.getRecoveryPath()), false)
+  assert.deepEqual(fs.readdirSync(path.dirname(store.getRecoveryPath())), [])
 })
 
 test('opening a record starts in the portable records folder', async (context) => {
@@ -130,7 +130,58 @@ test('opening a record starts in the portable records folder', async (context) =
   assert.equal(fs.existsSync(openOptions.defaultPath), true)
 })
 
-test('exit recovery uses the checkpoint-aware export path without marking the record saved', async (context) => {
+test('a failed staged save preserves the old file, dirty state, and removes partial output', async context => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-failed-save-'))
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  const store = createGameFileStore(directory)
+  const target = path.join(directory, 'saved.mjstudio')
+  fs.writeFileSync(target, 'previous complete file')
+  store.setCurrentPath(target)
+  store.beginRecord({ dirty: true })
+  const workflow = createRecordWorkflow({
+    app: { getVersion: () => 'test' }, appOptions: {}, dialog: {}, gameFileStore: store,
+    backendGateway: { exportGameRecordToFile: async filePath => {
+      fs.writeFileSync(filePath, 'partial')
+      throw new Error('disk full')
+    } },
+    getMainWindow: () => null, t: key => key,
+  })
+  await assert.rejects(workflow.saveGame(), /disk full/)
+  assert.equal(fs.readFileSync(target, 'utf8'), 'previous complete file')
+  assert.equal(store.isDirty(), true)
+  assert.deepEqual(fs.readdirSync(directory), ['saved.mjstudio'])
+})
+
+test('open waits for the backend file import before applying recovery metadata', async context => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-file-open-'))
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  const store = createGameFileStore(directory)
+  store.beginRecord({ dirty: true, nodeId: 'old' })
+  const generation = store.getRecordGeneration()
+  const target = path.join(directory, 'recovery.mjstudio')
+  let finish
+  const workflow = createRecordWorkflow({
+    app: {}, appOptions: {}, gameFileStore: store,
+    dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [target] }) },
+    backendGateway: { importGameRecordFile: filePath => {
+      assert.equal(filePath, target)
+      return new Promise(resolve => { finish = resolve })
+    } },
+    getMainWindow: () => null, t: key => key,
+  })
+  const opening = workflow.openGame()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(store.getRecordGeneration(), generation)
+  finish({ recordMetadata: { recovery: { kind: 'unsaved-exit' } },
+    state: { gameLoaded: true }, view: { currentNodeId: 'new' } })
+  const result = await opening
+  assert.equal(result.recoveryRecord, true)
+  assert.equal(result.recordDirty, true)
+  assert.equal(result.view.currentNodeId, 'new')
+  assert.notEqual(store.getRecordGeneration(), generation)
+})
+
+test('exit recovery uses the same full file export without marking the record saved', async (context) => {
   const portableDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-recovery-workflow-'))
   context.after(() => fs.rmSync(portableDirectory, { recursive: true, force: true }))
   const gameFileStore = createGameFileStore(portableDirectory)
@@ -141,11 +192,13 @@ test('exit recovery uses the checkpoint-aware export path without marking the re
     appOptions: {},
     dialog: {},
     backendGateway: {
-      exportGameRecord: async () => { throw new Error('ordinary export should not be used for recovery') },
-      exportRecoveryGameRecord: async () => {
+      exportGameRecordToFile: async (filePath, options) => {
+        assert.equal(options.recovery, true)
         calls.push('recovery')
+        fs.writeFileSync(filePath, encodeGameRecord({ metadata: {
+          recovery: { kind: 'unsaved-exit', schemaVersion: 3 },
+        } }))
         return {
-          record: { game: { gameId: 'game-a', nodes: {} } },
           state: { gameLoaded: true },
           view: { currentNodeId: 'node-1' },
         }

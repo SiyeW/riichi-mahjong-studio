@@ -11,7 +11,7 @@ from . import game_tree
 from . import snapshot_state
 from . import tree_view
 from .analysis_cache import migrate_analysis_cache_storage
-from .analysis_cache_storage import expand_record_analysis_caches
+from .analysis_cache_storage import AnalysisCachePacker, expand_record_analysis_caches
 from .custom_tenhou import (
     build_custom_tenhou_game,
     export_custom_tenhou,
@@ -30,6 +30,7 @@ from .mortal_report_import import (
     build_mortal_report_game,
     repair_mortal_report_game,
 )
+from .record_file import RecordFileWriter
 from .service_helpers import build_round_seed_stream, now_iso
 from .seat import normalize_seat
 from .wall_reconstruction import reconstruct_imported_walls
@@ -56,6 +57,14 @@ class RecordSessionDependencies:
     invalidate_auto_timeline: Callable[[], None]
 
 
+@dataclass(frozen=True)
+class PreparedRecordExport:
+    game: Game
+    state: dict[str, Any]
+    analysis_packer: AnalysisCachePacker
+    file_writer: RecordFileWriter
+
+
 class RecordSession:
     """Owns replacing, importing, exporting, and closing the active record."""
 
@@ -71,6 +80,8 @@ class RecordSession:
     def __init__(self, state: State, dependencies: RecordSessionDependencies):
         self._state = state
         self.dependencies = dependencies
+        self._analysis_packer = AnalysisCachePacker()
+        self._file_writer = RecordFileWriter()
 
     def ensure_loaded(self) -> None:
         if not self._state["gameLoaded"] or not self._state["game"]:
@@ -128,7 +139,7 @@ class RecordSession:
         game, state = prepared
         return serialize_game_record_parts(copy.deepcopy(game), copy.deepcopy(state))
 
-    def prepare_export(self) -> tuple[Game, dict[str, Any]]:
+    def prepare_export(self) -> PreparedRecordExport:
         """Capture a coherent full save while holding the state lock.
 
         Published analysis results are replaced, never edited in place. Detach
@@ -143,19 +154,25 @@ class RecordSession:
                 cache = live_nodes[node_id].get(field)
                 if isinstance(cache, dict):
                     node[field] = dict(cache)
-        return game, state
+        return PreparedRecordExport(game, state, self._analysis_packer, self._file_writer)
 
     @staticmethod
-    def serialize_prepared_export(prepared: tuple[Game, dict[str, Any]]) -> dict:
-        return serialize_game_record_parts(*prepared)
+    def serialize_prepared_export(prepared: PreparedRecordExport) -> dict:
+        return serialize_game_record_parts(prepared.game, prepared.state,
+                                           analysis_packer=prepared.analysis_packer)
 
     def serialize(self) -> dict:
         return self.serialize_prepared_export(self.prepare_export())
 
-    def load(self, record: Any) -> None:
+    def load(self, record: Any, *, take_ownership: bool = False) -> None:
         if not isinstance(record, dict):
             raise ValueError("Record must be an object.")
-        expand_record_analysis_caches(record)
+        # IPC/file decoding already yields a private object. Other callers keep
+        # ownership; copy their compact input, never a fully expanded cache tree.
+        if not take_ownership:
+            record = copy.deepcopy(record)
+        analysis_packer = AnalysisCachePacker()
+        expand_record_analysis_caches(record, packer=analysis_packer)
         format_version = int(record.get("formatVersion") or 0)
         if format_version not in (1, 2, 3):
             raise ValueError("Unsupported record format version.")
@@ -179,7 +196,7 @@ class RecordSession:
         migrate_discard_tsumogiri(game)
         migrate_terminal_table_scores(game)
 
-        candidate = copy.deepcopy(game)
+        candidate = game
         mode = "research" if self.is_read_only(game) else self.normalize_mode(state.get("mode"))
         controlled_seat = normalize_seat(state.get("controlledSeat", 0))
         visible_hands = bool(state.get("visibleHands"))
@@ -202,6 +219,8 @@ class RecordSession:
         except Exception:
             self._restore_after_failure(previous)
             raise
+        self._analysis_packer = analysis_packer
+        self._file_writer = RecordFileWriter()
 
     def create(self) -> None:
         seed = random.randint(100000, 999999)
@@ -222,9 +241,13 @@ class RecordSession:
         except Exception:
             self._restore_after_failure(previous)
             raise
+        self._analysis_packer = AnalysisCachePacker()
+        self._file_writer = RecordFileWriter()
 
     def close(self) -> None:
         self.dependencies.reset_runtime()
+        self._analysis_packer = AnalysisCachePacker()
+        self._file_writer = RecordFileWriter()
         self._state.update({
             "game": None,
             "gameLoaded": False,
@@ -300,6 +323,8 @@ class RecordSession:
         except Exception:
             self._restore_after_failure(previous)
             raise
+        self._analysis_packer = AnalysisCachePacker()
+        self._file_writer = RecordFileWriter()
 
     @staticmethod
     def _hydrate_match_state(game: Game) -> None:

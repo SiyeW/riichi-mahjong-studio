@@ -6,6 +6,7 @@ import base64
 import math
 import struct
 from functools import lru_cache
+from threading import Lock
 
 
 ANALYSIS_CACHE_STORAGE_FIELD = "analysisCacheStorage"
@@ -135,23 +136,24 @@ def unpack_json(packed):
     number_data = base64.b64decode(str(packed.get("numbers") or ""), validate=True)
     if len(number_data) % 8:
         raise ValueError("Invalid packed analysis binary data.")
-    tokens = token_data
-    numbers = struct.unpack(f"<{len(number_data) // 8}d", number_data) if number_data else ()
+    raw_numbers = iter(struct.unpack(f"<{len(number_data) // 8}d", number_data) if number_data else ())
     number_count = packed.get("numberCount")
     if not isinstance(number_count, int) or isinstance(number_count, bool) or number_count < 0:
         raise ValueError("Invalid packed analysis number count.")
     zero_bits = _decode_bitmap(packed.get("exactZero"), number_count)
-    token_index = number_index = number_ordinal = 0
+    # Validate once, then use iterator exhaustion for bounds checking. Most
+    # indexes are one byte; avoid millions of nested varint calls and len checks.
+    if number_count - sum(zero_bits) != len(number_data) // 8:
+        raise ValueError("Packed analysis number count does not match its bitmap.")
+    numbers = iter([0.0 if zero else next(raw_numbers) for zero in zero_bits])
+    tokens = iter(token_data)
+    strings = packed["strings"]
 
-    def variable_unsigned():
-        nonlocal token_index
-        value = 0
-        shift = 0
-        for _ in range(8):
-            if token_index >= len(tokens):
-                raise ValueError("Packed analysis index ended unexpectedly.")
-            byte = tokens[token_index]
-            token_index += 1
+    def unsigned(first):
+        value = first & 0x7F
+        shift = 7
+        for _ in range(7):
+            byte = next(tokens)
             value |= (byte & 0x7F) << shift
             if not byte & 0x80:
                 return value
@@ -159,53 +161,88 @@ def unpack_json(packed):
         raise ValueError("Packed analysis index is too large.")
 
     def read():
-        nonlocal token_index, number_index, number_ordinal
-        if token_index >= len(tokens):
-            raise ValueError("Packed analysis payload ended unexpectedly.")
-        tag = tokens[token_index]
-        token_index += 1
+        tag = next(tokens)
+        if tag == _NUMBER:
+            return next(numbers)
         if tag == _NULL:
             return None
         if tag == _FALSE:
             return False
         if tag == _TRUE:
             return True
-        if tag == _NUMBER:
-            if number_ordinal >= len(zero_bits):
-                raise ValueError("Packed analysis number bitmap ended unexpectedly.")
-            is_zero = zero_bits[number_ordinal]
-            number_ordinal += 1
-            if is_zero:
-                return 0.0
-            if number_index >= len(numbers):
-                raise ValueError("Packed analysis number data ended unexpectedly.")
-            value = numbers[number_index]
-            number_index += 1
-            return value
+        if tag not in (_STRING, _ARRAY, _OBJECT):
+            raise ValueError(f"Unknown packed analysis tag: {tag}")
+        first = next(tokens)
+        payload = first if first < 128 else unsigned(first)
         if tag == _STRING:
-            payload = variable_unsigned()
-            if payload >= len(packed["strings"]):
-                raise ValueError("Packed analysis string index is out of range.")
-            return packed["strings"][payload]
+            return strings[payload]
         if tag == _ARRAY:
-            return [read() for _ in range(variable_unsigned())]
-        if tag == _OBJECT:
-            value = {}
-            for _ in range(variable_unsigned()):
-                key_index = variable_unsigned()
-                if key_index >= len(packed["strings"]):
-                    raise ValueError("Packed analysis key index is out of range.")
-                value[packed["strings"][key_index]] = read()
-            return value
-        raise ValueError(f"Unknown packed analysis tag: {tag}")
+            return [read() for _ in range(payload)]
+        value = {}
+        for _ in range(payload):
+            first = next(tokens)
+            key = strings[first if first < 128 else unsigned(first)]
+            value[key] = read()
+        return value
 
-    value = read()
-    if token_index != len(tokens) or number_ordinal != number_count or number_index != len(numbers):
+    try:
+        value = read()
+    except (StopIteration, IndexError) as error:
+        raise ValueError("Packed analysis payload ended unexpectedly or has an invalid index.") from error
+    sentinel = object()
+    if next(tokens, sentinel) is not sentinel or next(numbers, sentinel) is not sentinel:
         raise ValueError("Packed analysis payload contains trailing data.")
     return value
 
 
-def compact_record_analysis_caches(record):
+class AnalysisCachePacker:
+    """Retain one packed result per cache kind, not a second full record.
+
+    Published cache entries are immutable and replaced wholesale. Compare their
+    identities and keys (not millions of values); retain references so object-id
+    reuse cannot turn changed results into a false cache hit. New snapshots
+    replace this bounded cache. It is only used by the serialized export lane.
+    """
+
+    def __init__(self):
+        self._packed = {}
+        self._storage = None
+        self._lock = Lock()
+
+    def seed(self, kind, values, packed):
+        # Migration may prune the maps after load. Retain detached maps, while
+        # sharing only the immutable published result objects.
+        self._packed[kind] = ([dict(value) if isinstance(value, dict) else value for value in values], packed)
+
+    def storage(self, candidate):
+        previous = self._storage
+        if previous is not None and previous["nodeIds"] == candidate["nodeIds"] and all(
+            previous[kind]["presence"] == candidate[kind]["presence"]
+            and previous[kind]["values"] is candidate[kind]["values"]
+            for kind in ("decision", "opponent")
+        ):
+            return previous
+        self._storage = candidate
+        return candidate
+
+    def pack(self, kind, values):
+        with self._lock:
+            previous = self._packed.get(kind)
+            if previous is not None:
+                old_values, packed = previous
+                if len(old_values) == len(values) and all(
+                    isinstance(current, dict) and isinstance(old, dict)
+                    and list(current) == list(old)
+                    and all(current[key] is old[key] for key in current)
+                    for current, old in zip(values, old_values)
+                ):
+                    return packed
+            packed = pack_json(values, display_probabilities=True)
+            self._packed[kind] = (values, packed)
+            return packed
+
+
+def compact_record_analysis_caches(record, *, packer=None):
     nodes = (record.get("game") or {}).get("nodes") if isinstance(record, dict) else None
     if not isinstance(nodes, dict):
         return record
@@ -234,17 +271,19 @@ def compact_record_analysis_caches(record):
             "nodeIds": node_ids,
             "decision": {
                 "presence": _encode_bitmap(decision_presence),
-                "values": pack_json(decision_values, display_probabilities=True),
+                "values": packer.pack("decision", decision_values) if packer else pack_json(decision_values, display_probabilities=True),
             },
             "opponent": {
                 "presence": _encode_bitmap(opponent_presence),
-                "values": pack_json(opponent_values, display_probabilities=True),
+                "values": packer.pack("opponent", opponent_values) if packer else pack_json(opponent_values, display_probabilities=True),
             },
         }
+        if packer:
+            record[ANALYSIS_CACHE_STORAGE_FIELD] = packer.storage(record[ANALYSIS_CACHE_STORAGE_FIELD])
     return record
 
 
-def expand_record_analysis_caches(record):
+def expand_record_analysis_caches(record, *, packer=None):
     storage = record.get(ANALYSIS_CACHE_STORAGE_FIELD) if isinstance(record, dict) else None
     if storage is None:
         return record
@@ -274,5 +313,8 @@ def expand_record_analysis_caches(record):
         if opponent_presence[index]:
             node["opponentAnalysisCache"] = opponent_values[opponent_index]
             opponent_index += 1
+    if packer and storage.get("probabilityPrecision") == "float32":
+        packer.seed("decision", decision_values, storage["decision"]["values"])
+        packer.seed("opponent", opponent_values, storage["opponent"]["values"])
     record.pop(ANALYSIS_CACHE_STORAGE_FIELD, None)
     return record

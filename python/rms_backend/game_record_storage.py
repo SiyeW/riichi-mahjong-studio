@@ -683,7 +683,7 @@ def migrate_terminal_table_scores(game):
         set_table_scores(snapshot, base_scores)
 
 
-def serialize_game_record_parts(game_copy, state_copy):
+def serialize_game_record_parts(game_copy, state_copy, *, analysis_packer=None):
     _compact_round_walls_for_record(game_copy)
     _compact_round_states_for_record(game_copy)
     _compact_game_structure_for_record(game_copy)
@@ -696,4 +696,4 @@ def serialize_game_record_parts(game_copy, state_copy):
             "visibleHands": state_copy["visibleHands"],
         },
         "game": game_copy,
-    })
+    }, packer=analysis_packer)

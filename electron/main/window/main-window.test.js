@@ -198,3 +198,49 @@ test('canceling a failed close restores interaction and permits a later complete
   assert.equal(closes, 1)
   assert.deepEqual(states.slice(-2).map(state => state.stage), ['encoding', 'writing'])
 })
+
+test('a slow save remains owned after canceling exit and its late completion cannot close the window', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const states = []
+  const prompts = []
+  let finish
+  let closes = 0
+  let writes = 0
+  class Window extends EventEmitter {
+    constructor() {
+      super()
+      this.webContents = new EventEmitter()
+      this.webContents.setZoomFactor = () => {}
+      this.webContents.send = (channel, value) => { if (channel === 'record:close-state') states.push(value) }
+    }
+    isDestroyed() { return false }
+    loadURL() { return Promise.resolve() }
+    close() { closes += 1 }
+  }
+  const window = createMainWindow({
+    BrowserWindow: Window, dialog: { showMessageBox: async (_window, options) => {
+      prompts.push(options)
+      return { response: 1 }
+    } },
+    ipcMain: {}, appOptions: {}, projectRoot: process.cwd(), isDev: true, rendererUrl: 'unused',
+    gameFileStore: { isDirty: () => true }, t: key => key,
+    loadSettingsImpl: () => ({ window: { width: 1200, height: 800 }, records: { saveRecoveryOnExit: true } }),
+    requestRendererFlushImpl: async () => {},
+    writeRecoveryGameRecord: async () => { writes += 1; await new Promise(resolve => { finish = resolve }) },
+  })
+  window.emit('close', { preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  t.mock.timers.tick(30_000)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(prompts[0].title, 'native.closeSavePending.title')
+  assert.deepEqual(states.at(-1), { active: false, stage: '' })
+  assert.equal(writes, 1)
+  finish()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(closes, 0)
+  window.emit('close', { preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  finish()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(closes, 1)
+})

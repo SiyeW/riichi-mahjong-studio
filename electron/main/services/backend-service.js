@@ -69,11 +69,8 @@ function createBackendService(options = {}) {
       getGameView() {
         return backendSession.sendRequest('get_game_view')
       },
-      exportGameRecord() {
-        return backendSession.exportGameRecord()
-      },
-      exportRecoveryGameRecord() {
-        return backendSession.exportGameRecord({ reuseCheckpoint: true })
+      exportGameRecordToFile(filePath, options) {
+        return backendSession.exportGameRecordToFile(filePath, options)
       },
       describeEngine(profile) {
         return backendSession.sendRequest('describe_engine', profile, 30_000)
@@ -84,8 +81,8 @@ function createBackendService(options = {}) {
       unloadEngine(kind, profileId) {
         return backendSession.sendRequest('unload_engine', { kind, profileId }, 30_000)
       },
-      importGameRecord(record) {
-        return backendSession.sendRequest('import_game_record', { record })
+      importGameRecordFile(filePath) {
+        return backendSession.sendRequest('import_game_record', { path: filePath }, null)
       },
       importMortalReport(report, sourceUrl, options = {}) {
         return backendSession.sendRequest('import_mortal_report', {

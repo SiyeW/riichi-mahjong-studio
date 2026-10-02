@@ -98,7 +98,7 @@ class CommandTransportTests(unittest.TestCase):
 
     def test_full_record_export_bypasses_stateful_dispatch(self):
         self.transport.process('request', 'export_game_record', {})
-        self.export_record.assert_called_once_with('request', 'export_game_record')
+        self.export_record.assert_called_once_with('request', 'export_game_record', {})
         self.dispatch_stateful.assert_not_called()
 
 

@@ -75,6 +75,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   }
 
   function openRecordImportPanel() {
+    if (gameFileOperation.value !== null) return
     showRecordImportPanel.value = true
   }
 

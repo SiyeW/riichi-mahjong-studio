@@ -42,6 +42,21 @@ function fixture() {
   return { checkpoint, timers, requests, errors, fire, response }
 }
 
+test('foreground file work defers captures without discarding pending edits', async () => {
+  const f = fixture()
+  f.checkpoint.changed()
+  const resume = f.checkpoint.suspend()
+  assert.equal(f.timers.size, 0)
+  f.checkpoint.changed()
+  assert.equal(f.timers.size, 0)
+  resume()
+  assert.equal(f.timers.size, 1)
+  f.fire()
+  f.requests[0].resolve(f.response('a'))
+  await turn()
+  assert.ok(f.checkpoint.get().record)
+})
+
 test('many changes share one timer and exports never overlap', async () => {
   const f = fixture()
   for (let i = 0; i < 20; i++) f.checkpoint.changed()
@@ -74,35 +89,6 @@ test('cursor and visibility changes patch the completed snapshot without another
   assert.equal(f.checkpoint.get().record.game.pendingReview, null)
   assert.deepEqual(f.checkpoint.get().visibility, { opponentAnalysis: true })
   assert.equal(f.timers.size, 0)
-})
-
-test('only a settled checkpoint without pending changes is reusable', async () => {
-  const f = fixture()
-  assert.equal(f.checkpoint.getFresh(), null)
-
-  f.checkpoint.changed()
-  assert.equal(f.checkpoint.getFresh(), null)
-  f.fire()
-  f.requests[0].resolve(f.response('a'))
-  await turn()
-  assert.equal(f.checkpoint.getFresh(), f.checkpoint.get())
-
-  f.checkpoint.changed()
-  assert.equal(f.checkpoint.getFresh(), null)
-})
-
-test('a foreground export supersedes scheduled and in-flight checkpoints', async () => {
-  const f = fixture()
-  f.checkpoint.changed()
-  f.fire()
-  const foreground = { record: { game: { gameId: 'a', currentNodeId: 'new' } }, visibility: { opponentAnalysis: true } }
-  assert.equal(f.checkpoint.rememberFresh(foreground), true)
-  assert.equal(f.checkpoint.getFresh(), null, 'the older in-flight export must settle before reuse')
-
-  f.requests[0].resolve(f.response('a'))
-  await turn()
-  assert.equal(f.checkpoint.getFresh(), foreground)
-  assert.equal(f.checkpoint.get().record.game.currentNodeId, 'new')
 })
 
 test('switching games clears the old checkpoint and ignores its delayed export', async () => {

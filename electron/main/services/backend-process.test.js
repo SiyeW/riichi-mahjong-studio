@@ -25,6 +25,24 @@ function fixture() {
   return { backend, children, events }
 }
 
+test('owned file operations retain late completion and still fail when their process stops', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const { backend, children } = fixture()
+  const importing = backend.sendRequest('import_game_record', { path: 'record' }, null)
+  children[0].output({ type: 'service_ready' })
+  let complete = false
+  importing.then(() => { complete = true })
+  t.mock.timers.tick(180_000)
+  await Promise.resolve()
+  assert.equal(complete, false)
+  children[0].output({ request_id: children[0].messages[0].request_id, ok: true })
+  assert.equal((await importing).ok, true)
+  const saving = backend.sendRequest('export_game_record', { path: 'staging' }, null)
+  const rejected = assert.rejects(saving, /stopped/)
+  backend.stop()
+  await rejected
+})
+
 test('a synchronous spawn exception reports stopped and rejects the request', async () => {
   const events = []
   const backend = createBackendProcess({ name: 'test', pythonExecutable: 'unused',

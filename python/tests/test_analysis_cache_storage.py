@@ -3,9 +3,11 @@ import json
 import struct
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from rms_backend.analysis_cache_storage import (
     ANALYSIS_CACHE_STORAGE_FIELD,
+    AnalysisCachePacker,
     compact_record_analysis_caches,
     expand_record_analysis_caches,
     pack_json,
@@ -14,6 +16,49 @@ from rms_backend.analysis_cache_storage import (
 
 
 class AnalysisCacheStorageTests(unittest.TestCase):
+    def test_reuse_tracks_entry_identity_keys_and_node_order(self):
+        packer = AnalysisCachePacker()
+        result = {'probability': 0.25}
+
+        def prepare(nodes):
+            record = {'game': {'nodes': nodes}}
+            compact_record_analysis_caches(record, packer=packer)
+            return record['analysisCacheStorage']
+
+        first = prepare({'a': {'analysisCache': {'model': result}}})
+        with patch('rms_backend.analysis_cache_storage.pack_json', wraps=pack_json) as pack:
+            self.assertIs(prepare({'a': {'analysisCache': {'model': result}}}), first)
+            pack.assert_not_called()
+            moved = prepare({'b': {'analysisCache': {'model': result}}})
+            self.assertEqual(moved['nodeIds'], ['b'])
+            self.assertIsNot(moved, first)
+            pack.assert_not_called()
+            changed = prepare({'b': {'analysisCache': {'model': {'probability': 0.75}}}})
+            self.assertEqual(unpack_json(changed['decision']['values'])[0]['model']['probability'], 0.75)
+            self.assertEqual(pack.call_count, 1)
+
+    def test_loading_can_reuse_validated_packed_data_but_migration_invalidates_it(self):
+        record = {'game': {'nodes': {'a': {'analysisCache': {'model': {'probability': 0.25}}}}}}
+        compact_record_analysis_caches(record)
+        original = record['analysisCacheStorage']['decision']['values']
+        packer = AnalysisCachePacker()
+        expand_record_analysis_caches(record, packer=packer)
+        values = [record['game']['nodes']['a']['analysisCache']]
+        self.assertIs(packer.pack('decision', values), original)
+        values[0].pop('model')
+        self.assertIsNot(packer.pack('decision', values), original)
+
+    def test_invalid_binary_bounds_and_trailing_data_are_rejected(self):
+        import base64
+        packed = pack_json({'value': [1, 0, 'label']})
+        for tokens in (b'', b'\x06\x01', b'\x04\xff\x7f', b'\x04' + b'\xff' * 9,
+                       base64.b64decode(packed['tokens']) + b'\x00'):
+            invalid = {**packed, 'tokens': base64.b64encode(tokens).decode('ascii')}
+            with self.assertRaises(ValueError):
+                unpack_json(invalid)
+        with self.assertRaises(ValueError):
+            unpack_json({**packed, 'numberCount': packed['numberCount'] + 1})
+
     def test_binary_json_matches_shared_cross_runtime_fixture(self):
         fixture_path = Path(__file__).parents[2] / "test" / "fixtures" / "analysis-cache-storage-v1.json"
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))

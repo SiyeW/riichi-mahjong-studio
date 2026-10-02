@@ -5,43 +5,9 @@ const zlib = require('node:zlib')
 const {
   decodeGameRecord,
   encodeGameRecord,
-  encodeGameRecordAsync,
   getRecoverySourcePath,
   isRecoveryGameRecord,
-  prepareGameRecordForWrite,
 } = require('./game-record-codec')
-
-test('asynchronous encoding preserves the synchronous record format', async () => {
-  const record = { formatVersion: 1, game: { gameId: 'async-test', nodes: { n1: { comment: '🀄' } } } }
-  assert.deepEqual(await encodeGameRecordAsync(record), encodeGameRecord(record))
-  assert.deepEqual(decodeGameRecord(await encodeGameRecordAsync(record)), record)
-  assert.deepEqual(await encodeGameRecordAsync(record, false), encodeGameRecord(record, false))
-})
-
-test('encoder failures reject without leaving a pending worker', async () => {
-  await assert.rejects(encodeGameRecordAsync({ invalid: 1n }), /BigInt/)
-  await assert.rejects(encodeGameRecordAsync({ invalid: () => {} }), /clone/)
-})
-
-test('new writes compact analysis caches while decoding restores the backend record shape', async () => {
-  const record = {
-    formatVersion: 3,
-    game: {
-      nodes: {
-        n1: {
-          analysisCache: { decision: { probability: 0.12345678901234568 } },
-          opponentAnalysisCache: { opponent: { probability: 0 } },
-        },
-      },
-    },
-  }
-  const prepared = prepareGameRecordForWrite(record, { appVersion: '1.0.0' })
-  assert.equal(Object.hasOwn(prepared.game.nodes.n1, 'analysisCache'), false)
-  assert.ok(prepared.analysisCacheStorage)
-  const decoded = decodeGameRecord(await encodeGameRecordAsync(prepared))
-  assert.deepEqual(decoded.game, record.game)
-  assert.equal(decoded.analysisCacheStorage, undefined)
-})
 
 test('legacy inline analysis caches remain readable without migration metadata', () => {
   const legacy = {
@@ -60,55 +26,14 @@ test('legacy inline analysis caches remain readable without migration metadata',
   assert.equal(decoded.analysisCacheStorage, undefined)
 })
 
-function testWriteMetadataIsPortable() {
-  const source = {
-    formatVersion: 2,
-    metadata: {
-      app: 'riichi-mahjong-studio',
-      models: {
-        teachingModel: { modelPath: 'D:\\models\\example.pth' },
-      },
-      recovery: { kind: 'stale-marker' },
-    },
-    state: {},
-    game: {},
-  }
-
-  const formal = prepareGameRecordForWrite(source, { appVersion: '0.4.0-alpha.1' })
-  assert.equal(formal.metadata.appVersion, '0.4.0-alpha.1')
-  assert.equal(formal.metadata.app, undefined)
-  assert.equal(formal.metadata.recordType, undefined)
-  assert.equal(formal.metadata.models, undefined)
-  assert.equal(formal.metadata.recovery, undefined)
-  assert.equal(isRecoveryGameRecord(formal), false)
-  assert.equal(getRecoverySourcePath(formal), '')
-  assert.ok(source.metadata.models)
-
-  const recovery = prepareGameRecordForWrite(source, {
-    appVersion: '0.4.0-alpha.1',
-    recovery: true,
-  })
-  assert.equal(isRecoveryGameRecord(recovery), true)
-  assert.equal(recovery.metadata.recovery.schemaVersion, 3)
-  assert.equal(recovery.metadata.recovery.sourcePath, undefined)
-  assert.equal(getRecoverySourcePath(recovery), '')
-
-  const legacyRecovery = {
-    metadata: {
-      recovery: {
-        kind: 'unsaved-exit',
-        schemaVersion: 2,
-        sourcePath: 'D:\\records\\legacy.mjtrain',
-      },
-    },
-  }
-  assert.equal(getRecoverySourcePath(legacyRecovery), 'D:\\records\\legacy.mjtrain')
-
-  const decoded = decodeGameRecord(encodeGameRecord(recovery))
-  assert.deepEqual(decoded, recovery)
-}
-
-testWriteMetadataIsPortable()
+test('recovery metadata recognizes the legacy source path', () => {
+  const record = { metadata: { recovery: {
+    kind: 'unsaved-exit', schemaVersion: 2, sourcePath: ' D:/records/legacy.mjtrain ',
+  } } }
+  assert.equal(isRecoveryGameRecord(record), true)
+  assert.equal(getRecoverySourcePath(record), 'D:/records/legacy.mjtrain')
+  assert.equal(getRecoverySourcePath({ metadata: { recovery: { kind: 'other' } } }), '')
+})
 
 test('record decoding preserves Unicode and accepts a UTF-8 BOM with or without compression', () => {
   const record = { comment: '评论・牌譜🀄・literal replacement character �' }
