@@ -18,6 +18,7 @@ from .custom_tenhou import (
     normalize_custom_tenhou_input,
 )
 from .game_record_storage import (
+    copy_game_for_record,
     hydrate_game_structure,
     hydrate_round_walls,
     migrate_discard_tsumogiri,
@@ -137,7 +138,7 @@ class RecordSession:
     ) -> dict:
         """Finish a detached recovery snapshot without holding live-state locks."""
         game, state = prepared
-        return serialize_game_record_parts(copy.deepcopy(game), copy.deepcopy(state))
+        return serialize_game_record_parts(copy_game_for_record(game), copy.deepcopy(state))
 
     def prepare_export(self) -> PreparedRecordExport:
         """Capture a coherent full save while holding the state lock.
@@ -147,7 +148,7 @@ class RecordSession:
         Authored game data is copied here so later edits cannot change the save.
         """
         game, state = self.prepare_recovery_checkpoint()
-        game = copy.deepcopy(game)
+        game = copy_game_for_record(game)
         live_nodes = self._state["game"]["nodes"]
         for node_id, node in game["nodes"].items():
             for field in ("analysisCache", "opponentAnalysisCache"):

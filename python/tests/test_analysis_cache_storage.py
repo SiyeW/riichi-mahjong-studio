@@ -16,6 +16,14 @@ from rms_backend.analysis_cache_storage import (
 
 
 class AnalysisCacheStorageTests(unittest.TestCase):
+    def test_numeric_fast_path_preserves_mixed_vectors_and_multibyte_indexes(self):
+        source = {
+            f'key-{index}': [0, 1, index / 1000, None, False, True, f'label-{index}',
+                            {'nested': [0, -12000, 1e-12]}]
+            for index in range(260)
+        }
+        self.assertEqual(unpack_json(pack_json(source)), source)
+
     def test_reuse_tracks_entry_identity_keys_and_node_order(self):
         packer = AnalysisCachePacker()
         result = {'probability': 0.25}

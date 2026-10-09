@@ -143,12 +143,16 @@
       </button>
     </div>
 
-    <div v-if="closeState.active" class="exit-saving-overlay" role="status" aria-live="assertive">
-      <div class="exit-saving-card">
-        <strong>{{ closingExitLabel }}</strong>
-        <span>{{ t('close.keepOpen') }}</span>
-      </div>
+    <div v-if="recordOperationError" class="startup-banner" role="alert">
+      <span>{{ recordOperationError }}</span>
+      <button @click="recordOperationError = ''">{{ t('common.close') }}</button>
     </div>
+
+    <RecordOperationOverlay
+      v-if="closeState.active || gameFileOperation !== null"
+      :title="closeState.active ? closingExitLabel : t(`recordOperation.${gameFileOperation}`)"
+      :detail="closeState.active ? t('close.keepOpen') : t('recordOperation.wait')"
+    />
 
     <main
       ref="workspaceRoot"
@@ -547,6 +551,7 @@
     <RecordImportDialog
       v-if="showRecordImportPanel"
       :before-import="flushNodeComment"
+      @busy-change="handleImportBusy"
       @close="closeRecordImportPanel"
       @imported="handleRecordImported"
       @open-external="openExternalLink"
@@ -719,6 +724,7 @@ import DockLayoutNode from './workspace/DockLayoutNode.vue'
 import EngineManagerWindow from './engines/components/EngineManagerWindow.vue'
 import QuickSettingsPanel from './components/QuickSettingsPanel.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
+import RecordOperationOverlay from './components/RecordOperationOverlay.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
 import RoundResultOverlay from './components/RoundResultOverlay.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
@@ -1448,12 +1454,14 @@ const {
   gameFileOperation,
   handleRecordDirtyChanged,
   handleRecordImported,
+  handleImportBusy,
   markRecordDirty,
   openGame,
   openRecordImportPanel,
   recordDirty,
   recordHeaderTitle,
   recordPath,
+  recordOperationError,
   restoreRecordMetadata,
   saveGame,
   saveGameAs,
@@ -1893,6 +1901,10 @@ onBeforeUnmount(() => {
 })
 if (import.meta.env.MODE === 'ui-test') {
   installAnalysisTestHarness(proxyRefs({
+    openGame,
+    closeRecordImportPanel,
+    showRecordImportPanel,
+    recordOperationError,
     recordDirty,
     recordPath,
     saveGame,

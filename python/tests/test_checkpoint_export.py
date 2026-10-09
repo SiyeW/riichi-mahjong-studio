@@ -5,9 +5,35 @@ from unittest.mock import patch
 from rms_backend import service
 from rms_backend.analysis_cache import OPPONENT_ANALYSIS_CACHE_FIELD
 from rms_backend.analysis_cache_storage import expand_record_analysis_caches
+from rms_backend.game_record_storage import copy_game_for_record, serialize_game_record_parts
 
 
 class CheckpointExportTests(unittest.TestCase):
+    def test_persisted_projection_matches_full_copy_and_never_mutates_source(self):
+        game = service.create_empty_game(123456)
+        snapshot = game['nodes'][game['currentNodeId']]['snapshot']
+        snapshot['kyokuState']['pendingDoraRevealAfterActionCount'] = 2
+        before = copy.deepcopy(game)
+        state = {'mode': 'research', 'controlledSeat': 0, 'visibleHands': True}
+        expected = serialize_game_record_parts(copy.deepcopy(game), state)
+        actual = serialize_game_record_parts(copy_game_for_record(game), state)
+        expected.pop('savedAt')
+        actual.pop('savedAt')
+        self.assertEqual(actual, expected)
+        self.assertEqual(game, before)
+
+    def test_projected_save_detaches_mutable_snapshot_data(self):
+        game = service.create_empty_game(123456)
+        node_id = game['currentNodeId']
+        detached = copy_game_for_record(game)
+        snapshot = game['nodes'][node_id]['snapshot']
+        self.assertNotIn('kyokuState', detached['nodes'][node_id]['snapshot'])
+        frozen = copy.deepcopy(detached)
+        snapshot['hands'][0].append('1m')
+        snapshot['rivers'][0].append({'pai': '2m'})
+        snapshot['scores'][0] += 1000
+        self.assertEqual(detached, frozen)
+
     def test_real_checkpoint_is_detached_from_live_record(self):
         game = service.create_empty_game(123456)
         node = game['nodes'][game['currentNodeId']]

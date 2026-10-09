@@ -1,7 +1,9 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import type { GameView } from './contracts/game'
 import type { RecordImportResult, StudioStatus } from './contracts/runtime'
-type GameFileOperation = 'create' | 'open' | 'save' | 'save-as' | 'close'
+import { useI18n } from './i18n'
+
+type GameFileOperation = 'create' | 'open' | 'import' | 'save' | 'save-as' | 'close'
 
 interface UseRecordSessionOptions {
   status: StudioStatus
@@ -22,6 +24,7 @@ function fileNameFromPath(value: string): string {
 }
 
 export function useRecordSession(options: UseRecordSessionOptions) {
+  const { t } = useI18n()
   const {
     status,
     gameView,
@@ -37,10 +40,16 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   const recordDirty = ref(false)
   const recoveryRecord = ref(false)
   const gameFileOperation = ref<GameFileOperation | null>(null)
+  const recordOperationError = ref('')
   const closeRecordConfirmationPending = ref(false)
   const showRecordImportPanel = ref(false)
   let recordDirtyEventGeneration = 0
   let closeRecordConfirmationTimer: number | null = null
+
+  function reportOperationError(error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    recordOperationError.value = t('recordOperation.failed', { message })
+  }
 
   const recordHeaderTitle = computed(() => (
     recordPath.value ? fileNameFromPath(recordPath.value) : ''
@@ -80,7 +89,13 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   }
 
   function closeRecordImportPanel() {
+    if (gameFileOperation.value !== null) return
     showRecordImportPanel.value = false
+  }
+
+  function handleImportBusy(busy: boolean) {
+    if (busy) gameFileOperation.value = 'import'
+    else if (gameFileOperation.value === 'import') gameFileOperation.value = null
   }
 
   async function handleRecordImported(result: RecordImportResult) {
@@ -97,12 +112,15 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     if (!window.studioAPI || gameFileOperation.value !== null) return
     clearCloseRecordConfirmation()
     gameFileOperation.value = 'create'
+    recordOperationError.value = ''
     try {
       await flushNodeComment()
       applyStatus(await window.studioAPI.createGame())
       setRecordPath('')
       recoveryRecord.value = false
       await refreshGameView()
+    } catch (error) {
+      reportOperationError(error)
     } finally {
       gameFileOperation.value = null
     }
@@ -112,6 +130,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     if (!window.studioAPI || gameFileOperation.value !== null) return
     clearCloseRecordConfirmation()
     gameFileOperation.value = 'open'
+    recordOperationError.value = ''
     try {
       await flushNodeComment()
       const result = await window.studioAPI.openGame()
@@ -121,6 +140,8 @@ export function useRecordSession(options: UseRecordSessionOptions) {
       setRecordPath(result.path)
       recordDirty.value = Boolean(result.recordDirty)
       recoveryRecord.value = Boolean(result.recoveryRecord)
+    } catch (error) {
+      reportOperationError(error)
     } finally {
       gameFileOperation.value = null
     }
@@ -130,6 +151,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     if (!window.studioAPI || gameFileOperation.value !== null) return
     if (operation === 'save' && !recordDirty.value) return
     gameFileOperation.value = operation
+    recordOperationError.value = ''
     try {
       await flushNodeComment()
       const dirtyGeneration = recordDirtyEventGeneration
@@ -143,6 +165,8 @@ export function useRecordSession(options: UseRecordSessionOptions) {
         recordDirty.value = Boolean(result.recordDirty) || hasNodeCommentDrafts()
       }
       recoveryRecord.value = Boolean(result.recoveryRecord)
+    } catch (error) {
+      reportOperationError(error)
     } finally {
       gameFileOperation.value = null
     }
@@ -181,6 +205,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     }
     clearCloseRecordConfirmation()
     gameFileOperation.value = 'close'
+    recordOperationError.value = ''
     try {
       await flushNodeComment()
       prepareClose()
@@ -188,6 +213,8 @@ export function useRecordSession(options: UseRecordSessionOptions) {
       applyStatus(response.state)
       applyGameView(response.view)
       clearRecordMetadata()
+    } catch (error) {
+      reportOperationError(error)
     } finally {
       gameFileOperation.value = null
     }
@@ -213,12 +240,14 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     gameFileOperation,
     handleRecordDirtyChanged,
     handleRecordImported,
+    handleImportBusy,
     markRecordDirty,
     openGame,
     openRecordImportPanel,
     recordDirty,
     recordHeaderTitle,
     recordPath,
+    recordOperationError,
     restoreRecordMetadata,
     saveGame,
     saveGameAs,

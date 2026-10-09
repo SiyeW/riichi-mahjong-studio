@@ -6,6 +6,7 @@ import base64
 import math
 import struct
 from functools import lru_cache
+from itertools import chain
 from threading import Lock
 
 
@@ -14,6 +15,7 @@ ANALYSIS_CACHE_STORAGE_VERSION = 1
 ANALYSIS_CACHE_CODEC = "binary-json-f64-v1"
 
 _NULL, _FALSE, _TRUE, _NUMBER, _STRING, _ARRAY, _OBJECT = range(7)
+_BYTE_BITS = tuple(tuple(bool(byte & (1 << bit)) for bit in range(8)) for byte in range(256))
 _PROBABILITY_FIELDS = frozenset((
     "probability", "winProbability", "dealInProbability", "drawProbability",
     "furitenOrNoYaku",
@@ -43,7 +45,7 @@ def _decode_bitmap(encoded, length):
     data = base64.b64decode(str(encoded or ""), validate=True)
     if len(data) != (length + 7) // 8:
         raise ValueError("Invalid packed analysis bitmap.")
-    return [bool(data[index >> 3] & (1 << (index & 7))) for index in range(length)]
+    return list(chain.from_iterable(_BYTE_BITS[byte] for byte in data))[:length]
 
 
 def pack_json(value, *, display_probabilities=False):
@@ -160,8 +162,7 @@ def unpack_json(packed):
             shift += 7
         raise ValueError("Packed analysis index is too large.")
 
-    def read():
-        tag = next(tokens)
+    def read(tag):
         if tag == _NUMBER:
             return next(numbers)
         if tag == _NULL:
@@ -177,16 +178,20 @@ def unpack_json(packed):
         if tag == _STRING:
             return strings[payload]
         if tag == _ARRAY:
-            return [read() for _ in range(payload)]
+            # Probability vectors dominate files. Decode scalar vector entries
+            # directly instead of a recursive Python call for every number.
+            return [next(numbers) if (child_tag := next(tokens)) == _NUMBER
+                    else read(child_tag) for _ in range(payload)]
         value = {}
         for _ in range(payload):
             first = next(tokens)
             key = strings[first if first < 128 else unsigned(first)]
-            value[key] = read()
+            child_tag = next(tokens)
+            value[key] = next(numbers) if child_tag == _NUMBER else read(child_tag)
         return value
 
     try:
-        value = read()
+        value = read(next(tokens))
     except (StopIteration, IndexError) as error:
         raise ValueError("Packed analysis payload ended unexpectedly or has an invalid index.") from error
     sentinel = object()

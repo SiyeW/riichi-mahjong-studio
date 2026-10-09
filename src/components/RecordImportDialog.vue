@@ -15,6 +15,7 @@
         <span>{{ t('import.source') }}</span>
         <textarea
           v-model="input"
+          :disabled="importing"
           autocomplete="off"
           spellcheck="false"
           rows="8"
@@ -23,7 +24,7 @@
         ></textarea>
       </label>
       <label class="settings-checkbox settings-checkbox-with-description record-import-wall-option">
-        <input v-model="reconstructWalls" type="checkbox" />
+        <input v-model="reconstructWalls" type="checkbox" :disabled="importing" />
         <span class="settings-checkbox-control" aria-hidden="true"></span>
         <span class="settings-checkbox-copy">
           <span class="settings-checkbox-label">{{ t('import.reconstructWall') }}</span>
@@ -34,6 +35,7 @@
         <span>{{ t('wall.seedOptional') }}</span>
         <input
           v-model.trim="seed"
+          :disabled="importing"
           type="text"
           inputmode="numeric"
           autocomplete="off"
@@ -59,6 +61,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   close: []
   imported: [result: RecordImportResult]
+  'busy-change': [busy: boolean]
   'open-external': [url: string]
 }>()
 
@@ -75,6 +78,7 @@ function isMortalReportInput(value: string): boolean {
 async function submitImport() {
   if (!window.studioAPI || importing.value || !input.value.trim()) return
   importing.value = true
+  emit('busy-change', true)
   errorMessage.value = ''
   try {
     await props.beforeImport()
@@ -91,6 +95,7 @@ async function submitImport() {
     errorMessage.value = error instanceof Error ? error.message : t('import.failed')
   } finally {
     importing.value = false
+    emit('busy-change', false)
   }
 }
 </script>

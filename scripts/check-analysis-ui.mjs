@@ -322,16 +322,17 @@ try {
     await page.screenshot({ path: path.resolve(process.env.RMS_UI_SCREENSHOT), fullPage: true })
   }
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
+  uiChecks: {
   if (!performanceOnly) {
   await page.evaluate(() => {
     window.analysisCheck.vm.closeState.active = true
     window.analysisCheck.vm.closeState.stage = 'recovery'
   })
-  const exitSavingOverlay = page.locator('.exit-saving-overlay')
+  const exitSavingOverlay = page.locator('.record-operation-overlay')
   await exitSavingOverlay.waitFor({ state: 'visible' })
   const exitSavingGeometry = await exitSavingOverlay.evaluate((overlay) => {
     const overlayRect = overlay.getBoundingClientRect()
-    const card = overlay.querySelector('.exit-saving-card')
+    const card = overlay.querySelector('.record-operation-card')
     if (!card) throw new Error('exit-saving overlay is missing its status card')
     return {
       role: overlay.getAttribute('role'),
@@ -344,7 +345,7 @@ try {
     }
   })
   assert.equal(exitSavingGeometry.role, 'status', 'exit persistence feedback is exposed as a status')
-  assert.equal(exitSavingGeometry.live, 'assertive', 'exit persistence feedback is announced immediately')
+  assert.equal(exitSavingGeometry.live, 'polite', 'record operation feedback is accessible without repeated interruptions')
   assert.ok(exitSavingGeometry.text.includes('正在保存恢复数据'), `exit feedback reports the active persistence stage: ${exitSavingGeometry.text}`)
   assert.deepEqual(
     exitSavingGeometry.overlay,
@@ -361,6 +362,62 @@ try {
     window.analysisCheck.vm.closeState.stage = ''
   })
   await exitSavingOverlay.waitFor({ state: 'detached' })
+
+  for (const [method, title] of [['openGame', '正在打开牌谱'], ['saveGameAs', '正在另存牌谱'], ['saveGame', '正在保存牌谱']]) {
+    const previousGame = await page.evaluate(() => window.analysisCheck.vm.gameView.gameId)
+    await page.evaluate(method => {
+      window.analysisCheck.vm.recordDirty = true
+      window.studioAPI[method] = () => new Promise(resolve => { window.analysisCheck.finishFileOperation = resolve })
+      window.analysisCheck.pendingFileOperation = window.analysisCheck.vm[method]()
+    }, method)
+    await exitSavingOverlay.waitFor({ state: 'visible' })
+    assert.ok((await exitSavingOverlay.textContent()).includes(title))
+    if (method === 'openGame') {
+      const viewport = page.viewportSize()
+      await page.setViewportSize({ width: 320, height: 600 })
+      for (const language of ['zh-CN', 'ja-JP', 'en-US']) {
+        await page.evaluate(language => { window.analysisCheck.vm.settings.display.language = language }, language)
+        const fits = await page.locator('.record-operation-card').evaluate(card => {
+          const rect = card.getBoundingClientRect()
+          return rect.left >= 0 && rect.right <= window.innerWidth && card.scrollWidth <= card.clientWidth
+        })
+        assert.equal(fits, true, `record operation feedback fits a narrow viewport in ${language}`)
+      }
+      await page.evaluate(() => { window.analysisCheck.vm.settings.display.language = 'zh-CN' })
+      await page.setViewportSize(viewport)
+    }
+    assert.equal(await page.evaluate(() => window.analysisCheck.vm.gameView.gameId), previousGame,
+      'the previous complete record remains displayed while file I/O is pending')
+    assert.equal(await page.locator('.toolbar button').first().isDisabled(), true)
+    await page.evaluate(async () => {
+      window.analysisCheck.finishFileOperation(null)
+      await window.analysisCheck.pendingFileOperation
+    })
+    await exitSavingOverlay.waitFor({ state: 'detached' })
+  }
+  await page.evaluate(async () => {
+    window.studioAPI.openGame = async () => { throw new Error('fixture damaged record') }
+    await window.analysisCheck.vm.openGame()
+  })
+  assert.ok((await page.locator('[role="alert"]').textContent()).includes('fixture damaged record'))
+  await page.evaluate(() => { window.analysisCheck.vm.recordOperationError = '' })
+  await page.evaluate(() => {
+    window.analysisCheck.vm.showRecordImportPanel = true
+    window.studioAPI.importCustomTenhou = () => new Promise((resolve, reject) => {
+      window.analysisCheck.failImport = reject
+    })
+  })
+  await page.locator('.record-import-modal textarea').fill('{}')
+  await page.locator('.record-import-modal button[type="submit"]').click()
+  await exitSavingOverlay.waitFor({ state: 'visible' })
+  assert.ok((await exitSavingOverlay.textContent()).includes('正在导入牌谱'))
+  await page.evaluate(() => window.analysisCheck.failImport(new Error('fixture import failed')))
+  await exitSavingOverlay.waitFor({ state: 'detached' })
+  assert.ok((await page.locator('.record-import-error').textContent()).includes('fixture import failed'))
+  await page.evaluate(() => window.analysisCheck.vm.closeRecordImportPanel())
+  if (process.env.RMS_UI_RECORD_IO_ONLY) {
+    break uiChecks
+  }
 
   await page.locator('.toolbar .hover-action-menu > button').hover()
   await page.waitForFunction(() => getComputedStyle(document.querySelector('.toolbar .hover-action-menu-items')).visibility === 'visible')
@@ -3054,8 +3111,9 @@ try {
 
   await checkWorkspaceDock(page)
   }
+  }
   assert.deepEqual(errors, [])
-  console.log(performanceOnly
+  console.log(process.env.RMS_UI_RECORD_IO_ONLY ? 'Record I/O UI checks passed.' : performanceOnly
     ? 'Analysis UI performance scenario passed.'
     : 'Analysis UI: events, hover, navigation motion, cache, geometry, artwork and workspace docking passed.')
 } catch (error) {

@@ -683,6 +683,41 @@ def migrate_terminal_table_scores(game):
         set_table_scores(snapshot, base_scores)
 
 
+def copy_game_for_record(game):
+    """Detach persisted state without copying runtime mirrors discarded on save.
+
+    The caller holds the state lock. Snapshot top-level fields are the persisted
+    authority; matchState and kyokuState are runtime mirrors. Keep the one legacy
+    delayed-dora field which the existing serializer reads from that mirror.
+    """
+    projected = dict(game)
+    projected_nodes = {}
+    memo = {}
+    for node_id, node in game.get("nodes", {}).items():
+        projected_node = dict(node)
+        snapshot = node.get("snapshot")
+        if isinstance(snapshot, dict):
+            persisted = {
+                key: value for key, value in snapshot.items()
+                if key not in ("matchState", "kyokuState")
+            }
+            kyoku = snapshot.get("kyokuState")
+            if isinstance(kyoku, dict) and kyoku.get("pendingDoraRevealAfterActionCount"):
+                persisted["pendingDoraRevealAfterActionCount"] = int(
+                    kyoku["pendingDoraRevealAfterActionCount"]
+                )
+            projected_node["snapshot"] = persisted
+            # Walls hydrated from record files are immutable tuples of strings.
+            # deepcopy otherwise traverses the same tuples for every snapshot.
+            for field in _STATIC_WALL_FIELDS:
+                value = persisted.get(field)
+                if isinstance(value, tuple) and all(isinstance(tile, str) for tile in value):
+                    memo[id(value)] = value
+        projected_nodes[node_id] = projected_node
+    projected["nodes"] = projected_nodes
+    return copy.deepcopy(projected, memo)
+
+
 def serialize_game_record_parts(game_copy, state_copy, *, analysis_packer=None):
     _compact_round_walls_for_record(game_copy)
     _compact_round_states_for_record(game_copy)
