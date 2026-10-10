@@ -249,6 +249,9 @@ class DecisionAnalysisSession:
         controlled_seat = int(self.state["controlledSeat"])
         updates = []
         for parent_node in game.get("nodes", {}).values():
+            children = [game["nodes"][key] for key in parent_node.get("children", []) if key in game["nodes"]]
+            if not children or all(child.get("comparison") for child in children):
+                continue
             snapshot = parent_node.get("snapshot") or {}
             phase = str(snapshot.get("phase") or "")
             if phase == "draw_or_discard":

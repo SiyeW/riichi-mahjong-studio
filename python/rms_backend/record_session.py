@@ -12,6 +12,7 @@ from . import snapshot_state
 from . import tree_view
 from .analysis_cache import migrate_analysis_cache_storage
 from .analysis_cache_storage import AnalysisCachePacker, expand_record_analysis_caches
+from .analysis_cache_codec import snapshot_json_object
 from .custom_tenhou import (
     build_custom_tenhou_game,
     export_custom_tenhou,
@@ -154,7 +155,7 @@ class RecordSession:
             for field in ("analysisCache", "opponentAnalysisCache"):
                 cache = live_nodes[node_id].get(field)
                 if isinstance(cache, dict):
-                    node[field] = dict(cache)
+                    node[field] = snapshot_json_object(cache)
         return PreparedRecordExport(game, state, self._analysis_packer, self._file_writer)
 
     @staticmethod
@@ -173,7 +174,7 @@ class RecordSession:
         if not take_ownership:
             record = copy.deepcopy(record)
         analysis_packer = AnalysisCachePacker()
-        expand_record_analysis_caches(record, packer=analysis_packer)
+        expand_record_analysis_caches(record, packer=analysis_packer, lazy=True)
         format_version = int(record.get("formatVersion") or 0)
         if format_version not in (1, 2, 3):
             raise ValueError("Unsupported record format version.")

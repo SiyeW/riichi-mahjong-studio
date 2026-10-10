@@ -104,7 +104,7 @@ def prune_stale_cache_entries(cache, current_key):
             and candidate["mode"] == current["mode"]
             and cache_key != current_key
         ):
-            cache.pop(cache_key, None)
+            del cache[cache_key]
 
 
 def find_stale_cache_entry(game, node, current_key, cache_field):
@@ -141,13 +141,13 @@ def migrate_analysis_cache_storage(game):
         if isinstance(decision_cache, dict):
             for cache_key in list(decision_cache):
                 if cache_key_context(cache_key) is None:
-                    decision_cache.pop(cache_key, None)
+                    del decision_cache[cache_key]
 
         opponent_cache = node.get(OPPONENT_ANALYSIS_CACHE_FIELD)
         if isinstance(opponent_cache, dict):
             for cache_key in list(opponent_cache):
                 if cache_key_context(cache_key) is None:
-                    opponent_cache.pop(cache_key, None)
+                    del opponent_cache[cache_key]
 
 
 def quantize_probability(value):
