@@ -27,6 +27,9 @@ export async function checkReplayWorkflow(page) {
   })
   const names = page.locator('.player-name-button')
   assert.equal(await names.count(), 4, 'all four stable seats have a name editor')
+  assert.ok(await names.evaluateAll(buttons => buttons.every(button =>
+    getComputedStyle(button).fontSize === getComputedStyle(document.querySelector('.gi-riichi-bet')).fontSize)),
+  'player names use the same font size as the riichi deduction')
   await names.first().hover()
   assert.equal(await page.locator('.ui-hover-tooltip.is-inline-reveal').count(), 0, 'untruncated names have no reveal')
   for (let index = 1; index < 4; index++) {

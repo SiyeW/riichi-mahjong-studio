@@ -40,7 +40,7 @@ const orderedViews = computed(() => positionOrder.flatMap(position => (
   inset: var(--grid-top-row) var(--grid-side-col) var(--grid-bottom-row);
   z-index: 2;
   pointer-events: none;
-  font-size: var(--table-text-center-label);
+  font-size: var(--table-text-bet);
   --name-inset: calc(6px * var(--zoom));
   --name-height: calc(1.35em + 2px);
   /* Use the free edge until the third river row actually occupies it.
