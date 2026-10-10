@@ -17,7 +17,8 @@ interface UseRecordSessionOptions {
   handleReconstruction: (roundCount: number) => void | Promise<void>
 }
 
-const CLOSE_CONFIRMATION_TIMEOUT_MS = 3000
+const DISCARD_CONFIRMATION_TIMEOUT_MS = 3000
+type ReplacementOperation = 'create' | 'open' | 'import' | 'close'
 
 function fileNameFromPath(value: string): string {
   return String(value || '').split(/[\\/]/).pop() || ''
@@ -41,10 +42,10 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   const recoveryRecord = ref(false)
   const gameFileOperation = ref<GameFileOperation | null>(null)
   const recordOperationError = ref('')
-  const closeRecordConfirmationPending = ref(false)
+  const discardConfirmation = ref<ReplacementOperation | null>(null)
   const showRecordImportPanel = ref(false)
   let recordDirtyEventGeneration = 0
-  let closeRecordConfirmationTimer: number | null = null
+  let discardConfirmationTimer: number | null = null
 
   function reportOperationError(error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
@@ -85,6 +86,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
 
   function openRecordImportPanel() {
     if (gameFileOperation.value !== null) return
+    if (!confirmReplacement('import')) return
     showRecordImportPanel.value = true
   }
 
@@ -110,7 +112,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
 
   async function createGame() {
     if (!window.studioAPI || gameFileOperation.value !== null) return
-    clearCloseRecordConfirmation()
+    if (!confirmReplacement('create')) return
     gameFileOperation.value = 'create'
     recordOperationError.value = ''
     try {
@@ -128,7 +130,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
 
   async function openGame() {
     if (!window.studioAPI || gameFileOperation.value !== null) return
-    clearCloseRecordConfirmation()
+    if (!confirmReplacement('open')) return
     gameFileOperation.value = 'open'
     recordOperationError.value = ''
     try {
@@ -149,6 +151,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
 
   async function saveWith(operation: 'save' | 'save-as') {
     if (!window.studioAPI || gameFileOperation.value !== null) return
+    clearDiscardConfirmation()
     if (operation === 'save' && !recordDirty.value) return
     gameFileOperation.value = operation
     recordOperationError.value = ''
@@ -180,30 +183,31 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     return saveWith('save-as')
   }
 
-  function clearCloseRecordConfirmation() {
-    closeRecordConfirmationPending.value = false
-    if (closeRecordConfirmationTimer !== null) {
-      window.clearTimeout(closeRecordConfirmationTimer)
-      closeRecordConfirmationTimer = null
+  function clearDiscardConfirmation() {
+    discardConfirmation.value = null
+    if (discardConfirmationTimer !== null) {
+      window.clearTimeout(discardConfirmationTimer)
+      discardConfirmationTimer = null
     }
   }
 
-  function requestCloseRecordConfirmation() {
-    closeRecordConfirmationPending.value = true
-    if (closeRecordConfirmationTimer !== null) window.clearTimeout(closeRecordConfirmationTimer)
-    closeRecordConfirmationTimer = window.setTimeout(() => {
-      closeRecordConfirmationPending.value = false
-      closeRecordConfirmationTimer = null
-    }, CLOSE_CONFIRMATION_TIMEOUT_MS)
+  function confirmReplacement(operation: ReplacementOperation): boolean {
+    if (!status.gameLoaded || (!recordDirty.value && !hasNodeCommentDrafts()) || discardConfirmation.value === operation) {
+      clearDiscardConfirmation()
+      return true
+    }
+    discardConfirmation.value = operation
+    if (discardConfirmationTimer !== null) window.clearTimeout(discardConfirmationTimer)
+    discardConfirmationTimer = window.setTimeout(() => {
+      discardConfirmation.value = null
+      discardConfirmationTimer = null
+    }, DISCARD_CONFIRMATION_TIMEOUT_MS)
+    return false
   }
 
   async function closeGame() {
     if (!window.studioAPI || !status.gameLoaded || gameFileOperation.value !== null) return
-    if (recordDirty.value && !closeRecordConfirmationPending.value) {
-      requestCloseRecordConfirmation()
-      return
-    }
-    clearCloseRecordConfirmation()
+    if (!confirmReplacement('close')) return
     gameFileOperation.value = 'close'
     recordOperationError.value = ''
     try {
@@ -226,15 +230,16 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   }
 
   watch(recordDirty, (dirty) => {
-    if (!dirty) clearCloseRecordConfirmation()
+    if (!dirty) clearDiscardConfirmation()
   })
 
-  onBeforeUnmount(clearCloseRecordConfirmation)
+  watch(() => gameView.gameId, clearDiscardConfirmation)
+  onBeforeUnmount(clearDiscardConfirmation)
 
   return {
     clearRecordMetadata,
     closeGame,
-    closeRecordConfirmationPending,
+    discardConfirmation,
     closeRecordImportPanel,
     createGame,
     gameFileOperation,

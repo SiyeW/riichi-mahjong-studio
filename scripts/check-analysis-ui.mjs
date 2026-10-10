@@ -363,11 +363,45 @@ try {
   })
   await exitSavingOverlay.waitFor({ state: 'detached' })
 
+  // Every record replacement uses the same operation-scoped discard guard.
+  await page.evaluate(async () => {
+    const check = window.analysisCheck
+    const vm = check.vm
+    vm.status.gameLoaded = true
+    vm.recordDirty = true
+    await new Promise(resolve => setTimeout(resolve, 0))
+    let opens = 0
+    const originalOpen = window.studioAPI.openGame
+    window.studioAPI.openGame = async () => { opens += 1; return null }
+    await vm.openGame()
+    if (opens || vm.discardConfirmation !== 'open') throw new Error(`dirty open bypassed discard confirmation: ${JSON.stringify({opens, pending: vm.discardConfirmation, dirty: vm.recordDirty, loaded: vm.status.gameLoaded, operation: vm.gameFileOperation})}`)
+    await vm.createGame()
+    if (vm.discardConfirmation !== 'create') throw new Error('open confirmation incorrectly authorized new record')
+    vm.openRecordImportPanel()
+    if (vm.showRecordImportPanel || vm.discardConfirmation !== 'import') throw new Error('dirty import bypassed discard confirmation')
+    vm.openRecordImportPanel()
+    if (!vm.showRecordImportPanel || vm.discardConfirmation !== null) throw new Error('confirmed import did not open its dialog')
+    vm.closeRecordImportPanel()
+    await vm.closeGame()
+    if (vm.discardConfirmation !== 'close') throw new Error('dirty close lost its guard')
+    await vm.openGame()
+    if (opens || vm.discardConfirmation !== 'open') throw new Error('close confirmation incorrectly authorized open')
+    await vm.openGame()
+    if (opens !== 1 || !vm.recordDirty) throw new Error('cancelled file picker lost the dirty record')
+    window.studioAPI.openGame = originalOpen
+  })
+  await page.evaluate(() => window.analysisCheck.vm.openGame())
+  assert.equal(await page.locator('.toolbar button.confirm-discard').count(), 1)
+  assert.equal(await page.locator('.toolbar button.confirm-discard').textContent(), '丢弃')
+  await page.waitForFunction(() => window.analysisCheck.vm.discardConfirmation === null)
+  assert.equal(await page.locator('.toolbar button.confirm-discard').count(), 0)
+
   for (const [method, title] of [['openGame', '正在打开牌谱'], ['saveGameAs', '正在另存牌谱'], ['saveGame', '正在保存牌谱']]) {
     const previousGame = await page.evaluate(() => window.analysisCheck.vm.gameView.gameId)
-    await page.evaluate(method => {
+    await page.evaluate(async method => {
       window.analysisCheck.vm.recordDirty = true
       window.studioAPI[method] = () => new Promise(resolve => { window.analysisCheck.finishFileOperation = resolve })
+      if (method === 'openGame') await window.analysisCheck.vm.openGame()
       window.analysisCheck.pendingFileOperation = window.analysisCheck.vm[method]()
     }, method)
     await exitSavingOverlay.waitFor({ state: 'visible' })
@@ -397,6 +431,7 @@ try {
   }
   await page.evaluate(async () => {
     window.studioAPI.openGame = async () => { throw new Error('fixture damaged record') }
+    await window.analysisCheck.vm.openGame()
     await window.analysisCheck.vm.openGame()
   })
   assert.ok((await page.locator('[role="alert"]').textContent()).includes('fixture damaged record'))

@@ -7,6 +7,10 @@ import type { PythonEvent, StudioStatus } from '../contracts/runtime'
 // installed in Vite's ui-test mode, never in the desktop application.
 export interface AnalysisTestApi {
   openGame: () => Promise<void>
+  createGame: () => Promise<void>
+  closeGame: () => Promise<void>
+  openRecordImportPanel: () => void
+  readonly discardConfirmation: 'create' | 'open' | 'import' | 'close' | null
   closeRecordImportPanel: () => void
   showRecordImportPanel: boolean
   recordOperationError: string

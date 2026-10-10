@@ -49,18 +49,18 @@
       <div class="toolbar">
         <span class="toolbar-section">
           <button
-            :class="{ 'is-pending': gameFileOperation === 'create' }"
+            :class="{ 'is-pending': gameFileOperation === 'create', 'confirm-discard': discardConfirmation === 'create' }"
             :disabled="gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'create'"
             @click="createGame"
-          >{{ t('toolbar.new') }}</button>
+          >{{ t(discardConfirmation === 'create' ? 'toolbar.discard' : 'toolbar.new') }}</button>
           <button
-            :class="{ 'is-pending': gameFileOperation === 'open' }"
+            :class="{ 'is-pending': gameFileOperation === 'open', 'confirm-discard': discardConfirmation === 'open' }"
             :disabled="gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'open'"
             @click="openGame"
-          >{{ t('toolbar.open') }}</button>
-          <button :disabled="gameFileOperation !== null" @click="openRecordImportPanel">{{ t('toolbar.import') }}</button>
+          >{{ t(discardConfirmation === 'open' ? 'toolbar.discard' : 'toolbar.open') }}</button>
+          <button :class="{ 'confirm-discard': discardConfirmation === 'import' }" :disabled="gameFileOperation !== null" @click="openRecordImportPanel">{{ t(discardConfirmation === 'import' ? 'toolbar.discard' : 'toolbar.import') }}</button>
           <button
             :class="{ 'is-pending': gameFileOperation === 'save' }"
             :disabled="!recordDirty || gameFileOperation !== null"
@@ -76,12 +76,12 @@
           <button
             :class="{
               'is-pending': gameFileOperation === 'close',
-              'confirm-discard': closeRecordConfirmationPending,
+              'confirm-discard': discardConfirmation === 'close',
             }"
             :disabled="!status.gameLoaded || gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'close'"
             @click="closeGame"
-          >{{ closeRecordConfirmationPending ? t('toolbar.discard') : t('toolbar.close') }}</button>
+          >{{ t(discardConfirmation === 'close' ? 'toolbar.discard' : 'toolbar.close') }}</button>
         </span>
         <span class="toolbar-section">
           <span
@@ -1448,7 +1448,7 @@ const {
 const {
   clearRecordMetadata,
   closeGame,
-  closeRecordConfirmationPending,
+  discardConfirmation,
   closeRecordImportPanel,
   createGame,
   gameFileOperation,
@@ -1901,6 +1901,10 @@ onBeforeUnmount(() => {
 })
 if (import.meta.env.MODE === 'ui-test') {
   installAnalysisTestHarness(proxyRefs({
+    createGame,
+    closeGame,
+    openRecordImportPanel,
+    discardConfirmation,
     openGame,
     closeRecordImportPanel,
     showRecordImportPanel,
