@@ -100,6 +100,14 @@ function createBackendService(options = {}) {
           seed: options.seed,
         }, 120_000)
       },
+      importReplayFile(filePath, options = {}) {
+        return backendSession.sendRequest('import_replay_file', {
+          path: filePath, reconstructWalls: Boolean(options.reconstructWalls), seed: options.seed,
+        }, null)
+      },
+      setPlayerName(seat, name) {
+        return backendSession.sendRequest('set_player_name', { seat, name })
+      },
       exportCustomTenhou() {
         return backendSession.sendRequest('export_custom_tenhou')
       },

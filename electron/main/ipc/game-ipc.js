@@ -58,6 +58,11 @@ function registerGameIpc({
     if (response.changed) markRecordDirty()
     return response
   })
+  ipcMain.handle('game:set-player-name', async (event, seat, name) => {
+    const response = await backendGateway.setPlayerName(seat, name)
+    if (response.changed) markRecordDirty()
+    return response
+  })
   ipcMain.handle('game:delete-node', async (event, nodeId) => {
     const response = await backendGateway.deleteNode(nodeId)
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)

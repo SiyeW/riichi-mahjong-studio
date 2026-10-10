@@ -49,6 +49,24 @@ def make_document(rounds):
 
 
 class CustomTenhouTests(unittest.TestCase):
+    def test_riichi_is_accepted_when_declaration_tile_is_called(self):
+        round_data = make_round(0, kyotaku=0)
+        round_data[6] = ['r14']
+        round_data[8] = ['c141516']
+        round_data[9] = [14]
+        events, _ = decode_custom_tenhou_log(make_document([round_data]))
+        accepted = next(i for i, event in enumerate(events) if event['type'] == 'reach_accepted')
+        self.assertEqual(events[accepted]['actor'], 0)
+        self.assertEqual(events[accepted + 1]['type'], 'chi')
+
+    def test_future_tsumo_does_not_cancel_riichi_acceptance(self):
+        round_data = make_round(0, kyotaku=0)
+        round_data[5].append(wall_codes()[57])
+        round_data[6] = ['r60']
+        round_data[-1] = ['和了', [6000, -2000, -2000, -2000], [0, 0, 0, '2000点∀']]
+        events, _ = decode_custom_tenhou_log(make_document([round_data]))
+        self.assertEqual([event['actor'] for event in events if event['type'] == 'reach_accepted'], [0])
+
     def test_accepts_json_single_round_and_defaults_viewpoint_to_dealer(self):
         document = make_document([make_round(round_index=2)])
         normalized = normalize_custom_tenhou_input(json.dumps(document, ensure_ascii=False))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import random
 from dataclasses import dataclass
 from typing import Any, Callable, MutableMapping
@@ -33,6 +34,7 @@ from .mortal_report_import import (
     repair_mortal_report_game,
 )
 from .record_file import RecordFileWriter
+from .mjai_import import read_replay_file, build_mjai_game
 from .service_helpers import build_round_seed_stream, now_iso
 from .seat import normalize_seat
 from .wall_reconstruction import reconstruct_imported_walls
@@ -297,6 +299,17 @@ class RecordSession:
     def export_custom(self) -> dict:
         self.ensure_loaded()
         return export_custom_tenhou(self._state["game"])
+
+    def import_file(self, path: str, reconstruct_walls=False, seed=None):
+        kind, document = read_replay_file(path)
+        if kind == 'tenhou':
+            return self.import_custom(json.dumps(document, ensure_ascii=False), reconstruct_walls, seed)
+        game, seat = build_mjai_game(document, self._next_game_id(), now_iso(), path)
+        self.dependencies.repair_reaction_decisions(game)
+        game.setdefault('treeRevision', 1)
+        reconstruction = reconstruct_imported_walls(game, seed, generated_at=now_iso()) if reconstruct_walls else None
+        self._activate_imported(game, seat)
+        return reconstruction
 
     def reconstruct_walls(self, seed: Any = None) -> dict:
         self.ensure_loaded()

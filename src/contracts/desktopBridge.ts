@@ -84,6 +84,9 @@ export interface DesktopBridge {
     reconstructWalls?: boolean
     seed?: string
   }) => Promise<RecordImportResult>
+  selectRecordImportFile: () => Promise<string | null>
+  importReplayFile: (payload: { path: string; reconstructWalls?: boolean; seed?: string }) => Promise<RecordImportResult>
+  setPlayerName: (seat: number, name: string) => Promise<{ seat: number; name: string; changed: boolean }>
   exportCustomTenhou: () => Promise<{
     tenhou: string
     mortal: string

@@ -292,6 +292,7 @@ export interface GameTreeView {
 
 export interface GameView {
   gameId: string | null
+  playerNames?: string[]
   matchId?: string | null
   readOnly?: boolean
   sourceUrl?: string | null

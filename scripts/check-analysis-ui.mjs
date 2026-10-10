@@ -5,6 +5,7 @@ import zlib from 'node:zlib'
 import { createServer } from 'vite'
 import { _electron as electron, chromium } from 'playwright'
 import { checkWorkspaceDock } from './check-workspace-dock.mjs'
+import { checkReplayWorkflow } from './check-replay-workflow.mjs'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
 const root = path.resolve(import.meta.dirname, '..')
@@ -451,6 +452,7 @@ try {
   assert.ok((await page.locator('.record-import-error').textContent()).includes('fixture import failed'))
   await page.evaluate(() => window.analysisCheck.vm.closeRecordImportPanel())
   if (process.env.RMS_UI_RECORD_IO_ONLY) {
+    await checkReplayWorkflow(page)
     break uiChecks
   }
 

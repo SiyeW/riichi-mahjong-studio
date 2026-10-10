@@ -50,16 +50,33 @@ function positionTooltip(element: HTMLElement, state: TooltipState) {
   if (target) {
     const anchor = target.getBoundingClientRect()
     const style = getComputedStyle(target)
+    let angle = 0
+    for (let parent: HTMLElement | null = target; parent; parent = parent.parentElement) {
+      const transform = getComputedStyle(parent).transform
+      if (transform !== 'none') {
+        const matrix = new DOMMatrixReadOnly(transform)
+        angle += Math.atan2(matrix.b, matrix.a)
+      }
+    }
+    const turn = ((Math.round(angle / (Math.PI / 2)) % 4) + 4) % 4
+    const radians = turn * Math.PI / 2
+    const rotated = turn % 2 === 1
+    const width = rotated ? anchor.height : anchor.width
+    const originX = turn === 1 || turn === 2 ? anchor.right : anchor.left
+    const originY = turn === 2 || turn === 3 ? anchor.bottom : anchor.top
+    const inlineSpace = [window.innerWidth - anchor.left, window.innerHeight - anchor.top, anchor.right, anchor.bottom][turn]!
     const fontSize = Number.parseFloat(style.fontSize) || 0
-    const extraTop = Math.max(0, Math.min(fontSize * 0.12, anchor.top - 8))
+    const extraTop = fontSize * 0.12
     const extraBottom = fontSize * 0.12
-    const extraLeft = Math.max(0, Math.min(fontSize * 0.18, anchor.left - 8))
+    const extraLeft = fontSize * 0.18
     const extraRight = fontSize * 0.18
     tooltip.classList.add('is-inline-reveal')
-    tooltip.style.left = `${anchor.left - extraLeft}px`
-    tooltip.style.top = `${anchor.top - extraTop}px`
-    tooltip.style.minWidth = `${anchor.width + extraLeft + extraRight}px`
-    tooltip.style.maxWidth = `${Math.max(anchor.width + extraLeft + extraRight, Math.min(fontSize * 24, window.innerWidth - anchor.left + extraLeft - 8))}px`
+    tooltip.style.transformOrigin = '0 0'
+    tooltip.style.transform = `rotate(${turn * 90}deg)`
+    tooltip.style.left = `${originX - extraLeft * Math.cos(radians) + extraTop * Math.sin(radians)}px`
+    tooltip.style.top = `${originY - extraLeft * Math.sin(radians) - extraTop * Math.cos(radians)}px`
+    tooltip.style.minWidth = `${width + extraLeft + extraRight}px`
+    tooltip.style.maxWidth = `${Math.max(width + extraLeft + extraRight, Math.min(fontSize * 24, inlineSpace + extraLeft - 8))}px`
     tooltip.style.font = style.font
     tooltip.style.lineHeight = style.lineHeight
     tooltip.style.letterSpacing = style.letterSpacing
@@ -74,6 +91,8 @@ function positionTooltip(element: HTMLElement, state: TooltipState) {
     return
   }
   tooltip.classList.remove('is-inline-reveal')
+  tooltip.style.transform = ''
+  tooltip.style.transformOrigin = ''
   tooltip.style.minWidth = ''
   tooltip.style.maxWidth = ''
   tooltip.style.maxHeight = ''

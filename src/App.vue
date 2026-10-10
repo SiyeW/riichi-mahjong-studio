@@ -343,6 +343,12 @@
             <TableCenterInfo
               v-if="gameView.table"
               :table="gameView.table"
+              :player-names="gameView.playerNames"
+              :name-drafts="playerNames.drafts"
+              :name-error="playerNames.error.value"
+              :save-names="playerNames.flush"
+              @name-draft="playerNames.draft"
+              @name-cancel="playerNames.cancel"
               :views="tableSeatViews"
               :round-label="roundLabel"
               :dora-slots="centerDoraSlots"
@@ -550,7 +556,7 @@
 
     <RecordImportDialog
       v-if="showRecordImportPanel"
-      :before-import="flushNodeComment"
+      :before-import="flushRecordEdits"
       @busy-change="handleImportBusy"
       @close="closeRecordImportPanel"
       @imported="handleRecordImported"
@@ -677,6 +683,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
+import { usePlayerNames } from './usePlayerNames'
 import type { StudioSettings } from './contracts/settings'
 import type { GameTreeNode, GameView, GameViewTransitionDirection } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
@@ -1445,6 +1452,15 @@ const {
   applyGameView,
 })
 
+const playerNames = usePlayerNames(gameView, () => markRecordDirty())
+watch(() => gameView.playerNames, () => {
+  if (showCustomTenhouExport.value) customTenhouExportRefreshKey.value += 1
+})
+async function flushRecordEdits() {
+  await playerNames.flush()
+  await flushNodeComment()
+}
+
 const {
   clearRecordMetadata,
   closeGame,
@@ -1471,8 +1487,8 @@ const {
 } = useRecordSession({
   status,
   gameView,
-  flushNodeComment,
-  hasNodeCommentDrafts,
+  flushRecordEdits,
+  hasRecordDrafts: () => hasNodeCommentDrafts() || playerNames.drafts.size > 0,
   applyStatus,
   applyGameView,
   refreshGameView,
@@ -1570,6 +1586,7 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   gameView.readOnly = Boolean(nextView.readOnly)
   gameView.sourceUrl = nextView.sourceUrl || null
   gameView.readOnlyReason = nextView.readOnlyReason || null
+  gameView.playerNames = nextView.playerNames || ['', '', '', '']
   gameView.currentNodeId = nextView.currentNodeId
   gameView.nodeComment = nextView.nodeComment || ''
   syncBranchNavigationFromGameView(nextView)
@@ -1875,7 +1892,7 @@ useDesktopBridgeSubscriptions({
     closeState.stage = state.stage || ''
   },
   beforeClose: () => flushBeforeClose(
-    flushNodeComment,
+    flushRecordEdits,
     flushEngineAutosave,
     () => engineSaveMessage.value || t('native.closeSaveFailed.message'),
     async () => {

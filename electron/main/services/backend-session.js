@@ -40,7 +40,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
     const request = backend.sendRequest(...args).then(response => {
       if (generation !== startedGeneration) throw new Error('Backend stopped before the response was applied.')
       const command = args[0]
-      if (['create_game', 'close_game', 'import_game_record', 'import_mortal_report', 'import_custom_tenhou'].includes(command)) {
+      if (['create_game', 'close_game', 'import_game_record', 'import_mortal_report', 'import_custom_tenhou', 'import_replay_file'].includes(command)) {
         checkpoint.reset()
       }
       // Status/metrics have independent Python executors and can arrive after

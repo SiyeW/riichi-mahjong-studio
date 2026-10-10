@@ -39,6 +39,8 @@ async function downloadMortalReport(rawInput, { fetchImpl = fetch, t, timeoutMs 
 
 function registerRecordIpc({
   ipcMain,
+  dialog,
+  getMainWindow,
   shell,
   backendGateway,
   gameFileStore,
@@ -61,6 +63,20 @@ function registerRecordIpc({
     return true
   })
   ipcMain.handle('game:restore-startup-recovery', () => restoreStartupRecovery())
+  ipcMain.handle('game:select-import-file', async () => {
+    const result = await withCurrentRecord(gameFileStore, () => dialog.showOpenDialog(getMainWindow(), {
+      title: t('import.chooseFile'), properties: ['openFile'],
+      filters: [{ name: 'MJAI / Tenhou JSON', extensions: ['json', 'jsonl', 'mjai', 'gz'] }],
+    }))
+    return result.canceled ? null : result.filePaths[0] || null
+  })
+  ipcMain.handle('game:import-replay-file', async (event, request = {}) => {
+    if (typeof request.path !== 'string' || !request.path) throw new Error('Missing replay file path.')
+    const response = await backendGateway.importReplayFile(request.path, request)
+    gameFileStore.prepareUnsavedRecord(path.basename(request.path).replace(/(?:\.(?:jsonl?|mjai))?(?:\.gz)?$/i, ''))
+    beginRecordTracking({ dirty: true, nodeId: response.view?.currentNodeId })
+    return { reconstruction: response.reconstruction || null, state: response.state, view: response.view, recordDirty: true }
+  })
   ipcMain.handle('game:import-mortal-report', async (event, payload) => {
     const request = typeof payload === 'string' ? { input: payload } : (payload || {})
     const originalInput = String(request.input || '').trim()

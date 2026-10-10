@@ -161,6 +161,8 @@ function registerIpcHandlers() {
   })
   registerRecordIpc({
     ipcMain,
+    dialog,
+    getMainWindow: () => mainWindow,
     shell,
     backendGateway: backend.backendGateway,
     gameFileStore,

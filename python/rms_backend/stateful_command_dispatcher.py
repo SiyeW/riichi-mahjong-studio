@@ -78,6 +78,8 @@ class StatefulCommandDispatcher:
             "import_custom_tenhou": lambda: self._record.import_custom(
                 request_id, command, payload
             ),
+            "import_replay_file": lambda: self._record.import_file(request_id, command, payload),
+            "set_player_name": lambda: self._record.set_player_name(request_id, command, payload),
             "export_custom_tenhou": lambda: self._record.export_custom(
                 request_id, command
             ),

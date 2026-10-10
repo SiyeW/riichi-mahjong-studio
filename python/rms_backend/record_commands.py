@@ -1,4 +1,4 @@
-"""Tree-editing commands for the active game record."""
+"""Navigation and user-authored edits for the active game record."""
 
 from __future__ import annotations
 
@@ -133,3 +133,18 @@ class RecordCommands:
         if self._state.get("mode") == "research":
             self.dependencies.request_opponent_analysis(parent_snapshot)
         return len(subtree_ids)
+
+    def set_player_name(self, seat: Any, value: Any) -> tuple[bool, str]:
+        self.dependencies.ensure_loaded()
+        if type(seat) is not int or seat not in range(4):
+            raise ValueError('Player seat must be an integer from 0 to 3.')
+        if not isinstance(value, str) or '\n' in value or '\r' in value or len(value) > 200:
+            raise ValueError('Player name must be a single line of at most 200 characters.')
+        name = value.strip()
+        metadata = self._state['game'].setdefault('metadata', {})
+        names = list(metadata.get('playerNames') or ['', '', '', ''])
+        names = (names + ['', '', '', ''])[:4]
+        changed = names[seat] != name
+        names[seat] = name
+        metadata['playerNames'] = names
+        return changed, name

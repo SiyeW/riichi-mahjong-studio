@@ -434,8 +434,8 @@ def _decode_round(round_data: Any, round_number: int) -> Tuple[List[Dict[str, An
                     _fail(label, "同一张弃牌出现了多个副露", action_index)
                 caller = candidate
 
-        ron_here = any(win["target"] == actor for win in wins) and player["out"] == len(player["outgoing"])
-        if declares_riichi and caller is None and not ron_here:
+        ron_here = any(win["target"] == actor and win["actor"] != actor for win in wins) and player["out"] == len(player["outgoing"])
+        if declares_riichi and not ron_here:
             events.append({"type": "reach_accepted", "actor": actor})
             riichi[actor] = True
             running_scores[actor] -= 1000
@@ -592,7 +592,9 @@ def _export_end_info(group: List[Dict[str, Any]]) -> List[Any]:
             actor = int(event.get("actor", 0))
             target = int(event.get("target", actor))
             deltas = event.get("deltas") or result.get("deltas") or [0, 0, 0, 0]
-            score_text = str(event.get("scoreText") or event.get("scoreLabel") or "0点")
+            # MJAI records may contain settlement deltas without a score label.
+            # Do not invent a zero-point win or infer fu/yaku from its payment.
+            score_text = str(event.get("scoreText") or event.get("scoreLabel") or "")
             detail = [actor, target, int(event.get("liablePlayer", actor)), score_text]
             output.extend([list(deltas), detail])
         return output

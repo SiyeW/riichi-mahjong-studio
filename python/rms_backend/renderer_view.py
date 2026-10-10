@@ -120,6 +120,7 @@ class RendererView:
             "readOnly": bool(metadata.get("readOnly")),
             "sourceUrl": metadata.get("sourceUrl"),
             "readOnlyReason": metadata.get("readOnlyReason"),
+            "playerNames": list(metadata.get("playerNames") or ['', '', '', '']),
             "currentNodeId": current_node_id,
             "nodeComment": str(current_node.get("comment") or ""),
             "opponentAnalysis": opponent_analysis,

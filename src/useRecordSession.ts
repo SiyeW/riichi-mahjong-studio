@@ -8,8 +8,8 @@ type GameFileOperation = 'create' | 'open' | 'import' | 'save' | 'save-as' | 'cl
 interface UseRecordSessionOptions {
   status: StudioStatus
   gameView: GameView
-  flushNodeComment: () => Promise<void>
-  hasNodeCommentDrafts: () => boolean
+  flushRecordEdits: () => Promise<void>
+  hasRecordDrafts: () => boolean
   applyStatus: (status: StudioStatus) => void
   applyGameView: (view: GameView) => void
   refreshGameView: () => Promise<void>
@@ -29,8 +29,8 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   const {
     status,
     gameView,
-    flushNodeComment,
-    hasNodeCommentDrafts,
+    flushRecordEdits,
+    hasRecordDrafts,
     applyStatus,
     applyGameView,
     refreshGameView,
@@ -70,7 +70,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
 
   function handleRecordDirtyChanged(dirty: boolean) {
     recordDirtyEventGeneration += 1
-    recordDirty.value = dirty || hasNodeCommentDrafts()
+    recordDirty.value = dirty || hasRecordDrafts()
   }
 
   function restoreRecordMetadata(path: string | null | undefined, isRecoveryRecord: boolean) {
@@ -116,7 +116,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     gameFileOperation.value = 'create'
     recordOperationError.value = ''
     try {
-      await flushNodeComment()
+      await flushRecordEdits()
       applyStatus(await window.studioAPI.createGame())
       setRecordPath('')
       recoveryRecord.value = false
@@ -134,7 +134,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     gameFileOperation.value = 'open'
     recordOperationError.value = ''
     try {
-      await flushNodeComment()
+      await flushRecordEdits()
       const result = await window.studioAPI.openGame()
       if (!result) return
       applyStatus(result.state)
@@ -156,7 +156,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     gameFileOperation.value = operation
     recordOperationError.value = ''
     try {
-      await flushNodeComment()
+      await flushRecordEdits()
       const dirtyGeneration = recordDirtyEventGeneration
       const gameId = gameView.gameId
       const result = operation === 'save'
@@ -165,7 +165,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
       if (!result || gameId !== gameView.gameId) return
       setRecordPath(result.path)
       if (dirtyGeneration === recordDirtyEventGeneration) {
-        recordDirty.value = Boolean(result.recordDirty) || hasNodeCommentDrafts()
+        recordDirty.value = Boolean(result.recordDirty) || hasRecordDrafts()
       }
       recoveryRecord.value = Boolean(result.recoveryRecord)
     } catch (error) {
@@ -192,7 +192,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
   }
 
   function confirmReplacement(operation: ReplacementOperation): boolean {
-    if (!status.gameLoaded || (!recordDirty.value && !hasNodeCommentDrafts()) || discardConfirmation.value === operation) {
+    if (!status.gameLoaded || (!recordDirty.value && !hasRecordDrafts()) || discardConfirmation.value === operation) {
       clearDiscardConfirmation()
       return true
     }
@@ -211,7 +211,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
     gameFileOperation.value = 'close'
     recordOperationError.value = ''
     try {
-      await flushNodeComment()
+      await flushRecordEdits()
       prepareClose()
       const response = await window.studioAPI.closeGame()
       applyStatus(response.state)

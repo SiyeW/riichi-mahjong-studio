@@ -21,6 +21,7 @@ function createFixture(overrides = {}) {
     reconstructWalls: response('reconstructWalls'),
     setMainBranch: response('setMainBranch'),
     setNodeComment: response('setNodeComment', { changed: true }),
+    setPlayerName: response('setPlayerName', { changed: true, name: 'Model' }),
     submitUserAction: response('submitUserAction'),
     ...overrides.backendGateway,
   }
@@ -61,6 +62,7 @@ test('game IPC registers the complete game session channel boundary', () => {
     'game:reconstruct-walls',
     'game:set-main-branch',
     'game:set-node-comment',
+    'game:set-player-name',
     'game:submit-action',
     'game:view',
     'game:wall-view',
@@ -69,6 +71,19 @@ test('game IPC registers the complete game session channel boundary', () => {
     'status:get',
     'visibleHands:toggle',
   ])
+})
+
+test('player names dirty the record only when actually changed', async () => {
+  for (const changed of [false, true]) {
+    const { calls, handlers } = createFixture({ backendGateway: {
+      setPlayerName: async (seat, name) => { calls.push(['setPlayerName', seat, name]); return { changed, name } },
+    } })
+    const result = await handlers.get('game:set-player-name')(null, 2, 'Model')
+    assert.equal(result.name, 'Model')
+    assert.deepEqual(calls, changed
+      ? [['setPlayerName', 2, 'Model'], ['markRecordDirty']]
+      : [['setPlayerName', 2, 'Model']])
+  }
 })
 
 test('game IPC projects game changes into record tracking without dirtying uncommitted prefetch', async () => {

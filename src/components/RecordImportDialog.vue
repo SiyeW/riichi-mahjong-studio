@@ -5,17 +5,23 @@
         <h2>{{ t('import.title') }}</h2>
         <div class="settings-modal-actions">
           <button class="settings-btn-secondary" type="button" :disabled="importing" @click="emit('close')">{{ t('common.close') }}</button>
-          <button class="settings-btn-primary" type="submit" :disabled="importing || !input.trim()">
+          <button class="settings-btn-primary" type="submit" :disabled="importing || selecting || (!input.trim() && !filePath)">
             {{ importing ? t('import.importing') : t('common.import') }}
           </button>
         </div>
       </div>
+      <div class="record-import-file">
+        <button class="settings-btn-secondary" type="button" :disabled="importing || selecting" @click="chooseFile">{{ t('import.chooseFile') }}</button>
+        <span v-if="filePath" class="record-import-file-name">{{ filePath }}</span>
+        <button v-if="filePath" class="settings-btn-secondary" type="button" :disabled="importing" @click="filePath = ''">{{ t('import.clearFile') }}</button>
+      </div>
+      <p class="record-import-copy">{{ t('import.fileTypes') }}</p>
       <p class="record-import-copy">{{ t('import.description.beforeMortal') }}<a href="https://mjai.ekyu.moe/zh-cn.html" @click.prevent="emit('open-external', 'https://mjai.ekyu.moe/zh-cn.html')">{{ t('import.description.mortal') }}</a>{{ t('import.description.between') }}<a href="https://tenhou.net/6/" @click.prevent="emit('open-external', 'https://tenhou.net/6/')">{{ t('import.description.tenhou') }}</a>{{ t('import.description.afterTenhou') }}</p>
       <label>
         <span>{{ t('import.source') }}</span>
         <textarea
           v-model="input"
-          :disabled="importing"
+          :disabled="importing || Boolean(filePath)"
           autocomplete="off"
           spellcheck="false"
           rows="8"
@@ -66,6 +72,8 @@ const emit = defineEmits<{
 }>()
 
 const input = ref('')
+const filePath = ref('')
+const selecting = ref(false)
 const importing = ref(false)
 const reconstructWalls = ref(false)
 const seed = ref('')
@@ -76,7 +84,7 @@ function isMortalReportInput(value: string): boolean {
 }
 
 async function submitImport() {
-  if (!window.studioAPI || importing.value || !input.value.trim()) return
+  if (!window.studioAPI || importing.value || selecting.value || (!input.value.trim() && !filePath.value)) return
   importing.value = true
   emit('busy-change', true)
   errorMessage.value = ''
@@ -87,7 +95,9 @@ async function submitImport() {
       reconstructWalls: reconstructWalls.value,
       seed: seed.value,
     }
-    const result = isMortalReportInput(input.value)
+    const result = filePath.value
+      ? await window.studioAPI.importReplayFile({ path: filePath.value, reconstructWalls: reconstructWalls.value, seed: seed.value })
+      : isMortalReportInput(input.value)
       ? await window.studioAPI.importMortalReport(payload)
       : await window.studioAPI.importCustomTenhou(payload)
     emit('imported', result)
@@ -98,9 +108,25 @@ async function submitImport() {
     emit('busy-change', false)
   }
 }
+
+async function chooseFile() {
+  if (!window.studioAPI || selecting.value) return
+  selecting.value = true
+  errorMessage.value = ''
+  try {
+    const selected = await window.studioAPI.selectRecordImportFile()
+    if (selected) filePath.value = selected
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : t('import.failed')
+  } finally {
+    selecting.value = false
+  }
+}
 </script>
 
 <style scoped>
+.record-import-file { display: flex; align-items: center; gap: .5em; min-width: 0; }
+.record-import-file-name { flex: 1; min-width: 0; overflow-wrap: anywhere; color: var(--text-dim); font-size: var(--ui-text-caption); }
 .record-import-modal {
   width: min(calc(41.25rem * var(--ui-scale)), 92vw);
 }

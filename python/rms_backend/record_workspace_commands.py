@@ -1,4 +1,4 @@
-"""Commands for records, branches, comments, and reconstructed walls."""
+"""Commands for records, authored metadata, branches, and reconstructed walls."""
 
 from __future__ import annotations
 
@@ -80,6 +80,23 @@ class RecordWorkspaceCommands:
             command,
             {"customTenhou": self._record_session.export_custom()},
         )
+
+    def import_file(self, request_id: Any, command: str, payload: dict[str, Any]) -> dict[str, Any]:
+        reconstruction = self._record_session.import_file(
+            payload.get('path'), bool(payload.get('reconstructWalls')), payload.get('seed'),
+        )
+        return self._reconstruction_response(request_id, command, reconstruction)
+
+    def set_player_name(self, request_id: Any, command: str, payload: dict[str, Any]) -> dict[str, Any]:
+        changed, name = self._record_commands.set_player_name(payload.get('seat'), payload.get('name'))
+        return {
+            'request_id': request_id,
+            'command': command,
+            'changed': changed,
+            'seat': payload.get('seat'),
+            'name': name,
+            'timestamp': self._now_iso(),
+        }
 
     def import_record(
         self,
@@ -174,7 +191,7 @@ class RecordWorkspaceCommands:
             "tiles": tiles,
             "complete": len(tiles) == 136,
             "canReconstruct": bool(
-                metadata.get("source") in ("mortal-report", "tenhou-custom")
+                metadata.get("source") in ("mortal-report", "tenhou-custom", "mjai")
                 and metadata.get("readOnly")
             ),
             "seed": (
