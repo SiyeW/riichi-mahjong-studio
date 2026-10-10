@@ -66,7 +66,7 @@ function cancel() {
   color: var(--text-dim);
   font: inherit;
   line-height: 1.35;
-  text-align: center;
+  text-align: inherit;
 }
 .player-name-button { cursor: text; }
 .player-name-text {

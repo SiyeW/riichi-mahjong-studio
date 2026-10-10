@@ -10,28 +10,17 @@
     <span
       v-for="view in orderedViews"
       :key="`center-seat-${view.seat}`"
-      :data-player-seat="view.seat"
       :class="['gi-player-anchor', `gi-p${positionIndex[view.position]}-anchor`]"
     >
-      <span :class="['gi-player-stack', `gi-p${positionIndex[view.position]}-stack`]">
-        <span
-          :class="[
-            `gi-p${positionIndex[view.position]}-outer`,
-            { 'is-actor': isCurrentActorSeat(view.seat), 'is-east': view.seat === table.dealer },
-          ]"
-        >
-          <span class="gi-seat">{{ seatWindLabel(view.seat) }}</span>
-          <span class="gi-score">{{ table.scores?.[view.seat] ?? 0 }}</span>
-          <span class="gi-riichi-bet" :class="{ on: view.riichiAccepted }">-1000</span>
-        </span>
-        <PlayerNameEditor
-          :name="playerNames?.[view.seat] || ''"
-          :draft="nameDrafts.get(view.seat)"
-          :error="nameError"
-          :save="saveNames"
-          @draft="emit('name-draft', view.seat, $event)"
-          @cancel="emit('name-cancel', view.seat)"
-        />
+      <span
+        :class="[
+          `gi-p${positionIndex[view.position]}-outer`,
+          { 'is-actor': isCurrentActorSeat(view.seat), 'is-east': view.seat === table.dealer },
+        ]"
+      >
+        <span class="gi-seat">{{ seatWindLabel(view.seat) }}</span>
+        <span class="gi-score">{{ table.scores?.[view.seat] ?? 0 }}</span>
+        <span class="gi-riichi-bet" :class="{ on: view.riichiAccepted }">-1000</span>
       </span>
     </span>
   </div>
@@ -41,14 +30,9 @@
 import { computed } from 'vue'
 import type { TableSeatView } from '../useTablePresentation'
 import type { GameView } from '../contracts/game'
-import PlayerNameEditor from './PlayerNameEditor.vue'
 
 const props = defineProps<{
   table: NonNullable<GameView['table']>
-  playerNames?: string[]
-  nameDrafts: Map<number, string>
-  nameError: string
-  saveNames: () => Promise<void>
   views: TableSeatView[]
   roundLabel: string
   doraSlots: string[]
@@ -58,10 +42,8 @@ const props = defineProps<{
   tileImageSrc: (tile: string) => string
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   'toggle-round-map': []
-  'name-draft': [seat: number, name: string]
-  'name-cancel': [seat: number]
 }>()
 
 const positionIndex: Record<TableSeatView['position'], number> = {
@@ -82,7 +64,6 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   --gi-score-width: calc(76px * var(--center-ui-scale));
   --gi-strip-width: calc((2 * var(--gi-side-width)) + var(--gi-score-width));
   --gi-strip-height: calc(22px * var(--center-ui-scale));
-  --gi-stack-height: calc(var(--gi-strip-height) + var(--table-text-bet) * 1.35 + 2px);
   --gi-edge-inset: calc(6px * var(--center-ui-scale));
   width: var(--center-square-span);
   height: var(--center-square-span);
@@ -190,7 +171,7 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   left: 0;
   right: 0;
   width: var(--gi-strip-width);
-  height: var(--gi-stack-height);
+  height: var(--gi-strip-height);
   margin-inline: auto;
 }
 
@@ -206,7 +187,7 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
 .gi-p3-anchor {
   top: 0;
   bottom: 0;
-  width: var(--gi-stack-height);
+  width: var(--gi-strip-height);
   height: var(--gi-strip-width);
   margin-block: auto;
 }
@@ -219,24 +200,15 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   left: var(--gi-edge-inset);
 }
 
-.gi-player-stack {
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  width: var(--gi-strip-width);
-  height: var(--gi-stack-height);
-  font-size: var(--table-text-bet);
-}
-
-.gi-p1-stack {
+.gi-p1-outer {
   transform: rotate(-90deg);
 }
 
-.gi-p2-stack {
+.gi-p2-outer {
   transform: rotate(180deg);
 }
 
-.gi-p3-stack {
+.gi-p3-outer {
   transform: rotate(90deg);
 }
 

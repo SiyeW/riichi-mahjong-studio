@@ -343,12 +343,6 @@
             <TableCenterInfo
               v-if="gameView.table"
               :table="gameView.table"
-              :player-names="gameView.playerNames"
-              :name-drafts="playerNames.drafts"
-              :name-error="playerNames.error.value"
-              :save-names="playerNames.flush"
-              @name-draft="playerNames.draft"
-              @name-cancel="playerNames.cancel"
               :views="tableSeatViews"
               :round-label="roundLabel"
               :dora-slots="centerDoraSlots"
@@ -357,6 +351,17 @@
               :tile-face-label="tileFaceLabel"
               :tile-image-src="tileImageSrc"
               @toggle-round-map="toggleRoundMapOverlay"
+            />
+            <TablePlayerNames
+              v-if="gameView.table"
+              :views="tableSeatViews"
+              :river-display-rows="riverDisplayRows"
+              :player-names="gameView.playerNames"
+              :name-drafts="playerNames.drafts"
+              :name-error="playerNames.error.value"
+              :save-names="playerNames.flush"
+              @name-draft="playerNames.draft"
+              @name-cancel="playerNames.cancel"
             />
             <TableActionAnnouncement
               :game-view="gameView"
@@ -737,6 +742,7 @@ import RoundResultOverlay from './components/RoundResultOverlay.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
 import TableActionAnnouncement from './components/TableActionAnnouncement.vue'
 import TableCenterInfo from './components/TableCenterInfo.vue'
+import TablePlayerNames from './components/TablePlayerNames.vue'
 import TableOpponentHands, { type OpponentHandPresentation } from './components/TableOpponentHands.vue'
 import TableRecommendationBars from './components/TableRecommendationBars.vue'
 import TableRonRiskBars from './components/TableRonRiskBars.vue'
