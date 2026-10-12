@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from .record_file import read_record_file
+from .record_file import read_record_file, RecordFileWriter
 
 
 class RecordWorkspaceCommands:
@@ -106,8 +106,9 @@ class RecordWorkspaceCommands:
     ) -> dict[str, Any]:
         if "path" in payload and "record" in payload:
             raise ValueError("Supply either a record file path or a record, not both.")
-        record = read_record_file(payload["path"]) if "path" in payload else payload.get("record")
-        self._record_session.load(record, take_ownership=True)
+        writer = RecordFileWriter()
+        record = read_record_file(payload["path"], writer=writer) if "path" in payload else payload.get("record")
+        self._record_session.load(record, take_ownership=True, file_writer=writer)
         return self._view_builder.build_response(request_id, command, {
             "recordMetadata": record.get("metadata") or {},
         })

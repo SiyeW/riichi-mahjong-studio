@@ -141,15 +141,21 @@ class PersistedAnalysisIndexTests(unittest.TestCase):
             saved = Path(directory) / 'saved.mjstudio'
             RecordFileWriter().write(saved, legacy)
             code = '''
-import copy, json, sys
+import copy, gzip, json, sys, tempfile
+from pathlib import Path
 from unittest.mock import patch
 from rms_backend.analysis_cache_codec import _TokenCursor
-from rms_backend.analysis_cache_storage import expand_record_analysis_caches
-from rms_backend.record_file import read_record_file
-record = read_record_file(sys.argv[1])
+from rms_backend.analysis_cache_storage import AnalysisCachePacker, compact_record_analysis_caches, expand_record_analysis_caches
+from rms_backend.record_file import read_record_file, RecordFileWriter
+writer, packer = RecordFileWriter(), AnalysisCachePacker()
+record = read_record_file(sys.argv[1], writer=writer)
 with patch.object(_TokenCursor, 'scan', side_effect=AssertionError('index rebuilt')):
-    expand_record_analysis_caches(record, lazy=True)
+    expand_record_analysis_caches(record, packer=packer, lazy=True)
 values = [node['opponentAnalysisCache'] for node in record['game']['nodes'].values()]
+compact_record_analysis_caches(record, packer=packer)
+with tempfile.TemporaryDirectory() as directory, patch('rms_backend.record_file.gzip.compress', wraps=gzip.compress) as compress:
+    writer.write(Path(directory) / 'saved', record, recovery=True)
+    assert compress.call_count == 2, 'unchanged analysis recompressed after restart'
 print(json.dumps(copy.deepcopy(values), ensure_ascii=True))
 '''
             result = subprocess.run([sys.executable, '-c', code, str(saved)],

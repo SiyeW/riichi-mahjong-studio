@@ -1,15 +1,21 @@
 import copy
+import gzip
+import tempfile
+from pathlib import Path
 from contextlib import ExitStack
 import unittest
 from unittest.mock import patch
 
 from rms_backend import service
 from rms_backend import record_session
+from rms_backend.analysis_cache_storage import compact_record_analysis_caches
+from rms_backend.record_file import RecordFileWriter, read_record_file
 
 
 class ImportGameFailureTests(unittest.TestCase):
     def setUp(self):
         self.saved = dict(service.STATE)
+        self.saved_owners = (service.RECORD_SESSION._analysis_packer, service.RECORD_SESSION._file_writer)
         self.old_game = service.create_empty_game(123456)
         self.old_game['nodes']['n_root']['comment'] = 'unsaved comment'
         service.STATE.update(game=self.old_game, gameLoaded=True, mode='research',
@@ -24,6 +30,50 @@ class ImportGameFailureTests(unittest.TestCase):
     def tearDown(self):
         service.STATE.clear()
         service.STATE.update(self.saved)
+        service.RECORD_SESSION._analysis_packer, service.RECORD_SESSION._file_writer = self.saved_owners
+
+    def test_native_import_reuses_analysis_on_first_save_and_recovery(self):
+        self.record['game']['nodes']['n_root']['opponentAnalysisCache'] = {
+            'o5::0::visible::o-test': {'status': 'ready', 'probability': [0, .25, .75]},
+        }
+        for node in self.record['game']['nodes'].values():
+            for field in ('analysisCache', 'opponentAnalysisCache'):
+                if node.get(field) == {}:
+                    del node[field]
+        compact_record_analysis_caches(self.record)
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(service.RECORD_SESSION.dependencies, 'request_opponent_analysis'), \
+             patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'), \
+             patch.object(service.VIEW_BUILDER, 'build_response', side_effect=lambda _id, _cmd, extra: extra):
+            source = Path(directory) / 'source'
+            RecordFileWriter().write(source, self.record)
+            service.RECORD_WORKSPACE_COMMANDS.import_record(1, 'import_game_record', {'path': str(source)})
+            service.STATE['game']['nodes']['n_root']['comment'] = 'new comment'
+            for recovery in (False, True):
+                prepared = service.RECORD_SESSION.prepare_export()
+                document = service.RECORD_SESSION.serialize_prepared_export(prepared)
+                target = Path(directory) / str(recovery)
+                with patch('rms_backend.record_file.gzip.compress', wraps=gzip.compress) as compress:
+                    prepared.file_writer.write(target, document, recovery=recovery)
+                self.assertEqual(compress.call_count, 2)
+                saved = read_record_file(target)
+                self.assertEqual(saved['analysisCacheStorage'], self.record['analysisCacheStorage'])
+                self.assertEqual(saved['game']['nodes']['n_root']['comment'], 'new comment')
+
+    def test_failed_native_activation_does_not_commit_candidate_file_writer(self):
+        previous_writer = service.RECORD_SESSION._file_writer
+        previous_packer = service.RECORD_SESSION._analysis_packer
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'source'
+            RecordFileWriter().write(source, self.record)
+            with patch.object(service.RECORD_SESSION.dependencies, 'request_opponent_analysis',
+                              side_effect=RuntimeError('activation failed')), \
+                 patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'):
+                with self.assertRaisesRegex(RuntimeError, 'activation failed'):
+                    service.RECORD_WORKSPACE_COMMANDS.import_record(1, 'import_game_record', {'path': str(source)})
+        self.assertIs(service.RECORD_SESSION._file_writer, previous_writer)
+        self.assertIs(service.RECORD_SESSION._analysis_packer, previous_packer)
+        self.assert_old_record_preserved()
 
     def assert_old_record_preserved(self):
         self.assertIs(service.STATE['game'], self.old_game)

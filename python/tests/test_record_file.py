@@ -10,9 +10,93 @@ from types import SimpleNamespace
 from rms_backend import service
 from rms_backend.record_file import read_record_file, RecordFileWriter
 from rms_backend.record_session import RecordSession
+from rms_backend.analysis_cache_storage import (
+    AnalysisCachePacker, compact_record_analysis_caches, expand_record_analysis_caches,
+)
 
 
 class RecordFileTests(unittest.TestCase):
+    def cache_record(self):
+        record = {'game': {'nodes': {'a': {'opponentAnalysisCache': {
+            'model': {'status': 'ready', 'probability': [0, .25, .75]},
+        }}}}}
+        compact_record_analysis_caches(record)
+        return record
+
+    def test_reopened_analysis_reuses_compressed_bytes_and_invalidates_on_edits(self):
+        for edit in ('comment', 'result', 'delete', 'add', 'order', 'clear'):
+            with self.subTest(edit=edit), tempfile.TemporaryDirectory() as directory:
+                # Build presence bitmaps for both nodes using the normal packer.
+                original = self.cache_record()
+                expand_record_analysis_caches(original)
+                original['game']['nodes']['b'] = {}
+                compact_record_analysis_caches(original)
+                source = Path(directory) / 'original'
+                RecordFileWriter().write(source, original)
+                writer = RecordFileWriter()
+                loaded = read_record_file(source, writer=writer)
+                packer = AnalysisCachePacker()
+                expand_record_analysis_caches(loaded, packer=packer, lazy=True)
+                nodes = loaded['game']['nodes']
+                if edit == 'comment':
+                    nodes['a']['comment'] = 'changed'
+                elif edit == 'result':
+                    nodes['a']['opponentAnalysisCache']['model'] = {'status': 'ready', 'probability': [1, 0, 0]}
+                elif edit == 'delete':
+                    del nodes['b']
+                elif edit == 'add':
+                    nodes['c'] = {}
+                elif edit == 'order':
+                    loaded['game']['nodes'] = dict(reversed(list(nodes.items())))
+                elif edit == 'clear':
+                    del nodes['a']['opponentAnalysisCache']
+                compact_record_analysis_caches(loaded, packer=packer)
+                target = Path(directory) / 'saved'
+                with patch('rms_backend.record_file.gzip.compress', wraps=gzip.compress) as compress:
+                    writer.write(target, loaded, recovery=True)
+                self.assertEqual(compress.call_count, 2 if edit == 'comment' else 1 if edit == 'clear' else 3)
+                actual = read_record_file(target)
+                self.assertEqual(actual['game'], loaded['game'])
+                self.assertEqual(actual.get('analysisCacheStorage'), loaded.get('analysisCacheStorage'))
+
+    def test_legacy_index_creation_does_not_reuse_stale_compressed_bytes(self):
+        record = self.cache_record()
+        for kind in ('decision', 'opponent'):
+            record['analysisCacheStorage'][kind]['values'].pop('index')
+        with tempfile.TemporaryDirectory() as directory:
+            source, target = Path(directory) / 'old', Path(directory) / 'new'
+            RecordFileWriter().write(source, record)
+            writer, packer = RecordFileWriter(), AnalysisCachePacker()
+            loaded = read_record_file(source, writer=writer)
+            expand_record_analysis_caches(loaded, packer=packer, lazy=True)
+            compact_record_analysis_caches(loaded, packer=packer)
+            with patch('rms_backend.record_file.gzip.compress', wraps=gzip.compress) as compress:
+                writer.write(target, loaded)
+            self.assertEqual(compress.call_count, 3)
+            for kind in ('decision', 'opponent'):
+                self.assertIn('index', read_record_file(target)['analysisCacheStorage'][kind]['values'])
+
+    def test_all_gzip_members_are_validated_before_returning_a_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'source'
+            RecordFileWriter().write(source, self.cache_record())
+            data = source.read_bytes()
+            for broken in (data[:-1], data[:-8] + bytes([data[-8] ^ 1]) + data[-7:], data + b'junk'):
+                source.write_bytes(broken)
+                with self.assertRaises((ValueError, EOFError)):
+                    read_record_file(source, writer=RecordFileWriter())
+            source.write_bytes(data + b'\0\0')
+            self.assertIn('game', read_record_file(source))
+
+    def test_arbitrary_gzip_member_boundaries_remain_readable(self):
+        encoded = json.dumps({'comment': '牌譜🀄', 'value': 1}, ensure_ascii=False).encode('utf-8')
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'members'
+            # The old reader allowed members to split even inside UTF-8 text.
+            for cut in range(1, len(encoded)):
+                path.write_bytes(gzip.compress(encoded[:cut]) + gzip.compress(encoded[cut:]))
+                self.assertEqual(read_record_file(path), {'comment': '牌譜🀄', 'value': 1})
+
     def test_pending_export_retains_its_owners_after_the_record_is_closed(self):
         game = service.create_empty_game(123456)
         state = {

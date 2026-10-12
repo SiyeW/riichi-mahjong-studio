@@ -33,6 +33,14 @@ class AnalysisCachePacker:
         # sharing only the immutable published result objects.
         self._packed[kind] = ([snapshot_json_object(value) for value in values], packed)
 
+    def seed_storage(self, storage):
+        # Only the current canonical envelope can be returned unchanged by
+        # storage(); unknown/old metadata must go through the current writer.
+        if set(storage) == {
+            "schemaVersion", "codec", "probabilityPrecision", "nodeIds", "decision", "opponent",
+        } and all(set(storage[kind]) == {"presence", "values"} for kind in ("decision", "opponent")):
+            self._storage = storage
+
     def storage(self, candidate):
         previous = self._storage
         if previous is not None and previous["nodeIds"] == candidate["nodeIds"] and all(
@@ -115,6 +123,10 @@ def expand_record_analysis_caches(record, *, packer=None, lazy=False):
         raise ValueError("Packed analysis cache node order does not match the record tree.")
     decision_presence = _decode_bitmap((storage.get("decision") or {}).get("presence"), len(node_ids))
     opponent_presence = _decode_bitmap((storage.get("opponent") or {}).get("presence"), len(node_ids))
+    # A legacy lazy decode adds its missing index in place. Its original gzip
+    # member must not be reused afterwards, even when result entries are intact.
+    indexed = all(isinstance(storage.get(kind, {}).get("values", {}).get("index"), dict)
+                  for kind in ("decision", "opponent"))
     decode = index_json_array if lazy else unpack_json
     decision_values = decode((storage.get("decision") or {}).get("values"))
     opponent_values = decode((storage.get("opponent") or {}).get("values"))
@@ -137,5 +149,7 @@ def expand_record_analysis_caches(record, *, packer=None, lazy=False):
     if packer and storage.get("probabilityPrecision") == "float32":
         packer.seed("decision", decision_values, storage["decision"]["values"])
         packer.seed("opponent", opponent_values, storage["opponent"]["values"])
+        if indexed and lazy:
+            packer.seed_storage(storage)
     record.pop(ANALYSIS_CACHE_STORAGE_FIELD, None)
     return record

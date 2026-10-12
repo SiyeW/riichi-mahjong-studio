@@ -169,7 +169,8 @@ class RecordSession:
     def serialize(self) -> dict:
         return self.serialize_prepared_export(self.prepare_export())
 
-    def load(self, record: Any, *, take_ownership: bool = False) -> None:
+    def load(self, record: Any, *, take_ownership: bool = False,
+             file_writer: RecordFileWriter | None = None) -> None:
         if not isinstance(record, dict):
             raise ValueError("Record must be an object.")
         # IPC/file decoding already yields a private object. Other callers keep
@@ -225,7 +226,7 @@ class RecordSession:
             self._restore_after_failure(previous)
             raise
         self._analysis_packer = analysis_packer
-        self._file_writer = RecordFileWriter()
+        self._file_writer = file_writer if take_ownership and file_writer is not None else RecordFileWriter()
 
     def create(self) -> None:
         seed = random.randint(100000, 999999)
