@@ -105,7 +105,7 @@ class RecordSession:
 
         Node snapshots are immutable after a node is committed. Copy node
         dictionaries and their mutable tree links here, then leave the expensive
-        recursive copy and storage normalization to the checkpoint worker.
+        compact authored projection and recursive copy to the checkpoint worker.
         """
         self.ensure_loaded()
         live_game = self._state["game"]
@@ -148,7 +148,8 @@ class RecordSession:
 
         Published analysis results are replaced, never edited in place. Detach
         their mutable key maps, not millions of immutable probability values.
-        Authored game data is copied here so later edits cannot change the save.
+        Authored game data is projected and copied here so later edits cannot
+        change the save; encoding/compression remains on the export worker.
         """
         game, state = self.prepare_recovery_checkpoint()
         game = copy_game_for_record(game)
@@ -156,7 +157,7 @@ class RecordSession:
         for node_id, node in game["nodes"].items():
             for field in ("analysisCache", "opponentAnalysisCache"):
                 cache = live_nodes[node_id].get(field)
-                if isinstance(cache, dict):
+                if isinstance(cache, dict) and cache:
                     node[field] = snapshot_json_object(cache)
         return PreparedRecordExport(game, state, self._analysis_packer, self._file_writer)
 

@@ -80,10 +80,6 @@ def _compact_round_walls_for_record(game):
                 }
                 for field in _STATIC_WALL_FIELDS:
                     snapshot.pop(field, None)
-                kyoku_state = snapshot.get("kyokuState")
-                if isinstance(kyoku_state, dict):
-                    for field in _STATIC_WALL_FIELDS:
-                        kyoku_state.pop(field, None)
             continue
 
         wall_id = ids_by_wall.get(full_wall)
@@ -101,10 +97,6 @@ def _compact_round_walls_for_record(game):
         }
         for field in _STATIC_WALL_FIELDS:
             snapshot.pop(field, None)
-        kyoku_state = snapshot.get("kyokuState")
-        if isinstance(kyoku_state, dict):
-            for field in _STATIC_WALL_FIELDS:
-                kyoku_state.pop(field, None)
 
     if walls:
         game[_ROUND_WALL_STORAGE_FIELD] = {
@@ -126,7 +118,7 @@ def _compact_round_states_for_record(game):
         if not isinstance(snapshot, dict):
             continue
         state = {
-            field: copy.deepcopy(snapshot[field])
+            field: snapshot[field]
             for field in _ROUND_STATIC_FIELDS
             if field in snapshot
         }
@@ -313,21 +305,10 @@ def _compact_game_structure_for_record(game):
             continue
         snapshot = node.get("snapshot")
         if isinstance(snapshot, dict):
-            kyoku_state = snapshot.get("kyokuState")
-            if isinstance(kyoku_state, dict) and kyoku_state.get("pendingDoraRevealAfterActionCount"):
-                snapshot["pendingDoraRevealAfterActionCount"] = int(
-                    kyoku_state["pendingDoraRevealAfterActionCount"]
-                )
-            snapshot.pop("matchState", None)
-            snapshot.pop("kyokuState", None)
             if shared_seed is not None and snapshot.get("seed") == shared_seed:
                 snapshot.pop("seed", None)
             if shared_round_seeds is not None and snapshot.get("roundSeeds") == shared_round_seeds:
                 snapshot.pop("roundSeeds", None)
-            _sanitize_persisted_action(snapshot.get("lastAction"))
-            _sanitize_persisted_action(snapshot.get("actionHistoryDelta"))
-            _sanitize_persisted_action(snapshot.get("melds"))
-        _sanitize_persisted_action(node.get("action"))
         for field in ("id", "type", "parentId", "actor", "depth", "isDecision"):
             node.pop(field, None)
         if not node.get("analysisCache"):
@@ -344,6 +325,19 @@ def _compact_game_structure_for_record(game):
     if game.get("pendingReview") is None:
         game.pop("pendingReview", None)
     return game
+
+
+def _sanitize_record_actions(game):
+    # Only run after detaching. Projected action/history entries may still point
+    # into live immutable snapshots until copy_game_for_record finishes copying.
+    for node in game.get("nodes", {}).values():
+        if not isinstance(node, dict):
+            continue
+        snapshot = node.get("snapshot")
+        if isinstance(snapshot, dict):
+            for field in ("lastAction", "actionHistoryDelta", "melds"):
+                _sanitize_persisted_action(snapshot.get(field))
+        _sanitize_persisted_action(node.get("action"))
 
 
 def _validate_legacy_node_links(game):
@@ -684,15 +678,17 @@ def migrate_terminal_table_scores(game):
 
 
 def copy_game_for_record(game):
-    """Detach persisted state without copying runtime mirrors discarded on save.
+    """Project the compact authored representation, then detach it once.
 
-    The caller holds the state lock. Snapshot top-level fields are the persisted
+    The input is a stable snapshot, or the caller holds the state lock.
+    Snapshot top-level fields are the persisted
     authority; matchState and kyokuState are runtime mirrors. Keep the one legacy
-    delayed-dora field which the existing serializer reads from that mirror.
+    delayed-dora field read from that mirror. Histories become deltas and static
+    walls/round data become shared references *before* recursive copying. No
+    source-owned nested actions may be sanitized until the copy is detached.
     """
     projected = dict(game)
     projected_nodes = {}
-    memo = {}
     for node_id, node in game.get("nodes", {}).items():
         projected_node = dict(node)
         snapshot = node.get("snapshot")
@@ -707,21 +703,18 @@ def copy_game_for_record(game):
                     kyoku["pendingDoraRevealAfterActionCount"]
                 )
             projected_node["snapshot"] = persisted
-            # Walls hydrated from record files are immutable tuples of strings.
-            # deepcopy otherwise traverses the same tuples for every snapshot.
-            for field in _STATIC_WALL_FIELDS:
-                value = persisted.get(field)
-                if isinstance(value, tuple) and all(isinstance(tile, str) for tile in value):
-                    memo[id(value)] = value
         projected_nodes[node_id] = projected_node
     projected["nodes"] = projected_nodes
-    return copy.deepcopy(projected, memo)
+    _compact_round_walls_for_record(projected)
+    _compact_round_states_for_record(projected)
+    _compact_game_structure_for_record(projected)
+    detached = copy.deepcopy(projected)
+    _sanitize_record_actions(detached)
+    return detached
 
 
 def serialize_game_record_parts(game_copy, state_copy, *, analysis_packer=None):
-    _compact_round_walls_for_record(game_copy)
-    _compact_round_states_for_record(game_copy)
-    _compact_game_structure_for_record(game_copy)
+    """Finish a game prepared by copy_game_for_record; never recompact deltas."""
     return compact_record_analysis_caches({
         "formatVersion": RECORD_FORMAT_VERSION,
         "savedAt": now_iso(),

@@ -30,6 +30,8 @@ def set_pending_dora_counts(snapshot, immediate, delayed):
 def sync(snapshot):
     match_state = snapshot.get("matchState")
     kyoku_state = snapshot.get("kyokuState")
+    match_created = not isinstance(match_state, dict)
+    kyoku_created = not isinstance(kyoku_state, dict)
 
     if not isinstance(match_state, dict):
         match_state = {
@@ -85,7 +87,7 @@ def sync(snapshot):
     snapshot["kyotaku"] = int(match_state.get("kyotaku", 0))
     snapshot["dealer"] = int(match_state.get("dealer", 0))
     snapshot["dealerOffset"] = int(match_state.get("dealerOffset", 0))
-    snapshot["scores"] = copy.deepcopy(match_state.get("scores", DEFAULT_SCORES))
+    _restore_mutable_fields(snapshot, match_state, (("scores", DEFAULT_SCORES),), match_created)
     snapshot["westEntered"] = bool(match_state.get("westEntered", False))
     snapshot["inRenchan"] = bool(match_state.get("inRenchan", False))
     if "seed" not in snapshot:
@@ -93,28 +95,18 @@ def sync(snapshot):
     if "roundSeeds" not in snapshot:
         snapshot["roundSeeds"] = copy.deepcopy(match_state.get("roundSeeds", []))
 
-    snapshot["initialHands"] = copy.deepcopy(kyoku_state.get("initialHands", EMPTY_SEAT_LISTS))
-    snapshot["startScores"] = copy.deepcopy(
-        kyoku_state.get("startScores", snapshot.get("scores", DEFAULT_SCORES))
-    )
+    _restore_mutable_fields(snapshot, kyoku_state, (
+        ("initialHands", EMPTY_SEAT_LISTS),
+        ("startScores", snapshot.get("scores", DEFAULT_SCORES)),
+        ("fullWall", []), ("hands", EMPTY_SEAT_LISTS), ("rivers", EMPTY_SEAT_LISTS),
+        ("wall", []), ("rinshanWall", []), ("doraIndicators", []), ("uraIndicators", []),
+        ("doraIndicatorStack", []), ("uraIndicatorStack", []), ("melds", EMPTY_SEAT_LISTS),
+        ("riichiDeclared", FALSE_BY_SEAT), ("riichiAccepted", FALSE_BY_SEAT),
+        ("ippatsuEligible", FALSE_BY_SEAT), ("pendingRiichiDiscard", None), ("pendingKan", None),
+    ), kyoku_created)
     snapshot["startKyotaku"] = int(kyoku_state.get("startKyotaku", snapshot.get("kyotaku", 0)))
-    snapshot["fullWall"] = copy.deepcopy(kyoku_state.get("fullWall", []))
-    snapshot["hands"] = copy.deepcopy(kyoku_state.get("hands", EMPTY_SEAT_LISTS))
-    snapshot["rivers"] = copy.deepcopy(kyoku_state.get("rivers", EMPTY_SEAT_LISTS))
-    snapshot["wall"] = copy.deepcopy(kyoku_state.get("wall", []))
-    snapshot["rinshanWall"] = copy.deepcopy(kyoku_state.get("rinshanWall", []))
     snapshot["drawIndex"] = int(kyoku_state.get("drawIndex", 0))
-    snapshot["doraIndicators"] = copy.deepcopy(kyoku_state.get("doraIndicators", []))
-    snapshot["uraIndicators"] = copy.deepcopy(kyoku_state.get("uraIndicators", []))
-    snapshot["doraIndicatorStack"] = copy.deepcopy(kyoku_state.get("doraIndicatorStack", []))
-    snapshot["uraIndicatorStack"] = copy.deepcopy(kyoku_state.get("uraIndicatorStack", []))
-    snapshot["melds"] = copy.deepcopy(kyoku_state.get("melds", EMPTY_SEAT_LISTS))
-    snapshot["riichiDeclared"] = copy.deepcopy(kyoku_state.get("riichiDeclared", FALSE_BY_SEAT))
-    snapshot["riichiAccepted"] = copy.deepcopy(kyoku_state.get("riichiAccepted", FALSE_BY_SEAT))
-    snapshot["ippatsuEligible"] = copy.deepcopy(kyoku_state.get("ippatsuEligible", FALSE_BY_SEAT))
     snapshot["pendingRiichiSeat"] = kyoku_state.get("pendingRiichiSeat")
-    snapshot["pendingRiichiDiscard"] = copy.deepcopy(kyoku_state.get("pendingRiichiDiscard"))
-    snapshot["pendingKan"] = copy.deepcopy(kyoku_state.get("pendingKan"))
     snapshot["pendingRinshanDraw"] = bool(kyoku_state.get("pendingRinshanDraw", False))
     set_pending_dora_counts(
         snapshot,
@@ -122,6 +114,16 @@ def sync(snapshot):
         int(kyoku_state.get("pendingDoraRevealAfterActionCount", 0)),
     )
     return snapshot
+
+
+def _restore_mutable_fields(snapshot, state, fields, created):
+    for field, default in fields:
+        # A newly created mirror is already a detached copy of the flat field.
+        # Keep that original flat value instead of immediately copying it back.
+        # Existing mirrors remain authoritative, including partially populated
+        # legacy state; missing flat fields still receive independent defaults.
+        if not created or field not in snapshot:
+            snapshot[field] = copy.deepcopy(state.get(field, default))
 
 
 def persist(snapshot):

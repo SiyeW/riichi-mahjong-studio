@@ -524,7 +524,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
             service.GAME_FLOW.advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
         pass_id = game["nodes"][discard_id]["mainChildId"]
         record = game_record_storage.serialize_game_record_parts(
-            copy.deepcopy(game),
+            game_record_storage.copy_game_for_record(game),
             {
                 "mode": "play",
                 "controlledSeat": 0,

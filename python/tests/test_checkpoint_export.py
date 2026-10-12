@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from rms_backend import service
+from rms_backend import game_record_storage
 from rms_backend.analysis_cache import OPPONENT_ANALYSIS_CACHE_FIELD
 from rms_backend.analysis_cache_storage import expand_record_analysis_caches
 from rms_backend.game_record_storage import copy_game_for_record, serialize_game_record_parts
@@ -15,7 +16,18 @@ class CheckpointExportTests(unittest.TestCase):
         snapshot['kyokuState']['pendingDoraRevealAfterActionCount'] = 2
         before = copy.deepcopy(game)
         state = {'mode': 'research', 'controlledSeat': 0, 'visibleHands': True}
-        expected = serialize_game_record_parts(copy.deepcopy(game), state)
+        full_copy = copy.deepcopy(game)
+        for node in full_copy['nodes'].values():
+            saved = node['snapshot']
+            kyoku = saved.pop('kyokuState', {})
+            saved.pop('matchState', None)
+            if kyoku.get('pendingDoraRevealAfterActionCount'):
+                saved['pendingDoraRevealAfterActionCount'] = int(kyoku['pendingDoraRevealAfterActionCount'])
+        game_record_storage._compact_round_walls_for_record(full_copy)
+        game_record_storage._compact_round_states_for_record(full_copy)
+        game_record_storage._compact_game_structure_for_record(full_copy)
+        game_record_storage._sanitize_record_actions(full_copy)
+        expected = serialize_game_record_parts(full_copy, state)
         actual = serialize_game_record_parts(copy_game_for_record(game), state)
         expected.pop('savedAt')
         actual.pop('savedAt')
@@ -33,6 +45,53 @@ class CheckpointExportTests(unittest.TestCase):
         snapshot['rivers'][0].append({'pai': '2m'})
         snapshot['scores'][0] += 1000
         self.assertEqual(detached, frozen)
+
+    def test_projection_does_not_copy_history_prefixes_or_discarded_walls(self):
+        class History(list):
+            def __deepcopy__(self, memo):
+                raise AssertionError('full history copied before selecting deltas')
+
+        class Wall(tuple):
+            def __deepcopy__(self, memo):
+                raise AssertionError('per-frame static wall copied')
+
+        event = {'type': 'dahai', 'pai': '1m', 'meta': {'error': 'runtime'}}
+        wall = Wall(['1m'] * 136)
+        game = {'rootNodeId': 'root', 'nodes': {
+            'root': {'children': ['left', 'right'], 'snapshot': {
+                'fullWall': wall, 'wall': wall[:122], 'actionHistory': History([event])}},
+            'left': {'children': [], 'snapshot': {
+                'fullWall': wall, 'wall': wall[:121],
+                'actionHistory': History([event, {'type': 'tsumo', 'pai': '2m'}])}},
+            'right': {'children': [], 'snapshot': {
+                'fullWall': wall, 'wall': wall[:120],
+                'actionHistory': History([event, {'type': 'tsumo', 'pai': '3m'}])}},
+        }}
+        prepared = copy_game_for_record(game)
+        root = prepared['nodes']['root']['snapshot']
+        self.assertNotIn('actionHistory', root)
+        self.assertEqual(root['actionHistoryDelta'], [{'type': 'dahai', 'pai': '1m'}])
+        self.assertEqual(prepared['nodes']['right']['snapshot']['actionHistoryDelta'],
+                         [{'type': 'tsumo', 'pai': '3m'}])
+        self.assertEqual(len(prepared['roundWallStorage']['walls']), 1)
+        self.assertEqual(event['meta'], {'error': 'runtime'})
+        event['pai'] = '9m'
+        game['nodes']['left']['snapshot']['actionHistory'][-1]['pai'] = '9p'
+        self.assertEqual(root['actionHistoryDelta'][0]['pai'], '1m')
+        self.assertEqual(prepared['nodes']['left']['snapshot']['actionHistoryDelta'][0]['pai'], '2m')
+
+    def test_round_static_projection_is_shared_on_disk_but_detached_from_source(self):
+        hands = [['1m'], ['2m'], ['3m'], ['4m']]
+        game = {'nodes': {str(i): {'snapshot': {'initialHands': copy.deepcopy(hands),
+                  'startScores': [25000] * 4, 'startKyotaku': 0}} for i in range(4)}}
+        prepared = copy_game_for_record(game)
+        states = prepared['roundStateStorage']['states']
+        self.assertEqual(len(states), 1)
+        for node in prepared['nodes'].values():
+            self.assertEqual(node['snapshot']['roundStateRef'], 'r1')
+            self.assertNotIn('initialHands', node['snapshot'])
+        game['nodes']['0']['snapshot']['initialHands'][0].append('5m')
+        self.assertEqual(states['r1']['initialHands'], hands)
 
     def test_real_checkpoint_is_detached_from_live_record(self):
         game = service.create_empty_game(123456)
@@ -92,6 +151,18 @@ class CheckpointExportTests(unittest.TestCase):
             record = service.RECORD_SESSION.serialize()
         expand_record_analysis_caches(record)
         self.assertIn('decision', record['game']['nodes'][node_id]['analysisCache'])
+
+    def test_normal_export_omits_empty_cache_maps_after_authored_projection(self):
+        game = service.create_empty_game(123456)
+        for node in game['nodes'].values():
+            node['analysisCache'] = {}
+            node[OPPONENT_ANALYSIS_CACHE_FIELD] = {}
+        with patch.dict(service.STATE, {'game': game, 'gameLoaded': True}):
+            record = service.RECORD_SESSION.serialize()
+        self.assertNotIn('analysisCacheStorage', record)
+        for node in record['game']['nodes'].values():
+            self.assertNotIn('analysisCache', node)
+            self.assertNotIn(OPPONENT_ANALYSIS_CACHE_FIELD, node)
 
     def test_prepared_checkpoint_is_detached_before_background_serialization(self):
         game = service.create_empty_game(123456)
