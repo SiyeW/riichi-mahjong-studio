@@ -1,5 +1,22 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+// The close handshake belongs to the page, not to a Vue component. Even a
+// failed/unmounted renderer must answer instead of looking like a slow save.
+let closeRegistration = null
+ipcRenderer.on('record:before-close', async (_event, token) => {
+  const registration = closeRegistration
+  let errorMessage = 'RENDERER_UNAVAILABLE'
+  if (registration) {
+    try {
+      await registration.callback()
+      errorMessage = ''
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error)
+    }
+  }
+  ipcRenderer.send('record:close-ready', token, errorMessage)
+})
+
 contextBridge.exposeInMainWorld('studioAPI', {
   notifyBootstrapComplete: () => ipcRenderer.send('app:bootstrap-complete'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
@@ -66,17 +83,11 @@ contextBridge.exposeInMainWorld('studioAPI', {
     return () => ipcRenderer.removeListener('record:dirty-changed', handler)
   },
   onBeforeClose: (callback) => {
-    const handler = async (_event, token) => {
-      let errorMessage = ''
-      try {
-        await callback()
-      } catch (error) {
-        errorMessage = error instanceof Error ? error.message : String(error)
-      }
-      ipcRenderer.send('record:close-ready', token, errorMessage)
+    const registration = { callback }
+    closeRegistration = registration
+    return () => {
+      if (closeRegistration === registration) closeRegistration = null
     }
-    ipcRenderer.on('record:before-close', handler)
-    return () => ipcRenderer.removeListener('record:before-close', handler)
   },
   onCloseState: (callback) => {
     const handler = (_event, state) => callback(state)

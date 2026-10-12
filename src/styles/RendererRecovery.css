@@ -1,0 +1,21 @@
+.renderer-recovery {
+  z-index: 10000;
+  color: var(--text-main);
+}
+
+.renderer-recovery .settings-modal {
+  display: grid;
+  gap: calc(0.5rem * var(--chrome-scale));
+  width: min(calc(34rem * var(--ui-scale)), 96vw);
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+}
+
+.renderer-recovery [role="status"]:empty {
+  display: none;
+}
+
+.renderer-recovery-detail {
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}

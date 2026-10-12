@@ -6,6 +6,7 @@ import { createServer } from 'vite'
 import { _electron as electron, chromium } from 'playwright'
 import { checkWorkspaceDock } from './check-workspace-dock.mjs'
 import { checkReplayWorkflow } from './check-replay-workflow.mjs'
+import { checkRendererRecovery } from './check-renderer-recovery.mjs'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
 const root = path.resolve(import.meta.dirname, '..')
@@ -453,6 +454,7 @@ try {
   await page.evaluate(() => window.analysisCheck.vm.closeRecordImportPanel())
   if (process.env.RMS_UI_RECORD_IO_ONLY) {
     await checkReplayWorkflow(page)
+    await checkRendererRecovery(page)
     break uiChecks
   }
 

@@ -172,6 +172,7 @@ function createMainWindow({
       try {
         await persistBeforeCloseImpl(
           () => requestRendererFlushImpl(window, ipcMain, t('native.closeSaveTimeout'), {
+            unavailableMessage: t('native.rendererUnavailable'),
             onSlow: () => stageChanged('waiting'),
           }),
           () => loadSettingsImpl(appOptions).records?.saveRecoveryOnExit && gameFileStore.isDirty(),

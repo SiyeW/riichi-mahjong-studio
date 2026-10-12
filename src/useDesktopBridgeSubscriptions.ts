@@ -1,6 +1,7 @@
 import { onBeforeUnmount, onMounted } from 'vue'
 import type { CloseState, DesktopBridge } from './contracts/desktopBridge'
 import type { PythonEvent } from './contracts/runtime'
+import { rendererRecovery } from './rendererRecoveryState.ts'
 
 type UiZoomDirection = 'in' | 'out' | 'reset'
 
@@ -17,6 +18,9 @@ export function subscribeDesktopBridge(
   handlers: DesktopBridgeHandlers,
 ): () => void {
   if (!api) return () => {}
+  // Keep the pending-edit recovery callback after a failed root unmount, but
+  // release all IPC subscriptions normally. The next root replaces this owner.
+  rendererRecovery.setFlush(handlers.beforeClose)
   const unsubscribe = [
     api.onPythonEvent?.(handlers.pythonEvent),
     api.onRecordDirtyChanged?.(handlers.recordDirtyChanged),
