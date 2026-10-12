@@ -57,7 +57,7 @@ class AnalysisCachePacker:
                     for current, old in zip(values, old_values)
                 ):
                     return packed
-            packed = pack_json(values, display_probabilities=True, strings_seed=json_string_seed(values))
+            packed = pack_json(values, display_probabilities=True, strings_seed=json_string_seed(values), indexed=True)
             self._packed[kind] = (values, packed)
             return packed
 
@@ -91,11 +91,11 @@ def compact_record_analysis_caches(record, *, packer=None):
             "nodeIds": node_ids,
             "decision": {
                 "presence": _encode_bitmap(decision_presence),
-                "values": packer.pack("decision", decision_values) if packer else pack_json(decision_values, display_probabilities=True, strings_seed=json_string_seed(decision_values)),
+                "values": packer.pack("decision", decision_values) if packer else pack_json(decision_values, display_probabilities=True, strings_seed=json_string_seed(decision_values), indexed=True),
             },
             "opponent": {
                 "presence": _encode_bitmap(opponent_presence),
-                "values": packer.pack("opponent", opponent_values) if packer else pack_json(opponent_values, display_probabilities=True, strings_seed=json_string_seed(opponent_values)),
+                "values": packer.pack("opponent", opponent_values) if packer else pack_json(opponent_values, display_probabilities=True, strings_seed=json_string_seed(opponent_values), indexed=True),
             },
         }
         if packer:

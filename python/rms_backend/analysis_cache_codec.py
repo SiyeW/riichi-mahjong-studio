@@ -11,6 +11,8 @@ from functools import lru_cache
 from itertools import chain
 from threading import RLock
 
+from .analysis_cache_index import attach_index, read_index
+
 
 _NULL, _FALSE, _TRUE, _NUMBER, _STRING, _ARRAY, _OBJECT = range(7)
 _BYTE_BITS = tuple(tuple(bool(byte & (1 << bit)) for bit in range(8)) for byte in range(256))
@@ -46,12 +48,22 @@ def _decode_bitmap(encoded, length):
     return list(chain.from_iterable(_BYTE_BITS[byte] for byte in data))[:length]
 
 
-def pack_json(value, *, display_probabilities=False, strings_seed=()):
+def pack_json(value, *, display_probabilities=False, strings_seed=(), indexed=False):
     strings = list(strings_seed)
     string_indexes = {text: index for index, text in enumerate(strings)}
     tokens = bytearray()
     numbers = []
     zero_bits = []
+    value_spans = []
+    object_fields = []
+
+    def position():
+        return len(tokens), len(zero_bits), len(numbers)
+
+    def span(before):
+        offset, ordinal, number = before
+        return [offset, len(tokens), ordinal, len(zero_bits) - ordinal,
+                number, len(numbers) - number]
 
     def string_index(text):
         index = string_indexes.get(text)
@@ -80,7 +92,12 @@ def pack_json(value, *, display_probabilities=False, strings_seed=()):
     key_tokens = {}
     fragment_sources = set()
 
-    def visit(current, probability=False):
+    def visit(current, probability=False, depth=0):
+        # Re-encode only shallow dictionary headers. Keep their large, unopened
+        # fields encoded, while generating the new offsets in the same pass.
+        if (indexed and isinstance(current, EncodedJsonValue) and depth <= 2
+                and current.source.tokens[current.start] == _OBJECT):
+            current = current.source.read(current)
         if isinstance(current, EncodedJsonValue):
             source = current.source
             if source not in fragment_sources:
@@ -113,8 +130,13 @@ def pack_json(value, *, display_probabilities=False, strings_seed=()):
         elif isinstance(current, (list, tuple)):
             token(_ARRAY, len(current))
             for child in current:
-                visit(child, probability)
+                before = position() if indexed and depth == 0 else None
+                visit(child, probability, depth + 1 if depth == 0 else max(3, depth + 1))
+                if before is not None:
+                    value_spans.append(span(before))
         elif isinstance(current, dict):
+            start = len(tokens)
+            fields = [] if indexed and depth <= 2 else None
             token(_OBJECT, len(current))
             for key, child in raw_json_items(current):
                 if not isinstance(key, str):
@@ -124,20 +146,30 @@ def pack_json(value, *, display_probabilities=False, strings_seed=()):
                     encoded_key = variable_unsigned(string_index(key))
                     key_tokens[key] = encoded_key
                 tokens.extend(encoded_key)
+                before = position() if fields is not None else None
                 visit(child, key in _PROBABILITY_FIELDS or key == "tiles"
-                      or (probability and isinstance(child, (int, float))))
+                      or (probability and isinstance(child, (int, float))), depth + 1)
+                if fields is not None:
+                    fields.append([string_indexes[key], span(before)])
+            if fields is not None:
+                object_fields.append([start, fields])
         else:
             raise ValueError(f"Unsupported analysis cache value: {type(current).__name__}")
 
     visit(value)
     number_data = struct.pack(f"<{len(numbers)}d", *numbers) if numbers else b""
-    return {
+    packed = {
         "strings": strings,
         "tokens": base64.b64encode(tokens).decode("ascii"),
         "numbers": base64.b64encode(number_data).decode("ascii"),
         "numberCount": len(zero_bits),
         "exactZero": _encode_bitmap(zero_bits),
     }
+    if indexed:
+        if not isinstance(value, (list, tuple)):
+            raise ValueError('Indexed analysis cache values must be an array.')
+        attach_index(packed, value_spans, object_fields)
+    return packed
 
 
 def unpack_json(packed):
@@ -341,8 +373,8 @@ def json_string_seed(value):
 class PackedJsonIndex:
     """Validate tokens and index cache fields without constructing their arrays.
 
-    Existing files remain readable; this is an in-memory index, not a new codec.
-    Top-level cache/model fields are indexed once. Deeper objects are indexed
+    Saved files carry their shallow index; legacy files build it once in memory
+    and include it on the next save. Deeper objects are indexed
     only when requested; numeric arrays are decoded only when actually read.
     """
 
@@ -350,6 +382,9 @@ class PackedJsonIndex:
         if not isinstance(packed, dict) or not isinstance(packed.get('strings'), list):
             raise ValueError('Invalid packed analysis payload.')
         self.strings = packed['strings']
+        if (any(not isinstance(text, str) for text in self.strings)
+                or len(set(self.strings)) != len(self.strings)):
+            raise ValueError('Invalid packed analysis string table.')
         self.tokens = base64.b64decode(str(packed.get('tokens') or ''), validate=True)
         self.numbers = base64.b64decode(str(packed.get('numbers') or ''), validate=True)
         self.number_count = packed.get('numberCount')
@@ -363,6 +398,7 @@ class PackedJsonIndex:
             raise ValueError('Packed analysis number count does not match its bitmap.')
         self.fields = {}
         self.array_decodes = 0
+        self._packed = packed
 
     def zero_count(self, start, count):
         if not count:
@@ -397,6 +433,12 @@ class PackedJsonIndex:
         )
 
     def array(self):
+        if 'index' in self._packed:
+            rows, objects = read_index(self._packed, self)
+            self.fields = {offset: tuple((self.strings[key], EncodedJsonValue(self, *row))
+                                        for key, row in fields)
+                           for offset, fields in objects}
+            return [self.read(EncodedJsonValue(self, *row)) for row in rows]
         cursor = _TokenCursor(self)
         try:
             if cursor.byte() != _ARRAY:
@@ -412,6 +454,20 @@ class PackedJsonIndex:
         except (IndexError, KeyError) as error:
             raise ValueError('Packed analysis payload ended unexpectedly or has an invalid index.') from error
         self.fields = cursor.fields
+        string_ids = {key: i for i, key in enumerate(self.strings)}
+        def row(span):
+            return [span.start, span.end, span.ordinal, span.count, span.number, span.nonzero]
+        objects = []
+        def retain_fields(span, depth):
+            if self.tokens[span.start] != _OBJECT or depth > 2:
+                return
+            fields = self.fields[span.start]
+            objects.append([span.start, [[string_ids[key], row(child)] for key, child in fields]])
+            for _, child in fields:
+                retain_fields(child, depth + 1)
+        for span in values:
+            retain_fields(span, 1)
+        attach_index(self._packed, [row(span) for span in values], objects)
         return [self.read(span) for span in values]
 
 

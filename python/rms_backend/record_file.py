@@ -6,6 +6,10 @@ import gzip
 import json
 import os
 
+# Favor interactive saves over the last few percent of disk compression.
+# Unchanged analysis still reuses its already-compressed block.
+_COMPRESSION_LEVEL = 3
+
 
 def read_record_file(path: str) -> dict:
     with open(path, "rb") as source:
@@ -44,23 +48,23 @@ class RecordFileWriter:
         storage = document.pop("analysisCacheStorage", None)
         if compressed and storage is not None:
             if storage is not self._analysis_source:
-                encoded = gzip.compress(_json_bytes(storage), compresslevel=6, mtime=0)
+                encoded = gzip.compress(_json_bytes(storage), compresslevel=_COMPRESSION_LEVEL, mtime=0)
                 self._analysis_source, self._analysis_bytes = storage, encoded
             # Concatenated gzip members decode into the same single JSON object.
             # Recompress authored data/metadata every save, but not an unchanged
             # multi-megabyte analysis block. Existing gzip readers accept this.
             parts = (
                 gzip.compress(_json_bytes(document)[:-1] + b',"analysisCacheStorage":',
-                              compresslevel=6, mtime=0),
+                              compresslevel=_COMPRESSION_LEVEL, mtime=0),
                 self._analysis_bytes,
-                gzip.compress(b"}", compresslevel=6, mtime=0),
+                gzip.compress(b"}", compresslevel=_COMPRESSION_LEVEL, mtime=0),
             )
         else:
             self._analysis_source = self._analysis_bytes = None
             if storage is not None:
                 document["analysisCacheStorage"] = storage
             data = _json_bytes(document)
-            parts = (gzip.compress(data, compresslevel=6, mtime=0) if compressed else data,)
+            parts = (gzip.compress(data, compresslevel=_COMPRESSION_LEVEL, mtime=0) if compressed else data,)
         # Never overwrite an existing staging file. The host removes a partial
         # file on failure and promotes only after durable completion.
         with open(path, "xb") as target:
