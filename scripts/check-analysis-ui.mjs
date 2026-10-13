@@ -778,6 +778,12 @@ try {
   }
   await engineBody.evaluate((element, previous) => element.style.setProperty('--engine-list-width', previous), priorListWidth)
   await engineBody.evaluate(element => element.style.setProperty('--engine-list-width', '480px'))
+  // Column fitting is applied by ResizeObserver, after layout. Reading in the
+  // very next evaluate can observe the previous narrow column count.
+  await page.waitForFunction(() => {
+    const filters = document.querySelector('.engine-output-filters')
+    return filters && getComputedStyle(filters).gridTemplateColumns.split(' ').length > 3
+  })
   const wideFilterLayout = await page.locator('.engine-output-filters').evaluate(element => ({
     columns: getComputedStyle(element).gridTemplateColumns.split(' ').length,
     width: element.getBoundingClientRect().width,
@@ -1472,7 +1478,7 @@ try {
   assert.equal(
     await page.locator('.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line').count(),
     0,
-    '30% and 50% guide lines stay hidden while the default ranges are sufficient',
+    '30% and 60% guide lines stay hidden while the default ranges are sufficient',
   )
   const baselineModeStrengths = await page.locator('.analysis-score-modes span').evaluateAll(elements => (
     elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))
@@ -1494,8 +1500,8 @@ try {
     const result = window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1)
     for (const player of result.outputs['opponent-dora-count'].players) {
       player.prediction.distribution = [
-        { value: 0, probability: 0.55 },
-        { value: 1, probability: 0.2 },
+        { value: 0, probability: 0.65 },
+        { value: 1, probability: 0.1 },
         { value: 2, probability: 0.1 },
         { value: 3, probability: 0.07 },
         { value: 4, probability: 0.04 },
@@ -1547,7 +1553,7 @@ try {
     const bounds = track?.getBoundingClientRect()
     return bounds ? Number.parseFloat(getComputedStyle(track, '::before').top) / bounds.height : -1
   }))
-  assert.ok(Math.abs(adaptiveGuideRatios[0] - (1 - (0.5 / 0.55))) < 0.02, 'the 50% dora guide moves inside an expanded range')
+  assert.ok(Math.abs(adaptiveGuideRatios[0] - (1 - (0.6 / 0.65))) < 0.02, 'the 60% dora guide moves inside an expanded range')
   assert.ok(Math.abs(adaptiveGuideRatios[1] - (1 - (0.3 / 0.62))) < 0.02, 'the 30% score guide moves inside an expanded range')
   const adaptiveModeStrengths = await page.locator('.analysis-score-modes').first().locator('span').evaluateAll(elements => (
     elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))

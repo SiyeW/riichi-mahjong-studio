@@ -16,6 +16,7 @@ from .analysis_cache_codec import (
     AnalysisReadError, DeferredJsonObject, EncodedJsonValue, JsonReference, index_json_array,
     json_string_seed, pack_json, raw_json_items,
 )
+from .record_binary import DIRECTORY_LIMIT, RESULT_LIMIT, inflate, load_json
 
 MAGIC = b"MJSTBLK1"
 HEADER = struct.Struct("<8sQ")
@@ -86,7 +87,7 @@ class BlockEntry:
     def _load_result(self):
         with self.lock:
             if self._result is None:
-                packed = json.loads(gzip.decompress(self.source.read_block(self.descriptor)).decode('utf-8'))
+                packed = load_json(inflate(self.source.read_block(self.descriptor), RESULT_LIMIT))
                 values = index_json_array(packed)
                 if len(values) != 1 or not isinstance(values[0], dict):
                     raise ValueError('Invalid analysis result block.')
@@ -134,9 +135,9 @@ def read_block_record(file, *, writer=None):
             raise ValueError('Incomplete indexed record header.')
         magic, length = HEADER.unpack(header)
         size = os.fstat(file.fileno()).st_size
-        if magic != MAGIC or length > size - HEADER.size:
+        if magic != MAGIC or length > DIRECTORY_LIMIT + 65536 or length > size - HEADER.size:
             raise ValueError('Invalid indexed record directory length.')
-        manifest = json.loads(gzip.decompress(file.read(length)).decode('utf-8'))
+        manifest = load_json(inflate(file.read(length), DIRECTORY_LIMIT), limit=DIRECTORY_LIMIT)
         if manifest.get('version') != 1:
             raise ValueError('Unsupported indexed record version.')
         record, entries = manifest.get('record'), manifest.get('entries')

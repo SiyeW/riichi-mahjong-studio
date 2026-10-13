@@ -16,6 +16,25 @@ from rms_backend.analysis_cache_storage import (
 
 
 class RecordFileTests(unittest.TestCase):
+    def test_bundled_example_remains_readable_under_legacy_safety_limits(self):
+        example = Path(__file__).resolve().parents[2] / 'examples' / 'example-record.mjstudio'
+        record = read_record_file(example)
+        self.assertEqual(record['formatVersion'], 3)
+        self.assertTrue(record['game']['nodes'])
+
+    def test_legacy_member_limit_is_aggregate_not_per_member(self):
+        data = gzip.compress(b'{"text":"1234') + gzip.compress(b'5678"}')
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'limited'
+            source.write_bytes(data)
+            with patch('rms_backend.record_file.LEGACY_LIMIT', len(data) + 1):
+                self.assertEqual(read_record_file(source), {'text': '12345678'})
+            # Keep compressed input under the cap, but produce too much across
+            # independently valid members. No post-allocation whole inflate.
+            source.write_bytes(gzip.compress(b'x' * 1000) + gzip.compress(b'y' * 1000))
+            with patch('rms_backend.record_file.LEGACY_LIMIT', 1500), self.assertRaisesRegex(ValueError, 'expansion limit'):
+                read_record_file(source)
+
     def cache_record(self):
         record = {'game': {'nodes': {'a': {'opponentAnalysisCache': {
             'model': {'status': 'ready', 'probability': [0, .25, .75]},
