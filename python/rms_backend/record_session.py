@@ -162,9 +162,10 @@ class RecordSession:
         return PreparedRecordExport(game, state, self._analysis_packer, self._file_writer)
 
     @staticmethod
-    def serialize_prepared_export(prepared: PreparedRecordExport) -> dict:
+    def serialize_prepared_export(prepared: PreparedRecordExport, *, for_file=False) -> dict:
         return serialize_game_record_parts(prepared.game, prepared.state,
-                                           analysis_packer=prepared.analysis_packer)
+                                           analysis_packer=prepared.analysis_packer,
+                                           compact_analysis=not for_file)
 
     def serialize(self) -> dict:
         return self.serialize_prepared_export(self.prepare_export())

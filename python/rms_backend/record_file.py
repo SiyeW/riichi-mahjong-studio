@@ -7,6 +7,8 @@ import json
 import os
 import zlib
 
+from .record_blocks import MAGIC, CACHE_FIELDS, open_record_source, read_block_record, write_block_record, json_bytes
+
 # Favor interactive saves over the last few percent of disk compression.
 # Unchanged analysis still reuses its already-compressed block.
 _COMPRESSION_LEVEL = 3
@@ -39,7 +41,12 @@ def read_record_file(path: str, *, writer: RecordFileWriter | None = None) -> di
     The session commits that writer only after record validation/activation.
     Analysis packing must independently confirm that its storage is unchanged.
     """
-    with open(path, "rb") as source:
+    source = open_record_source(path)
+    if source.read(len(MAGIC)) == MAGIC:
+        source.seek(0)
+        return read_block_record(source, writer=writer)
+    with source:
+        source.seek(0)
         data = source.read()
     if data.startswith(b"\x1f\x8b"):
         members = _gzip_members(data)
@@ -59,7 +66,7 @@ def read_record_file(path: str, *, writer: RecordFileWriter | None = None) -> di
 
 
 def _json_bytes(value):
-    return json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    return json_bytes(value)
 
 
 def _file_metadata(record, app_version, recovery):
@@ -79,10 +86,21 @@ class RecordFileWriter:
     def __init__(self):
         self._analysis_source = None
         self._analysis_bytes = None
+        self._block_source = None
+        self._block_encoded = {}
 
     def write(self, path: str, record: dict, *, compressed=True,
               app_version="", recovery=False) -> None:
         document = {**record, "metadata": _file_metadata(record, app_version, recovery)}
+        if self._block_source is not None:
+            self._block_source.detach()
+        if compressed and isinstance(document.get('game', {}).get('nodes'), dict) and any(
+            field in node for node in document['game']['nodes'].values() for field in CACHE_FIELDS
+        ):
+            self._analysis_source = self._analysis_bytes = None
+            self._block_encoded = write_block_record(path, document, encoded=self._block_encoded)
+            return
+        self._block_encoded = {}
         storage = document.pop("analysisCacheStorage", None)
         if compressed and storage is not None:
             if storage is not self._analysis_source:

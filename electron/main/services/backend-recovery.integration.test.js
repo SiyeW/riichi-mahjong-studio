@@ -18,9 +18,15 @@ test('native file import and save preserve caches and pending edits across both 
   { skip: !fs.existsSync(python), timeout: 30_000 }, async () => {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-record-file-test-'))
     const env = { RMS_PORTABLE_DIR: directory, RMS_BACKEND_CONFIG: path.join(directory, 'config.json') }
+    let backendClosed
     const backend = createBackendProcess({
       name: 'record-file-test', pythonExecutable: python, scriptPath: null,
       args: ['-m', 'rms_backend'], cwd: path.join(root, 'python'), env,
+      spawnProcess: (...args) => {
+        const child = spawn(...args)
+        backendClosed = new Promise(resolve => child.once('close', resolve))
+        return child
+      },
     })
     const session = createBackendSession(backend)
     backend.onEvent(event => session.handleEvent(event))
@@ -51,6 +57,9 @@ test('native file import and save preserve caches and pending edits across both 
       const saved = await workflow.saveGame()
       await editing
       const decoded = decodeGameRecord(fs.readFileSync(saved.path))
+      const damagedBlock = Buffer.from(fs.readFileSync(saved.path))
+      damagedBlock[damagedBlock.length - 1] ^= 1
+      assert.throws(() => decodeGameRecord(damagedBlock), /Damaged analysis result block/)
       assert.equal(decoded.game.nodes[nodeId].comment, '评论・牌譜🀄')
       assert.deepEqual(decoded.game.nodes[nodeId].analysisCache['m3::0::discard::source'], decision)
       assert.deepEqual(decoded.game.nodes[nodeId].opponentAnalysisCache['o5::0::public::source'], opponent)
@@ -70,6 +79,9 @@ test('native file import and save preserve caches and pending edits across both 
       assert.equal(fs.readdirSync(directory).some(name => name.endsWith('.tmp')), false)
     } finally {
       backend.stop()
+      // A stop request is not process exit. Lazy file sources legitimately
+      // retain handles until released; await the isolated process before cleanup.
+      await backendClosed
       fs.rmSync(directory, { recursive: true, force: true })
     }
   })

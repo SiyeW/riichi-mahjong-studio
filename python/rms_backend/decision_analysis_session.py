@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, MutableMapping, Optional
 
 from .action_recommendation_adapter import analyze_action_choices, analyze_discard_choices
+from .analysis_cache_codec import AnalysisReadError
 from .auto_analysis_plan import is_terminal_analysis_node
 from .analysis_cache import (
     cache_key_context,
@@ -262,6 +263,11 @@ class DecisionAnalysisSession:
                 self.engine_management.decision_source(),
             )
             analysis = (parent_node.get("analysisCache") or {}).get(analysis_key)
+            if getattr(analysis, 'pending_io', False) and parent_node is not game['nodes'].get(game.get('currentNodeId')):
+                # Saved comparisons remain visible. Missing derived comparisons
+                # are filled when their frame is visited, not by reading every
+                # unopened analysis block during record activation.
+                continue
             if not isinstance(analysis, dict) or analysis.get("error"):
                 continue
             updates.extend(
@@ -429,6 +435,12 @@ class DecisionAnalysisSession:
         snapshot: dict[str, Any],
         legal_actions: list[dict[str, Any]],
     ) -> Optional[dict[str, Any]]:
+        try:
+            return self._get_or_schedule(current_node, snapshot, legal_actions)
+        except AnalysisReadError as error:
+            return {'error': str(error), 'discardEntries': [], 'reactionEntries': []}
+
+    def _get_or_schedule(self, current_node, snapshot, legal_actions):
         if is_terminal_analysis_node(current_node):
             return None
         if not self.state.get("decisionRecommendationsEnabled", True):
@@ -438,7 +450,11 @@ class DecisionAnalysisSession:
 
         analysis_key = self.cache_key(snapshot)
         if analysis_key in current_node.get("analysisCache", {}):
-            return copy.deepcopy(current_node["analysisCache"][analysis_key])
+            cached = current_node["analysisCache"][analysis_key]
+            if getattr(cached, 'pending_io', False):
+                self.update_child_comparisons(self.state['game'], current_node, cached,
+                                              int(self.state['controlledSeat']), only_missing=True)
+            return copy.deepcopy(cached)
         if not self.action_gateway.accepts_requests():
             return find_stale_cache_entry(
                 self.state.get("game"),
@@ -538,6 +554,9 @@ class DecisionAnalysisSession:
                     and not cached_analysis.get("error"),
                 )
             cached = current_node.get("analysisCache", {}).get(analysis_key)
+            if isinstance(cached, dict) and getattr(cached, 'pending_io', False):
+                self.update_child_comparisons(self.state['game'], current_node, cached,
+                                              int(self.state['controlledSeat']), only_missing=True)
             return copy.deepcopy(cached) if isinstance(cached, dict) else empty
         except Exception as error:  # pylint: disable=broad-except
             empty["error"] = str(error)

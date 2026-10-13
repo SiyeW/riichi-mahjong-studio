@@ -713,9 +713,9 @@ def copy_game_for_record(game):
     return detached
 
 
-def serialize_game_record_parts(game_copy, state_copy, *, analysis_packer=None):
+def serialize_game_record_parts(game_copy, state_copy, *, analysis_packer=None, compact_analysis=True):
     """Finish a game prepared by copy_game_for_record; never recompact deltas."""
-    return compact_record_analysis_caches({
+    record = {
         "formatVersion": RECORD_FORMAT_VERSION,
         "savedAt": now_iso(),
         "state": {
@@ -724,4 +724,5 @@ def serialize_game_record_parts(game_copy, state_copy, *, analysis_packer=None):
             "visibleHands": state_copy["visibleHands"],
         },
         "game": game_copy,
-    }, packer=analysis_packer)
+    }
+    return compact_record_analysis_caches(record, packer=analysis_packer) if compact_analysis else record

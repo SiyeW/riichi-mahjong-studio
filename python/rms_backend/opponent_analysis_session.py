@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .analysis_cache_codec import AnalysisReadError
+
 import copy
 from dataclasses import dataclass
 from typing import Any, Callable, MutableMapping, Optional
@@ -208,6 +210,13 @@ class OpponentAnalysisSession:
             return True
 
     def current(self) -> dict[str, Any]:
+        try:
+            return self._current()
+        except AnalysisReadError as error:
+            return {'status': f'prediction_error: {error}', 'error': str(error),
+                    'predictions': {}, 'ground_truth': {}}
+
+    def _current(self) -> dict[str, Any]:
         if not self.state.get("opponentAnalysisEnabled"):
             return {"status": "disabled", "predictions": {}, "ground_truth": {}}
         context = self.current_context()

@@ -93,6 +93,11 @@ def pack_json(value, *, display_probabilities=False, strings_seed=(), indexed=Fa
     fragment_sources = set()
 
     def visit(current, probability=False, depth=0):
+        if isinstance(current, JsonReference) and not isinstance(current, EncodedJsonValue):
+            # Explicit aggregate/in-memory export may combine independently
+            # encoded blocks with different string tables. Materialize this
+            # requested value instead of copying incompatible token fragments.
+            current = copy.deepcopy(current.resolve())
         # Re-encode only shallow dictionary headers. Keep their large, unopened
         # fields encoded, while generating the new offsets in the same pass.
         if (indexed and isinstance(current, EncodedJsonValue) and depth <= 2
@@ -244,8 +249,22 @@ def _unpack_parts(strings, token_data, number_data, zero_bits):
     return value
 
 
+class AnalysisReadError(ValueError):
+    """A persisted analysis value could not be read; authored state is intact."""
+
+
+class JsonReference:
+    """Immutable deferred value; persistence can retain it without resolving."""
+
+    def resolve(self):
+        raise NotImplementedError
+
+    def __deepcopy__(self, memo):
+        return self
+
+
 @dataclass(frozen=True, slots=True)
-class EncodedJsonValue:
+class EncodedJsonValue(JsonReference):
     source: 'PackedJsonIndex'
     start: int
     end: int
@@ -259,6 +278,13 @@ class EncodedJsonValue:
         # without decoding fields the user has never viewed.
         return self
 
+    def resolve(self):
+        return self.source.read(self)
+
+    @property
+    def is_container(self):
+        return self.source.tokens[self.start] in (_ARRAY, _OBJECT)
+
 
 class DeferredJsonObject(dict):
     """Dictionary interface with independently decoded, immutable JSON fields."""
@@ -271,10 +297,10 @@ class DeferredJsonObject(dict):
     def __getitem__(self, key):
         with self._lock:
             raw = dict.__getitem__(self, key)
-            if not isinstance(raw, EncodedJsonValue):
+            if not isinstance(raw, JsonReference):
                 return raw
             if key not in self._resolved:
-                self._resolved[key] = raw.source.read(raw)
+                self._resolved[key] = raw.resolve()
             return self._resolved[key]
 
     def __iter__(self):

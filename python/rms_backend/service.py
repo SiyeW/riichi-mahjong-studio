@@ -724,7 +724,9 @@ def _export_game_record(request_id, command, payload=None):
         prepared = RECORD_SESSION.prepare_export()
         response = VIEW_BUILDER.build_response(request_id, command)
     # Do not hold the gameplay lock while packing all cached predictions.
-    record = RECORD_SESSION.serialize_prepared_export(prepared)
+    native_file = bool(payload and 'path' in payload and payload.get('compressed', True))
+    record = (RECORD_SESSION.serialize_prepared_export(prepared, for_file=True)
+              if native_file else RECORD_SESSION.serialize_prepared_export(prepared))
     if payload and "path" in payload:
         prepared.file_writer.write(payload["path"], record,
                           compressed=payload.get("compressed", True),
