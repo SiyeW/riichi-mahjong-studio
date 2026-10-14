@@ -19,6 +19,7 @@ from .analysis_cache import (
     find_stale_cache_entry,
     prune_stale_cache_entries,
     register_analysis_source,
+    cache_presentation_metadata,
 )
 from .service_helpers import (
     build_comparison_result,
@@ -529,8 +530,8 @@ class DecisionAnalysisSession:
     def _stale_analysis(self, game, node, key, field):
         cached = find_stale_cache_entry(game, node, key, field, resolve=False)
         if isinstance(cached, AnalysisReference):
-            result = self.dependencies.read_presenter.read(cached, kind='decision')
-            return {**result, 'cacheStatus': 'stale'} if result is not None else None
+            return self.dependencies.read_presenter.read(cached, kind='decision',
+                metadata=cache_presentation_metadata(game, cached.cache_key, key))
         return find_stale_cache_entry(game, node, key, field) if cached is not None else None
 
     def resolve_current(

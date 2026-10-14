@@ -191,6 +191,7 @@ OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
         emit=emit,
         read_presenter=ANALYSIS_READS,
         record_access=RECORD_ANALYSIS,
+        build_analysis_table=lambda snapshot, seat, mode: VIEW_BUILDER.build_analysis_table(snapshot, seat, mode),
     ),
 )
 

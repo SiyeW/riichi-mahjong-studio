@@ -3,7 +3,7 @@ import { acceptsAnalysisEpoch } from './analysisEpoch.ts'
 import { decisionPositionKey } from './analysisPosition.ts'
 import type { TranslationParams } from './i18n'
 import type { StudioSettings } from './contracts/settings'
-import type { GameView, TableState } from './contracts/game'
+import type { AnalysisPresentationContext, GameView, TableState } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 import { normalizeTrainingMode } from './trainingSettings.ts'
 import { getUiMotionDurationMs } from './uiMotion.ts'
@@ -134,6 +134,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
       || activity === 'error'
   })
   const opponentAnalysisIsLoading = computed(() => {
+    const context = gameView.opponentAnalysis?.context as AnalysisPresentationContext | undefined
+    if (context?.dataState === 'reading') return opponentAnalysisPending.value
     const rawActivity: unknown = status.modelActivity?.opponentAnalysis
     const activity = rawActivity === 'loading' || rawActivity === 'running' || rawActivity === 'error'
       ? rawActivity
@@ -255,7 +257,11 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   ): boolean {
     if (!analysisResultMatchesCurrentPosition(result)) return false
     gameView.opponentAnalysis = result
-    shantenStatus.value = String(result.status || '?')
+    const rawStatus = String(result.status || '?')
+    const error = typeof result.error === 'string' ? result.error
+      : rawStatus.startsWith('prediction_error:') ? rawStatus.slice('prediction_error:'.length).trim() : ''
+    const nextStatus = error ? `err: ${error}` : rawStatus
+    shantenStatus.value = nextStatus
     const predictions = result.predictions as Record<string, unknown> | undefined
     const groundTruth = result.ground_truth as Record<string, unknown> | undefined
     const predOpponents = predictions?.opponents as Record<string, number[]> | undefined
@@ -270,7 +276,12 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     const hasResult = hasPredOpponents || hasPredRonWait || hasGtOpponents || hasGtRonWait
       || Boolean(protocolOutputs && Object.keys(protocolOutputs).length)
     if (!hasResult) {
-      if (applyOptions.clearWhenEmpty) clearOpponentAnalysisWithoutMotion()
+      const readingSaved = (result.context as AnalysisPresentationContext | undefined)?.dataState === 'reading'
+      if (rawStatus !== 'loading' || applyOptions.clearWhenEmpty && !readingSaved) {
+        clearOpponentAnalysisWithoutMotion()
+        gameView.opponentAnalysis = result
+        shantenStatus.value = nextStatus
+      }
       else if (result.status !== 'loading') finishOpponentAnalysisPending()
       return true
     }
@@ -283,7 +294,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     // presentation snapshot. During a round transition the live table already
     // belongs to the next round while the previous result is deliberately
     // retained for the short handoff window.
-    displayedAnalysisTable.value = gameView.table
+    const context = result.context as AnalysisPresentationContext | undefined
+    displayedAnalysisTable.value = context?.sourceTable ?? gameView.table
     displayedAnalysisControlledSeat.value = status.controlledSeat
     displayedOpponentAnalysis.value = result
     finishOpponentAnalysisPending()

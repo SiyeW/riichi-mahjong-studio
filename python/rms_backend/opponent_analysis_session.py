@@ -15,6 +15,7 @@ from .analysis_cache import (
     compact_opponent_analysis,
     find_stale_cache_entry,
     cache_key_context,
+    cache_presentation_metadata,
     opponent_analysis_cache_key,
     prune_stale_cache_entries,
     register_analysis_source,
@@ -34,6 +35,7 @@ class OpponentAnalysisDependencies:
     emit: Callable[[dict[str, Any]], None]
     read_presenter: Any = None
     record_access: Any = None
+    build_analysis_table: Any = None
 
 
 class OpponentAnalysisSession:
@@ -61,7 +63,8 @@ class OpponentAnalysisSession:
 
     def display_input_mode(self, node):
         # Loaded providers govern inference, never access to already saved facts.
-        if self.state.get('visibleHands'):
+        available = getattr(self.predictions, 'accepts_requests', lambda: False)()
+        if self.state.get('visibleHands') and not available:
             for key in (node or {}).get(OPPONENT_ANALYSIS_CACHE_FIELD, {}):
                 address = cache_key_context(key)
                 if address and address['seat'] == int(self.state['controlledSeat']) and address['mode'] == 'full-information':
@@ -96,6 +99,7 @@ class OpponentAnalysisSession:
         return {
             "gameId": game.get("gameId"),
             "nodeId": node_id,
+            "sourceNodeId": (source_node or {}).get('id'),
             "seat": seat,
             "inputMode": input_mode,
             "cacheKey": self.build_cache_key(seat, input_mode),
@@ -200,7 +204,13 @@ class OpponentAnalysisSession:
             if context is None:
                 return False
             if context.get("terminal"):
-                return False
+                source = context.get('sourceNodeId')
+                if source is None or not getattr(self.predictions, 'accepts_requests', lambda: False)():
+                    return False
+                # Predict its eligible predecessor, never the resolved display
+                # node. Saving keeps the result on that predecessor too.
+                context = {**context, 'nodeId': source, 'sourceNodeId': source, 'terminal': False}
+                snapshot = None
             self.predictions.set_latest_context(context)
             game = self.state["game"]
             node = game["nodes"][context["nodeId"]]
@@ -262,7 +272,8 @@ class OpponentAnalysisSession:
             return self._current()
         except AnalysisReadError as error:
             return {'status': f'prediction_error: {error}', 'error': str(error),
-                    'predictions': {}, 'ground_truth': {}}
+                    'predictions': {}, 'ground_truth': {},
+                    'context': {**(self.current_context() or {}), 'dataState': 'failed'}}
 
     def _current(self) -> dict[str, Any]:
         if not self.state.get("opponentAnalysisEnabled"):
@@ -278,8 +289,9 @@ class OpponentAnalysisSession:
                     self.state["game"], node, context["cacheKey"], OPPONENT_ANALYSIS_CACHE_FIELD,
                     resolve=False,
                 )
-            if isinstance(cached, dict) and cached.get("status") == "ready":
+            if isinstance(cached, AnalysisReference) or isinstance(cached, dict) and cached.get("status") == "ready":
                 return self._present_cached(cached, context, terminal=True)
+            self.request_current()
             return {
                 "status": "loading", "predictions": {}, "ground_truth": {},
                 "context": context,
@@ -337,12 +349,23 @@ class OpponentAnalysisSession:
         }
 
     def _present_cached(self, cached, context, *, terminal=False):
+        context = dict(context)
+        source_id = context.get('sourceNodeId') or context['nodeId']
+        if self.dependencies.build_analysis_table is not None and (
+                source_id != context['nodeId']
+                or (context.get('inputMode') == 'full-information') != bool(self.state['visibleHands'])):
+            source = self.state['game']['nodes'].get(source_id)
+            if source is not None:
+                context['sourceTable'] = self.dependencies.build_analysis_table(
+                    source['snapshot'], context['seat'], context['inputMode'])
         if isinstance(cached, AnalysisReference):
             result = self.dependencies.read_presenter.read(
-                cached, kind='opponent', context=context, terminal=terminal)
+                cached, kind='opponent', context=context, terminal=terminal,
+                metadata=cache_presentation_metadata(self.state['game'], cached.cache_key, context['cacheKey']))
             return result if result is not None else dict(
-                status='loading', predictions={}, ground_truth={}, context=dict(context))
+                status='loading', predictions={}, ground_truth={}, context={**context, 'dataState': 'reading'})
         result = attach_analysis_context(cached, context)
+        result['context']['dataState'] = 'ready'
         if terminal:
             result['status'] = 'terminal'
         return result

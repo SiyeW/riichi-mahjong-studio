@@ -22,31 +22,32 @@ class AnalysisReadPresenter:
         self._retry_timers = {}
 
     @staticmethod
-    def _payload(kind, value, context, terminal):
+    def _payload(kind, value, context, terminal, metadata):
+        value = {**value, **metadata} if metadata else value
         if kind == 'opponent':
-            return {**value, 'context': dict(context), **({'status': 'terminal'} if terminal else {})}
+            return {**value, 'context': {**context, 'dataState': 'ready'}, **({'status': 'terminal'} if terminal else {})}
         return value
 
-    def read(self, reference, *, kind, context=None, terminal=False):
+    def read(self, reference, *, kind, context=None, terminal=False, metadata=None):
         """Called under game lock. No filesystem/codec wait or inference here."""
         if not isinstance(reference, AnalysisReference):
             raise TypeError('Async reads require record-owned analysis references.')
         token = self.view_token()
-        self._subscriptions[kind] = (reference, token, context, terminal)
+        self._subscriptions[kind] = (reference, token, context, terminal, metadata)
         hot = reference.ready_value()
         if hot is not None:
             self._cancel_retry(kind)
-            return self._payload(kind, hot, context, terminal)
+            return self._payload(kind, hot, context, terminal, metadata)
         try:
             future = reference.request(group=('visible-analysis', kind))
         except AnalysisReadError as error:
             self._cancel_retry(kind)
-            return self._error(kind, error, context)
+            return self._error(kind, error, context, metadata)
         if future is None:
             hot = reference.ready_value()
             if hot is not None:
                 self._cancel_retry(kind)
-                return self._payload(kind, hot, context, terminal)
+                return self._payload(kind, hot, context, terminal, metadata)
             self._retry_read(kind)
         else:
             self._cancel_retry(kind)
@@ -73,24 +74,24 @@ class AnalysisReadPresenter:
                         self._retry_timers.pop(kind)
                     subscribed = self._subscriptions.get(kind)
                     if subscribed is not None:
-                        reference, token, context, terminal = subscribed
+                        reference, token, context, terminal, metadata = subscribed
                         if token == self.view_token():
-                            self.publish(reference, kind=kind, context=context, terminal=terminal)
+                            self.publish(reference, kind=kind, context=context, terminal=terminal, metadata=metadata)
             timer = Timer(.25, retry)
             timer.daemon = True
             self._retry_timers[kind] = timer
             timer.start()
 
     @staticmethod
-    def _error(kind, error, context):
+    def _error(kind, error, context, metadata=None):
         if kind == 'opponent':
             return dict(status=f'prediction_error: {error}', error=str(error),
-                        predictions={}, ground_truth={}, context=dict(context))
-        return dict(error=str(error), discardEntries=[], reactionEntries=[])
+                        predictions={}, ground_truth={}, context={**context, 'dataState': 'failed'}, **(metadata or {}))
+        return dict(error=str(error), discardEntries=[], reactionEntries=[], **(metadata or {}))
 
-    def publish(self, reference, *, kind, context=None, terminal=False):
+    def publish(self, reference, *, kind, context=None, terminal=False, metadata=None):
         """Model completion also publishes if encoding won the subscription race."""
-        ready = self.read(reference, kind=kind, context=context, terminal=terminal)
+        ready = self.read(reference, kind=kind, context=context, terminal=terminal, metadata=metadata)
         if ready is not None:
             future = Future()
             future.set_result(ready)
@@ -124,13 +125,13 @@ class AnalysisReadPresenter:
             with self.state_lock:
                 subscribed = self._subscriptions.get(kind)
                 if subscribed is not None:
-                    reference, token, context, terminal = subscribed
+                    reference, token, context, terminal, metadata = subscribed
                     if (reference.identity == identity and token is not None
                             and token == self.view_token()
                             and self._observed.get(kind) == (identity, future)):
                         error = future.exception()
-                        payload = (self._error(kind, error, context) if error is not None else
-                                   self._payload(kind, future.result(), context, terminal))
+                        payload = (self._error(kind, error, context, metadata) if error is not None else
+                                   self._payload(kind, future.result(), context, terminal, metadata))
                         event = dict(type='opponent_analysis_ready' if kind == 'opponent' else 'analysis_ready',
                                      viewToken=token, gameId=token['gameId'], nodeId=token['nodeId'],
                                      seat=token['seat'], cacheEpoch=token['decisionEpoch'])
@@ -140,7 +141,7 @@ class AnalysisReadPresenter:
             if event is not None:
                 self.emit(event)
             # An idle presenter must not retain the last canonical result/future.
-            subscribed = reference = payload = event = future = None
+            subscribed = reference = payload = event = future = metadata = context = token = None
 
     def close(self):
         with self._condition:

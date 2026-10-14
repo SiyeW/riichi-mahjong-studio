@@ -201,6 +201,10 @@ class AutoAnalysisPlanTest(unittest.TestCase):
                     self.assertEqual(result["status"], "terminal")
                     self.assertEqual(result["predictions"], cached["predictions"])
                     self.assertEqual(result["context"]["nodeId"], terminal_id)
+                    self.assertEqual(result['context']['sourceNodeId'], start_id)
+                    source_table = result['context']['sourceTable']
+                    self.assertEqual(source_table['phase'], start_node['snapshot']['phase'])
+                    self.assertNotIn('actionHistory', source_table)
                 request.assert_not_called()
             self.assertEqual(cached["status"], "ready")
             self.assertNotIn("context", cached)

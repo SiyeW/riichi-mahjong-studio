@@ -3,7 +3,7 @@ import { backendStoppedState } from './backendStoppedState.ts'
 import { applyModelActivityEvent } from './modelActivityEvent.ts'
 import { analysisResultHasRows } from './useAnalysisSession.ts'
 import { createAnalysisVisitInbox } from './analysisVisitInbox.ts'
-import type { GameTreeNode, GameView } from './contracts/game'
+import type { AnalysisPresentationContext, GameTreeNode, GameView } from './contracts/game'
 import type { PythonEvent, StudioStatus } from './contracts/runtime'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
@@ -157,7 +157,8 @@ export function createPythonEventRouter(options: PythonEventRouterOptions) {
     if (event.type === 'model_activity') {
       const { opponentFailed } = applyModelActivityEvent(options.status, event, options.t('error.unknown'))
       if (opponentFailed) {
-        if (!analysisResultHasRows(options.gameView.opponentAnalysis)) {
+        const context = options.gameView.opponentAnalysis?.context as AnalysisPresentationContext | undefined
+        if (context?.dataState !== 'reading' && !analysisResultHasRows(options.gameView.opponentAnalysis)) {
           options.clearOpponentAnalysisWithoutMotion()
         }
         void options.fetchAnalysisOnce()

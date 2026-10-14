@@ -50,6 +50,7 @@ class StoredRecordExportTests(unittest.TestCase):
                 {'seat': 0, 'extension': [0, .25, 1]}, epoch=0, kind='decision', seat=0)
             game['nodes']['A']['analysisCache'] = {'key': AnalysisReference(storage.results, identity)}
             captured = StoredRecordExport(storage, game, state)
+            game['nodes']['A']['snapshot']['riichiDiscardState'] = 'pending_pause'
             game['nodes']['A']['comment'] = 'after'
             storage.accept_authored(attributes={'A': dict(id='A', children=[], comment='after')})
             storage.move_cursor({'currentNodeId': 'A', **state, 'visibleHands': True})
@@ -62,6 +63,7 @@ class StoredRecordExportTests(unittest.TestCase):
             loaded = read_record_file(directory / 'save.mjstudio')
             try:
                 self.assertEqual(loaded['game']['nodes']['A']['comment'], 'before')
+                self.assertNotIn('riichiDiscardState', loaded['game']['nodes']['A']['snapshot'])
                 self.assertEqual(set(loaded['game']['nodes']['A']['analysisCache']), {'key'})
                 self.assertFalse(loaded['state']['visibleHands'])
                 self.assertEqual(loaded['metadata']['save']['content'], result['contentRevision'])

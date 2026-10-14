@@ -48,6 +48,21 @@ def stored(store, writer, value):
 
 
 class AnalysisReadPresenterTests(unittest.TestCase):
+    def test_cold_stale_result_keeps_its_actual_source_in_the_delivered_presentation(self):
+        with environment() as (store, lane, writer, lock, state, visits, presenter, events, delivered):
+            store.cache.set_budget(1024 * 1024)
+            identity = store.register('saved', fields={'status': [True, 'ready'], 'outputs': [False, None]},
+                                      raw=dict(status='ready', outputs={'extension': [0, 1]}))
+            metadata = dict(cacheStatus='stale', cacheSource={'id': 'old-source', 'displayName': 'Saved source'})
+            with lock:
+                presenter.read(AnalysisReference(store, identity), kind='opponent',
+                               context=dict(cacheEpoch=1, cacheKey='new-source'), metadata=metadata)
+            self.assertTrue(delivered.wait(5))
+            result = events[0]['opponentAnalysis']
+            self.assertEqual(result['cacheSource'], metadata['cacheSource'])
+            self.assertEqual(result['cacheStatus'], 'stale')
+            self.assertEqual(result['context']['dataState'], 'ready')
+            self.assertNotIn('cacheSource', store.hot(identity) or {})
     def test_temporary_capacity_pressure_retries_one_current_read_without_starting_inference(self):
         with environment() as (store, lane, writer, lock, state, visits, presenter, events, delivered):
             value = dict(status='ready', outputs={'extension': [0, .5, 1]})
@@ -143,6 +158,10 @@ class AnalysisReadPresenterTests(unittest.TestCase):
                 self.assertEqual(context['inputMode'], 'full-information')
                 self.assertFalse(session.request_current())
                 self.assertEqual(session.current()['status'], 'loading')
+                predictions.accepts_requests = lambda: True
+                self.assertEqual(session.display_input_mode(state['game']['nodes']['A']), 'public',
+                                 'A saved full-information result overrode the loaded public-only provider')
+                del predictions.accepts_requests
             self.assertTrue(delivered.wait(5))
             self.assertEqual(events[0]['nodeId'], 'T')
             self.assertEqual(events[0]['opponentAnalysis']['status'], 'terminal')

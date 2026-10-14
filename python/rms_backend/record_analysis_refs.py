@@ -1,6 +1,7 @@
 """Read-only node references: metadata queries never load an analysis body."""
 
 import copy
+import json
 
 from .analysis_cache_codec import AnalysisReadError, JsonReference
 
@@ -26,6 +27,14 @@ class AnalysisReference(dict, JsonReference):
 
     def _fields(self):
         return self.store.describe(self.identity)['fields']
+
+    @property
+    def cache_key(self):
+        try:
+            address = json.loads(self.store.describe(self.identity)['slot'])
+        except ValueError:
+            return None
+        return address[2] if isinstance(address, list) and len(address) == 3 else None
 
     @property
     def pending_io(self):

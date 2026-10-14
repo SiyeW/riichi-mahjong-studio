@@ -65,6 +65,15 @@ test('service lifecycle events invalidate every request owner through one route'
   assert.deepEqual(calls.lifecycle, ['reset', 'gameplay', 'navigation'])
 })
 
+test('model failure cannot clear an independent saved-result read', () => {
+  const { route, options, gameView } = createHarness()
+  let clears = 0
+  options.clearOpponentAnalysisWithoutMotion = () => { clears += 1 }
+  gameView.opponentAnalysis = { status: 'loading', context: { dataState: 'reading' } }
+  route({ type: 'model_activity', model: 'opponent_analysis', activityState: 'error', error: 'bad weight' } as PythonEvent)
+  assert.equal(clears, 0)
+})
+
 test('python event routing rejects stale game progress before mutating status', () => {
   const { route, status } = createHarness()
 

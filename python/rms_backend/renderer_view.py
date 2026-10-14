@@ -228,6 +228,14 @@ class RendererView:
             result_info=self.build_result_info(snapshot),
         )
 
+    def build_analysis_table(self, snapshot, seat, input_mode):
+        self.dependencies.sync_snapshot(snapshot)
+        game = self.state.get('game')
+        return table_view.build_table_view(snapshot, controlled_seat=seat,
+            visible_hands=input_mode == 'full-information',
+            match_id=game.get('matchId') if isinstance(game, dict) else None,
+            auto_advance_mode=None, result_info=None, include_history=False)
+
     def _build_match_summary(
         self,
         game: dict[str, Any],

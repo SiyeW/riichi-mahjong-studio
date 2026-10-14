@@ -355,7 +355,7 @@ class AnalysisCacheSourceTest(unittest.TestCase):
             service.STATE["opponentAnalysisEnabled"] = previous_enabled
 
         self.assertEqual(result["cacheStatus"], "stale")
-        self.assertEqual(result["context"], context)
+        self.assertEqual(result["context"], {**context, 'dataState': 'ready'})
         request.assert_not_called()
 
     def test_stale_opponent_cache_starts_current_request_before_returning(self):

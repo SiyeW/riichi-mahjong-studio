@@ -22,7 +22,7 @@ class StoredRecordExport:
         identities = []
         for node_id, node in game['nodes'].items():
             self.game['nodes'][node_id] = {
-                key: value if key == 'snapshot' else copy.deepcopy(value)
+                key: dict(value) if key == 'snapshot' else copy.deepcopy(value)
                 for key, value in node.items() if key not in ('analysisCache', 'opponentAnalysisCache')}
             for field in ('analysisCache', 'opponentAnalysisCache'):
                 for key, reference in node.get(field, {}).items():

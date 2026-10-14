@@ -1899,6 +1899,25 @@ try {
     document.querySelector('.analysis-count-source-row-canvas')?.rmsCountRenderSignature === expected
   ), baselineSignature)
 
+  const sourceFrameContext = await page.evaluate(async () => {
+    const { vm } = window.analysisCheck
+    const original = JSON.parse(JSON.stringify(vm.gameView.opponentAnalysis))
+    const sourceTable = JSON.parse(JSON.stringify(vm.gameView.table))
+    sourceTable.dealer = (sourceTable.dealer + 1) % 4
+    const alias = {
+      ...original, status: 'terminal',
+      context: { ...original.context, gameId: vm.gameView.gameId, nodeId: vm.gameView.currentNodeId,
+        seat: vm.status.controlledSeat, sourceNodeId: 'prediction-before-result', sourceTable },
+    }
+    vm.stageOpponentAnalysisForView(alias, { withoutMotion: true })
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    const observed = { source: vm.displayedAnalysisTable?.dealer, live: vm.gameView.table.dealer }
+    vm.stageOpponentAnalysisForView(original, { withoutMotion: true })
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    return observed
+  })
+  assert.notEqual(sourceFrameContext.source, sourceFrameContext.live, 'terminal prediction keeps its source-table context, not the settled live table')
+
   // Backward frame navigation restores a pending discard to its hand. The
   // returning tile must remain hidden in the new hand until the river ghost
   // reaches it; otherwise it flashes in the former gap and duplicates itself.

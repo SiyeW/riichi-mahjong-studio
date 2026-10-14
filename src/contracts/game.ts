@@ -303,6 +303,12 @@ export interface AnalysisViewToken {
   opponentEpoch: number
 }
 
+export interface AnalysisPresentationContext extends Record<string, unknown> {
+  sourceNodeId?: string | null
+  sourceTable?: TableState | null
+  dataState?: 'reading' | 'ready' | 'failed' | 'missing'
+}
+
 export interface GameView {
   viewToken?: AnalysisViewToken | null
   gameId: string | null

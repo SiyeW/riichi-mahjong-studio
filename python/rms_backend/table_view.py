@@ -59,6 +59,7 @@ def build_table_view(
     match_id,
     auto_advance_mode,
     result_info,
+    include_history=True,
 ):
     last_drawn_seat, last_drawn_tile = resolve_display_last_draw_state(snapshot)
     hands_view = []
@@ -78,7 +79,7 @@ def build_table_view(
     for seat, hand in enumerate(snapshot["hands"]):
         hands_view.append(hand[:] if seat == controlled_seat or visible_hands or seat in revealed_seats else ["?"] * len(hand))
 
-    return {
+    view = {
         "matchId": match_id,
         "bakaze": snapshot["bakaze"],
         "kyoku": snapshot["kyoku"],
@@ -101,7 +102,6 @@ def build_table_view(
         "hands": hands_view,
         "rivers": copy.deepcopy(snapshot["rivers"]),
         "melds": copy.deepcopy(snapshot["melds"]),
-        "actionHistory": copy.deepcopy(snapshot.get("actionHistory", [])),
         "riichiDeclared": copy.deepcopy(snapshot.get("riichiDeclared", [False] * 4)),
         "riichiAccepted": copy.deepcopy(snapshot.get("riichiAccepted", [False] * 4)),
         "ippatsuEligible": copy.deepcopy(snapshot.get("ippatsuEligible", [False] * 4)),
@@ -115,6 +115,9 @@ def build_table_view(
         "lastAction": copy.deepcopy(snapshot["lastAction"]),
         "resultInfo": result_info,
     }
+    if include_history:
+        view['actionHistory'] = copy.deepcopy(snapshot.get('actionHistory', []))
+    return view
 
 
 def build_match_summary(game, snapshot):
