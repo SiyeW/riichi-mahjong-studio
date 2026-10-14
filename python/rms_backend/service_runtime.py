@@ -54,6 +54,11 @@ class ServiceRuntime:
             if self._record_codec is not None:
                 self._record_codec.close()
 
+    def codec_metrics(self):
+        with self._codec_owner:
+            lane = self._record_codec
+            return (lane.client.pid, lane.metrics()) if lane is not None else (None, {})
+
     def add_shutdown(self, callback: Callable[[], None]) -> None:
         if self._closed:
             raise RuntimeError("service runtime is already closed")

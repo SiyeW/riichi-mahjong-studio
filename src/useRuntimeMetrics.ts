@@ -28,13 +28,16 @@ export function useRuntimeMetrics(t: Translate) {
       { label: 'Electron', value: formatMemorySize(metrics.electronBytes) },
       { label: t('status.pythonBackend'), value: formatMemorySize(metrics.backendBytes) },
       { label: t('status.engines', { count: engineCount }), value: formatMemorySize(metrics.engineBytes) },
+      { label: t('status.recordCodec'), value: formatMemorySize(metrics.codecBytes) },
       { label: t('status.systemTotal'), value: formatMemorySize(metrics.systemTotalBytes) },
+      ...(metrics.recordCache ? [
+        { label: t('status.analysisCache'), value: `${formatMemorySize(metrics.recordCache.residentBytes)} / ${formatMemorySize(metrics.recordCache.budgetBytes)}` },
+        { label: t('status.cacheProtected'), value: formatMemorySize(metrics.recordCache.protectedBytes) },
+        { label: t('status.cachePending'), value: `${metrics.recordCache.pendingResults} · ${formatMemorySize(metrics.recordCache.encodedPendingBytes)}` },
+        ...(metrics.recordCache.error ? [{ label: t('status.recoveryError'), value: metrics.recordCache.error }] : []),
+      ] : []),
     ]
   })
-
-  const runtimeMemoryDetail = computed(() => (
-    runtimeMemoryRows.value.map((row) => `${row.label}：${row.value}`).join('\n')
-  ))
 
   async function refreshRuntimeMetrics() {
     if (!window.studioAPI?.getRuntimeMetrics || runtimeMetricsRequestInFlight) return
@@ -67,7 +70,6 @@ export function useRuntimeMetrics(t: Translate) {
   return {
     runtimeMetrics,
     runtimeMemoryRows,
-    runtimeMemoryDetail,
     formatMemorySize,
     startRuntimeMetrics,
   }

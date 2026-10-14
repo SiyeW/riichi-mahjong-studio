@@ -27,6 +27,7 @@ function buildRuntimeMetrics({
   const electronBytes = collectElectronPrivateBytes(processMetrics)
   const backendBytes = Math.max(0, Number(backendMetrics?.backendPrivateBytes) || 0)
   const engineBytes = Math.max(0, Number(backendMetrics?.enginePrivateBytes) || 0)
+  const codecBytes = Math.max(0, Number(backendMetrics?.codecPrivateBytes) || 0)
   const backendAvailable = Boolean(backendMetrics)
   const availableKilobytes = Number.isFinite(Number(systemMemory.available))
     ? Number(systemMemory.available)
@@ -34,11 +35,13 @@ function buildRuntimeMetrics({
 
   return {
     applicationBytes: backendAvailable
-      ? electronBytes + backendBytes + engineBytes
+      ? electronBytes + backendBytes + engineBytes + codecBytes
       : null,
     electronBytes,
     backendBytes: backendAvailable ? backendBytes : null,
     engineBytes: backendAvailable ? engineBytes : null,
+    codecBytes: backendAvailable ? codecBytes : null,
+    recordCache: backendMetrics?.recordCache || null,
     backendAvailable,
     electronProcessCount: Array.isArray(processMetrics) ? processMetrics.length : 0,
     engineProcessCount: backendAvailable

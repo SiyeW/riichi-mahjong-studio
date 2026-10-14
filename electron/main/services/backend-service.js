@@ -59,7 +59,7 @@ function createBackendService(options = {}) {
   backendProcess.onEvent(event => {
     backendSession.handleEvent(event)
     onEvent?.(event.type === 'service_stopped'
-      ? { ...event, hasCheckpoint: backendSession.hasCheckpoint() } : event)
+      ? { ...event, hasCheckpoint: backendSession.hasRecovery() } : event)
   })
   return {
     backendProcess: { onEvent(callback) { onEvent = callback } },
@@ -83,6 +83,10 @@ function createBackendService(options = {}) {
       restoreRecordRecovery: backendSession.restoreStartup,
       getRecordRuntime: backendSession.getRuntime,
       updateRecordRetention: backendSession.updateRetention,
+      async updateRecordPreferences(records) {
+        await backendSession.updateRetention()
+        if (!backendSession.needsRecovery()) await backendSession.sendRequest('record_preferences', records)
+      },
       describeEngine(profile) {
         return backendSession.sendRequest('describe_engine', profile, 30_000)
       },

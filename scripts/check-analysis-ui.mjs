@@ -236,6 +236,11 @@ try {
             electronBytes: 512 * 1024 * 1024,
             backendBytes: 256 * 1024 * 1024,
             engineBytes: 0,
+            codecBytes: 32 * 1024 * 1024,
+            applicationBytes: 800 * 1024 * 1024,
+            recordCache: { residentBytes: 16 * 1024 * 1024, budgetBytes: 32 * 1024 * 1024,
+              protectedBytes: 2 * 1024 * 1024, protectedOvershootBytes: 0, encodedPendingBytes: 0,
+              pendingResults: 0, queuedWrites: 0, error: null },
             engineProcessCount: 0,
             systemTotalBytes: 16 * 1024 * 1024 * 1024,
             systemAvailableBytes: 8 * 1024 * 1024 * 1024,
@@ -324,6 +329,32 @@ try {
     await page.screenshot({ path: path.resolve(process.env.RMS_UI_SCREENSHOT), fullPage: true })
   }
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
+  await page.waitForFunction(() => document.querySelectorAll('.footer-memory-status .resource-track').length === 3)
+  const cacheMeter = await page.locator('.resource-track').first().evaluate(track => ({
+    width: track.getBoundingClientRect().width, height: track.getBoundingClientRect().height,
+    fill: getComputedStyle(track.firstElementChild).transform,
+  }))
+  assert.ok(cacheMeter.width > cacheMeter.height && cacheMeter.height > 0)
+  assert.equal(cacheMeter.fill, 'matrix(0.5, 0, 0, 1, 0, 0)')
+  for (const [width, scale] of [[1120, 1], [1120, 1.75], [1800, 1]]) {
+    await page.setViewportSize({ width, height: 1000 })
+    await page.evaluate(scale => { window.analysisCheck.vm.settings.display.uiScale = scale }, scale)
+    const footer = await page.locator('.footer').evaluate(element => ({ client: element.clientWidth, scroll: element.scrollWidth }))
+    assert.ok(footer.scroll <= footer.client + 1, 'resource meters must not overflow the footer')
+  }
+  await page.setViewportSize({ width: 1400, height: 1000 })
+  await page.evaluate(() => { window.analysisCheck.vm.settings.display.uiScale = 1 })
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  const cachePolicySelect = page.locator('.settings-modal select').filter({ has: page.locator('option[value="custom"]') })
+  await cachePolicySelect.selectOption('custom')
+  const cacheBudget = page.locator('.settings-modal input[type="number"][min="1"]')
+  await cacheBudget.fill('0')
+  assert.equal(await page.locator('.settings-modal .settings-btn-primary').isDisabled(), true)
+  await cacheBudget.fill('64')
+  assert.equal(await page.locator('.settings-modal .settings-btn-primary').isDisabled(), false)
+  await page.locator('.settings-modal .settings-btn-primary').click()
+  await page.locator('.settings-modal').waitFor({ state: 'hidden' })
+  assert.equal(await page.evaluate(() => window.analysisCheck.settingsSaves.at(-1).records.analysisCacheMiB), 64)
   uiChecks: {
   if (!performanceOnly) {
   await page.evaluate(() => {
@@ -1257,8 +1288,8 @@ try {
   })
 
   // The visible retry control must restart the backend, not repeat bootstrap reads.
-  for (const hasCheckpoint of [true, false]) {
-    await page.evaluate(hasCheckpoint => {
+  for (const hasRecovery of [true, false]) {
+    await page.evaluate(hasRecovery => {
       const check = window.analysisCheck
       check.recoverySavedState = JSON.parse(JSON.stringify(check.vm.status))
       check.recoverySavedView = JSON.parse(JSON.stringify(check.vm.gameView))
@@ -1267,11 +1298,11 @@ try {
         check.restartCalls++
         return new Promise((resolve, reject) => { check.finishRestart = resolve; check.failRestart = reject })
       }
-      check.vm.handlePythonEvent({ type: 'service_stopped', hasCheckpoint })
-    }, hasCheckpoint)
+      check.vm.handlePythonEvent({ type: 'service_stopped', hasCheckpoint: hasRecovery })
+    }, hasRecovery)
     const retry = page.locator('.startup-banner button')
-    assert.equal(await retry.textContent().then(text => text.trim()), hasCheckpoint ? '恢复对局' : '重新启动')
-    if (!hasCheckpoint && process.env.RMS_RECOVERY_SCREENSHOT) {
+    assert.equal(await retry.textContent().then(text => text.trim()), hasRecovery ? '恢复对局' : '重新启动')
+    if (!hasRecovery && process.env.RMS_RECOVERY_SCREENSHOT) {
       await page.screenshot({ path: process.env.RMS_RECOVERY_SCREENSHOT })
     }
     await retry.click()
@@ -1281,16 +1312,16 @@ try {
     await page.waitForFunction(() => !document.querySelector('.startup-banner button').disabled)
     assert.match(await page.locator('.startup-banner').textContent(), /test restart failure/)
     await retry.click()
-    await page.evaluate(hasCheckpoint => {
+    await page.evaluate(hasRecovery => {
       const check = window.analysisCheck
-      const state = hasCheckpoint ? check.recoverySavedState : { ...check.recoverySavedState, gameLoaded: false }
-      const view = hasCheckpoint ? check.recoverySavedView : { ...check.recoverySavedView,
+      const state = hasRecovery ? check.recoverySavedState : { ...check.recoverySavedState, gameLoaded: false }
+      const view = hasRecovery ? check.recoverySavedView : { ...check.recoverySavedView,
         gameId: null, matchId: null, currentNodeId: null, table: null, tree: null,
         nodeComment: '', legalActions: [], analysis: null, opponentAnalysis: null, pendingReview: null }
       check.vm.handlePythonEvent({ type: 'service_restored', state, view })
-      if (!hasCheckpoint && (check.vm.status.gameLoaded || check.vm.gameView.currentNodeId)) throw new Error('Empty restart retained the old game')
+      if (!hasRecovery && (check.vm.status.gameLoaded || check.vm.gameView.currentNodeId)) throw new Error('Empty restart retained the old game')
       check.finishRestart({ ok: true })
-    }, hasCheckpoint)
+    }, hasRecovery)
     await page.waitForFunction(() => !document.querySelector('.startup-banner'))
     assert.equal(await page.evaluate(() => window.analysisCheck.restartCalls), 2)
     await page.evaluate(() => {

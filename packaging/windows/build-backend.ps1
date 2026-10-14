@@ -50,6 +50,7 @@ foreach ($Path in @($BackendRoot, $WorkRoot, $SpecRoot)) {
     --paths (Join-Path $ProjectRoot 'python') `
     --paths (Join-Path $ProjectRoot 'python\vendor') `
     --add-binary "$SqliteLibrary;." `
+    --add-data "$(Join-Path $ProjectRoot 'electron\record-cache-policy.json');electron" `
     --hidden-import rms_backend.record_workspace `
     --hidden-import rms_backend.engine_process_client `
     --hidden-import rms_backend.rule_kernel `

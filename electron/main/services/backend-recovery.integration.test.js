@@ -10,9 +10,11 @@ const { createRecordWorkflow } = require('./record-workflow')
 const { createGameFileStore } = require('../state/game-file-store')
 const { encodeGameRecord, decodeGameRecord } = require('../state/game-record-codec')
 const { compactAnalysisCaches } = require('../state/analysis-cache-storage')
+const { loadSettings, saveSettings } = require('../state/settings')
 
 const root = path.resolve(__dirname, '../../..')
 const python = path.join(root, '.conda-backend', process.platform === 'win32' ? 'python.exe' : 'bin/python')
+const packagedBackend = process.env.RMS_TEST_BACKEND_EXECUTABLE || null
 const supported = { skip: !fs.existsSync(python), timeout: 60_000 }
 const cleanupOwners = new WeakMap()
 
@@ -31,8 +33,9 @@ function runtime(context, directory) {
     owners.directories.push(directory)
   }
   let child
-  const backend = createBackendProcess({ name: 'record-integration', pythonExecutable: python,
-    scriptPath: null, args: ['-m', 'rms_backend'], cwd: path.join(root, 'python'),
+  const backend = createBackendProcess({ name: 'record-integration', pythonExecutable: packagedBackend || python,
+    scriptPath: null, args: packagedBackend ? [] : ['-m', 'rms_backend'],
+    cwd: packagedBackend ? path.dirname(packagedBackend) : path.join(root, 'python'),
     env: { RMS_PORTABLE_DIR: directory, RMS_BACKEND_CONFIG: path.join(directory, 'config.json') },
     spawnProcess(...args) { child = spawn(...args); return child },
   })
@@ -184,4 +187,29 @@ test('queued frontend scopes reject old sessions and implicit actions in superse
   await assert.rejects(first.session.sendRequest('set_node_comment', { nodeId: created.view.currentNodeId,
     comment: 'old queued edit', recordViewScope: scope }), /SCOPE_CHANGED/)
   assert.notEqual((await first.session.sendRequest('get_game_view')).view.nodeComment, 'old queued edit')
+})
+
+test('cache preference applies live and survives exit, new backend and reread from its actual config', supported, async context => {
+  const first = runtime(context)
+  const options = { portableDir: first.directory,
+    env: { RMS_BACKEND_CONFIG: path.join(first.directory, 'config.json') } }
+  const settings = loadSettings(options)
+  settings.records.analysisCacheMiB = 64
+  saveSettings(settings, options)
+  await first.session.sendRequest('import_game_record', { record: recordFixture(first.directory) })
+  let metrics = await first.session.sendRequest('get_runtime_metrics')
+  assert.equal(metrics.metrics.recordCache.budgetBytes, 64 * 1024 * 1024)
+  settings.records.analysisCacheMiB = 1
+  saveSettings(settings, options)
+  await first.session.sendRequest('record_preferences', settings.records)
+  metrics = await first.session.sendRequest('get_runtime_metrics')
+  assert.equal(metrics.metrics.recordCache.budgetBytes, 1024 * 1024)
+  await first.session.prepareClose(true)
+  await first.session.confirmClose()
+  await first.session.shutdown()
+  const second = runtime(context, first.directory)
+  await second.session.restoreStartup()
+  metrics = await second.session.sendRequest('get_runtime_metrics')
+  assert.equal(metrics.metrics.recordCache.budgetBytes, 1024 * 1024)
+  assert.equal(loadSettings(options).records.analysisCacheMiB, 1)
 })

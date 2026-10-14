@@ -68,7 +68,7 @@ test('crash keeps the main claim and restores no data from a dead process', asyn
   const id = session.getRuntime().workspaceId
   backend.running = false
   session.handleEvent({ type: 'service_stopped' })
-  assert.equal(session.hasCheckpoint(), true)
+  assert.equal(session.hasRecovery(), true)
   await assert.rejects(session.sendRequest('get_game_view'), /recovery/)
   calls.length = 0
   await session.restart()
@@ -84,7 +84,7 @@ test('failed restore remains retryable and never silently becomes an empty recor
   session.handleEvent({ type: 'service_stopped' })
   backend.failRestore = true
   await assert.rejects(session.restart(), /restore failed/)
-  assert.equal(session.hasCheckpoint(), true)
+  assert.equal(session.hasRecovery(), true)
   await assert.rejects(session.sendRequest('create_game'), /recovery/)
   backend.failRestore = false
   await session.restart()
@@ -121,7 +121,7 @@ test('empty close/crash can restart empty without manufacturing a recovery recor
   assert.equal(calls.includes('record_restore'), false)
   await session.sendRequest('create_game')
   await session.sendRequest('close_game')
-  assert.equal(session.hasCheckpoint(), false)
+  assert.equal(session.hasRecovery(), false)
   session.handleEvent({ type: 'service_stopped' })
   const response = await session.restart()
   assert.equal(response.state.gameLoaded, false)

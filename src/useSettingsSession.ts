@@ -100,6 +100,7 @@ export function useSettingsSession(t: Translate) {
     },
     records: {
       saveRecoveryOnExit: true,
+      analysisCacheMiB: null,
     },
     audio: {
       volume: 50,

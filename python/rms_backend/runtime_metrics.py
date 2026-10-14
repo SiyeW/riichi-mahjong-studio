@@ -28,13 +28,14 @@ def _private_memory_bytes(process: Any) -> int:
         return 0
 
 
-def collect_runtime_memory_metrics() -> dict[str, int]:
+def collect_runtime_memory_metrics(*, codec_pid=None) -> dict[str, int]:
     if psutil is None:
         raise RuntimeError("Runtime memory metrics require psutil.")
     root = psutil.Process(os.getpid())
     backend_private_bytes = _private_memory_bytes(root)
     engine_private_bytes = 0
     engine_process_count = 0
+    codec_private_bytes = 0
     seen = {root.pid}
     try:
         descendants = root.children(recursive=True)
@@ -47,10 +48,14 @@ def collect_runtime_memory_metrics() -> dict[str, int]:
         private_bytes = _private_memory_bytes(process)
         if private_bytes <= 0:
             continue
-        engine_private_bytes += private_bytes
-        engine_process_count += 1
+        if process.pid == codec_pid:
+            codec_private_bytes += private_bytes
+        else:
+            engine_private_bytes += private_bytes
+            engine_process_count += 1
     return {
         "backendPrivateBytes": backend_private_bytes,
         "enginePrivateBytes": engine_private_bytes,
         "engineProcessCount": engine_process_count,
+        "codecPrivateBytes": codec_private_bytes,
     }

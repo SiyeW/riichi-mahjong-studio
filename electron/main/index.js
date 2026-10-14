@@ -129,7 +129,7 @@ function openMainWindow() {
 
 function registerIpcHandlers() {
   registerStartupEngineRestore(ipcMain, () => engineIpcController.restoreLoadedProfiles())
-  registerSettingsIpc(ipcMain, appOptions, backend.backendGateway.updateRecordRetention)
+  registerSettingsIpc(ipcMain, appOptions, next => backend.backendGateway.updateRecordPreferences(next.records))
   registerApplicationIpc({
     ipcMain,
     appOptions,

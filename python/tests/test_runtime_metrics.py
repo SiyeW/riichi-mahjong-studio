@@ -47,6 +47,15 @@ class RuntimeMemoryMetricTests(unittest.TestCase):
         self.assertEqual(metrics["enginePrivateBytes"], 500)
         self.assertEqual(metrics["engineProcessCount"], 2)
 
+    def test_codec_process_is_not_counted_as_an_engine(self):
+        root = FakeProcess(10, 100, [FakeProcess(11, 200), FakeProcess(12, 300)])
+        with mock.patch.object(runtime_metrics.os, 'getpid', return_value=10), \
+             mock.patch.object(runtime_metrics.psutil, 'Process', return_value=root):
+            metrics = runtime_metrics.collect_runtime_memory_metrics(codec_pid=12)
+        self.assertEqual(metrics['codecPrivateBytes'], 300)
+        self.assertEqual(metrics['enginePrivateBytes'], 200)
+        self.assertEqual(metrics['engineProcessCount'], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

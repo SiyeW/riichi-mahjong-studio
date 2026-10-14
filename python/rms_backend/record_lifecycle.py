@@ -91,6 +91,8 @@ class RecordLifecycle:
             result = self.resources.runtime()
         elif command == 'record_runtime':
             result = self.resources.runtime()
+        elif command == 'record_preferences':
+            result = {'budgetBytes': self.resources.set_cache_preference(data.get('analysisCacheMiB'))}
         else:
             response = self.dispatcher(request_id, command, data)
             return {**response, 'recordRuntime': self.resources.runtime()}

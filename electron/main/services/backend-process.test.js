@@ -94,6 +94,18 @@ test('multibyte text survives arbitrary stdout chunk boundaries', async () => {
   backend.stop()
 })
 
+test('prediction events are forwarded without duplicating their payload onto the main diagnostic stream', async t => {
+  const { backend, children, events } = fixture()
+  backend.start()
+  const output = t.mock.method(process.stdout, 'write', () => true)
+  const event = { type: 'analysis_ready', analysis: { values: Array(2000).fill(.25) } }
+  children[0].output(event)
+  assert.deepEqual(events, [event])
+  assert.equal(output.mock.callCount(), 0)
+  output.mock.restore()
+  await backend.stop()
+})
+
 test('large split replies and subsequent lines are delivered once and in order', async () => {
   const { backend, children, events } = fixture()
   const request = backend.sendRequest('record')

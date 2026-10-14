@@ -225,7 +225,7 @@ function createBackendSession(backend, options = {}) {
   return { sendRequest, captureSave, writeSave, acknowledgeSave, abortSave, prepareClose, cancelClose,
     confirmClose, restoreStartup, restart, shutdown, handleEvent,
     getRuntime: () => runtime, updateRetention: workspaces.updateRetention,
-    needsRecovery: () => stopped, hasCheckpoint: () => Boolean(workspaces.getActive()) }
+    needsRecovery: () => stopped, hasRecovery: () => Boolean(workspaces.getActive()) }
 }
 
 module.exports = { createBackendSession }

@@ -17,6 +17,7 @@ class RecordWorkspaceWriter:
         self._closing = False
         self._health = None
         self._authored_error = None
+        self._maintenance = {}
         self.ready = Future()
         self.closed = Future()
         self._thread = Thread(target=self._run, args=(create,), name='record-workspace-writer', daemon=True)
@@ -79,12 +80,12 @@ class RecordWorkspaceWriter:
                 future.set_exception(error)
             else:
                 future.set_result(result)
-                dirty_bytes += len(kwargs.get('data') or b'')
+                dirty_bytes += workspace.take_written_bytes()
                 # Maintenance is owned and off game/renderer locks. This caps
                 # admitted bytes between calls, NOT SQLite's internal I/O time.
                 if dirty_bytes >= 4 * 1024 * 1024:
                     try:
-                        workspace.maintain()
+                        self._maintenance = workspace.maintain()
                         dirty_bytes = 0
                     except Exception as error:
                         self._health = str(error)
@@ -104,7 +105,8 @@ class RecordWorkspaceWriter:
     def metrics(self):
         with self._condition:
             return {'queuedWrites': len(self._urgent) + len(self._bodies),
-                    'error': self._authored_error or self._health}
+                    'error': self._authored_error or self._health,
+                    'wal': dict(self._maintenance)}
 
     def close(self):
         with self._condition:

@@ -70,6 +70,7 @@ export interface StudioSettings {
   }
   records: {
     saveRecoveryOnExit: boolean
+    analysisCacheMiB: number | null
   }
   audio: {
     volume: number

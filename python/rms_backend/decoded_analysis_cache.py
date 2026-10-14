@@ -28,7 +28,7 @@ class DecodedAnalysisCache:
     values are protected until the store has an owned reloadable encoding.
     """
 
-    def __init__(self, budget=32 * 1024 * 1024):
+    def __init__(self, budget):
         self._lock = RLock()
         self._entries = OrderedDict()
         self._resident = self._protected = 0

@@ -1,6 +1,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { writeFileAtomically } = require('./atomic-file')
+const recordCachePolicy = require('../../record-cache-policy.json')
 const { normalizeEngineSettings } = require('./engine-registry')
 const {
   discoverEnginePackages,
@@ -48,7 +49,14 @@ const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
   tablePosition: 'center',
   workspaceLayout: DEFAULT_WORKSPACE_LAYOUT,
 })
-const DEFAULT_RECORD_SETTINGS = Object.freeze({ saveRecoveryOnExit: true })
+const DEFAULT_RECORD_SETTINGS = Object.freeze({ saveRecoveryOnExit: true, analysisCacheMiB: null })
+
+function normalizeRecordSettings(value = {}) {
+  const budget = value?.analysisCacheMiB
+  return { saveRecoveryOnExit: value?.saveRecoveryOnExit !== false,
+    analysisCacheMiB: Number.isInteger(budget) && budget >= recordCachePolicy.minimumMiB
+      && budget <= recordCachePolicy.maximumMiB ? budget : null }
+}
 const DEFAULT_AUDIO_SETTINGS = Object.freeze({ volume: 50, soundPackId: '' })
 
 function normalizeTrainingMode(mode) {
@@ -265,8 +273,7 @@ function loadSettings(options = {}) {
         ...normalizeDisplaySettings(parsed.display),
       },
       records: {
-        ...defaults.records,
-        ...(parsed.records || {}),
+        ...normalizeRecordSettings(parsed.records),
       },
       audio: normalizeAudioSettings(parsed.audio, soundPackCatalog),
       engines,
@@ -312,6 +319,7 @@ function saveSettings(settings, options = {}) {
   if (settings?.display) {
     settings.display = normalizeDisplaySettings(settings.display)
   }
+  settings.records = normalizeRecordSettings(settings.records)
   const engineCatalog = discoverEnginePackages(options)
   const soundPackCatalog = discoverSoundPacks(options)
   settings.engines = normalizeEngineSettings(settings.engines, legacyModels, engineCatalog)
@@ -353,6 +361,7 @@ module.exports = {
   migrateSettings,
   normalizeAudioSettings,
   normalizeDisplaySettings,
+  normalizeRecordSettings,
   normalizeTrainingMode,
   normalizeWorkspaceLayout,
   saveSettings,

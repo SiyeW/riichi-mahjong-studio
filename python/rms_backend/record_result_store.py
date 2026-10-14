@@ -20,6 +20,7 @@ from .record_archive import PortableBody
 from .record_codec_packets import result_packet
 from .record_binary import RESULT_LIMIT
 from .record_body_backing import FileSpanSource, RescueBodyBacking
+from .record_cache_settings import cache_budget_bytes
 
 
 @dataclass
@@ -57,10 +58,10 @@ class ResultVersion:
 class RecordResultStore:
     """Metadata methods are short; read/encode/write waits are explicitly off-lock."""
 
-    def __init__(self, identity, scheduler, writer, *, schemas=(), budget=32 * 1024 * 1024):
+    def __init__(self, identity, scheduler, writer, *, schemas=(), budget=None):
         self.identity, self.scheduler, self.writer = identity, scheduler, writer
         self.schemas = list(schemas)
-        self.cache = DecodedAnalysisCache(budget)
+        self.cache = DecodedAnalysisCache(cache_budget_bytes(None) if budget is None else budget)
         self._lock = RLock()
         self._settled = Condition(self._lock)
         self._versions, self._slots, self._epochs = {}, {}, {}
@@ -68,11 +69,12 @@ class RecordResultStore:
         self._durable_schema_count = 0
         self._closed = False
         self._clears, self._clear_failures = {}, set()
+        self._persistence_failures = {}
         self._orphans = OrderedDict()
         self._source_locations = {}
 
     @classmethod
-    def restore(cls, identity, scheduler, writer, *, index=None, budget=32 * 1024 * 1024):
+    def restore(cls, identity, scheduler, writer, *, index=None, budget=None):
         """Indexed metadata only; no BLOB SELECT, body decode or helper startup."""
         workspace = writer.ready.result()
         index = workspace.restore_index() if index is None else index
@@ -303,6 +305,8 @@ class RecordResultStore:
                                             expected_body=version.previous_body, **kwargs)
         except Exception as error:
             version.persistence_error = error
+            with self._lock:
+                self._persistence_failures[version.identity] = str(error)
             durable.set_exception(error)
             with self._settled:
                 self._settled.notify_all()
@@ -313,10 +317,12 @@ class RecordResultStore:
             with self._lock:
                 version.persistence_error = error
                 if error is not None:
+                    self._persistence_failures[version.identity] = str(error)
                     durable.set_exception(error)
                     self._settled.notify_all()
                     return  # Retain encoded bytes and admission capacity for retry/rescue.
                 workspace = self.writer.ready.result()
+                self._persistence_failures.pop(version.identity, None)
                 version.portable = PortableBody(length, digest,
                                                 lambda: iter((workspace.read_body(body_id),)))
                 version.read = lambda: workspace.read_body(body_id)
@@ -495,6 +501,7 @@ class RecordResultStore:
             for version in retired:
                 self._orphans.pop(version.identity)
                 self._versions.pop(version.identity)
+                self._persistence_failures.pop(version.identity, None)
                 self.cache.discard(version.identity)
                 if version.encoded is not None:
                     self._encoded_pending -= len(version.encoded)
@@ -611,10 +618,12 @@ class RecordResultStore:
 
     def metrics(self):
         with self._lock:
+            writer = self.writer.metrics()
             return {**self.cache.metrics(), 'encodedPendingBytes': self._encoded_pending,
                     'failedClears': len(self._clear_failures),
                     'versions': len(self._versions), 'orphanVersions': len(self._orphans),
-                    **self.writer.metrics()}
+                    **writer, 'error': writer['error'] or next(iter(self._persistence_failures.values()), None)
+                    or ('Analysis cache deletion could not be persisted.' if self._clear_failures else None)}
 
     def close(self):
         with self._lock:
@@ -643,6 +652,7 @@ class RecordResultStore:
                 if version.rescue_backing is not None:
                     version.rescue_backing.close()
             self._versions.clear()
+            self._persistence_failures.clear()
             self._slots.clear()
             self._orphans.clear()
             self._encoded_pending = 0

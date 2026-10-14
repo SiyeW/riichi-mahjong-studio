@@ -126,29 +126,6 @@
   outline-offset: calc(0.125rem * var(--ui-scale));
 }
 
-.footer-memory-status {
-  position: relative;
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  margin-left: auto;
-  gap: calc(0.5rem * var(--chrome-scale));
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: default;
-  outline: none;
-}
-
-.footer-memory-status:focus-visible {
-  color: var(--text-main);
-}
-
-.footer-memory-separator {
-  color: rgba(213, 232, 228, 0.34);
-}
-
 .ui-hover-tooltip {
   position: absolute;
   z-index: 40;
@@ -203,8 +180,7 @@
   text-align: right;
 }
 
-.footer-model-tooltip,
-.footer-memory-tooltip {
+.footer-model-tooltip {
   opacity: 0;
   visibility: hidden;
 }
@@ -217,18 +193,6 @@
 
 .footer-model-indicator:hover .footer-model-tooltip,
 .footer-model-indicator:focus-within .footer-model-tooltip {
-  opacity: 1;
-  visibility: visible;
-}
-
-.footer-memory-tooltip {
-  right: 0;
-  bottom: calc(100% + 0.55rem * var(--chrome-scale));
-  min-width: calc(17rem * var(--chrome-scale));
-}
-
-.footer-memory-status:hover .footer-memory-tooltip,
-.footer-memory-status:focus-visible .footer-memory-tooltip {
   opacity: 1;
   visibility: visible;
 }

@@ -46,11 +46,24 @@ export interface StudioStatus {
   autoAnalysis: AutoAnalysisStatus
 }
 
+export interface RecordCacheMetrics {
+  residentBytes: number
+  budgetBytes: number
+  protectedBytes: number
+  protectedOvershootBytes: number
+  encodedPendingBytes: number
+  pendingResults: number
+  queuedWrites: number
+  error: string | null
+}
+
 export interface RuntimeMetrics {
   applicationBytes: number | null
   electronBytes: number
   backendBytes: number | null
   engineBytes: number | null
+  codecBytes?: number | null
+  recordCache?: RecordCacheMetrics | null
   backendAvailable: boolean
   electronProcessCount: number
   engineProcessCount: number | null

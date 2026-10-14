@@ -3,12 +3,35 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from rms_backend.record_workspace_lease import WorkspaceLease
 from rms_backend.record_workspace_writer import RecordWorkspaceWriter
+from rms_backend.record_workspace import RecordWorkspace
 
 
 class RecordWorkspaceWriterTests(unittest.TestCase):
+    def test_authored_and_imported_input_bytes_trigger_off_lock_maintenance(self):
+        with tempfile.TemporaryDirectory() as directory:
+            actual = RecordWorkspace.maintain
+            with patch.object(RecordWorkspace, 'maintain', autospec=True, side_effect=actual) as maintain:
+                writer = RecordWorkspaceWriter(Path(directory) / 'workspace.sqlite', 'test', create=True)
+                try:
+                    writer.ready.result(3)
+                    text = 'x' * (4 * 1024 * 1024)
+                    writer.submit('authored_delta', 1, metadata={'game:comment': text}).result(5)
+                    writer.submit('metadata').result(5)  # Drain maintenance after the write's durable receipt.
+                    self.assertEqual(maintain.call_count, 1)
+                    writer.submit('adopt_sources', [dict(version='input', slot='slot', epoch=0,
+                        summary={'input': True}, input={'extension': text})]).result(5)
+                    writer.submit('metadata').result(5)
+                    self.assertEqual(maintain.call_count, 2)
+                    metrics = writer.metrics()['wal']
+                    self.assertIn('pendingFrames', metrics)
+                    self.assertGreaterEqual(metrics['allocatedBytes'], metrics['pendingFrames'])
+                finally:
+                    writer.close()
+
     def test_live_writer_lease_rejects_a_second_owner_and_releases_after_close(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'workspace.sqlite'

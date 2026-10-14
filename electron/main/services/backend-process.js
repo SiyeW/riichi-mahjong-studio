@@ -167,9 +167,9 @@ function createBackendProcess({
       process.stdout.write(`[${name}] ${line}\n`)
       return
     }
-    if (!payload || typeof payload !== 'object' || !('request_id' in payload)) {
-      process.stdout.write(`[${name}] ${line}\n`)
-    }
+    // Structured events are data, not diagnostics. In particular, printing an
+    // entire prediction for every visited frame duplicates megabytes of IPC
+    // on main's stdout/IDE terminal. Forward the event exactly once below.
     if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return
     try {
       const requestId = payload?.request_id

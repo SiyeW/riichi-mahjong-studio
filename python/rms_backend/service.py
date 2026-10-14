@@ -760,11 +760,21 @@ def _dispatch_record_command(request_id, command, payload):
     return STATEFUL_COMMANDS.dispatch(request_id, command, payload)
 
 
+def _collect_runtime_metrics():
+    codec_pid, queue = SERVICE_RUNTIME.codec_metrics()
+    metrics = runtime_metrics.collect_runtime_memory_metrics(codec_pid=codec_pid)
+    lifecycle = RECORD_LIFECYCLE
+    if lifecycle is not None:
+        metrics['recordCache'] = {**lifecycle.resources.cache_metrics(),
+            'pendingResults': queue.get('backgroundReserved', 0) + queue.get('foregroundReserved', 0)}
+    return metrics
+
+
 COMMAND_TRANSPORT = command_transport.CommandTransport(
     state_lock=_STATE_LOCK,
     view_builder=VIEW_BUILDER,
     engine_management=ENGINE_MANAGEMENT,
-    collect_runtime_metrics=runtime_metrics.collect_runtime_memory_metrics,
+    collect_runtime_metrics=_collect_runtime_metrics,
     dispatch_stateful=_dispatch_record_command,
     emit=emit,
     now_iso=now_iso,
@@ -783,6 +793,8 @@ def main():
         STATEFUL_COMMANDS, VIEW_BUILDER, view_context=VIEW_CONTEXT, emit=emit,
         cancel_analysis=reset_runtime_for_game_change)
     SERVICE_RUNTIME.add_shutdown(RECORD_LIFECYCLE.shutdown)
+    RECORD_LIFECYCLE.resources.set_cache_preference(
+        ENGINE_MANAGEMENT.load_project_config().get('records', {}).get('analysisCacheMiB'))
     SERVICE_RUNTIME.run(
         sys.stdin,
         service_name="backend",

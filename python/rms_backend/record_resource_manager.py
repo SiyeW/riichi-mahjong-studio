@@ -16,6 +16,7 @@ from uuid import UUID
 
 from .record_session_storage import RecordSessionStorage
 from .record_workspace_writer import RecordWorkspaceWriter
+from .record_cache_settings import cache_budget_bytes
 
 
 def workspace_identity(value):
@@ -51,6 +52,7 @@ class RecordResourceManager:
         self._active = None
         self._thread = None
         self._closed = False
+        self._cache_budget = cache_budget_bytes(None)
         self._transport_error = None
 
     @contextmanager
@@ -89,6 +91,7 @@ class RecordResourceManager:
         try:
             writer.ready.result()
             storage = RecordSessionStorage(identity, self.scheduler(), writer)
+            storage.results.cache.set_budget(self._cache_budget)
             resource = RecordResource(storage, game, dict(state), released=Future())
             with self._lock:
                 self._resources[identity] = resource
@@ -138,6 +141,7 @@ class RecordResourceManager:
             if metadata.get('disposition') in ('discarded', 'replaced', 'retention-off', 'prepared'):
                 raise ValueError('Private recovery was not retained as an active record.')
             storage, game, state = RecordSessionStorage.restore(identity, self.scheduler(), writer)
+            storage.results.cache.set_budget(self._cache_budget)
             resource = RecordResource(storage, game, dict(state), released=Future(),
                                       saved=metadata.get('saved'), initial_cursor=storage.cursor_sequence, restored=True)
             with self._lock:
@@ -207,6 +211,24 @@ class RecordResourceManager:
                         contentRevision=content, cursorSequence=cursor,
                         savedContentRevision=saved.get('content', 0), savedCursorSequence=saved.get('cursor', 0),
                         pathIntent=saved.get('intent', 0), savedPath=saved.get('target', ''))
+
+    def set_cache_preference(self, value):
+        budget = cache_budget_bytes(value)
+        with self._lock:
+            self._cache_budget = budget
+            for resource in self._resources.values():
+                resource.storage.results.cache.set_budget(budget)
+        return budget
+
+    def cache_metrics(self):
+        with self._lock:
+            if self._active is None:
+                return dict(residentBytes=0, budgetBytes=self._cache_budget, protectedBytes=0,
+                            protectedOvershootBytes=0, encodedPendingBytes=0, queuedWrites=0, error=None)
+            storage = self._active.storage
+            metrics = storage.results.metrics()
+            metrics['error'] = storage.source_error or metrics['error']
+            return metrics
 
     def mark_saved(self, resource, token, file_identity=None):
         with self._lock:

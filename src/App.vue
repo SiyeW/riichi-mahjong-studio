@@ -541,22 +541,7 @@
           </span>
         </span>
       </div>
-      <div
-        class="footer-memory-status"
-        :aria-label="runtimeMemoryDetail"
-        aria-describedby="runtime-memory-detail"
-        tabindex="0"
-      >
-        <span>{{ t('status.applicationMemory', { value: formatMemorySize(runtimeMetrics?.applicationBytes) }) }}</span>
-        <span class="footer-memory-separator" aria-hidden="true">·</span>
-        <span>{{ t('status.systemAvailable', { value: formatMemorySize(runtimeMetrics?.systemAvailableBytes) }) }}</span>
-        <div id="runtime-memory-detail" class="ui-hover-tooltip footer-memory-tooltip" role="tooltip">
-          <div v-for="row in runtimeMemoryRows" :key="row.label" class="ui-hover-tooltip-row">
-            <span>{{ row.label }}</span>
-            <span>{{ row.value }}</span>
-          </div>
-        </div>
-      </div>
+      <RuntimeResources :metrics="runtimeMetrics" :rows="runtimeMemoryRows" :format-size="formatMemorySize" />
     </footer>
 
     <RecordImportDialog
@@ -574,6 +559,7 @@
       :draft="settingsDraft"
       :sound-packs="settings.runtime?.soundPackCatalog.packs || []"
       :ui-scale-options="uiScaleOptions"
+      :available-memory-bytes="runtimeMetrics?.systemAvailableBytes"
       @close="closeSettingsPanel"
       @save="saveSettingsPanel"
     />
@@ -740,6 +726,7 @@ import RecordOperationOverlay from './components/RecordOperationOverlay.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
 import RoundResultOverlay from './components/RoundResultOverlay.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
+import RuntimeResources from './components/RuntimeResources.vue'
 import TableActionAnnouncement from './components/TableActionAnnouncement.vue'
 import TableCenterInfo from './components/TableCenterInfo.vue'
 import TablePlayerNames from './components/TablePlayerNames.vue'
@@ -930,7 +917,6 @@ const status = reactive<StudioStatus>({
 const {
   runtimeMetrics,
   runtimeMemoryRows,
-  runtimeMemoryDetail,
   formatMemorySize,
   startRuntimeMetrics,
 } = useRuntimeMetrics(t)

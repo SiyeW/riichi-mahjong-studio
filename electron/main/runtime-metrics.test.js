@@ -38,6 +38,8 @@ test('combines Electron, backend, and engine memory', () => {
     electronBytes: 300 * 1024,
     backendBytes: 400 * 1024,
     engineBytes: 500 * 1024,
+    codecBytes: 0,
+    recordCache: null,
     backendAvailable: true,
     electronProcessCount: 2,
     engineProcessCount: 2,
@@ -55,4 +57,15 @@ test('does not report an incomplete total while the backend is unavailable', () 
   assert.equal(partial.applicationBytes, null)
   assert.equal(partial.backendAvailable, false)
   assert.equal(partial.systemAvailableBytes, 3_000 * 1024)
+})
+
+test('codec memory belongs in the application total but not engine memory', () => {
+  const recordCache = { residentBytes: 16, budgetBytes: 32 }
+  const result = buildRuntimeMetrics({ backendMetrics: {
+    backendPrivateBytes: 100, enginePrivateBytes: 200, codecPrivateBytes: 50, recordCache,
+  } })
+  assert.equal(result.applicationBytes, 350)
+  assert.equal(result.engineBytes, 200)
+  assert.equal(result.codecBytes, 50)
+  assert.deepEqual(result.recordCache, recordCache)
 })

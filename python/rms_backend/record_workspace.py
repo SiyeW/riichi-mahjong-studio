@@ -60,6 +60,7 @@ class RecordWorkspace:
         self.path = Path(path)
         self.workspace_id = workspace_id
         self._owner = get_ident()
+        self._written_bytes = 0
         if sqlite3.sqlite_version_info < (3, 51, 3):
             raise RuntimeError('Record recovery requires SQLite 3.51.3 or newer.')
         if create:
@@ -104,17 +105,30 @@ class RecordWorkspace:
     @contextmanager
     def transaction(self):
         self._check_owner()
+        before = self._written_bytes
         self._db.execute('BEGIN IMMEDIATE')
         try:
             yield
             self._db.execute('COMMIT')
         except BaseException:
             self._db.execute('ROLLBACK')
+            self._written_bytes = before
             raise
+
+    def _encode(self, value):
+        data = json_bytes(value)
+        self._written_bytes += len(data)
+        return data
+
+    def take_written_bytes(self):
+        """Committed serialized updates, not WAL allocation or pending frames."""
+        self._check_owner()
+        result, self._written_bytes = self._written_bytes, 0
+        return result
 
     def _set(self, key, value):
         self._db.execute('INSERT INTO metadata VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
-                         (key, json_bytes(value)))
+                         (key, self._encode(value)))
 
     def _coverage(self, revision, kind, complete):
         if type(revision) is not int or revision <= 0:
@@ -148,9 +162,9 @@ class RecordWorkspace:
         self._new_revision(revision)
         for node_id, node in (nodes or {}).items():
             self._db.execute('INSERT INTO nodes VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET snapshot=excluded.snapshot, attributes=excluded.attributes',
-                             (node_id, json_bytes(node['snapshot']), json_bytes(node['attributes'])))
+                             (node_id, self._encode(node['snapshot']), self._encode(node['attributes'])))
         for node_id, value in (attributes or {}).items():
-            if self._db.execute('UPDATE nodes SET attributes=? WHERE id=?', (json_bytes(value), node_id)).rowcount != 1:
+            if self._db.execute('UPDATE nodes SET attributes=? WHERE id=?', (self._encode(value), node_id)).rowcount != 1:
                 raise ValueError('Authored delta references a missing node.')
         for node_id in deleted:
             self._db.execute('DELETE FROM nodes WHERE id=?', (node_id,))
@@ -160,7 +174,7 @@ class RecordWorkspace:
             self._set(key, value)
         for round_id, value in (rounds or {}).items():
             self._db.execute('INSERT INTO rounds VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
-                             (round_id, json_bytes(value)))
+                             (round_id, self._encode(value)))
         for round_id in deleted_rounds:
             self._db.execute('DELETE FROM rounds WHERE id=?', (round_id,))
         for key in deleted_metadata:
@@ -194,7 +208,7 @@ class RecordWorkspace:
                 return  # Retry must not republish a subsequently cleared slot.
             self._new_revision(revision)
             self._db.execute('INSERT INTO versions VALUES(?,?,?,NULL,?)',
-                             (version, slot, revision, json_bytes(summary or {})))
+                             (version, slot, revision, self._encode(summary or {})))
             self._clear_slot_rows(revision, cleared_slots)
             for key, value in (metadata or {}).items():
                 if key != 'game:analysisSources':
@@ -221,9 +235,9 @@ class RecordWorkspace:
                         or previous[2] not in (expected_body, body_id)):
                     raise ValueError('Immutable converted source version conflict.')
                 self._db.execute('INSERT OR IGNORE INTO versions VALUES(?,?,0,?,?)',
-                                 (version, slot, body_id, json_bytes(summary or {})))
+                                 (version, slot, body_id, self._encode(summary or {})))
                 self._db.execute('UPDATE versions SET body=?,summary=? WHERE id=?',
-                                 (body_id, json_bytes(summary or {}), version))
+                                 (body_id, self._encode(summary or {}), version))
                 self._db.execute('DELETE FROM inputs WHERE version=?', (version,))
                 current = self._db.execute('SELECT epoch,revision FROM slots WHERE slot=?', (slot,)).fetchone()
                 if current is None or current == (epoch, 0):
@@ -248,9 +262,9 @@ class RecordWorkspace:
                         continue  # A successful demanded conversion may beat an uncertain catalog retry.
                     raise ValueError('Imported source version identity conflict.')
                 self._db.execute('INSERT OR IGNORE INTO versions VALUES(?,?,0,?,?)',
-                                 (version, slot, body_id, json_bytes(entry['summary'])))
+                                 (version, slot, body_id, self._encode(entry['summary'])))
                 if 'input' in entry:
-                    data = json_bytes(entry['input'])
+                    data = self._encode(entry['input'])
                     if len(data) > RESULT_LIMIT:
                         raise ValueError('Imported analysis input exceeds its size limit.')
                     existing = self._db.execute('SELECT data FROM inputs WHERE version=?', (version,)).fetchone()
@@ -264,7 +278,7 @@ class RecordWorkspace:
 
     def _schemas(self, schemas):
         for index, schema in schemas:
-            encoded = json_bytes(schema)
+            encoded = self._encode(schema)
             old = self._db.execute('SELECT value FROM schemas WHERE id=?', (index,)).fetchone()
             if old is not None and old[0] != encoded:
                 raise ValueError('Recovery schema identity conflict.')
@@ -284,6 +298,7 @@ class RecordWorkspace:
         else:
             self._db.execute('INSERT INTO bodies VALUES(?,?,?,?,?,?,?,?)',
                              (body_id, codec, namespace, length, digest, data, base, offset))
+            self._written_bytes += len(data) if data is not None else 0
 
     def store_result(self, version, *, body_id, codec, namespace=None, data=None, base=None,
                      offset=None, length=None, digest=None, schemas=(), summary=None):
@@ -307,7 +322,7 @@ class RecordWorkspace:
                 raise ValueError('Immutable recovery version replacement.')
             self._db.execute('UPDATE versions SET body=? WHERE id=?', (body_id, version))
             if summary is not None:
-                self._db.execute('UPDATE versions SET summary=? WHERE id=?', (json_bytes(summary), version))
+                self._db.execute('UPDATE versions SET summary=? WHERE id=?', (self._encode(summary), version))
             self._coverage(pending[0], 'analysis', True)
 
     def clear_slots(self, revision, slots):
