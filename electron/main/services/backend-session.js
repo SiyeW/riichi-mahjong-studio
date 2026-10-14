@@ -28,9 +28,10 @@ function createBackendSession(backend, options = {}) {
         runtime = { ...value, contentRevision: Math.max(value.contentRevision, runtime.contentRevision),
           cursorSequence: Math.max(value.cursorSequence, runtime.cursorSequence),
           pathIntent: saved.pathIntent, savedPath: saved.savedPath,
+          recoveryWarning: saved.recoveryWarning,
           savedContentRevision: saved.savedContentRevision, savedCursorSequence: saved.savedCursorSequence }
       } else runtime = value
-      pathIntent = Math.max(pathIntent, runtime?.pathIntent || 0)
+      pathIntent = Math.max(pathIntent, value?.saveIntentSequence || 0, runtime?.pathIntent || 0)
       options.onRuntime?.(runtime)
     }
     return response
@@ -107,7 +108,7 @@ function createBackendSession(backend, options = {}) {
   async function captureSave(target, appVersion = '') {
     if (stopped || restarting || changingRecord || close || !runtime) throw new Error('No current record is ready to save.')
     const workspaceId = runtime.workspaceId
-    await Promise.all([...pendingEdits])
+    await Promise.allSettled([...pendingEdits])
     if (runtime?.workspaceId !== workspaceId) throw new Error('The record changed before save capture.')
     const saveId = randomUUID()
     const response = await raw('record_save_capture', { workspaceId, saveId, target,
@@ -122,12 +123,13 @@ function createBackendSession(backend, options = {}) {
 
   async function prepareClose(retain, onStage = () => {}) {
     if (close) return close.promise
-    if (!runtime) return null
-    const operation = { closeId: randomUUID(), workspaceId: runtime.workspaceId, cancelled: false, prepared: null }
+    const operation = { closeId: randomUUID(), workspaceId: null, cancelled: false, prepared: null }
     close = operation
     operation.promise = (async () => {
-      await Promise.all([...pendingEdits])
+      await Promise.allSettled([...pendingEdits])
       if (operation.cancelled) return null
+      if (!runtime) { if (close === operation) close = null; return null }
+      operation.workspaceId = runtime.workspaceId
       onStage('preparing')
       await raw('record_close_capture', { closeId: operation.closeId, workspaceId: operation.workspaceId, retain })
       if (operation.cancelled) { await raw('record_close_cancel', { closeId: operation.closeId }); return null }
@@ -180,7 +182,7 @@ function createBackendSession(backend, options = {}) {
           throw error
         }
       }
-      await backend.restart()
+      await backend.restart({ graceful: true })
       for (const candidate of unconfirmedCandidates) {
         if (candidate !== identity) {
           await workspaces.released({ workspaceId: candidate })
@@ -207,7 +209,10 @@ function createBackendSession(backend, options = {}) {
         throw error
       }
       const recovery = manifest.recovery
-      if (recovery.kind === 'workspace') return replace('record_restore', { workspaceId: manifest.workspaceId }, null, true)
+      if (recovery.kind === 'workspace') {
+        const response = await replace('record_restore', { workspaceId: manifest.workspaceId }, null, true)
+        return { ...response, recoveryUnclean: manifest.status === 'active' }
+      }
       if (recovery.kind === 'source') {
         try {
           const response = await replace('import_game_record', { path: recovery.path,
@@ -222,7 +227,7 @@ function createBackendSession(backend, options = {}) {
     return null
   }
 
-  async function shutdown() { await backend.stop(); await workspaces.shutdown() }
+  async function shutdown() { await backend.stop(undefined, { graceful: true }); await workspaces.shutdown() }
   return { sendRequest, captureSave, writeSave, acknowledgeSave, abortSave, releaseSave, prepareClose, cancelClose,
     confirmClose, restoreStartup, restart, shutdown, handleEvent,
     getRuntime: () => runtime, updateRetention: workspaces.updateRetention,

@@ -1,7 +1,7 @@
 import threading
 import unittest
 
-from rms_backend.record_codec_scheduler import RecordCodecScheduler
+from rms_backend.records.codec_scheduler import RecordCodecScheduler
 
 
 class FakeClient:

@@ -4,10 +4,10 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from rms_backend.record_analysis_refs import AnalysisPending, AnalysisReference
-from rms_backend.record_codec_scheduler import RecordCodecScheduler
-from rms_backend.record_result_store import RecordResultStore
-from rms_backend.record_workspace_writer import RecordWorkspaceWriter
+from rms_backend.records.analysis_refs import AnalysisPending, AnalysisReference
+from rms_backend.records.codec_scheduler import RecordCodecScheduler
+from rms_backend.records.results import RecordResultStore
+from rms_backend.records.workspace_writer import RecordWorkspaceWriter
 
 
 class AnalysisReferenceTests(unittest.TestCase):

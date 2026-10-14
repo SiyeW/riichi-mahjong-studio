@@ -11,9 +11,9 @@ import tempfile
 from threading import Event, Thread
 import unittest
 
-from rms_backend.record_archive import PortableBody, read_archive, write_archive
-from rms_backend.record_codec_client import RecordCodecClient
-from rms_backend.record_workspace import RecordWorkspace
+from rms_backend.records.archive import PortableBody, read_archive, write_archive
+from rms_backend.records.codec_client import RecordCodecClient
+from rms_backend.records.workspace import RecordWorkspace
 
 
 class RecordStoragePipelineTests(unittest.TestCase):
@@ -67,7 +67,7 @@ class RecordStoragePipelineTests(unittest.TestCase):
                 self.assertEqual(restored.metadata()['cursor']['sequence'], 5)
             code = '''
 import json,sys
-from rms_backend.record_archive import read_archive
+from rms_backend.records.archive import read_archive
 a=read_archive(open(sys.argv[1],'rb'))
 print(json.dumps({'record':a.record,'result':a.decode_entry(0)},ensure_ascii=False))
 '''

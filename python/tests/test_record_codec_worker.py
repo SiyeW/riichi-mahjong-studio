@@ -5,8 +5,8 @@ import sys
 import time
 import unittest
 
-from rms_backend.record_codec_client import RecordCodecClient, CodecWorkerError
-from rms_backend.record_codec_worker import PACKET_HEADER, PACKET_LIMIT, read_packet, write_packet
+from rms_backend.records.codec_client import RecordCodecClient, CodecWorkerError
+from rms_backend.records.codec_worker import PACKET_HEADER, PACKET_LIMIT, read_packet, write_packet
 
 
 class RecordCodecWorkerTests(unittest.TestCase):

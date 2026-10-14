@@ -6,11 +6,11 @@ import unittest
 from uuid import uuid4
 
 from rms_backend import service
-from rms_backend.record_archive import read_archive
-from rms_backend.record_codec_scheduler import RecordCodecScheduler
-from rms_backend.record_resource_manager import RecordResourceManager
-from rms_backend.record_save_operations import RecordSaveOperations
-from rms_backend.record_session import RecordSession
+from rms_backend.records.archive import read_archive
+from rms_backend.records.codec_scheduler import RecordCodecScheduler
+from rms_backend.records.resources import RecordResourceManager
+from rms_backend.records.save_operations import RecordSaveOperations
+from rms_backend.records.session import RecordSession
 
 
 class RecordSaveFixture:

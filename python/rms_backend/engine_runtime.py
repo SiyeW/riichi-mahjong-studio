@@ -287,6 +287,10 @@ class EngineProfileRuntime:
     def request(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return self._client.request(*args, **kwargs)
 
+    @property
+    def process_id(self):
+        return self._client.process_id
+
     def restart(self) -> None:
         with self._initialization_lock:
             self._initialization = None
@@ -323,6 +327,10 @@ class EngineRuntimeRegistry:
 
     def get(self, profile_id: str) -> EngineProfileRuntime | None:
         return self._runtimes.get(str(profile_id or ""))
+
+    def process_ids(self):
+        return tuple(pid for runtime in tuple(self._runtimes.values())
+                     if (pid := runtime.process_id) is not None)
 
     def shutdown(self) -> None:
         for runtime in self._runtimes.values():

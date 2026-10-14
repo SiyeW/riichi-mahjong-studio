@@ -8,10 +8,10 @@ import struct
 import subprocess
 import unittest
 
-from rms_backend.analysis_body_codec import (
+from rms_backend.records.body_codec import (
     AnalysisBodyCodec, BODY_HEADER, ESCAPE64, probability_code,
 )
-from rms_backend.record_binary import Cursor, U64, inflate, json_bytes, load_json, unsigned
+from rms_backend.records.binary import Cursor, U64, inflate, json_bytes, load_json, unsigned
 from rms_backend.riichi_score_values import possible_hand_value
 
 
@@ -198,7 +198,7 @@ process.stdout.write(JSON.stringify({
         original = result_for('opponent-dora-count', {'distribution': distribution([0, 1], [.3, .7])})
         codec.encode(original)
         original['outputs']['opponent-dora-count']['players'][0]['prediction']['distribution'][0]['probability'] = .4
-        with patch('rms_backend.analysis_body_codec._schema_tree', side_effect=AssertionError('schema rebuilt')):
+        with patch('rms_backend.records.body_codec._schema_tree', side_effect=AssertionError('schema rebuilt')):
             codec.encode(original)
 
 

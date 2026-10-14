@@ -9,8 +9,8 @@ from contextlib import contextmanager
 from typing import Any, Callable, MutableMapping, Optional
 
 from .action_recommendation_adapter import analyze_action_choices, analyze_discard_choices
-from .analysis_cache_codec import AnalysisReadError
-from .record_analysis_refs import AnalysisReference, ready_analysis
+from .records.legacy_codec import AnalysisReadError
+from .records.analysis_refs import AnalysisReference, ready_analysis
 from .decision_analysis_use import DecisionAnalysisUse
 from .auto_analysis_plan import is_terminal_analysis_node
 from .analysis_cache import (

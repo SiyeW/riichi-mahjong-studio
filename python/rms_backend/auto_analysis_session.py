@@ -13,7 +13,7 @@ from .action_recommendation_adapter import analyze_action_choices, analyze_disca
 from .analysis_cache import OPPONENT_ANALYSIS_CACHE_FIELD
 from .auto_analysis_runtime import AutoAnalysisRuntime
 from .service_helpers import now_iso
-from .record_analysis_refs import AnalysisReference
+from .records.analysis_refs import AnalysisReference
 
 
 @dataclass

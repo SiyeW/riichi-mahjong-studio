@@ -8,7 +8,7 @@ import tempfile
 from threading import Thread
 import unittest
 
-from rms_backend.record_workspace import RecordWorkspace
+from rms_backend.records.workspace import RecordWorkspace
 
 
 class RecordWorkspaceTests(unittest.TestCase):
@@ -134,7 +134,7 @@ class RecordWorkspaceTests(unittest.TestCase):
             path = Path(directory) / 'data'
             code = '''
 import os, sys
-from rms_backend.record_workspace import RecordWorkspace
+from rms_backend.records.workspace import RecordWorkspace
 s=RecordWorkspace(sys.argv[1], workspace_id='crash', create=True)
 s.authored_delta(1, metadata={'kept': 'committed'})
 s._db.execute('BEGIN IMMEDIATE')

@@ -56,8 +56,16 @@ function createRecordWorkflow({
       onStage = () => {},
     } = options
     targetPath = path.resolve(targetPath)
-    const targetIdentity = process.platform === 'win32' ? targetPath.toLowerCase() : targetPath
-    const lease = await acquireRecordLease('save-target', targetIdentity)
+    await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
+    const canonical = await fs.promises.realpath(targetPath).catch(async error => {
+      if (error.code !== 'ENOENT') throw error
+      return path.join(await fs.promises.realpath(path.dirname(targetPath)), path.basename(targetPath))
+    })
+    const targetIdentity = process.platform === 'win32' ? canonical.toLowerCase() : canonical
+    const lease = await acquireRecordLease('save-target', targetIdentity).catch(error => {
+      if (error.code === 'EADDRINUSE') throw new Error(t('native.saveTargetBusy'))
+      throw error
+    })
     const recordGeneration = gameFileStore.getRecordGeneration()
     let token, stagingPath, promoted = false, recoveryWarning = ''
     try {
@@ -66,7 +74,6 @@ function createRecordWorkflow({
         throw error
       })
       onStage('encoding')
-      await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
       token = await backendGateway.captureRecordSave(targetPath, app.getVersion())
       stagingPath = `${targetPath}.${token.saveId}.tmp`
       const written = await backendGateway.writeRecordSave(token, stagingPath)
@@ -178,7 +185,7 @@ function createRecordWorkflow({
         name: t('native.recordFilter'),
         extensions: [RECORD_FILE_EXTENSION, LEGACY_RECORD_FILE_EXTENSION, '.json']
           .map((extension) => extension.slice(1)),
-      }],
+      }, { name: t('native.allFiles'), extensions: ['*'] }],
     }))
     if (result.canceled || !result.filePaths.length) return null
     return importGameRecordFile(result.filePaths[0])
@@ -196,6 +203,13 @@ function createRecordWorkflow({
         gameFileStore.openRecoveryRecord(runtime?.savedPath || '', t('record.unsavedName'))
         beginRecordTracking({ dirty: runtime?.contentRevision !== runtime?.savedContentRevision,
           nodeId: response.view?.currentNodeId })
+        const warning = response.recoveryError || response.saveReconciliationErrors?.map(item => item.stagingPath
+          ? t('native.unfinishedSaveFile', { path: item.stagingPath }) : item.error).join('\n')
+        const mainWindow = getMainWindow()
+        if ((warning || response.recoveryUnclean) && mainWindow && !mainWindow.isDestroyed()) {
+          void dialog.showMessageBox(mainWindow, { type: 'warning', title: t('native.recoveryIncomplete.title'),
+            message: t('native.recoveryIncomplete.message'), detail: warning || '' })
+        }
         return { ...response, path: runtime?.savedPath || '', recordDirty: gameFileStore.isDirty(), recoveryRecord: true }
       }
       // Narrow one-time reader for existing released recovery files; new exits

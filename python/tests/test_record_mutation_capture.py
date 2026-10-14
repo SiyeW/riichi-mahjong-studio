@@ -5,12 +5,12 @@ import tempfile
 import unittest
 
 from rms_backend.game_tree_coordinator import GameTreeCoordinator, GameTreeDependencies
-from rms_backend.record_commands import RecordCommands
-from rms_backend.record_mutation_capture import RecordMutationCapture
-from rms_backend.record_session_storage import RecordSessionStorage, result_slot
-from rms_backend.record_codec_scheduler import RecordCodecScheduler
-from rms_backend.record_workspace_writer import RecordWorkspaceWriter
-from rms_backend.record_analysis_refs import AnalysisReference
+from rms_backend.records.authored_commands import RecordCommands
+from rms_backend.records.mutation_capture import RecordMutationCapture
+from rms_backend.records.session_storage import RecordSessionStorage, result_slot
+from rms_backend.records.codec_scheduler import RecordCodecScheduler
+from rms_backend.records.workspace_writer import RecordWorkspaceWriter
+from rms_backend.records.analysis_refs import AnalysisReference
 
 
 @contextmanager

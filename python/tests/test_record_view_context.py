@@ -1,6 +1,6 @@
 import unittest
 
-from rms_backend.record_view_context import RecordViewContext
+from rms_backend.records.view_context import RecordViewContext
 
 
 class RecordViewContextTests(unittest.TestCase):

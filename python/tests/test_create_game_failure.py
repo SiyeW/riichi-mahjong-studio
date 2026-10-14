@@ -4,7 +4,7 @@ from threading import Thread
 from unittest.mock import patch
 
 from rms_backend import service
-from rms_backend import record_session
+from rms_backend.records import session as record_session
 
 
 class CreateGameFailureTests(unittest.TestCase):

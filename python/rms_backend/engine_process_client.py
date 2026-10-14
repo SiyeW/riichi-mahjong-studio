@@ -65,6 +65,12 @@ class EngineProcessClient:
         atexit.register(self.shutdown)
 
     @property
+    def process_id(self) -> int | None:
+        with self._lock:
+            process = self._process
+            return process.pid if process is not None and process.poll() is None else None
+
+    @property
     def engine_version_changed(self) -> str:
         """The engine's version when it differs from the one the profile recorded."""
 

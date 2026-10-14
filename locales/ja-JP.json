@@ -514,5 +514,11 @@
   "native.mortal.noId": "URL から Mortal レポート ID を取得できませんでした。",
   "native.backend.startFailed": "{name} を起動できませんでした：{message}",
   "record.unsavedName": "未保存の対局",
+  "native.saveTargetBusy": "別のウィンドウがこのファイルを保存しています。しばらくしてから再試行してください。",
+  "native.allFiles": "すべてのファイル",
+  "native.unfinishedSaveFile": "保存途中のファイルを保持しています。「開く」で「すべてのファイル」を選び、このファイルから復元を試せます：{path}",
+  "recordOperation.saveContinue": "保存中も閲覧や編集を続けられます。",
+  "native.recoveryIncomplete.title": "復元した内容を確認してください",
+  "native.recoveryIncomplete.message": "保持された内容を復元しましたが、一部のデータが欠けている可能性があります。保存した牌譜ファイルを確認してください。",
   "recordOperation.savedRecoveryWarning": "牌譜は保存されましたが、復元データを更新できませんでした。保存したファイルを保管してください。{message}"
 }

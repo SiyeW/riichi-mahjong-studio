@@ -30,7 +30,7 @@
         </filter>
       </defs>
     </svg>
-    <header class="topbar">
+    <header class="topbar" :inert="recordOperationBlocking">
       <div class="title-block" :class="{ 'app-title-only': !recordHeaderTitle }">
         <div>
           <p v-if="recordHeaderTitle" class="eyebrow">Riichi Mahjong Studio</p>
@@ -151,10 +151,12 @@
     <RecordOperationOverlay
       v-if="closeState.active || gameFileOperation !== null"
       :title="closeState.active ? closingExitLabel : t(`recordOperation.${gameFileOperation}`)"
-      :detail="closeState.active ? t('close.keepOpen') : t('recordOperation.wait')"
+      :detail="closeState.active ? t('close.keepOpen') : t(recordOperationBlocking ? 'recordOperation.wait' : 'recordOperation.saveContinue')"
+      :blocking="recordOperationBlocking"
     />
 
     <main
+      :inert="recordOperationBlocking"
       ref="workspaceRoot"
       class="workspace"
       :class="{
@@ -1104,7 +1106,7 @@ const { clearAutoAdvanceTimer, scheduleAutoAdvance } = useAutoAdvance({
   prefetchWaiting: playPrefetchWaiting,
   motionDelayMs: () => autoAdvanceMotionDelayMs(),
   hasPendingMotion: () => hasPendingDiscardFlight(),
-  advance: () => advanceGame(),
+  advance: () => recordOperationBlocking.value ? undefined : advanceGame(),
 })
 const {
   advanceGame,
@@ -1499,6 +1501,14 @@ const {
     reportReconstructedRounds(roundCount)
   },
 })
+
+const recordOperationBlocking = computed<boolean>(() => closeState.active || (
+  gameFileOperation.value !== null && gameFileOperation.value !== 'save' && gameFileOperation.value !== 'save-as'
+))
+watch(recordOperationBlocking, (blocking, previous) => {
+  if (blocking) { clearAutoAdvanceTimer(); cancelPendingWheelNavigation() }
+  else if (previous) scheduleAutoAdvance()
+}, { flush: 'sync' })
 
 async function jumpToRoundRoot(roundRootId: string) {
   await jumpToNode(roundRootId)

@@ -10,11 +10,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from rms_backend.analysis_body_codec import AnalysisBodyCodec
-from rms_backend.record_archive import (
+from rms_backend.records.body_codec import AnalysisBodyCodec
+from rms_backend.records.archive import (
     ArchiveSource, HEADER, MAGIC, PortableBody, read_archive, write_archive,
 )
-from rms_backend.record_binary import U64, inflate, json_bytes
+from rms_backend.records.binary import U64, inflate, json_bytes
 
 
 class RecordArchiveTests(unittest.TestCase):

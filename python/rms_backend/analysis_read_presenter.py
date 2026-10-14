@@ -7,8 +7,8 @@ replaceable delivery per kind, not an unbounded executor queue or decoded cache.
 from threading import Condition, Thread, Timer
 from concurrent.futures import Future
 
-from .analysis_cache_codec import AnalysisReadError
-from .record_analysis_refs import AnalysisReference
+from .records.legacy_codec import AnalysisReadError
+from .records.analysis_refs import AnalysisReference
 
 
 class AnalysisReadPresenter:

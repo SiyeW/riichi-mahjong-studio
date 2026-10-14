@@ -5,9 +5,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from rms_backend.record_workspace_lease import WorkspaceLease
-from rms_backend.record_workspace_writer import RecordWorkspaceWriter
-from rms_backend.record_workspace import RecordWorkspace
+from rms_backend.records.workspace_lease import WorkspaceLease
+from rms_backend.records.workspace_writer import RecordWorkspaceWriter
+from rms_backend.records.workspace import RecordWorkspace
 
 
 class RecordWorkspaceWriterTests(unittest.TestCase):
@@ -54,7 +54,7 @@ class RecordWorkspaceWriterTests(unittest.TestCase):
     def test_crashed_process_releases_os_lease_without_deleting_lock_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'owner.lock'
-            code = ('import os,sys; from rms_backend.record_workspace_lease import WorkspaceLease; '
+            code = ('import os,sys; from rms_backend.records.workspace_lease import WorkspaceLease; '
                     'lease=WorkspaceLease(sys.argv[1],"test"); print("locked",flush=True); os._exit(0)')
             result = subprocess.run([sys.executable, '-c', code, str(path)],
                                     cwd=Path(__file__).resolve().parents[1],

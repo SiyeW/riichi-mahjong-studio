@@ -45,7 +45,7 @@ class ServiceRuntime:
             if self._closed:
                 raise RuntimeError('Service runtime is already closed.')
             if self._record_codec is None:
-                from .record_codec_scheduler import RecordCodecScheduler
+                from .records.codec_scheduler import RecordCodecScheduler
                 self._record_codec = RecordCodecScheduler()
             return self._record_codec
 

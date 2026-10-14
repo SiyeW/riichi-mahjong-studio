@@ -20,7 +20,7 @@ from .analysis_cache import (
 )
 from .play_prefetch_runtime import PlayPrefetchRuntime
 from .service_helpers import now_iso
-from .record_analysis_refs import AnalysisReference
+from .records.analysis_refs import AnalysisReference
 
 
 @dataclass

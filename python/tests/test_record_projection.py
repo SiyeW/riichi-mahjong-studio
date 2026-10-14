@@ -3,10 +3,10 @@ import unittest
 from unittest.mock import patch
 
 from rms_backend import service
-from rms_backend import game_record_storage
+from rms_backend.records import authored_projection as game_record_storage
 from rms_backend.analysis_cache import OPPONENT_ANALYSIS_CACHE_FIELD
-from rms_backend.analysis_cache_storage import expand_record_analysis_caches
-from rms_backend.game_record_storage import copy_game_for_record, serialize_game_record_parts
+from rms_backend.records.legacy_cache import expand_record_analysis_caches
+from rms_backend.records.authored_projection import copy_game_for_record, serialize_game_record_parts
 
 
 class RecordProjectionTests(unittest.TestCase):

@@ -148,6 +148,25 @@ test('startup queues requests until ready and exit rejects outstanding requests'
   assert.equal(backend.isRunning(), false)
 })
 
+test('graceful cleanup sends EOF and still waits for actual exit; its deadline never pretends exit happened', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const { backend, children } = fixture({ autoExit: false })
+  backend.start()
+  let ended = false, completed = false
+  children[0].stdin.end = () => { ended = true }
+  const stopping = backend.stop(undefined, { graceful: true, cleanupTimeoutMs: 100 })
+    .then(() => { completed = true })
+  assert.equal(ended, true)
+  assert.equal(children[0].killed, undefined)
+  t.mock.timers.tick(100)
+  assert.equal(children[0].killed, true)
+  await Promise.resolve()
+  assert.equal(completed, false)
+  children[0].emit('exit', 0)
+  await stopping
+  assert.equal(completed, true)
+})
+
 test('restart rejects old requests and ignores old replies, readiness and exit', async () => {
   const { backend, children, events } = fixture()
   const oldRequest = backend.sendRequest('old')

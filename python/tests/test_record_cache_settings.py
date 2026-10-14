@@ -4,7 +4,7 @@ import shutil
 import subprocess
 import unittest
 
-from rms_backend.record_cache_settings import POLICY, cache_budget_bytes
+from rms_backend.records.cache_settings import POLICY, cache_budget_bytes
 
 
 class RecordCacheSettingsTests(unittest.TestCase):

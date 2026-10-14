@@ -12,14 +12,14 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from rms_backend.record_blocks import (
+from rms_backend.records.legacy_blocks import (
     MAGIC, HEADER, BlockEntry, BlockSource, open_record_source, read_block_record,
 )
-from rms_backend.record_file import RecordFileWriter, read_record_file
-from rms_backend.analysis_cache_codec import AnalysisReadError
-from rms_backend.record_blocks import pack_json
+from tests.legacy_record_fixture import RecordFileWriter, read_record_file
+from rms_backend.records.legacy_codec import AnalysisReadError
+from rms_backend.records.legacy_codec import pack_json
 from rms_backend import service
-from rms_backend.record_session import RecordSession
+from rms_backend.records.session import RecordSession
 
 
 class CountingFile:
@@ -49,11 +49,11 @@ class RecordBlockTests(unittest.TestCase):
             path, saved = Path(directory) / 'source', Path(directory) / 'saved'
             RecordFileWriter().write(path, session.serialize_prepared_export(session.prepare_export(), for_file=True))
             writer = RecordFileWriter()
-            session.load(read_record_file(path, writer=writer), take_ownership=True, file_writer=writer)
+            session.load(read_record_file(path, writer=writer), take_ownership=True)
             prepared = session.prepare_export()
             session.close()
             with patch.object(BlockEntry, 'result', side_effect=AssertionError('decoded while saving')):
-                prepared.file_writer.write(saved, session.serialize_prepared_export(prepared, for_file=True))
+                writer.write(saved, session.serialize_prepared_export(prepared, for_file=True))
             record = read_record_file(saved)
             self.assertEqual(copy.deepcopy(record['game']['nodes']['n_root']['opponentAnalysisCache']['o5::0::public::test']), expected)
             del record, prepared, writer
@@ -80,7 +80,7 @@ class RecordBlockTests(unittest.TestCase):
     def test_same_session_reuses_new_results_and_drops_deleted_cached_blocks(self):
         with tempfile.TemporaryDirectory() as directory:
             writer, record = RecordFileWriter(), self.record()
-            with patch('rms_backend.record_blocks.pack_json', wraps=pack_json) as pack:
+            with patch('tests.legacy_record_fixture.pack_json', wraps=pack_json) as pack:
                 writer.write(Path(directory) / 'first', record)
                 self.assertEqual(pack.call_count, 3)
                 writer.write(Path(directory) / 'second', record)
@@ -249,8 +249,8 @@ class RecordBlockTests(unittest.TestCase):
             code = '''
 import sys
 from unittest.mock import patch
-from rms_backend.record_file import read_record_file, RecordFileWriter
-from rms_backend.record_blocks import BlockSource, BlockEntry
+from tests.legacy_record_fixture import read_record_file, RecordFileWriter
+from rms_backend.records.legacy_blocks import BlockSource, BlockEntry
 with patch.object(BlockSource, 'read_block', side_effect=AssertionError('full read')):
     record = read_record_file(sys.argv[1])
 with patch.object(BlockEntry, 'result', side_effect=AssertionError('full decode')):

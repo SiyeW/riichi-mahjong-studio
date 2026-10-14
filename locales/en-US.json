@@ -514,5 +514,11 @@
   "native.mortal.noId": "Could not find a Mortal report ID in the URL.",
   "native.backend.startFailed": "{name} failed to start: {message}",
   "record.unsavedName": "Unsaved game",
+  "native.saveTargetBusy": "Another window is saving this file. Try again shortly.",
+  "native.allFiles": "All files",
+  "native.unfinishedSaveFile": "An unfinished save was retained. Select it using “All files” in the Open dialog to try restoring it: {path}",
+  "recordOperation.saveContinue": "Saving in the background. You can keep browsing and editing.",
+  "native.recoveryIncomplete.title": "Check the restored content",
+  "native.recoveryIncomplete.message": "The retained content was restored, but recovery data may be incomplete. Check your saved record file.",
   "recordOperation.savedRecoveryWarning": "The record was saved, but recovery data could not be updated. Keep the saved file. {message}"
 }

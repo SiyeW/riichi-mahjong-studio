@@ -9,11 +9,11 @@ from uuid import uuid4
 import weakref
 
 from rms_backend import service
-from rms_backend.record_analysis_refs import AnalysisReference
-from rms_backend.record_codec_scheduler import RecordCodecScheduler
-from rms_backend.record_resource_manager import RecordResourceManager
-from rms_backend.record_session import RecordSession
-from rms_backend.record_session_storage import result_slot
+from rms_backend.records.analysis_refs import AnalysisReference
+from rms_backend.records.codec_scheduler import RecordCodecScheduler
+from rms_backend.records.resources import RecordResourceManager
+from rms_backend.records.session import RecordSession
+from rms_backend.records.session_storage import result_slot
 
 
 @contextmanager
@@ -36,6 +36,20 @@ def resources():
 
 
 class RecordResourceManagerTests(unittest.TestCase):
+    def test_corrupt_private_links_are_rejected_before_replacing_the_live_game(self):
+        with resources() as (manager, lane, session, state):
+            first = str(uuid4())
+            with manager.candidate(first):
+                session.create()
+            manager.confirm_activation(first)
+            old = state['game']
+            bad = dict(old)
+            bad['nodes'] = {'broken': dict(id='broken', children=['missing'], parentId=None, snapshot={})}
+            bad['currentNodeId'] = 'broken'
+            with self.assertRaisesRegex(ValueError, 'missing node'):
+                session.prepare_restored(session.storage, bad, {})
+            self.assertIs(state['game'], old)
+
     def test_idle_retirement_thread_releases_the_previous_record_graph(self):
         class TrackedGame(dict):
             pass

@@ -58,6 +58,28 @@ function recordFixture(directory) {
     RMS_BACKEND_CONFIG: path.join(directory, 'config.json') }, encoding: 'utf8' }))
 }
 
+async function withDatabaseLock(database, operation) {
+  const locker = spawn(python, ['-u', '-c',
+    'import sqlite3,sys; db=sqlite3.connect(sys.argv[1],timeout=5); db.execute("BEGIN IMMEDIATE"); print("locked",flush=True); sys.stdin.readline(); db.rollback(); db.close()', database],
+    { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+  const closed = new Promise(resolve => locker.once('close', resolve))
+  let timer
+  try {
+    await new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error('Isolated database locker did not become ready.')), 5000)
+      locker.once('error', reject)
+      locker.stdout.once('data', output => output.toString().includes('locked') ? resolve() : reject(new Error('Invalid lock readiness')))
+      locker.once('exit', code => reject(new Error(`Database locker exited before readiness: ${code}`)))
+    })
+    clearTimeout(timer)
+    return await operation()
+  } finally {
+    clearTimeout(timer)
+    locker.stdin.end('release\n')
+    await closed
+  }
+}
+
 test('native import, authored edit and V2 save preserve real action/analysis facts across runtimes', supported, async context => {
   const { directory, session, store, workflow } = runtime(context)
   const record = recordFixture(directory)
@@ -175,6 +197,32 @@ test('a promoted save with a lost ACK reconciles its exact intent after real bac
   await first.session.cancelClose()
 })
 
+test('a crash before promotion preserves verified staging as a candidate and never reports the target saved', supported, async context => {
+  const first = runtime(context)
+  await first.session.sendRequest('import_game_record', { record: recordFixture(first.directory) })
+  const target = path.join(first.directory, 'unpromoted.mjstudio')
+  const token = await first.session.captureSave(target, 'test')
+  const stage = `${target}.${token.saveId}.tmp`
+  await first.session.writeSave(token, stage)
+  const child = first.child()
+  const exited = new Promise(resolve => child.once('close', resolve))
+  child.kill()
+  await exited
+  await first.session.shutdown()
+  const second = runtime(context, first.directory)
+  const restored = await second.session.restoreStartup()
+  assert.equal(fs.existsSync(target), false)
+  assert.equal(fs.existsSync(stage), true)
+  assert.equal(restored.saveReconciliationErrors[0].stagingPath, stage)
+  assert.notEqual(second.session.getRuntime().savedPath, target)
+  const later = await second.session.captureSave(path.join(first.directory, 'later.mjstudio'), 'test')
+  assert.ok(later.pathIntent > token.pathIntent, 'A new main must not reuse an older uncommitted path intent.')
+  await second.session.abortSave(later)
+  const candidate = await second.session.sendRequest('import_game_record', { path: stage,
+    savedBaseline: { clean: false, target: '' } })
+  assert.equal(candidate.state.gameLoaded, true)
+})
+
 test('queued frontend scopes reject old sessions and implicit actions in superseded visits', supported, async context => {
   const first = runtime(context)
   const record = recordFixture(first.directory)
@@ -223,27 +271,7 @@ test('a real locked recovery DB cannot turn a promoted portable Save into failur
   first.store.setCurrentPath(target)
   const database = path.join(first.directory, 'records/.recovery/workspaces', first.session.getRuntime().workspaceId, 'workspace.sqlite')
   const acknowledge = first.gateway.acknowledgeRecordSave
-  first.gateway.acknowledgeRecordSave = async token => {
-    const locker = spawn(python, ['-u', '-c',
-      'import sqlite3,sys; db=sqlite3.connect(sys.argv[1],timeout=5); db.execute("BEGIN IMMEDIATE"); print("locked",flush=True); sys.stdin.readline(); db.rollback(); db.close()', database],
-      { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
-    const closed = new Promise(resolve => locker.once('close', resolve))
-    let timer
-    try {
-      await new Promise((resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('Isolated database locker did not become ready.')), 5000)
-        locker.once('error', reject)
-        locker.stdout.once('data', output => output.toString().includes('locked') ? resolve() : reject(new Error('Invalid lock readiness')))
-        locker.once('exit', code => reject(new Error(`Database locker exited before acknowledgement: ${code}`)))
-      })
-      clearTimeout(timer)
-      return await acknowledge(token)
-    } finally {
-      clearTimeout(timer)
-      locker.stdin.end('release\n')
-      await closed
-    }
-  }
+  first.gateway.acknowledgeRecordSave = token => withDatabaseLock(database, () => acknowledge(token))
   const result = await first.workflow.saveGame()
   assert.equal(result.path, target)
   assert.match(result.recoveryWarning, /locked/)
@@ -257,4 +285,30 @@ test('a real locked recovery DB cannot turn a promoted portable Save into failur
   await second.session.restoreStartup()
   assert.equal(second.session.getRuntime().savedPath, target)
   assert.equal(second.session.getRuntime().savedContentRevision, second.session.getRuntime().contentRevision)
+})
+
+test('a rescue file containing unretained authored changes is not presented as a complete recovery snapshot', supported, async context => {
+  const first = runtime(context)
+  const created = await first.session.sendRequest('import_game_record', { record: recordFixture(first.directory) })
+  first.store.beginRecord({ dirty: true, nodeId: created.view.currentNodeId })
+  const identity = first.session.getRuntime().workspaceId
+  const database = path.join(first.directory, 'records/.recovery/workspaces', identity, 'workspace.sqlite')
+  await withDatabaseLock(database, async () => {
+    await first.session.sendRequest('set_node_comment', { nodeId: created.view.currentNodeId, comment: 'RAM-only rescue comment' })
+    await assert.rejects(first.session.sendRequest('record_flush', { workspaceId: identity }), /locked/)
+  })
+  const target = path.join(first.directory, 'authored-rescue.mjstudio')
+  first.store.setCurrentPath(target)
+  const saved = await first.workflow.saveGame()
+  assert.match(saved.recoveryWarning, /locked/)
+  assert.equal(decodeGameRecord(fs.readFileSync(target)).game.nodes[created.view.currentNodeId].comment, 'RAM-only rescue comment')
+  await first.session.shutdown() // Simulate exit-anyway after a failed private durability obligation.
+  const second = runtime(context, first.directory)
+  const restored = await second.session.restoreStartup()
+  assert.match(restored.recoveryError, /saved file contains data missing/)
+  assert.ok(second.session.getRuntime().recoveryWarning)
+  assert.equal(restored.recoveryUnclean, true)
+  const complete = await second.session.sendRequest('import_game_record', { path: target })
+  assert.equal(complete.view.nodeComment, 'RAM-only rescue comment')
+  assert.equal(second.session.getRuntime().recoveryWarning, null)
 })

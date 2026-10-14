@@ -28,7 +28,7 @@ def _private_memory_bytes(process: Any) -> int:
         return 0
 
 
-def collect_runtime_memory_metrics(*, codec_pid=None) -> dict[str, int]:
+def collect_runtime_memory_metrics(*, codec_pid=None, engine_pids=()) -> dict[str, int]:
     if psutil is None:
         raise RuntimeError("Runtime memory metrics require psutil.")
     root = psutil.Process(os.getpid())
@@ -41,6 +41,23 @@ def collect_runtime_memory_metrics(*, codec_pid=None) -> dict[str, int]:
         descendants = root.children(recursive=True)
     except (psutil.AccessDenied, psutil.NoSuchProcess):
         descendants = []
+    parents = {}
+    for process in descendants:
+        try:
+            parents[process.pid] = process.ppid()
+        except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
+            continue
+
+    def belongs_to(pid, owners):
+        visited = set()
+        while pid is not None and pid not in visited and pid != root.pid:
+            if pid in owners:
+                return True
+            visited.add(pid)
+            pid = parents.get(pid)
+        return False
+
+    engines = set(engine_pids)
     for process in descendants:
         if process.pid in seen:
             continue
@@ -48,11 +65,13 @@ def collect_runtime_memory_metrics(*, codec_pid=None) -> dict[str, int]:
         private_bytes = _private_memory_bytes(process)
         if private_bytes <= 0:
             continue
-        if process.pid == codec_pid:
+        if belongs_to(process.pid, {codec_pid}):
             codec_private_bytes += private_bytes
-        else:
+        elif belongs_to(process.pid, engines):
             engine_private_bytes += private_bytes
             engine_process_count += 1
+        else:
+            backend_private_bytes += private_bytes  # E.g. Windows console support, not an engine.
     return {
         "backendPrivateBytes": backend_private_bytes,
         "enginePrivateBytes": engine_private_bytes,

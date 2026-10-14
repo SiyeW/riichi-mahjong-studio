@@ -3,8 +3,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from rms_backend.record_archive import COPY_CHUNK
-from rms_backend.record_body_backing import FileSpanSource
+from rms_backend.records.archive import COPY_CHUNK
+from rms_backend.records.body_backing import FileSpanSource
 
 
 class FileSpanSourceTests(unittest.TestCase):

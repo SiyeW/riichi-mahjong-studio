@@ -8,15 +8,15 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from rms_backend.analysis_cache_codec import (
+from rms_backend.records.legacy_codec import (
     PackedJsonIndex, _TokenCursor, index_json_array, json_string_seed, pack_json, unpack_json,
 )
-from rms_backend.analysis_cache_index import attach_index
-from rms_backend.analysis_cache_storage import (
+from rms_backend.records.legacy_index import attach_index
+from rms_backend.records.legacy_cache import (
     AnalysisCachePacker, compact_record_analysis_caches, expand_record_analysis_caches,
 )
-from rms_backend.record_file import RecordFileWriter, read_record_file
-from rms_backend.record_session import RecordSession
+from tests.legacy_record_fixture import RecordFileWriter, read_record_file
+from rms_backend.records.session import RecordSession
 
 
 class PersistedAnalysisIndexTests(unittest.TestCase):
@@ -144,16 +144,16 @@ class PersistedAnalysisIndexTests(unittest.TestCase):
 import copy, gzip, json, sys, tempfile
 from pathlib import Path
 from unittest.mock import patch
-from rms_backend.analysis_cache_codec import _TokenCursor
-from rms_backend.analysis_cache_storage import AnalysisCachePacker, compact_record_analysis_caches, expand_record_analysis_caches
-from rms_backend.record_file import read_record_file, RecordFileWriter
+from rms_backend.records.legacy_codec import _TokenCursor
+from rms_backend.records.legacy_cache import AnalysisCachePacker, compact_record_analysis_caches, expand_record_analysis_caches
+from tests.legacy_record_fixture import read_record_file, RecordFileWriter
 writer, packer = RecordFileWriter(), AnalysisCachePacker()
 record = read_record_file(sys.argv[1], writer=writer)
 with patch.object(_TokenCursor, 'scan', side_effect=AssertionError('index rebuilt')):
     expand_record_analysis_caches(record, packer=packer, lazy=True)
 values = [node['opponentAnalysisCache'] for node in record['game']['nodes'].values()]
 compact_record_analysis_caches(record, packer=packer)
-with tempfile.TemporaryDirectory() as directory, patch('rms_backend.record_file.gzip.compress', wraps=gzip.compress) as compress:
+with tempfile.TemporaryDirectory() as directory, patch('tests.legacy_record_fixture.gzip.compress', wraps=gzip.compress) as compress:
     writer.write(Path(directory) / 'saved', record, recovery=True)
     assert compress.call_count == 2, 'unchanged analysis recompressed after restart'
 print(json.dumps(copy.deepcopy(values), ensure_ascii=True))

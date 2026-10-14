@@ -34,7 +34,8 @@ function fixture(context, options = {}) {
     releaseRecordSave: async () => { calls.push('release') },
     ...options.gateway,
   }
-  const workflow = createRecordWorkflow({ app: { getVersion: () => 'test' }, appOptions: {},
+  const workflow = createRecordWorkflow({ app: { getVersion: () => 'test' }, appOptions: {
+    portableDir: directory, env: { RMS_BACKEND_CONFIG: path.join(directory, 'config.json') } },
     dialog: options.dialog || {}, backendGateway: gateway, gameFileStore: store,
     getMainWindow: () => ({ isDestroyed: () => false, webContents: { send: (...args) => messages.push(args) } }),
     t: key => key })
@@ -89,6 +90,28 @@ test('external target replacement is detected before promotion', async context =
   assert.equal(fs.readFileSync(target, 'utf8'), 'externally edited content')
 })
 
+test('directory aliases cannot acquire a second save claim for the same physical target', async context => {
+  let finish, entered
+  const ready = new Promise(resolve => { entered = resolve })
+  const { workflow, directory, target, gateway } = fixture(context, { write: () => {
+    entered()
+    return new Promise(resolve => { finish = resolve })
+  } })
+  const alias = path.join(directory, 'alias')
+  try { fs.symlinkSync(path.dirname(target), alias, process.platform === 'win32' ? 'junction' : 'dir') }
+  catch (error) { if (['EPERM', 'EACCES'].includes(error.code)) return context.skip('Directory links are unavailable.'); throw error }
+  const store = createGameFileStore(directory)
+  store.beginRecord({ dirty: true })
+  store.setCurrentPath(path.join(alias, path.basename(target)))
+  const other = createRecordWorkflow({ app: { getVersion: () => 'test' }, appOptions: {}, dialog: {},
+    gameFileStore: store, backendGateway: gateway, getMainWindow: () => null, t: key => key })
+  const saving = workflow.saveGame()
+  try {
+    await ready
+    await assert.rejects(other.saveGame(), /native.saveTargetBusy/)
+  } finally { finish(); await saving }
+})
+
 test('an old captured save may finish its artifact but cannot change the new record path', async context => {
   const { workflow, store, target } = fixture(context, { write: (_token, _stage, recordStore) => {
     recordStore.beginRecord({ dirty: true })
@@ -128,4 +151,23 @@ test('open applies recovery metadata only after the prepared backend candidate s
   assert.equal(result.recordDirty, true)
   assert.equal(result.view.currentNodeId, 'new')
   assert.notEqual(store.getRecordGeneration(), generation)
+})
+
+test('unclean recovery warns without waiting for a modal acknowledgement or pretending it is fully current', async context => {
+  let warned = false
+  const { workflow, store } = fixture(context, {
+    gateway: {
+      restoreRecordRecovery: async () => ({ state: { gameLoaded: true }, view: { currentNodeId: 'recovered' }, recoveryUnclean: true }),
+      getRecordRuntime: () => ({ contentRevision: 2, savedContentRevision: 2, savedPath: '', recoveryWarning: 'Saved file has more data' }),
+    },
+    dialog: { showMessageBox: async (_window, options) => {
+      assert.equal(options.type, 'warning')
+      warned = true
+      return new Promise(() => {})
+    } },
+  })
+  const restored = await workflow.restoreStartupRecovery()
+  assert.equal(restored.view.currentNodeId, 'recovered')
+  assert.equal(warned, true)
+  assert.equal(store.isDirty(), true)
 })

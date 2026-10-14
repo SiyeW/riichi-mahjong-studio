@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
-from rms_backend.record_close_operations import RecordCloseOperations
+from rms_backend.records.close_operations import RecordCloseOperations
 from tests.test_record_save_operations import RecordSaveFixture
 
 

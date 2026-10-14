@@ -3,7 +3,7 @@ import random
 import unittest
 from unittest.mock import patch
 
-from rms_backend import game_record_storage
+from rms_backend.records import authored_projection as game_record_storage
 from rms_backend import service
 from rms_backend.service_helpers import (
     DORA_INDICATOR_POSITIONS,

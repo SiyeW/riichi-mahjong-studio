@@ -1,5 +1,5 @@
 <template>
-  <div class="record-operation-overlay" role="status" aria-live="polite" aria-atomic="true">
+  <div class="record-operation-overlay" :class="{ 'is-nonblocking': !blocking }" role="status" aria-live="polite" aria-atomic="true">
     <div class="record-operation-card">
       <strong>{{ title }}</strong>
       <div class="record-operation-progress" aria-hidden="true"><span></span></div>
@@ -9,7 +9,7 @@
 </template>
 
 <script setup lang="ts">
-defineProps<{ title: string; detail: string }>()
+withDefaults(defineProps<{ title: string; detail: string; blocking?: boolean }>(), { blocking: true })
 </script>
 
 <style scoped>
@@ -35,6 +35,14 @@ defineProps<{ title: string; detail: string }>()
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
+
+.record-operation-overlay.is-nonblocking {
+  inset: auto calc(0.75rem * var(--chrome-scale)) calc(2.5rem * var(--chrome-scale)) auto;
+  place-items: end;
+  background: transparent;
+  pointer-events: none;
+}
+.is-nonblocking .record-operation-card { width: max-content; max-width: min(calc(22rem * var(--chrome-scale)), calc(100vw - 2rem)); }
 
 .record-operation-card > strong {
   color: var(--text-main);

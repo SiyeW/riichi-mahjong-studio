@@ -5,7 +5,7 @@ import numpy as np
 
 from rms_backend.analysis_cache import compact_opponent_analysis
 from rms_backend.opponent_prediction_protocol import OpponentPredictionProtocolAdapter
-from rms_backend.record_codec_client import RecordCodecClient
+from rms_backend.records.codec_client import RecordCodecClient
 
 
 class OpponentPredictionProjectionTests(unittest.TestCase):

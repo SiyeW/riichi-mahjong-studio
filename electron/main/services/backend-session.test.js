@@ -154,3 +154,21 @@ test('a failed main activation marker blocks old-renderer edits instead of aband
   assert.equal(session.needsRecovery(), true)
   await assert.rejects(session.sendRequest('set_node_comment', { nodeId: 'branch-2', comment: 'stale' }), /recovery/)
 })
+
+test('close waits for an owned replacement, then captures the new active record rather than the previous one', async () => {
+  const { backend, session } = fixture()
+  await session.sendRequest('create_game')
+  const old = session.getRuntime().workspaceId
+  const send = backend.sendRequest.bind(backend)
+  let finish
+  backend.sendRequest = (command, data) => command === 'create_game'
+    ? new Promise(resolve => { finish = async () => resolve(await send(command, data)) }) : send(command, data)
+  const replacing = session.sendRequest('create_game')
+  for (let i = 0; i < 3; i++) await new Promise(resolve => setImmediate(resolve))
+  const closing = session.prepareClose(true)
+  await finish()
+  await replacing
+  const prepared = await closing
+  assert.notEqual(session.getRuntime().workspaceId, old)
+  assert.equal(prepared.recovery.workspaceId, session.getRuntime().workspaceId)
+})

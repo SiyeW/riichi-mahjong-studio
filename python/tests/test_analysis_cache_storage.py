@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from rms_backend.analysis_cache_storage import (
+from rms_backend.records.legacy_cache import (
     ANALYSIS_CACHE_STORAGE_FIELD,
     AnalysisCachePacker,
     compact_record_analysis_caches,
@@ -34,7 +34,7 @@ class AnalysisCacheStorageTests(unittest.TestCase):
             return record['analysisCacheStorage']
 
         first = prepare({'a': {'analysisCache': {'model': result}}})
-        with patch('rms_backend.analysis_cache_storage.pack_json', wraps=pack_json) as pack:
+        with patch('rms_backend.records.legacy_cache.pack_json', wraps=pack_json) as pack:
             self.assertIs(prepare({'a': {'analysisCache': {'model': result}}}), first)
             pack.assert_not_called()
             moved = prepare({'b': {'analysisCache': {'model': result}}})

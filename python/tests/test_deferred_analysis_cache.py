@@ -4,11 +4,11 @@ import json
 import unittest
 from unittest.mock import patch
 
-from rms_backend.analysis_cache_codec import (
+from rms_backend.records.legacy_codec import (
     DeferredJsonObject, PackedJsonIndex, index_json_array, pack_json,
     snapshot_json_object, unpack_json,
 )
-from rms_backend.analysis_cache_storage import (
+from rms_backend.records.legacy_cache import (
     AnalysisCachePacker, compact_record_analysis_caches, expand_record_analysis_caches,
 )
 from rms_backend.analysis_cache import migrate_analysis_cache_storage
@@ -66,7 +66,7 @@ class DeferredAnalysisCacheTests(unittest.TestCase):
         packer = AnalysisCachePacker()
         packed = pack_json(expected)
         packer.seed('opponent', values, packed)
-        with patch('rms_backend.analysis_cache_storage.pack_json', wraps=pack_json) as encode:
+        with patch('rms_backend.records.legacy_cache.pack_json', wraps=pack_json) as encode:
             self.assertIs(packer.pack('opponent', values), packed)
             encode.assert_not_called()
         values[0]['new'] = {'probability': [0, 1]}

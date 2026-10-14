@@ -1,7 +1,7 @@
 import copy
 import unittest
 
-from rms_backend.game_record_storage import (
+from rms_backend.records.authored_projection import (
     _compact_action_histories_for_record,
     _hydrate_action_histories_from_record,
     hydrate_game_structure,

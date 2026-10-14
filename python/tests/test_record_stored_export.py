@@ -7,15 +7,15 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from rms_backend.record_analysis_refs import AnalysisReference
-from rms_backend.analysis_body_codec import AnalysisBodyCodec
-from rms_backend.analysis_cache_codec import AnalysisReadError
-from rms_backend.record_archive import PortableBody, write_archive
-from rms_backend.record_codec_scheduler import RecordCodecScheduler
-from rms_backend.record_file import read_record_file
-from rms_backend.record_session_storage import RecordSessionStorage, result_slot
-from rms_backend.record_stored_export import StoredRecordExport
-from rms_backend.record_workspace_writer import RecordWorkspaceWriter
+from rms_backend.records.analysis_refs import AnalysisReference
+from rms_backend.records.body_codec import AnalysisBodyCodec
+from rms_backend.records.legacy_codec import AnalysisReadError
+from rms_backend.records.archive import PortableBody, write_archive
+from rms_backend.records.codec_scheduler import RecordCodecScheduler
+from rms_backend.records.file import read_record_file
+from rms_backend.records.session_storage import RecordSessionStorage, result_slot
+from rms_backend.records.portable_export import StoredRecordExport
+from rms_backend.records.workspace_writer import RecordWorkspaceWriter
 
 
 @contextmanager

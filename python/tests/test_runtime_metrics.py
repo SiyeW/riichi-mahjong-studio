@@ -6,11 +6,15 @@ from rms_backend import runtime_metrics
 
 
 class FakeProcess:
-    def __init__(self, pid, private_bytes, children=None, *, deny_full_info=False):
+    def __init__(self, pid, private_bytes, children=None, *, deny_full_info=False, parent=10):
         self.pid = pid
         self.private_bytes = private_bytes
         self._children = children or []
         self.deny_full_info = deny_full_info
+        self.parent = parent
+
+    def ppid(self):
+        return self.parent
 
     def memory_full_info(self):
         if self.deny_full_info:
@@ -40,7 +44,7 @@ class RuntimeMemoryMetricTests(unittest.TestCase):
             mock.patch.object(runtime_metrics.os, "getpid", return_value=10),
             mock.patch.object(runtime_metrics.psutil, "Process", return_value=root),
         ):
-            metrics = runtime_metrics.collect_runtime_memory_metrics()
+            metrics = runtime_metrics.collect_runtime_memory_metrics(engine_pids=(11, 12))
 
         self.assertTrue(root.recursive_requested)
         self.assertEqual(metrics["backendPrivateBytes"], 100)
@@ -51,10 +55,21 @@ class RuntimeMemoryMetricTests(unittest.TestCase):
         root = FakeProcess(10, 100, [FakeProcess(11, 200), FakeProcess(12, 300)])
         with mock.patch.object(runtime_metrics.os, 'getpid', return_value=10), \
              mock.patch.object(runtime_metrics.psutil, 'Process', return_value=root):
-            metrics = runtime_metrics.collect_runtime_memory_metrics(codec_pid=12)
+            metrics = runtime_metrics.collect_runtime_memory_metrics(codec_pid=12, engine_pids=(11,))
         self.assertEqual(metrics['codecPrivateBytes'], 300)
         self.assertEqual(metrics['enginePrivateBytes'], 200)
         self.assertEqual(metrics['engineProcessCount'], 1)
+
+    def test_process_families_follow_actual_owners_and_console_support_is_not_an_engine(self):
+        root = FakeProcess(10, 100, [FakeProcess(11, 200), FakeProcess(12, 300),
+            FakeProcess(13, 50, parent=11), FakeProcess(14, 60, parent=12), FakeProcess(15, 70)])
+        with mock.patch.object(runtime_metrics.os, 'getpid', return_value=10), \
+             mock.patch.object(runtime_metrics.psutil, 'Process', return_value=root):
+            metrics = runtime_metrics.collect_runtime_memory_metrics(codec_pid=12, engine_pids=(11,))
+        self.assertEqual(metrics['backendPrivateBytes'], 170)
+        self.assertEqual(metrics['enginePrivateBytes'], 250)
+        self.assertEqual(metrics['codecPrivateBytes'], 360)
+        self.assertEqual(metrics['engineProcessCount'], 2)
 
 
 if __name__ == "__main__":

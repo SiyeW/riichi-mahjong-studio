@@ -76,7 +76,7 @@ function createGameFileStore(baseDir) {
   let backendRuntime = null
 
   function isDirty() {
-    if (backendRuntime) return backendRuntime.contentRevision !== backendRuntime.savedContentRevision
+    if (backendRuntime) return Boolean(backendRuntime.recoveryWarning) || backendRuntime.contentRevision !== backendRuntime.savedContentRevision
     return recordActive && revision !== savedRevision
   }
 

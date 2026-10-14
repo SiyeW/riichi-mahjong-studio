@@ -21,10 +21,10 @@ from . import legal_actions
 from . import opponent_analysis_session
 from . import play_prefetch_session
 from . import reaction_decision_history
-from . import record_commands
-from . import record_workspace_commands
-from . import record_session
-from . import new_game_candidate
+from .records import authored_commands as record_commands
+from .records import commands as record_workspace_commands
+from .records import session as record_session
+from .records import new_game_candidate
 from . import review_session
 from . import round_actions
 from . import round_progression
@@ -47,11 +47,11 @@ from .opponent_prediction_coordinator import OpponentPredictionCoordinator
 from .service_debug import DebugScenarioDependencies, run_debug_scenario
 from .service_helpers import actor_just_drew, now_iso
 from .service_runtime import ServiceRuntime
-from .record_view_context import RecordViewContext
+from .records.view_context import RecordViewContext
 from .analysis_read_presenter import AnalysisReadPresenter
-from .record_mutation_capture import RecordMutationCapture
-from .record_analysis_access import RecordAnalysisAccess
-from .record_lifecycle import RecordLifecycle
+from .records.mutation_capture import RecordMutationCapture
+from .records.analysis_access import RecordAnalysisAccess
+from .records.lifecycle import RecordLifecycle
 from .rule_kernel import (
     can_ankan,
     can_declare_riichi,
@@ -762,7 +762,8 @@ def _dispatch_record_command(request_id, command, payload):
 
 def _collect_runtime_metrics():
     codec_pid, queue = SERVICE_RUNTIME.codec_metrics()
-    metrics = runtime_metrics.collect_runtime_memory_metrics(codec_pid=codec_pid)
+    metrics = runtime_metrics.collect_runtime_memory_metrics(codec_pid=codec_pid,
+        engine_pids=ENGINE_RUNTIME_REGISTRY.process_ids())
     lifecycle = RECORD_LIFECYCLE
     if lifecycle is not None:
         metrics['recordCache'] = {**lifecycle.resources.cache_metrics(),

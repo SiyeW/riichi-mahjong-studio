@@ -6,10 +6,10 @@ import unittest
 from unittest import mock
 
 from rms_backend import service
-from rms_backend.analysis_cache_codec import AnalysisReadError
-from rms_backend.record_codec_scheduler import RecordCodecScheduler
-from rms_backend.record_session_storage import RecordSessionStorage
-from rms_backend.record_workspace_writer import RecordWorkspaceWriter
+from rms_backend.records.legacy_codec import AnalysisReadError
+from rms_backend.records.codec_scheduler import RecordCodecScheduler
+from rms_backend.records.session_storage import RecordSessionStorage
+from rms_backend.records.workspace_writer import RecordWorkspaceWriter
 
 
 class DecisionAnalysisUseTests(unittest.TestCase):

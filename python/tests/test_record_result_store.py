@@ -5,13 +5,13 @@ import tempfile
 import threading
 import unittest
 
-from rms_backend.analysis_cache_codec import index_json_array, pack_json
-from rms_backend.record_archive import read_archive, write_archive
-from rms_backend.record_codec_packets import result_packet, materialize_packet
-from rms_backend.record_codec_scheduler import RecordCodecScheduler
-from rms_backend.record_codec_client import RecordCodecClient
-from rms_backend.record_result_store import RecordResultStore
-from rms_backend.record_workspace_writer import RecordWorkspaceWriter
+from rms_backend.records.legacy_codec import index_json_array, pack_json
+from rms_backend.records.archive import read_archive, write_archive
+from rms_backend.records.codec_packets import result_packet, materialize_packet
+from rms_backend.records.codec_scheduler import RecordCodecScheduler
+from rms_backend.records.codec_client import RecordCodecClient
+from rms_backend.records.results import RecordResultStore
+from rms_backend.records.workspace_writer import RecordWorkspaceWriter
 
 
 @contextmanager
@@ -82,7 +82,7 @@ class RecordResultStoreTests(unittest.TestCase):
         self.assertEqual(materialize_packet(packet), result)
 
     def test_changed_legacy_header_retains_unopened_original_fields(self):
-        from rms_backend.record_file import RecordFileWriter, read_record_file
+        from tests.legacy_record_fixture import RecordFileWriter, read_record_file
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'old.mjstudio'
             original = {'status': 'ready', 'outputs': {'extension': [0, .5, 1]}}

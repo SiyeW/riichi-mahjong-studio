@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .analysis_cache_codec import AnalysisReadError
+from .records.legacy_codec import AnalysisReadError
 
 import copy
 from dataclasses import dataclass
@@ -22,7 +22,7 @@ from .analysis_cache import (
     same_analysis_context,
 )
 from .service_helpers import now_iso
-from .record_analysis_refs import AnalysisReference
+from .records.analysis_refs import AnalysisReference
 
 
 @dataclass(frozen=True)

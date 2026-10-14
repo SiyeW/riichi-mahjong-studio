@@ -9,15 +9,15 @@ from concurrent.futures import Future
 import gzip
 from rms_backend.analysis_cache import decision_cache_key
 
-from rms_backend.record_codec_scheduler import RecordCodecScheduler
-from rms_backend.record_session_storage import RecordSessionStorage, result_slot
-from rms_backend.record_workspace_writer import RecordWorkspaceWriter
-from rms_backend.record_file import RecordFileWriter, read_record_file
-from rms_backend.record_session import RecordSession
-from rms_backend.record_blocks import BlockSource
-from rms_backend.record_analysis_refs import AnalysisReference
-from rms_backend.analysis_body_codec import AnalysisBodyCodec
-from rms_backend.record_archive import ArchiveSource, PortableBody, write_archive
+from rms_backend.records.codec_scheduler import RecordCodecScheduler
+from rms_backend.records.session_storage import RecordSessionStorage, result_slot
+from rms_backend.records.workspace_writer import RecordWorkspaceWriter
+from tests.legacy_record_fixture import RecordFileWriter, read_record_file
+from rms_backend.records.session import RecordSession
+from rms_backend.records.legacy_blocks import BlockSource
+from rms_backend.records.analysis_refs import AnalysisReference
+from rms_backend.records.body_codec import AnalysisBodyCodec
+from rms_backend.records.archive import ArchiveSource, PortableBody, write_archive
 
 
 @contextmanager
@@ -233,7 +233,7 @@ class RecordSessionStorageTests(unittest.TestCase):
                 next_writer = RecordWorkspaceWriter(Path(directory) / 'workspace.sqlite', 'native')
                 next_scheduler = RecordCodecScheduler()
                 try:
-                    with patch('rms_backend.record_file.read_record_file', side_effect=AssertionError('Native restore reparsed source')):
+                    with patch('rms_backend.records.file.read_record_file', side_effect=AssertionError('Native restore reparsed source')):
                         restored, game, _state = RecordSessionStorage.restore('native', next_scheduler, next_writer)
                     self.assertIsNone(next_scheduler.client.pid)
                     self.assertEqual(restored.results.slot(slot), identity)
@@ -280,7 +280,7 @@ class RecordSessionStorageTests(unittest.TestCase):
                 record = read_record_file(source, writer=legacy_writer)
                 raw = record['game']['nodes']['n_root']['opponentAnalysisCache'][key]
                 with patch.object(BlockSource, 'read_block', side_effect=AssertionError('Adoption loaded a saved body')):
-                    session.load(record, take_ownership=True, file_writer=legacy_writer)
+                    session.load(record, take_ownership=True)
                 self.assertIs(session.storage, storage)
                 reference = state['game']['nodes']['n_root']['opponentAnalysisCache'][key]
                 self.assertIsInstance(reference, AnalysisReference)

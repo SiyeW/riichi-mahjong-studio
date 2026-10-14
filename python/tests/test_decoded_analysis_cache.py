@@ -1,6 +1,6 @@
 import unittest
 
-from rms_backend.decoded_analysis_cache import DecodedAnalysisCache
+from rms_backend.records.decoded_cache import DecodedAnalysisCache
 
 
 class DecodedAnalysisCacheTests(unittest.TestCase):

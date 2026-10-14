@@ -107,6 +107,7 @@ function createBackendProcess({
       child = null
       serviceReady = false
       stopping = null
+      if (operation?.timer) clearTimeout(operation.timer)
       if (!operation) notifyStopped(error)
       operation?.resolve()
     }
@@ -198,7 +199,7 @@ function createBackendProcess({
     }
   }
 
-  function stop(error) {
+  function stop(error, { graceful = false, cleanupTimeoutMs = 5000 } = {}) {
     if (stopping) return stopping.promise
     if (!child) return Promise.resolve()
     rejectPendingRequests(new Error(error || `${name} stopped before responding.`))
@@ -210,15 +211,27 @@ function createBackendProcess({
     notifyStopped(error)
     // kill() requests termination; it does not release this process's ownership.
     // Keep the child until its exit event, including a false kill() return.
-    try { stoppedChild.kill() } catch (killError) {
-      console.error(`[${name}] termination request failed:`, killError)
+    const terminate = () => {
+      if (child !== stoppedChild) return
+      try { stoppedChild.kill() } catch (killError) {
+        console.error(`[${name}] termination request failed:`, killError)
+      }
+    }
+    if (graceful && typeof stoppedChild.stdin.end === 'function') {
+      // Normal callers have already confirmed their data barrier. EOF lets
+      // Python close owned engines/codec/writers; the deadline is cleanup only.
+      stopping.timer = setTimeout(terminate, cleanupTimeoutMs)
+      stopping.timer.unref?.()
+      try { stoppedChild.stdin.end() } catch { terminate() }
+    } else {
+      terminate()
     }
     return promise
   }
 
-  function restart() {
+  function restart(options) {
     if (restarting) return restarting
-    restarting = stop().then(() => { start() }).finally(() => { restarting = null })
+    restarting = stop(undefined, options).then(() => { start() }).finally(() => { restarting = null })
     return restarting
   }
 

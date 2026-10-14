@@ -7,13 +7,13 @@ import unittest
 from unittest.mock import patch
 
 from rms_backend.analysis_cache import decision_cache_key
-from rms_backend.record_analysis_access import RecordAnalysisAccess
-from rms_backend.record_codec_scheduler import RecordCodecScheduler
-from rms_backend.record_session_storage import RecordSessionStorage, result_slot
-from rms_backend.record_workspace_writer import RecordWorkspaceWriter
+from rms_backend.records.analysis_access import RecordAnalysisAccess
+from rms_backend.records.codec_scheduler import RecordCodecScheduler
+from rms_backend.records.session_storage import RecordSessionStorage, result_slot
+from rms_backend.records.workspace_writer import RecordWorkspaceWriter
 from rms_backend.analysis_read_presenter import AnalysisReadPresenter
 from rms_backend.opponent_analysis_session import OpponentAnalysisSession, OpponentAnalysisDependencies
-from rms_backend.record_view_context import RecordViewContext
+from rms_backend.records.view_context import RecordViewContext
 
 
 @contextmanager

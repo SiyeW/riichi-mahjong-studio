@@ -7,15 +7,15 @@ import unittest
 from unittest.mock import patch
 
 from rms_backend import service
-from rms_backend import record_session
-from rms_backend.analysis_cache_storage import compact_record_analysis_caches
-from rms_backend.record_file import RecordFileWriter, read_record_file
+from rms_backend.records import session as record_session
+from rms_backend.records.legacy_cache import compact_record_analysis_caches
+from tests.legacy_record_fixture import RecordFileWriter, read_record_file
 
 
 class ImportGameFailureTests(unittest.TestCase):
     def setUp(self):
         self.saved = dict(service.STATE)
-        self.saved_owners = (service.RECORD_SESSION._analysis_packer, service.RECORD_SESSION._file_writer)
+        self.saved_packer = service.RECORD_SESSION._analysis_packer
         self.old_game = service.create_empty_game(123456)
         self.old_game['nodes']['n_root']['comment'] = 'unsaved comment'
         service.STATE.update(game=self.old_game, gameLoaded=True, mode='research',
@@ -30,7 +30,7 @@ class ImportGameFailureTests(unittest.TestCase):
     def tearDown(self):
         service.STATE.clear()
         service.STATE.update(self.saved)
-        service.RECORD_SESSION._analysis_packer, service.RECORD_SESSION._file_writer = self.saved_owners
+        service.RECORD_SESSION._analysis_packer = self.saved_packer
 
     def test_native_import_reuses_analysis_on_first_save_and_recovery(self):
         self.record['game']['nodes']['n_root']['opponentAnalysisCache'] = {
@@ -53,15 +53,12 @@ class ImportGameFailureTests(unittest.TestCase):
                 prepared = service.RECORD_SESSION.prepare_export()
                 document = service.RECORD_SESSION.serialize_prepared_export(prepared)
                 target = Path(directory) / str(recovery)
-                with patch('rms_backend.record_file.gzip.compress', wraps=gzip.compress) as compress:
-                    prepared.file_writer.write(target, document, recovery=recovery)
-                self.assertEqual(compress.call_count, 2)
+                RecordFileWriter().write(target, document, recovery=recovery)
                 saved = read_record_file(target)
                 self.assertEqual(saved['analysisCacheStorage'], self.record['analysisCacheStorage'])
                 self.assertEqual(saved['game']['nodes']['n_root']['comment'], 'new comment')
 
-    def test_failed_native_activation_does_not_commit_candidate_file_writer(self):
-        previous_writer = service.RECORD_SESSION._file_writer
+    def test_failed_native_activation_does_not_commit_candidate_analysis_owner(self):
         previous_packer = service.RECORD_SESSION._analysis_packer
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'source'
@@ -71,7 +68,6 @@ class ImportGameFailureTests(unittest.TestCase):
                  patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'):
                 with self.assertRaisesRegex(RuntimeError, 'activation failed'):
                     service.RECORD_WORKSPACE_COMMANDS.import_record(1, 'import_game_record', {'path': str(source)})
-        self.assertIs(service.RECORD_SESSION._file_writer, previous_writer)
         self.assertIs(service.RECORD_SESSION._analysis_packer, previous_packer)
         self.assert_old_record_preserved()
 
@@ -132,7 +128,7 @@ class ImportGameFailureTests(unittest.TestCase):
             self.assertIs(service.STATE['game'], self.record['game'])
 
     def test_failed_file_read_does_not_replace_active_game(self):
-        with patch('rms_backend.record_workspace_commands.read_record_file', side_effect=ValueError('damaged')), \
+        with patch('rms_backend.records.commands.read_record_file', side_effect=ValueError('damaged')), \
              patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime') as reset:
             with self.assertRaisesRegex(ValueError, 'damaged'):
                 service.RECORD_WORKSPACE_COMMANDS.import_record(1, 'import_game_record', {'path': 'bad'})
@@ -141,7 +137,7 @@ class ImportGameFailureTests(unittest.TestCase):
 
     def test_file_import_returns_recovery_metadata_after_activation(self):
         self.record['metadata'] = {'recovery': {'kind': 'unsaved-exit', 'sourcePath': 'source.mjstudio'}}
-        with patch('rms_backend.record_workspace_commands.read_record_file', return_value=self.record), \
+        with patch('rms_backend.records.commands.read_record_file', return_value=self.record), \
              patch.object(service.RECORD_SESSION.dependencies, 'request_opponent_analysis'), \
              patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'), \
              patch.object(service.VIEW_BUILDER, 'build_response', side_effect=lambda _id, _cmd, extra: extra):

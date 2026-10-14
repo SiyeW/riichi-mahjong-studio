@@ -514,5 +514,11 @@
   "native.mortal.noId": "未能从网址中识别 Mortal 报告 ID。",
   "native.backend.startFailed": "{name} 无法启动：{message}",
   "record.unsavedName": "未保存的对局",
+  "native.saveTargetBusy": "另一个窗口正在保存这个文件，请稍后重试。",
+  "native.allFiles": "所有文件",
+  "native.unfinishedSaveFile": "未完成的保存文件已保留，可在“打开”的“所有文件”中选择它尝试恢复：{path}",
+  "recordOperation.saveContinue": "正在保存，仍可浏览和编辑。",
+  "native.recoveryIncomplete.title": "请检查恢复的内容",
+  "native.recoveryIncomplete.message": "已恢复保留的内容，但恢复数据可能不完整。请检查已保存的牌谱文件。",
   "recordOperation.savedRecoveryWarning": "牌谱已保存，但恢复数据未能更新。请保留已保存的文件。{message}"
 }

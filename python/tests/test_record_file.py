@@ -8,9 +8,9 @@ from unittest.mock import patch
 from types import SimpleNamespace
 
 from rms_backend import service
-from rms_backend.record_file import read_record_file, RecordFileWriter
-from rms_backend.record_session import RecordSession
-from rms_backend.analysis_cache_storage import (
+from tests.legacy_record_fixture import read_record_file, RecordFileWriter
+from rms_backend.records.session import RecordSession
+from rms_backend.records.legacy_cache import (
     AnalysisCachePacker, compact_record_analysis_caches, expand_record_analysis_caches,
 )
 
@@ -27,12 +27,12 @@ class RecordFileTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / 'limited'
             source.write_bytes(data)
-            with patch('rms_backend.record_file.LEGACY_LIMIT', len(data) + 1):
+            with patch('rms_backend.records.file.LEGACY_LIMIT', len(data) + 1):
                 self.assertEqual(read_record_file(source), {'text': '12345678'})
             # Keep compressed input under the cap, but produce too much across
             # independently valid members. No post-allocation whole inflate.
             source.write_bytes(gzip.compress(b'x' * 1000) + gzip.compress(b'y' * 1000))
-            with patch('rms_backend.record_file.LEGACY_LIMIT', 1500), self.assertRaisesRegex(ValueError, 'expansion limit'):
+            with patch('rms_backend.records.file.LEGACY_LIMIT', 1500), self.assertRaisesRegex(ValueError, 'expansion limit'):
                 read_record_file(source)
 
     def cache_record(self):
@@ -71,7 +71,7 @@ class RecordFileTests(unittest.TestCase):
                     del nodes['a']['opponentAnalysisCache']
                 compact_record_analysis_caches(loaded, packer=packer)
                 target = Path(directory) / 'saved'
-                with patch('rms_backend.record_file.gzip.compress', wraps=gzip.compress) as compress:
+                with patch('tests.legacy_record_fixture.gzip.compress', wraps=gzip.compress) as compress:
                     writer.write(target, loaded, recovery=True)
                 self.assertEqual(compress.call_count, 2 if edit == 'comment' else 1 if edit == 'clear' else 3)
                 actual = read_record_file(target)
@@ -89,7 +89,7 @@ class RecordFileTests(unittest.TestCase):
             loaded = read_record_file(source, writer=writer)
             expand_record_analysis_caches(loaded, packer=packer, lazy=True)
             compact_record_analysis_caches(loaded, packer=packer)
-            with patch('rms_backend.record_file.gzip.compress', wraps=gzip.compress) as compress:
+            with patch('tests.legacy_record_fixture.gzip.compress', wraps=gzip.compress) as compress:
                 writer.write(target, loaded)
             self.assertEqual(compress.call_count, 3)
             for kind in ('decision', 'opponent'):
@@ -126,11 +126,10 @@ class RecordFileTests(unittest.TestCase):
             reset_runtime=lambda: None, storage_changed=lambda *_: None))
         prepared = session.prepare_export()
         session.close()
-        self.assertIsNot(prepared.file_writer, session._file_writer)
         self.assertIsNot(prepared.analysis_packer, session._analysis_packer)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'pending.tmp'
-            prepared.file_writer.write(path, session.serialize_prepared_export(prepared))
+            RecordFileWriter().write(path, session.serialize_prepared_export(prepared))
             self.assertEqual(read_record_file(path)['game']['gameId'], game['gameId'])
         self.assertFalse(state['gameLoaded'])
 
@@ -138,7 +137,7 @@ class RecordFileTests(unittest.TestCase):
         writer = RecordFileWriter()
         record = {'game': {'comment': 'first'}, 'analysisCacheStorage': {'payload': [0, 0.25, 1]}}
         with tempfile.TemporaryDirectory() as directory, \
-             patch('rms_backend.record_file.gzip.compress', wraps=gzip.compress) as compress:
+             patch('tests.legacy_record_fixture.gzip.compress', wraps=gzip.compress) as compress:
             first = Path(directory) / 'first.tmp'
             writer.write(first, record)
             self.assertEqual(compress.call_count, 3)
