@@ -32,6 +32,7 @@ const workflow = createRecordWorkflow({ app: { getVersion: () => 'benchmark' }, 
   gameFileStore: store, getMainWindow: () => null, t: key => key,
   backendGateway: { captureRecordSave: session.captureSave, writeRecordSave: session.writeSave,
     acknowledgeRecordSave: session.acknowledgeSave, abortRecordSave: session.abortSave,
+    releaseRecordSave: session.releaseSave,
     getRecordRuntime: session.getRuntime },
 })
 

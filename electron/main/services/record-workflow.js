@@ -25,6 +25,8 @@ function createRecordWorkflow({
 }) {
   let startupRecoveryAttempted = false
   let publishedRecordDirty = false
+  let savedPathGeneration = -1
+  let rememberedPathIntent = 0
 
   function publishRecordDirty(force = false) {
     if (backendGateway.getRecordRuntime) gameFileStore.observeRuntime(backendGateway.getRecordRuntime())
@@ -57,7 +59,7 @@ function createRecordWorkflow({
     const targetIdentity = process.platform === 'win32' ? targetPath.toLowerCase() : targetPath
     const lease = await acquireRecordLease('save-target', targetIdentity)
     const recordGeneration = gameFileStore.getRecordGeneration()
-    let token, stagingPath, promoted = false
+    let token, stagingPath, promoted = false, recoveryWarning = ''
     try {
       const previous = await fs.promises.stat(targetPath).catch(error => {
         if (error.code === 'ENOENT') return null
@@ -67,7 +69,8 @@ function createRecordWorkflow({
       await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
       token = await backendGateway.captureRecordSave(targetPath, app.getVersion())
       stagingPath = `${targetPath}.${token.saveId}.tmp`
-      await backendGateway.writeRecordSave(token, stagingPath)
+      const written = await backendGateway.writeRecordSave(token, stagingPath)
+      recoveryWarning = written?.result?.recoveryError || ''
       const current = await fs.promises.stat(targetPath).catch(error => {
         if (error.code === 'ENOENT') return null
         throw error
@@ -81,19 +84,36 @@ function createRecordWorkflow({
       await fs.promises.rename(stagingPath, targetPath)
       promoted = true
       await backendGateway.acknowledgeRecordSave(token)
-      if (recordGeneration === gameFileStore.getRecordGeneration() && rememberPath) gameFileStore.setCurrentPath(targetPath)
     } catch (error) {
-      if (token && !promoted) await backendGateway.abortRecordSave(token).catch(() => {})
-      throw error
+      if (!promoted) {
+        if (token) await backendGateway.abortRecordSave(token).catch(() => {})
+        throw error
+      }
+      // Promotion is the file commit. A failed local ACK cannot turn a valid
+      // rescue artifact into a failed Save; keep dirty/recovery state honest.
+      recoveryWarning = error instanceof Error ? error.message : String(error)
+      await backendGateway.releaseRecordSave(token).catch(() => {})
+      console.warn('[record] file saved but recovery acknowledgement failed:', recoveryWarning)
     } finally {
       if (stagingPath) await fs.promises.rm(stagingPath, { force: true }).catch(() => {})
       await lease.release()
+    }
+    if (recordGeneration === gameFileStore.getRecordGeneration() && rememberPath) {
+      if (savedPathGeneration !== recordGeneration) {
+        savedPathGeneration = recordGeneration
+        rememberedPathIntent = 0
+      }
+      if (token.pathIntent >= rememberedPathIntent) {
+        rememberedPathIntent = token.pathIntent
+        gameFileStore.setCurrentPath(targetPath)
+      }
     }
     const recordDirty = publishRecordDirty(true)
     return {
       path: targetPath,
       recordDirty,
       recoveryRecord: gameFileStore.isRecoveryRecord(),
+      ...(recoveryWarning ? { recoveryWarning } : {}),
     }
   }
 

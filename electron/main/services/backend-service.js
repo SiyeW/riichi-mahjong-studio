@@ -77,6 +77,7 @@ function createBackendService(options = {}) {
       writeRecordSave: backendSession.writeSave,
       acknowledgeRecordSave: backendSession.acknowledgeSave,
       abortRecordSave: backendSession.abortSave,
+      releaseRecordSave: backendSession.releaseSave,
       prepareRecordClose: backendSession.prepareClose,
       cancelRecordClose: backendSession.cancelClose,
       confirmRecordClose: backendSession.confirmClose,

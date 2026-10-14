@@ -21,7 +21,7 @@ function fixture(context, options = {}) {
     captureRecordSave: async (destination, version) => {
       calls.push('capture')
       assert.equal(version, 'test')
-      return { saveId: randomUUID(), target: destination, revision: store.getRevision() }
+      return { saveId: randomUUID(), target: destination, revision: store.getRevision(), pathIntent: 1 }
     },
     writeRecordSave: async (token, stage) => {
       calls.push('write')
@@ -31,6 +31,7 @@ function fixture(context, options = {}) {
     },
     acknowledgeRecordSave: async token => { calls.push('ack'); store.markSaved(token.revision) },
     abortRecordSave: async () => { calls.push('abort') },
+    releaseRecordSave: async () => { calls.push('release') },
     ...options.gateway,
   }
   const workflow = createRecordWorkflow({ app: { getVersion: () => 'test' }, appOptions: {},
@@ -74,9 +75,11 @@ test('a failed ACK never deletes the already promoted file or aborts its durable
   const { workflow, target, calls } = fixture(context, { gateway: {
     acknowledgeRecordSave: async () => { calls.push('ack'); throw new Error('backend exited') },
   } })
-  await assert.rejects(workflow.saveGame(), /backend exited/)
+  const saved = await workflow.saveGame()
+  assert.match(saved.recoveryWarning, /backend exited/)
   assert.equal(fs.readFileSync(target, 'utf8'), 'complete new record')
   assert.equal(calls.includes('abort'), false)
+  assert.equal(calls.includes('release'), true)
 })
 
 test('external target replacement is detected before promotion', async context => {

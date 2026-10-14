@@ -168,6 +168,7 @@ export function useRecordSession(options: UseRecordSessionOptions) {
         recordDirty.value = Boolean(result.recordDirty) || hasRecordDrafts()
       }
       recoveryRecord.value = Boolean(result.recoveryRecord)
+      if (result.recoveryWarning) recordOperationError.value = t('recordOperation.savedRecoveryWarning', { message: result.recoveryWarning })
     } catch (error) {
       reportOperationError(error)
     } finally {

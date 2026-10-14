@@ -289,6 +289,7 @@ class RecordResourceManager:
                 self.emit({'type': 'workspace_released', **outcome})
             except Exception as error:
                 self._transport_error = str(error)  # Parent loss must not stop release of remaining resources.
+            resource = None  # An idle collector must not retain the last completed game graph.
 
     def wait_released(self, identity):
         with self._lock:

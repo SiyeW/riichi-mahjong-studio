@@ -43,11 +43,12 @@ function runtime(context, directory) {
   backend.onEvent(session.handleEvent)
   owners.sessions.push(session)
   const store = createGameFileStore(directory)
-  const workflow = createRecordWorkflow({ app: { getVersion: () => 'test' }, appOptions: {}, dialog: {}, gameFileStore: store,
-    backendGateway: { captureRecordSave: session.captureSave, writeRecordSave: session.writeSave,
+  const gateway = { captureRecordSave: session.captureSave, writeRecordSave: session.writeSave,
       acknowledgeRecordSave: session.acknowledgeSave, abortRecordSave: session.abortSave,
-      getRecordRuntime: session.getRuntime }, getMainWindow: () => null, t: key => key })
-  return { directory, backend, session, store, workflow, child: () => child }
+      releaseRecordSave: session.releaseSave, getRecordRuntime: session.getRuntime }
+  const workflow = createRecordWorkflow({ app: { getVersion: () => 'test' }, appOptions: {}, dialog: {}, gameFileStore: store,
+    backendGateway: gateway, getMainWindow: () => null, t: key => key })
+  return { directory, backend, session, store, workflow, gateway, child: () => child }
 }
 
 function recordFixture(directory) {
@@ -212,4 +213,48 @@ test('cache preference applies live and survives exit, new backend and reread fr
   metrics = await second.session.sendRequest('get_runtime_metrics')
   assert.equal(metrics.metrics.recordCache.budgetBytes, 1024 * 1024)
   assert.equal(loadSettings(options).records.analysisCacheMiB, 1)
+})
+
+test('a real locked recovery DB cannot turn a promoted portable Save into failure or keep close pinned forever', supported, async context => {
+  const first = runtime(context)
+  const created = await first.session.sendRequest('import_game_record', { record: recordFixture(first.directory) })
+  first.store.beginRecord({ dirty: true, nodeId: created.view.currentNodeId })
+  const target = path.join(first.directory, 'rescue.mjstudio')
+  first.store.setCurrentPath(target)
+  const database = path.join(first.directory, 'records/.recovery/workspaces', first.session.getRuntime().workspaceId, 'workspace.sqlite')
+  const acknowledge = first.gateway.acknowledgeRecordSave
+  first.gateway.acknowledgeRecordSave = async token => {
+    const locker = spawn(python, ['-u', '-c',
+      'import sqlite3,sys; db=sqlite3.connect(sys.argv[1],timeout=5); db.execute("BEGIN IMMEDIATE"); print("locked",flush=True); sys.stdin.readline(); db.rollback(); db.close()', database],
+      { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    const closed = new Promise(resolve => locker.once('close', resolve))
+    let timer
+    try {
+      await new Promise((resolve, reject) => {
+        timer = setTimeout(() => reject(new Error('Isolated database locker did not become ready.')), 5000)
+        locker.once('error', reject)
+        locker.stdout.once('data', output => output.toString().includes('locked') ? resolve() : reject(new Error('Invalid lock readiness')))
+        locker.once('exit', code => reject(new Error(`Database locker exited before acknowledgement: ${code}`)))
+      })
+      clearTimeout(timer)
+      return await acknowledge(token)
+    } finally {
+      clearTimeout(timer)
+      locker.stdin.end('release\n')
+      await closed
+    }
+  }
+  const result = await first.workflow.saveGame()
+  assert.equal(result.path, target)
+  assert.match(result.recoveryWarning, /locked/)
+  assert.equal(result.recordDirty, true)
+  assert.equal(decodeGameRecord(fs.readFileSync(target)).formatVersion, 3)
+  // Failed ACK releases the actual operation hold while keeping its intent.
+  await first.session.prepareClose(true)
+  await first.session.confirmClose()
+  await first.session.shutdown()
+  const second = runtime(context, first.directory)
+  await second.session.restoreStartup()
+  assert.equal(second.session.getRuntime().savedPath, target)
+  assert.equal(second.session.getRuntime().savedContentRevision, second.session.getRuntime().contentRevision)
 })

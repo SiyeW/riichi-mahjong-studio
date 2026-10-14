@@ -118,6 +118,7 @@ function createBackendSession(backend, options = {}) {
   const writeSave = (token, staging) => track(raw('record_save_write', { saveId: token.saveId, path: staging }))
   const acknowledgeSave = token => track(raw('record_save_committed', token).then(observe))
   const abortSave = token => raw('record_save_abort', { saveId: token.saveId })
+  const releaseSave = token => raw('record_save_release', { saveId: token.saveId })
 
   async function prepareClose(retain, onStage = () => {}) {
     if (close) return close.promise
@@ -222,7 +223,7 @@ function createBackendSession(backend, options = {}) {
   }
 
   async function shutdown() { await backend.stop(); await workspaces.shutdown() }
-  return { sendRequest, captureSave, writeSave, acknowledgeSave, abortSave, prepareClose, cancelClose,
+  return { sendRequest, captureSave, writeSave, acknowledgeSave, abortSave, releaseSave, prepareClose, cancelClose,
     confirmClose, restoreStartup, restart, shutdown, handleEvent,
     getRuntime: () => runtime, updateRetention: workspaces.updateRetention,
     needsRecovery: () => stopped, hasRecovery: () => Boolean(workspaces.getActive()) }

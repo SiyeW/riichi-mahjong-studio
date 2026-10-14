@@ -1,9 +1,12 @@
 from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+import gc
+from threading import Event
 import tempfile
 import unittest
 from uuid import uuid4
+import weakref
 
 from rms_backend import service
 from rms_backend.record_analysis_refs import AnalysisReference
@@ -33,6 +36,27 @@ def resources():
 
 
 class RecordResourceManagerTests(unittest.TestCase):
+    def test_idle_retirement_thread_releases_the_previous_record_graph(self):
+        class TrackedGame(dict):
+            pass
+        with resources() as (manager, lane, session, state):
+            first, second = str(uuid4()), str(uuid4())
+            with manager.candidate(first):
+                session.create()
+            manager.confirm_activation(first)
+            collected = Event()
+            graph = TrackedGame(manager.resource(first).game)
+            reference = weakref.ref(graph, lambda _: collected.set())
+            manager.resource(first).game = graph
+            del graph
+            with manager.candidate(second):
+                session.create()
+            manager.confirm_activation(second, previous=first)
+            manager.wait_released(first)
+            gc.collect()
+            self.assertTrue(collected.wait(.5), 'An idle collector retained its completed record graph.')
+            self.assertIsNone(reference())
+
     def test_main_identity_is_required_and_initial_source_obligations_finish_before_activation(self):
         with resources() as (manager, lane, session, state):
             with self.assertRaisesRegex(ValueError, 'Main must allocate'):

@@ -513,5 +513,6 @@
   "native.mortal.unsupportedHost": "目前只支持 mjai.ekyu.moe 的公开 Mortal 报告。",
   "native.mortal.noId": "未能从网址中识别 Mortal 报告 ID。",
   "native.backend.startFailed": "{name} 无法启动：{message}",
-  "record.unsavedName": "未保存的对局"
+  "record.unsavedName": "未保存的对局",
+  "recordOperation.savedRecoveryWarning": "牌谱已保存，但恢复数据未能更新。请保留已保存的文件。{message}"
 }

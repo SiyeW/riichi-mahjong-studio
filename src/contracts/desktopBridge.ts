@@ -17,7 +17,7 @@ export interface RecordFileResult {
   recoveryRecord: boolean
 }
 
-export type RecordSaveResult = Pick<RecordFileResult, 'path' | 'recordDirty' | 'recoveryRecord'>
+export type RecordSaveResult = Pick<RecordFileResult, 'path' | 'recordDirty' | 'recoveryRecord'> & { recoveryWarning?: string }
 
 export interface CloseState {
   active: boolean

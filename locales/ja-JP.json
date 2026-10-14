@@ -513,5 +513,6 @@
   "native.mortal.unsupportedHost": "mjai.ekyu.moe で公開されている Mortal レポートのみ対応しています。",
   "native.mortal.noId": "URL から Mortal レポート ID を取得できませんでした。",
   "native.backend.startFailed": "{name} を起動できませんでした：{message}",
-  "record.unsavedName": "未保存の対局"
+  "record.unsavedName": "未保存の対局",
+  "recordOperation.savedRecoveryWarning": "牌譜は保存されましたが、復元データを更新できませんでした。保存したファイルを保管してください。{message}"
 }

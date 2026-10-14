@@ -513,5 +513,6 @@
   "native.mortal.unsupportedHost": "Only public Mortal reports on mjai.ekyu.moe are supported.",
   "native.mortal.noId": "Could not find a Mortal report ID in the URL.",
   "native.backend.startFailed": "{name} failed to start: {message}",
-  "record.unsavedName": "Unsaved game"
+  "record.unsavedName": "Unsaved game",
+  "recordOperation.savedRecoveryWarning": "The record was saved, but recovery data could not be updated. Keep the saved file. {message}"
 }

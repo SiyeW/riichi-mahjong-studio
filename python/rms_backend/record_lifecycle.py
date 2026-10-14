@@ -68,6 +68,8 @@ class RecordLifecycle:
             result = self.saves.committed(data)
         elif command == 'record_save_abort':
             result = self.saves.abort(data.get('saveId'))
+        elif command == 'record_save_release':
+            result = self.saves.abort(data.get('saveId'), preserve_intent=True)
         elif command == 'record_close_capture':
             with self.lock:
                 self.cancel_analysis()

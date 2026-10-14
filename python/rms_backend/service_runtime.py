@@ -71,6 +71,7 @@ class ServiceRuntime:
             "record_close_prepare": "checkpoint",
             "record_save_committed": "record_control",
             "record_save_abort": "record_control",
+            "record_save_release": "record_control",
             "record_close_cancel": "record_control",
             "record_close_confirm": "record_control",
             "record_wait_released": "record_release",
