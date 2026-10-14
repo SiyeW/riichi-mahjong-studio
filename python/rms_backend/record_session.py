@@ -37,6 +37,7 @@ from .mortal_report_import import (
     repair_mortal_report_game,
 )
 from .record_file import RecordFileWriter
+from .record_stored_export import StoredRecordExport
 from .mjai_import import read_replay_file, build_mjai_game
 from .service_helpers import build_round_seed_stream, now_iso
 from .seat import normalize_seat
@@ -172,7 +173,7 @@ class RecordSession:
         game, state = prepared
         return serialize_game_record_parts(copy_game_for_record(game), copy.deepcopy(state))
 
-    def prepare_export(self) -> PreparedRecordExport:
+    def prepare_export(self) -> PreparedRecordExport | StoredRecordExport:
         """Capture a coherent full save while holding the state lock.
 
         Published analysis results are replaced, never edited in place. Detach
@@ -180,6 +181,10 @@ class RecordSession:
         Authored game data is projected and copied here so later edits cannot
         change the save; encoding/compression remains on the export worker.
         """
+        if self.storage is not None:
+            self.ensure_loaded()
+            state = {key: self._state[key] for key in self._STATE_FIELDS if key not in ('game', 'gameLoaded')}
+            return StoredRecordExport(self.storage, self._state['game'], state)
         game, state = self.prepare_recovery_checkpoint()
         game = copy_game_for_record(game)
         live_nodes = self._state["game"]["nodes"]

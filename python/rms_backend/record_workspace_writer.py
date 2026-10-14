@@ -82,7 +82,7 @@ class RecordWorkspaceWriter:
                     except Exception as error:
                         self._health = str(error)
             finally:
-                job = args = kwargs = result = None
+                job = args = kwargs = result = future = None
         try:
             if workspace is not None:
                 workspace.close()

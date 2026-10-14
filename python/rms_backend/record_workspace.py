@@ -38,6 +38,8 @@ CREATE TABLE slots (
   slot TEXT PRIMARY KEY, version TEXT REFERENCES versions(id),
   epoch INTEGER NOT NULL, revision INTEGER NOT NULL
 );
+CREATE INDEX versions_body ON versions(body);
+CREATE INDEX slots_version ON slots(version);
 CREATE TABLE coverage (revision INTEGER PRIMARY KEY, kind TEXT NOT NULL, complete INTEGER NOT NULL);
 CREATE TABLE saves (id TEXT PRIMARY KEY, content INTEGER NOT NULL, cursor INTEGER NOT NULL,
                     target TEXT NOT NULL, committed INTEGER NOT NULL DEFAULT 0);
@@ -301,6 +303,25 @@ class RecordWorkspace:
                 raise ValueError('Save identity conflict.')
             self._db.execute('INSERT OR IGNORE INTO saves(id,content,cursor,target) VALUES(?,?,?,?)', (save_id, *row))
 
+    def collect_versions(self, identities):
+        if len(identities) > 128:
+            raise ValueError('Recovery reclamation slice exceeds its limit.')
+        with self.transaction():
+            for identity in identities:
+                row = self._db.execute('SELECT body,revision FROM versions WHERE id=?', (identity,)).fetchone()
+                deleted = self._db.execute('DELETE FROM versions WHERE id=? AND NOT EXISTS '
+                                          '(SELECT 1 FROM slots WHERE version=?)', (identity, identity)).rowcount
+                if deleted and row[1]:
+                    self._coverage(row[1], 'analysis', True)  # Later explicit deletion fulfils this obsolete obligation.
+                if row is not None and row[0] is not None:
+                    self._db.execute('DELETE FROM bodies WHERE id=? AND NOT EXISTS '
+                                     '(SELECT 1 FROM versions WHERE body=?)', (row[0], row[0]))
+
+    def adopt_base(self, old_path, base_path, descriptor):
+        with self.transaction():
+            self._db.execute('UPDATE bodies SET base=? WHERE base=?', (str(base_path), str(old_path)))
+            self._set('origin', descriptor)
+
     def save_committed(self, save_id, content, cursor):
         """Idempotent host-rename ACK; must not apply captured browser state."""
         with self.transaction():
@@ -346,8 +367,10 @@ class RecordWorkspace:
                 'rounds': {key: _json(value) for key, value in db.execute('SELECT id,value FROM rounds')},
                 'schemas': {key: _json(value) for key, value in db.execute('SELECT id,value FROM schemas')},
                 'slots': list(db.execute('SELECT s.slot,s.epoch,s.revision,v.id,v.body FROM slots s LEFT JOIN versions v ON s.version=v.id')),
-                'versionMetadata': {identity: _json(summary) for identity, summary in db.execute('SELECT id,summary FROM versions')},
-                'bodies': list(db.execute('SELECT id,codec,length,digest,base,offset,namespace FROM bodies')),
+                'versionMetadata': {identity: _json(summary) for identity, summary in db.execute(
+                    'SELECT v.id,v.summary FROM versions v WHERE EXISTS (SELECT 1 FROM slots s WHERE s.version=v.id)')},
+                'bodies': list(db.execute('SELECT b.id,b.codec,b.length,b.digest,b.base,b.offset,b.namespace FROM bodies b '
+                                         'WHERE EXISTS (SELECT 1 FROM versions v JOIN slots s ON s.version=v.id WHERE v.body=b.id)')),
                 'pending': list(db.execute('SELECT revision,kind FROM coverage WHERE complete=0')),
                 'saves': list(db.execute('SELECT id,content,cursor,target,committed FROM saves')),
             }

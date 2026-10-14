@@ -83,11 +83,13 @@ class ArchiveSource:
             raise AnalysisReadError('Compressed analysis exceeds its size limit.')
         return b''.join(self.body_chunks(index))
 
-    def detach(self, base_path=None):
+    def detach(self, base_path=None, *, required_indices=None):
         """One private exact compressed base before overwriting a pinned source."""
         with self._detach:
             if self.detached and (base_path is None or self.base_path is not None):
                 return self.base_path
+            descriptors = self.descriptors if required_indices is None else tuple(
+                self.descriptors[index] for index in sorted(set(required_indices)))
             if self.file.closed:
                 if self._path is None:
                     raise AnalysisReadError('Record source has been released.')
@@ -111,8 +113,8 @@ class ArchiveSource:
                     data = self.chunk(position, min(COPY_CHUNK, size - position))
                     if position < self.start:
                         prefix.update(data[:min(len(data), self.start - position)])
-                    while body_index < len(self.descriptors):
-                        descriptor = self.descriptors[body_index]
+                    while body_index < len(descriptors):
+                        descriptor = descriptors[body_index]
                         first = self.start + descriptor.offset
                         end = first + descriptor.length
                         left, right = max(0, first - position), min(len(data), end - position)
@@ -130,7 +132,7 @@ class ArchiveSource:
                 after = os.fstat(self.file.fileno())
                 if (signature != (after.st_size, after.st_mtime_ns, after.st_ino, after.st_dev)
                         or prefix.digest() != self._prefix_digest
-                        or body_index != len(self.descriptors)):
+                        or body_index != len(descriptors)):
                     raise AnalysisReadError('Record source changed during private-base copy.')
                 temporary.flush()
                 if base_path is not None:
@@ -162,6 +164,8 @@ class PortableBody:
     length: int
     digest: bytes
     chunks: object
+    source: object = None
+    source_index: int | None = None
 
     @classmethod
     def from_bytes(cls, data):
@@ -170,7 +174,7 @@ class PortableBody:
     @classmethod
     def from_source(cls, source, index):
         item = source.descriptors[index]
-        return cls(item.length, item.digest, lambda: source.body_chunks(index))
+        return cls(item.length, item.digest, lambda: source.body_chunks(index), source, index)
 
 
 class RecordArchive:

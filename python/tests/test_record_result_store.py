@@ -30,6 +30,24 @@ def storage(budget=1024 * 1024, *, client=None):
 
 
 class RecordResultStoreTests(unittest.TestCase):
+    def test_reclamation_respects_export_pins_then_removes_obsolete_versions_and_bodies(self):
+        with storage() as (store, writer, lane, directory):
+            identity = store.accept('slot', {'status': 'ready', 'extension': [.25, .75]}, revision=1,
+                                    epoch=0, reservation=store.reserve())
+            with store.capture() as versions:
+                store.portable(versions[0])
+                versions[0].durable.result(3)
+                store.clear(['slot'], revision=2).result(3)
+                self.assertIsNone(store.collect_garbage())
+                self.assertEqual(store.metrics()['versions'], 1)
+                body = store.portable(versions[0])
+                self.assertGreater(len(b''.join(body.chunks())), 0)
+            store.collect_garbage().result(3)
+            self.assertEqual(store.metrics()['versions'], 0)
+            with writer.ready.result().reader() as db:
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM versions').fetchone()[0], 0)
+                self.assertEqual(db.execute('SELECT COUNT(*) FROM bodies').fetchone()[0], 0)
+
     @unittest.skipUnless(os.environ.get('RMS_TEST_CODEC_EXECUTABLE'), 'No isolated frozen helper specified')
     def test_frozen_worker_integrates_owned_version_store_and_private_database(self):
         client = RecordCodecClient(command=[os.environ['RMS_TEST_CODEC_EXECUTABLE'], '--record-codec-worker'])

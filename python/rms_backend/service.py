@@ -48,6 +48,7 @@ from .service_helpers import actor_just_drew, now_iso
 from .service_runtime import ServiceRuntime
 from .record_view_context import RecordViewContext
 from .analysis_read_presenter import AnalysisReadPresenter
+from .record_stored_export import StoredRecordExport
 from .rule_kernel import (
     can_ankan,
     can_declare_riichi,
@@ -741,6 +742,13 @@ def _export_game_record(request_id, command, payload=None):
     # Save completion is metadata, not an old renderer snapshot. Building a
     # complete view here also used to force unrelated cold analyses to load.
     response = {'request_id': request_id, 'command': command, 'timestamp': now_iso()}
+    if isinstance(prepared, StoredRecordExport):
+        if not payload or 'path' not in payload:
+            prepared.close()
+            raise ValueError('Record workspace recovery uses its durable identity, not an in-memory export.')
+        response['save'] = prepared.write(payload['path'], target=payload.get('target'),
+                                         save_id=payload.get('saveId'), app_version=payload.get('appVersion', ''))
+        return response
     # Do not hold the gameplay lock while packing all cached predictions.
     native_file = bool(payload and 'path' in payload and payload.get('compressed', True))
     record = (RECORD_SESSION.serialize_prepared_export(prepared, for_file=True)

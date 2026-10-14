@@ -9,7 +9,7 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 import json
 from pathlib import Path
-from threading import RLock, Timer
+from threading import Lock, RLock, Timer
 from uuid import uuid4
 
 from .record_result_store import RecordResultStore
@@ -70,6 +70,7 @@ class RecordSessionStorage:
         self.session_id = uuid4().hex
         self.results = results or RecordResultStore(identity, scheduler, writer)
         self._lock = RLock()
+        self._base_lock = Lock()
         self.content_revision = self.cursor_sequence = 0
         self._generation = 0
         self._accepting = True
@@ -79,6 +80,8 @@ class RecordSessionStorage:
         self._obligations = {}
         self._failed = {}
         self._cursor_future = None
+        self._cursor_active = self._cursor_pending = None
+        self._cursor_failed = None
         self.origin = None
         self._origin_descriptor = None
         self._source_writes = []
@@ -98,8 +101,8 @@ class RecordSessionStorage:
         game['currentNodeId'] = cursor['state'].get('currentNodeId')
         if not game['nodes'] or game['currentNodeId'] not in game['nodes']:
             raise ValueError('Recovery has no valid current node.')
-        game['pendingReview'] = None
-        state = {key: value for key, value in cursor['state'].items() if key != 'currentNodeId'}
+        game['pendingReview'] = cursor['state'].get('pendingReview', game.get('pendingReview'))
+        state = {key: value for key, value in cursor['state'].items() if key not in ('currentNodeId', 'pendingReview')}
         session._origin_descriptor = index['metadata'].get('origin')
         unbound = results.unbound_source_inputs()
         if unbound and session._origin_descriptor is not None:
@@ -151,7 +154,7 @@ class RecordSessionStorage:
             if future.exception() is None:
                 packet.clear()
         baseline.add_done_callback(completed)
-        self.move_cursor({'currentNodeId': game['currentNodeId'], **state})
+        self.move_cursor({'currentNodeId': game['currentNodeId'], 'pendingReview': copy.deepcopy(game.get('pendingReview')), **state})
         return baseline
 
     def adopt_analyses(self, game, *, source_game=None):
@@ -212,7 +215,8 @@ class RecordSessionStorage:
                         identity = self.results.register(slot, fields=fields, raw=raw, kind=kind,
                             seat=context.get('seat'), read=read, portable=portable,
                             body_id=body['id'] if body is not None else None, source_codec=codec,
-                            source_locator=summary.get('source'))
+                            source_locator=summary.get('source'),
+                            source_span=(body['base'], body['offset'], body['length'], body['digest']) if body is not None else None)
                         source_entries.append({'version': identity, 'slot': slot, 'epoch': 0,
                                                'body': body, 'summary': summary})
                     elif source_game is not None:
@@ -231,6 +235,53 @@ class RecordSessionStorage:
             node = game['nodes'].get(node_id)
             if node is not None:
                 node.setdefault(field, {})[cache_key] = AnalysisReference(self.results, identity)
+
+    @property
+    def origin_descriptor(self):
+        return dict(self._origin_descriptor) if self._origin_descriptor is not None else None
+
+    def ensure_private_base(self, *, strict=True):
+        """Off-lock, once, only when retention/overwrite needs external bytes."""
+        with self._base_lock:
+            descriptor = self._origin_descriptor
+            if descriptor is None or descriptor.get('base'):
+                return None
+            dependencies = self.results.source_dependencies(descriptor['path'])
+            if not dependencies:
+                if self.origin is not None:
+                    self.origin.source._close()
+                return None
+            if self.origin is None:
+                from .record_file import read_record_file
+                loaded = read_record_file(descriptor['path'])
+                if loaded.origin.source.identity != {key: descriptor[key] for key in ('size', 'prefix')}:
+                    loaded.origin.source._close()
+                    raise ValueError('Original record changed before recovery base setup.')
+                self.origin = loaded.origin
+            source = self.origin.source
+            required = set()
+            spans = {(source.start + item.offset, item.length, item.digest): index
+                     for index, item in enumerate(source.descriptors)}
+            for version in dependencies:
+                if version.source_span is not None:
+                    _, offset, length, digest = version.source_span
+                    required.add(spans[(offset, length, digest)])
+            base = Path(self.writer.path).parent / 'source.mjstudio'
+            source.detach(str(base), required_indices=required)
+            updated = {**descriptor, 'base': str(base.resolve())}
+            # RAM readers may use the complete copy even if local bookkeeping
+            # fails. Recovery remains explicitly degraded until its retry.
+            self.results.adopt_base(descriptor['path'], updated['base'])
+            try:
+                self.writer.submit('adopt_base', descriptor['path'], updated['base'], updated).result()
+            except Exception as error:
+                self.source_error = str(error)
+                if strict:
+                    raise
+                return updated['base']
+            self._origin_descriptor = updated
+            self.source_error = None
+            return updated['base']
 
     def check_authored_admission(self):
         with self._lock:
@@ -316,12 +367,52 @@ class RecordSessionStorage:
     def move_cursor(self, state):
         with self._lock:
             self.cursor_sequence += 1
-            try:
-                self._cursor_future = self.writer.submit('cursor', self.cursor_sequence, copy.deepcopy(state))
-            except Exception as error:
-                self._cursor_future = Future()
-                self._cursor_future.set_exception(error)
+            if self._cursor_pending is None:
+                future = Future()
+                future.set_running_or_notify_cancel()
+            else:
+                future = self._cursor_pending[2]
+            self._cursor_pending = (self.cursor_sequence, copy.deepcopy(state), future)
+            self._cursor_failed = None
+            self._cursor_future = future
+            self._start_cursor_write()
             return self.cursor_sequence
+
+    def _start_cursor_write(self):
+        if self._cursor_active is not None or self._cursor_pending is None:
+            return
+        batch, self._cursor_pending = self._cursor_pending, None
+        self._cursor_active = batch
+        try:
+            write = self.writer.submit('cursor', batch[0], batch[1])
+        except Exception as error:
+            write = Future()
+            write.set_exception(error)
+        def completed(persisted):
+            error = persisted.exception()
+            with self._lock:
+                self._cursor_active = None
+                if error is not None and batch[0] == self.cursor_sequence:
+                    self._cursor_failed = batch[:2]
+                self._start_cursor_write()
+            if error is None:
+                batch[2].set_result(None)
+            else:
+                batch[2].set_exception(error)
+        write.add_done_callback(completed)
+
+    def retry_cursor(self):
+        with self._lock:
+            if self._cursor_failed is None:
+                return self._cursor_future
+            sequence, state = self._cursor_failed
+            self._cursor_failed = None
+            future = Future()
+            future.set_running_or_notify_cancel()
+            self._cursor_pending = (sequence, state, future)
+            self._cursor_future = future
+            self._start_cursor_write()
+            return future
 
     def reserve_analysis(self, *, foreground=False):
         with self._lock:

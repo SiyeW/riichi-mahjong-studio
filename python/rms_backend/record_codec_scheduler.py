@@ -155,7 +155,7 @@ class RecordCodecScheduler:
                         future.set_result(result)
             finally:
                 # Do not leave completed closures/results retained by an idle lane.
-                work = result = None
+                work = result = future = None
                 with self._condition:
                     self._active = None
 

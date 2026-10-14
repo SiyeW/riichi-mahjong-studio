@@ -5,6 +5,7 @@ import threading
 import unittest
 from unittest.mock import patch
 from dataclasses import replace
+from concurrent.futures import Future
 import gzip
 
 from rms_backend.record_codec_scheduler import RecordCodecScheduler
@@ -38,6 +39,39 @@ def session_storage():
 
 
 class RecordSessionStorageTests(unittest.TestCase):
+    def test_slow_cursor_writer_coalesces_rapid_browsing_without_growing_the_queue(self):
+        with tempfile.TemporaryDirectory() as directory:
+            writer = RecordWorkspaceWriter(Path(directory) / 'cursor.sqlite', 'cursor', create=True)
+            scheduler = RecordCodecScheduler()
+            session = RecordSessionStorage('cursor', scheduler, writer)
+            try:
+                writer.ready.result(3)
+                blocked = Future()
+                submit = writer.submit
+                first = True
+                def write(operation, *args, **kwargs):
+                    nonlocal first
+                    if operation == 'cursor' and first:
+                        first = False
+                        return blocked
+                    return submit(operation, *args, **kwargs)
+                with patch.object(writer, 'submit', side_effect=write):
+                    session.move_cursor({'currentNodeId': 'n0'})
+                    for index in range(1, 1001):
+                        session.move_cursor({'currentNodeId': f'n{index}'})
+                        if index == 500:
+                            captured = session.cutoff()
+                    self.assertEqual(writer.metrics()['queuedWrites'], 0)
+                    self.assertLess(captured.cursor, session.cursor_sequence)
+                    blocked.set_result(None)
+                    session.wait_authored(captured)
+                    self.assertEqual(writer.ready.result().metadata()['cursor'],
+                                     {'sequence': 1001, 'state': {'currentNodeId': 'n1000'}})
+                    self.assertEqual(session.content_revision, 0)
+            finally:
+                session.stop()
+                scheduler.close()
+                writer.close()
     def test_unvisited_legacy_sources_restore_from_spans_or_the_persisted_locator(self):
         for compressed in (False, True):
             with self.subTest(compressed=compressed), tempfile.TemporaryDirectory() as directory:
