@@ -32,7 +32,7 @@ CREATE TABLE bodies (
 );
 CREATE TABLE versions (
   id TEXT PRIMARY KEY, slot TEXT NOT NULL, revision INTEGER NOT NULL,
-  body TEXT REFERENCES bodies(id)
+  body TEXT REFERENCES bodies(id), summary BLOB NOT NULL
 );
 CREATE TABLE slots (
   slot TEXT PRIMARY KEY, version TEXT REFERENCES versions(id),
@@ -129,26 +129,36 @@ class RecordWorkspace:
     def authored_delta(self, revision, *, nodes=None, deleted=(), attributes=None,
                        metadata=None, rounds=None, deleted_rounds=()):
         """Update only supplied rows/attributes; comments need no snapshot write."""
+        self.authored_batch([(revision, dict(nodes=nodes, deleted=deleted, attributes=attributes,
+                                             metadata=metadata, rounds=rounds, deleted_rounds=deleted_rounds))])
+
+    def authored_batch(self, changes):
+        """One FULL transaction for a finite admitted batch, not command replay."""
         with self.transaction():
-            self._new_revision(revision)
-            for node_id, node in (nodes or {}).items():
-                self._db.execute('INSERT INTO nodes VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET snapshot=excluded.snapshot, attributes=excluded.attributes',
-                                 (node_id, json_bytes(node['snapshot']), json_bytes(node['attributes'])))
-            for node_id, value in (attributes or {}).items():
-                if self._db.execute('UPDATE nodes SET attributes=? WHERE id=?', (json_bytes(value), node_id)).rowcount != 1:
-                    raise ValueError('Authored delta references a missing node.')
-            for node_id in deleted:
-                self._db.execute('DELETE FROM nodes WHERE id=?', (node_id,))
-            for key, value in (metadata or {}).items():
-                if key in ('identity', 'disposition', 'cursor', 'saved'):
-                    raise ValueError('Reserved recovery metadata key.')
-                self._set(key, value)
-            for round_id, value in (rounds or {}).items():
-                self._db.execute('INSERT INTO rounds VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
-                                 (round_id, json_bytes(value)))
-            for round_id in deleted_rounds:
-                self._db.execute('DELETE FROM rounds WHERE id=?', (round_id,))
-            self._coverage(revision, 'authored', True)
+            for revision, packet in changes:
+                self._authored_update(revision, **packet)
+
+    def _authored_update(self, revision, *, nodes=None, deleted=(), attributes=None,
+                         metadata=None, rounds=None, deleted_rounds=()):
+        self._new_revision(revision)
+        for node_id, node in (nodes or {}).items():
+            self._db.execute('INSERT INTO nodes VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET snapshot=excluded.snapshot, attributes=excluded.attributes',
+                             (node_id, json_bytes(node['snapshot']), json_bytes(node['attributes'])))
+        for node_id, value in (attributes or {}).items():
+            if self._db.execute('UPDATE nodes SET attributes=? WHERE id=?', (json_bytes(value), node_id)).rowcount != 1:
+                raise ValueError('Authored delta references a missing node.')
+        for node_id in deleted:
+            self._db.execute('DELETE FROM nodes WHERE id=?', (node_id,))
+        for key, value in (metadata or {}).items():
+            if key in ('identity', 'disposition', 'cursor', 'saved'):
+                raise ValueError('Reserved recovery metadata key.')
+            self._set(key, value)
+        for round_id, value in (rounds or {}).items():
+            self._db.execute('INSERT INTO rounds VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',
+                             (round_id, json_bytes(value)))
+        for round_id in deleted_rounds:
+            self._db.execute('DELETE FROM rounds WHERE id=?', (round_id,))
+        self._coverage(revision, 'authored', True)
 
     def cursor(self, sequence, state):
         if type(sequence) is not int or sequence < 0:
@@ -161,19 +171,54 @@ class RecordWorkspace:
             if current is None or current['sequence'] < sequence:
                 self._set('cursor', {'sequence': sequence, 'state': state})
 
-    def accept_result(self, revision, *, slot, epoch, version):
+    def accept_result(self, revision, *, slot, epoch, version, summary=None):
         """Persist the obligation, not a false claim that RAM-only data survived."""
         with self.transaction():
+            previous = self._db.execute('SELECT slot,revision FROM versions WHERE id=?', (version,)).fetchone()
+            if previous is not None:
+                if previous != (slot, revision):
+                    raise ValueError('Accepted result version identity conflict.')
+                return  # Retry must not republish a subsequently cleared slot.
             self._new_revision(revision)
-            self._db.execute('INSERT INTO versions VALUES(?,?,?,NULL)', (version, slot, revision))
+            self._db.execute('INSERT INTO versions VALUES(?,?,?,NULL,?)',
+                             (version, slot, revision, json_bytes(summary or {})))
             current = self._db.execute('SELECT epoch,revision FROM slots WHERE slot=?', (slot,)).fetchone()
             if current is None or current[0] == epoch and current[1] < revision:
                 self._db.execute('INSERT INTO slots VALUES(?,?,?,?) ON CONFLICT(slot) DO UPDATE SET version=excluded.version,epoch=excluded.epoch,revision=excluded.revision',
                                  (slot, version, epoch, revision))
             self._coverage(revision, 'analysis', False)
 
+    def cache_body(self, body_id, *, codec, namespace, data, schemas=()):
+        """Read-only legacy conversion backing does not create dirty content."""
+        if not isinstance(data, bytes) or not 0 < len(data) <= RESULT_LIMIT + 65536:
+            raise ValueError('Invalid encoded cache body.')
+        digest = hashlib.sha256(data).digest()
+        with self.transaction():
+            self._schemas(schemas)
+            self._body(body_id, codec, namespace, len(data), digest, data, None, None)
+
+    def _schemas(self, schemas):
+        for index, schema in schemas:
+            encoded = json_bytes(schema)
+            old = self._db.execute('SELECT value FROM schemas WHERE id=?', (index,)).fetchone()
+            if old is not None and old[0] != encoded:
+                raise ValueError('Recovery schema identity conflict.')
+            self._db.execute('INSERT OR IGNORE INTO schemas VALUES(?,?)', (index, encoded))
+
+    def _body(self, body_id, codec, namespace, length, digest, data, base, offset):
+        old = self._db.execute('SELECT codec,namespace,length,digest,data,base,offset FROM bodies WHERE id=?',
+                               (body_id,)).fetchone()
+        if old is not None:
+            if old[:4] != (codec, namespace, length, digest) or data is not None and old[4] is not None and old[4] != data:
+                raise ValueError('Recovery body fingerprint collision.')
+            # A base-span hit requires byte comparison by the source owner
+            # before this method; fingerprints alone are not equivalence.
+        else:
+            self._db.execute('INSERT INTO bodies VALUES(?,?,?,?,?,?,?,?)',
+                             (body_id, codec, namespace, length, digest, data, base, offset))
+
     def store_result(self, version, *, body_id, codec, namespace=None, data=None, base=None,
-                     offset=None, length=None, digest=None, schemas=()):
+                     offset=None, length=None, digest=None, schemas=(), summary=None):
         """Body/schema/version commit atomically; never republish a cleared slot."""
         if data is not None:
             if len(data) > RESULT_LIMIT + 65536:
@@ -188,24 +233,13 @@ class RecordWorkspace:
             pending = self._db.execute('SELECT revision,body FROM versions WHERE id=?', (version,)).fetchone()
             if pending is None:
                 raise ValueError('Unknown accepted result version.')
-            for index, schema in schemas:
-                encoded = json_bytes(schema)
-                old = self._db.execute('SELECT value FROM schemas WHERE id=?', (index,)).fetchone()
-                if old is not None and old[0] != encoded:
-                    raise ValueError('Recovery schema identity conflict.')
-                self._db.execute('INSERT OR IGNORE INTO schemas VALUES(?,?)', (index, encoded))
-            old = self._db.execute('SELECT codec,namespace,length,digest,data,base,offset FROM bodies WHERE id=?', (body_id,)).fetchone()
-            if old is not None:
-                if old[:4] != (codec, namespace, length, digest) or data is not None and old[4] is not None and old[4] != data:
-                    raise ValueError('Recovery body fingerprint collision.')
-                # A base-span hit requires byte comparison by the source owner
-                # before this method; fingerprints alone are not equivalence.
-            else:
-                self._db.execute('INSERT INTO bodies VALUES(?,?,?,?,?,?,?,?)',
-                                 (body_id, codec, namespace, length, digest, data, base, offset))
+            self._schemas(schemas)
+            self._body(body_id, codec, namespace, length, digest, data, base, offset)
             if pending[1] is not None and pending[1] != body_id:
                 raise ValueError('Immutable recovery version replacement.')
             self._db.execute('UPDATE versions SET body=? WHERE id=?', (body_id, version))
+            if summary is not None:
+                self._db.execute('UPDATE versions SET summary=? WHERE id=?', (json_bytes(summary), version))
             self._coverage(pending[0], 'analysis', True)
 
     def clear_slots(self, revision, slots):
@@ -263,11 +297,13 @@ class RecordWorkspace:
         with self.reader() as db:
             return {
                 'metadata': {key: _json(value) for key, value in db.execute('SELECT key,value FROM metadata')},
+                'contentRevision': db.execute('SELECT COALESCE(MAX(revision),0) FROM coverage').fetchone()[0],
                 'nodes': {node_id: {'snapshot': _json(snapshot), 'attributes': _json(attributes)}
                           for node_id, snapshot, attributes in db.execute('SELECT id,snapshot,attributes FROM nodes')},
                 'rounds': {key: _json(value) for key, value in db.execute('SELECT id,value FROM rounds')},
                 'schemas': {key: _json(value) for key, value in db.execute('SELECT id,value FROM schemas')},
                 'slots': list(db.execute('SELECT s.slot,s.epoch,s.revision,v.id,v.body FROM slots s LEFT JOIN versions v ON s.version=v.id')),
+                'versionMetadata': {identity: _json(summary) for identity, summary in db.execute('SELECT id,summary FROM versions')},
                 'bodies': list(db.execute('SELECT id,codec,length,digest,base,offset,namespace FROM bodies')),
                 'pending': list(db.execute('SELECT revision,kind FROM coverage WHERE complete=0')),
                 'saves': list(db.execute('SELECT id,content,cursor,target,committed FROM saves')),
@@ -288,6 +324,16 @@ class RecordWorkspace:
     def missing_coverage(self, through):
         with self.reader() as db:
             return [row[0] for row in db.execute('SELECT revision FROM coverage WHERE revision<=? AND complete=0', (through,))]
+
+    def revision_coverage(self, revisions):
+        if not revisions:
+            return {}
+        if len(revisions) > 256 or any(type(revision) is not int or revision <= 0 for revision in revisions):
+            raise ValueError('Invalid revision coverage request.')
+        placeholders = ','.join('?' for _ in revisions)
+        with self.reader() as db:
+            return {revision: (kind, bool(complete)) for revision, kind, complete in db.execute(
+                f'SELECT revision,kind,complete FROM coverage WHERE revision IN ({placeholders})', revisions)}
 
     def maintain(self):
         self._check_owner()

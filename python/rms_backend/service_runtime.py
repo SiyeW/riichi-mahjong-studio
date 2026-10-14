@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from typing import Any
 
 
@@ -31,7 +32,25 @@ class ServiceRuntime:
             "engine_reload": executor_factory(max_workers=1),
         }
         self._shutdown_callbacks: list[Callable[[], None]] = []
+        self._record_codec = None
+        self._codec_owner = Lock()
+        self._shutdown_callbacks.append(self._close_record_codec)
         self._closed = False
+
+    @property
+    def record_codec(self):
+        with self._codec_owner:
+            if self._closed:
+                raise RuntimeError('Service runtime is already closed.')
+            if self._record_codec is None:
+                from .record_codec_scheduler import RecordCodecScheduler
+                self._record_codec = RecordCodecScheduler()
+            return self._record_codec
+
+    def _close_record_codec(self):
+        with self._codec_owner:
+            if self._record_codec is not None:
+                self._record_codec.close()
 
     def add_shutdown(self, callback: Callable[[], None]) -> None:
         if self._closed:

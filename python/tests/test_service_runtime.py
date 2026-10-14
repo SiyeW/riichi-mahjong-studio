@@ -70,6 +70,16 @@ class ServiceRuntimeTests(unittest.TestCase):
         self.assertEqual(self.events[0]["request_id"], None)
         self.assertIn("Expecting value", self.events[0]["error"])
 
+    def test_codec_lifetime_is_lazy_owned_and_independent_of_service_readiness(self):
+        self.assertIsNone(self.runtime._record_codec)
+        lane = self.runtime.record_codec
+        self.assertIsNone(lane.client.pid)
+        self.assertIs(lane, self.runtime.record_codec)
+        self.runtime.shutdown()
+        self.assertTrue(lane._closed)
+        with self.assertRaisesRegex(RuntimeError, 'closed'):
+            self.runtime.record_codec
+
 
 if __name__ == "__main__":
     unittest.main()
