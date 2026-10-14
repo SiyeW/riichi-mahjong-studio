@@ -352,8 +352,9 @@ def write_archive(path, record, entries, schemas, bodies):
     if len(directory) > DIRECTORY_LIMIT:
         raise ValueError('Native record directory exceeds its size limit.')
     directory = gzip.compress(directory, compresslevel=3, mtime=0)
+    header = HEADER.pack(MAGIC, len(directory))
     with open(path, 'xb') as target:
-        target.write(HEADER.pack(MAGIC, len(directory)))
+        target.write(header)
         target.write(directory)
         for body in bodies:
             digest, written = hashlib.sha256(), 0
@@ -367,3 +368,5 @@ def write_archive(path, record, entries, schemas, bodies):
                 raise AnalysisReadError('Damaged analysis result block.')
         target.flush()
         os.fsync(target.fileno())
+    return {'size': len(header) + len(directory) + offset,
+            'prefix': hashlib.sha256(header + directory).hexdigest()}

@@ -300,8 +300,9 @@ class RecordSessionStorage:
             spans = {(source.start + item.offset, item.length, item.digest): index
                      for index, item in enumerate(source.descriptors)}
             for version in dependencies:
-                if version.source_span is not None:
-                    _, offset, length, digest = version.source_span
+                span = version.source_span or version.previous_span
+                if span is not None:
+                    _, offset, length, digest = span
                     required.add(spans[(offset, length, digest)])
             base = Path(self.writer.path).parent / 'source.mjstudio'
             source.detach(str(base), required_indices=required)
@@ -530,6 +531,14 @@ class RecordSessionStorage:
             return RecordCutoff(self.session_id, self._generation, self.content_revision,
                                 self.cursor_sequence, cursor_write, freeze)
 
+    def revisions(self):
+        with self._lock:
+            return self.content_revision, self.cursor_sequence
+
+    def cursor_state(self):
+        with self._lock:
+            return copy.deepcopy(self._cursor_state or {})
+
     def cancel_close(self, cutoff):
         with self._lock:
             if not cutoff.closing or cutoff.session != self.session_id or cutoff.generation != self._generation:
@@ -537,6 +546,11 @@ class RecordSessionStorage:
             self._generation += 1
             self._accepting = True
             return True
+
+    def owns_close(self, cutoff):
+        with self._lock:
+            return (cutoff.closing and cutoff.session == self.session_id
+                    and cutoff.generation == self._generation and not self._accepting)
 
     def wait_authored(self, cutoff):
         """Finite accepted set, outside game lock. Newer edits remain independent."""

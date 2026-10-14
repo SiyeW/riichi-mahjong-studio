@@ -35,7 +35,7 @@ class StoredRecordExport:
         self.versions = self._pins.__enter__()
         self._closed = False
 
-    def write(self, path, *, target=None, save_id=None, app_version=''):
+    def write(self, path, *, target=None, save_id=None, app_version='', path_intent=None):
         """Filesystem promotion/ACK belongs to main, never to this staging writer."""
         if self._closed:
             raise RuntimeError('Stored export has already been released.')
@@ -48,7 +48,7 @@ class StoredRecordExport:
             # for rescue export onto a healthy volume.
             try:
                 self.storage.writer.submit('save_intent', save_id, self.cutoff.content,
-                                           self.cutoff.cursor, target).result()
+                                           self.cutoff.cursor, target, path_intent).result()
             except Exception as error:
                 recovery_error = str(error)
             origin = self.storage.origin_descriptor
@@ -60,6 +60,8 @@ class StoredRecordExport:
             record['metadata'] = dict(appVersion=app_version,
                                       save=dict(id=save_id, workspace=self.storage.identity,
                                                 content=self.cutoff.content, cursor=self.cutoff.cursor))
+            if path_intent is not None:
+                record['metadata']['save']['intent'] = path_intent
             bodies, body_indices, entries = [], {}, []
             for address, version in zip(self.addresses, self.versions):
                 body = self.storage.results.portable(version)
@@ -81,10 +83,11 @@ class StoredRecordExport:
                 node_id, field, cache_key = address
                 entries.append(dict(node=node_id, field=field, key=cache_key,
                                     body=index, fields=copy.deepcopy(version.fields)))
-            write_archive(path, record, entries, list(self.storage.results.schemas), bodies)
+            file_identity = write_archive(path, record, entries, list(self.storage.results.schemas), bodies)
             return dict(saveId=save_id, session=self.cutoff.session, workspaceId=self.storage.identity,
                         contentRevision=self.cutoff.content, cursorSequence=self.cutoff.cursor,
-                        target=target, recoveryError=recovery_error)
+                        target=target, pathIntent=path_intent, recoveryError=recovery_error,
+                        fileIdentity=file_identity)
         finally:
             self.close()
 

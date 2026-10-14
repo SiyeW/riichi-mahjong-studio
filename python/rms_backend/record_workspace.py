@@ -45,7 +45,7 @@ CREATE TABLE inputs (version TEXT PRIMARY KEY REFERENCES versions(id) ON DELETE 
                      data BLOB NOT NULL, digest BLOB NOT NULL CHECK(length(digest)=32));
 CREATE TABLE coverage (revision INTEGER PRIMARY KEY, kind TEXT NOT NULL, complete INTEGER NOT NULL);
 CREATE TABLE saves (id TEXT PRIMARY KEY, content INTEGER NOT NULL, cursor INTEGER NOT NULL,
-                    target TEXT NOT NULL, committed INTEGER NOT NULL DEFAULT 0);
+                    target TEXT NOT NULL, committed INTEGER NOT NULL DEFAULT 0, intent INTEGER NOT NULL);
 """
 
 
@@ -87,7 +87,7 @@ class RecordWorkspace:
                 self._db.executescript('BEGIN IMMEDIATE;\n' + SCHEMA + '\nCOMMIT;')
                 with self.transaction():
                     self._set('identity', {'id': workspace_id, 'version': WORKSPACE_VERSION})
-                    self._set('disposition', 'active')
+                    self._set('disposition', 'prepared')
                     self._set('cursor', {'sequence': 0, 'state': {}})
             identity = self.metadata().get('identity')
             if identity != {'id': workspace_id, 'version': WORKSPACE_VERSION}:
@@ -327,13 +327,39 @@ class RecordWorkspace:
             self._db.execute('INSERT INTO slots VALUES(?,NULL,?,?) ON CONFLICT(slot) DO UPDATE SET version=NULL,epoch=excluded.epoch,revision=excluded.revision',
                              (slot, epoch, revision))
 
-    def save_intent(self, save_id, content, cursor, target):
+    def save_intent(self, save_id, content, cursor, target, intent=None):
         with self.transaction():
-            row = (content, cursor, str(target))
-            existing = self._db.execute('SELECT content,cursor,target FROM saves WHERE id=?', (save_id,)).fetchone()
+            existing = self._db.execute('SELECT content,cursor,target,intent FROM saves WHERE id=?', (save_id,)).fetchone()
+            if intent is None:
+                intent = existing[3] if existing else self._db.execute('SELECT COALESCE(MAX(intent),0)+1 FROM saves').fetchone()[0]
+            if type(intent) is not int or intent <= 0:
+                raise ValueError('Invalid save path intent.')
+            row = (content, cursor, str(target), intent)
             if existing is not None and existing != row:
                 raise ValueError('Save identity conflict.')
-            self._db.execute('INSERT OR IGNORE INTO saves(id,content,cursor,target) VALUES(?,?,?,?)', (save_id, *row))
+            self._db.execute('INSERT OR IGNORE INTO saves(id,content,cursor,target,intent) VALUES(?,?,?,?,?)', (save_id, *row))
+
+    def saved_baseline(self, content, cursor, target, file_identity=None):
+        with self.transaction():
+            existing = self._db.execute("SELECT value FROM metadata WHERE key='saved'").fetchone()
+            baseline = dict(id=None, content=content, cursor=cursor, target=str(target or ''), intent=0)
+            if file_identity is not None:
+                baseline['fileIdentity'] = file_identity
+            if existing is not None and _json(existing[0]) != baseline:
+                raise ValueError('Initial saved baseline has already been established.')
+            self._set('saved', baseline)
+
+    def save_receipt(self, save_id):
+        with self.reader() as db:
+            row = db.execute('SELECT content,cursor,target,intent,committed FROM saves WHERE id=?', (save_id,)).fetchone()
+        if row is None:
+            return None
+        return dict(saveId=save_id, workspaceId=self.workspace_id, contentRevision=row[0],
+                    cursorSequence=row[1], target=row[2], pathIntent=row[3], committed=bool(row[4]))
+
+    def abort_save(self, save_id):
+        with self.transaction():
+            self._db.execute('DELETE FROM saves WHERE id=? AND committed=0', (save_id,))
 
     def collect_versions(self, identities):
         if len(identities) > 128:
@@ -354,24 +380,34 @@ class RecordWorkspace:
             self._db.execute('UPDATE bodies SET base=? WHERE base=?', (str(base_path), str(old_path)))
             self._set('origin', descriptor)
 
-    def save_committed(self, save_id, content, cursor):
+    def save_committed(self, save_id, content, cursor, file_identity=None):
         """Idempotent host-rename ACK; must not apply captured browser state."""
         with self.transaction():
-            row = self._db.execute('SELECT content,cursor,target FROM saves WHERE id=?', (save_id,)).fetchone()
+            row = self._db.execute('SELECT content,cursor,target,intent FROM saves WHERE id=?', (save_id,)).fetchone()
             if row is None or row[:2] != (content, cursor):
                 raise ValueError('Save acknowledgement identity mismatch.')
             self._db.execute('UPDATE saves SET committed=1 WHERE id=?', (save_id,))
-            sequence = self._db.execute('SELECT rowid FROM saves WHERE id=?', (save_id,)).fetchone()[0]
             previous = self._db.execute("SELECT value FROM metadata WHERE key='saved'").fetchone()
-            if previous is None or _json(previous[0])['sequence'] <= sequence:
-                self._set('saved', {'id': save_id, 'content': content, 'cursor': cursor,
-                                    'target': row[2], 'sequence': sequence})
+            if previous is None or _json(previous[0])['intent'] <= row[3]:
+                saved = {'id': save_id, 'content': content, 'cursor': cursor,
+                         'target': row[2], 'intent': row[3]}
+                if file_identity is not None:
+                    saved['fileIdentity'] = file_identity
+                elif previous is not None:
+                    old = _json(previous[0])
+                    if old.get('id') == save_id and 'fileIdentity' in old:
+                        saved['fileIdentity'] = old['fileIdentity']
+                self._set('saved', saved)
 
     def retire(self, disposition):
         if disposition not in ('discarded', 'replaced', 'retention-off', 'retained'):
             raise ValueError('Invalid workspace disposition.')
         with self.transaction():
             self._set('disposition', disposition)
+
+    def activate(self):
+        with self.transaction():
+            self._set('disposition', 'active')
 
     @contextmanager
     def reader(self):
@@ -404,7 +440,7 @@ class RecordWorkspace:
                 'bodies': list(db.execute('SELECT b.id,b.codec,b.length,b.digest,b.base,b.offset,b.namespace FROM bodies b '
                                          'WHERE EXISTS (SELECT 1 FROM versions v JOIN slots s ON s.version=v.id WHERE v.body=b.id)')),
                 'pending': list(db.execute('SELECT revision,kind FROM coverage WHERE complete=0')),
-                'saves': list(db.execute('SELECT id,content,cursor,target,committed FROM saves')),
+                'saves': list(db.execute('SELECT id,content,cursor,target,committed,intent FROM saves WHERE committed=0')),
             }
 
     def read_body(self, body_id):

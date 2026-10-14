@@ -42,6 +42,11 @@ class StatefulCommandDispatcher:
         payload: dict[str, Any] | None,
     ) -> dict[str, Any]:
         data = payload or {}
+        if command == 'create_game':
+            prepared = self._record.prepare_create()
+            with self._state_lock:
+                self._configure_thinking_time()
+                return self._record.activate_created(request_id, command, prepared)
         if command == 'import_game_record':
             # The command executor serializes record edits, but candidate file
             # I/O/legacy hydration must not exclude status, inference completion
@@ -50,6 +55,11 @@ class StatefulCommandDispatcher:
             with self._state_lock:
                 self._configure_thinking_time()
                 return self._record.activate_import(request_id, command, prepared)
+        if command in ('import_mortal_report', 'import_custom_tenhou', 'import_replay_file'):
+            prepared = self._record.prepare_reconstruction(command, data)
+            with self._state_lock:
+                self._configure_thinking_time()
+                return self._record.activate_reconstruction(request_id, command, prepared)
         if command == 'submit_user_action':
             with self._state_lock:
                 prepared = self._prepare_analysis_use()

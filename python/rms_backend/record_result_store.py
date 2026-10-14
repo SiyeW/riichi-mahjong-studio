@@ -10,7 +10,7 @@ from concurrent.futures import Future
 from concurrent.futures import CancelledError
 from dataclasses import dataclass
 import hashlib
-from threading import RLock
+from threading import Condition, RLock
 from uuid import uuid4
 
 from .analysis_body_codec import POLICY
@@ -50,6 +50,8 @@ class ResultVersion:
     source_span: tuple | None = None
     acceptance: dict | None = None
     encoding: bool = False
+    previous_span: tuple | None = None
+    needs_source_input: bool = False
 
 
 class RecordResultStore:
@@ -60,6 +62,7 @@ class RecordResultStore:
         self.schemas = list(schemas)
         self.cache = DecodedAnalysisCache(budget)
         self._lock = RLock()
+        self._settled = Condition(self._lock)
         self._versions, self._slots, self._epochs = {}, {}, {}
         self._encoded_pending = 0
         self._durable_schema_count = 0
@@ -139,6 +142,7 @@ class RecordResultStore:
             version = ResultVersion(identity or uuid4().hex, slot, revision, epoch, kind,
                                     seat, fields, raw, read, portable, body_id, source_codec=source_codec,
                                     source_locator=source_locator, source_span=source_span)
+            version.needs_source_input = source_locator is not None
             self._versions[version.identity] = version
             self._slots[slot] = version.identity
             self._epochs[slot] = epoch
@@ -149,7 +153,8 @@ class RecordResultStore:
             return tuple(version for version in self._versions.values()
                          if (self._slots.get(version.slot) == version.identity or version.pins)
                          and (version.source_span is not None and version.source_span[0] == path
-                              or version.source_locator is not None and version.source_codec == 'input'))
+                              or version.previous_span is not None and version.previous_span[0] == path
+                              or version.needs_source_input))
 
     def adopt_base(self, old_path, new_path):
         """Rebind file-backed readers after the exact base is durably owned."""
@@ -158,6 +163,8 @@ class RecordResultStore:
             backing.adopt(new_path)
             self._source_locations[new_path] = backing
             for version in self._versions.values():
+                if version.previous_span is not None and version.previous_span[0] == old_path:
+                    version.previous_span = (new_path, *version.previous_span[1:])
                 if version.source_span is None or version.source_span[0] != old_path:
                     continue
                 _, offset, length, digest = version.source_span
@@ -234,6 +241,7 @@ class RecordResultStore:
                     return
                 version.pending, version.encoding = None, False
                 reservation, version.reservation = version.reservation, None
+                self._settled.notify_all()
             if reservation is not None:
                 reservation.release()
             return
@@ -243,6 +251,7 @@ class RecordResultStore:
                 if error is not None:
                     version.error = AnalysisReadError(str(error))
                 version.pending, version.encoding = None, False
+                self._settled.notify_all()
 
     def _encode(self, version, lane):
         # Raw sources/files are retained on any failure. Never fall back to a
@@ -260,6 +269,7 @@ class RecordResultStore:
             version.fields = reply['fields']
             version.encoded = data
             version.portable = PortableBody.from_bytes(data)
+            version.previous_span = version.source_span or version.previous_span
             version.source_span = None
             version.read = lambda data=data: data
             version.raw = None
@@ -294,6 +304,8 @@ class RecordResultStore:
         except Exception as error:
             version.persistence_error = error
             durable.set_exception(error)
+            with self._settled:
+                self._settled.notify_all()
             return
 
         def finished(write):
@@ -302,6 +314,7 @@ class RecordResultStore:
                 version.persistence_error = error
                 if error is not None:
                     durable.set_exception(error)
+                    self._settled.notify_all()
                     return  # Retain encoded bytes and admission capacity for retry/rescue.
                 workspace = self.writer.ready.result()
                 version.portable = PortableBody(length, digest,
@@ -309,6 +322,8 @@ class RecordResultStore:
                 version.read = lambda: workspace.read_body(body_id)
                 version.body_id, version.encoded = body_id, None
                 version.acceptance = None
+                version.previous_span = None
+                version.needs_source_input = False
                 self._durable_schema_count = max(self._durable_schema_count, schema_count)
                 self._encoded_pending -= length
                 reservation, version.reservation = version.reservation, None
@@ -316,6 +331,8 @@ class RecordResultStore:
             if reservation is not None:
                 reservation.release()
             durable.set_result(None)
+            with self._settled:
+                self._settled.notify_all()
         future.add_done_callback(finished)
 
     def retry_persistence(self, identity):
@@ -519,6 +536,7 @@ class RecordResultStore:
             with self._lock:
                 for version in versions:
                     version.pins -= 1
+                self._settled.notify_all()
 
     def portable(self, version):
         """Finite captured-version barrier. Must not be called under game lock."""
@@ -604,3 +622,27 @@ class RecordResultStore:
             for version in self._versions.values():
                 if not version.pins and version.rescue_backing is not None:
                     version.rescue_backing.close()
+
+    def wait_unused(self):
+        with self._settled:
+            while any(version.pins or version.pending is not None
+                      or version.durable is not None and not version.durable.done()
+                      for version in self._versions.values()):
+                self._settled.wait()
+
+    def dispose(self):
+        """After retirement and all actual users; no caller may revive this store."""
+        with self._settled:
+            if any(version.pins or version.pending is not None for version in self._versions.values()):
+                raise RuntimeError('Record result store still has actual users.')
+            self._closed = True
+            for identity, version in self._versions.items():
+                self.cache.discard(identity)
+                if version.reservation is not None:
+                    version.reservation.release()
+                if version.rescue_backing is not None:
+                    version.rescue_backing.close()
+            self._versions.clear()
+            self._slots.clear()
+            self._orphans.clear()
+            self._encoded_pending = 0

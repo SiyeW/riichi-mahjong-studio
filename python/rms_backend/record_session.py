@@ -54,15 +54,15 @@ class RecordSessionDependencies:
 
     reset_runtime: Callable[[], None]
     create_empty_game: Callable[[int], Game]
-    advance_to_next_user_turn: Callable[[Game], None]
+    advance_new_game: Callable[[Game, int], None]
     prewarm_action_engine: Callable[[int], None]
     repair_reaction_decisions: Callable[[Game], None]
     backfill_child_comparisons: Callable[[Game], None]
     update_child_comparisons: Callable[[Game, dict, Any, int], None]
-    current_snapshot: Callable[[], dict]
     request_opponent_analysis: Callable[..., Any]
     purge_mjai_cache: Callable[[str], None]
     invalidate_auto_timeline: Callable[[], None]
+    storage_changed: Callable[..., None] = lambda *args: None
 
 
 @dataclass(frozen=True)
@@ -82,6 +82,7 @@ class PreparedRecordLoad:
     analysis_packer: AnalysisCachePacker
     file_writer: RecordFileWriter
     storage: RecordSessionStorage | None = None
+    pending_seat_switch: int | None = None
 
 
 class RecordSession:
@@ -115,6 +116,7 @@ class RecordSession:
             return None
         storage = self._storage_factory(game, state, origin=origin)
         storage.adopt_analyses(game)
+        storage.wait_authored(storage.cutoff())
         return storage
 
     def ensure_loaded(self) -> None:
@@ -272,7 +274,7 @@ class RecordSession:
                 "gameLoaded": True,
                 "mode": prepared.mode,
                 "controlledSeat": prepared.controlled_seat,
-                "pendingSeatSwitch": None,
+                "pendingSeatSwitch": prepared.pending_seat_switch,
                 "visibleHands": prepared.visible_hands,
             })
             self.dependencies.backfill_child_comparisons(candidate)
@@ -288,39 +290,38 @@ class RecordSession:
         self._file_writer = prepared.file_writer
         if previous_storage is not None:
             previous_storage.stop()
+        self.dependencies.storage_changed(prepared.storage, previous_storage, previous)
 
-    def create(self) -> None:
+    def prepare_restored(self, storage, game, state):
+        """Private rows are already authored facts, not a file to replay/migrate."""
+        if game.get('currentNodeId') not in game.get('nodes', {}):
+            raise ValueError('Private recovery has no valid cursor.')
+        mode = self.normalize_mode(state.get('mode'))
+        seat = normalize_seat(state.get('controlledSeat', 0))
+        pending = state.get('pendingSeatSwitch')
+        return PreparedRecordLoad(game, mode, seat, bool(state.get('visibleHands')),
+                                  AnalysisCachePacker(), RecordFileWriter(), storage,
+                                  normalize_seat(pending) if pending is not None else None)
+
+    def prepare_create(self) -> PreparedRecordLoad:
         seed = random.randint(100000, 999999)
         controlled_seat = random.randint(0, 3)
         game = self.dependencies.create_empty_game(seed)
-        previous = self._state_snapshot()
-        previous_storage = self.storage
-        self.dependencies.reset_runtime()
-        try:
-            self.storage = None
-            self._state.update({
-                "controlledSeat": controlled_seat,
-                "pendingSeatSwitch": None,
-                "game": game,
-                "gameLoaded": True,
-                "mode": "play",
-            })
-            self.dependencies.advance_to_next_user_turn(game)
-            self.storage = self._new_storage(game, {key: self._state[key] for key in self._STATE_FIELDS
-                                                    if key not in ('game', 'gameLoaded')})
-            self.dependencies.prewarm_action_engine(controlled_seat)
-        except Exception:
-            if self.storage is not None:
-                self.storage.stop()
-            self.storage = previous_storage
-            self._restore_after_failure(previous)
-            raise
-        self._analysis_packer = AnalysisCachePacker()
-        self._file_writer = RecordFileWriter()
-        if previous_storage is not None:
-            previous_storage.stop()
+        self.dependencies.advance_new_game(game, controlled_seat)
+        self.dependencies.prewarm_action_engine(controlled_seat)
+        tree_view.normalize_current_cursor(game, controlled_seat)
+        state = dict(mode='play', controlledSeat=controlled_seat, pendingSeatSwitch=None,
+                     visibleHands=bool(self._state['visibleHands']))
+        storage = self._new_storage(game, state)
+        return PreparedRecordLoad(game, 'play', controlled_seat, state['visibleHands'],
+                                  AnalysisCachePacker(), RecordFileWriter(), storage)
+
+    def create(self) -> None:
+        self.activate_load(self.prepare_create())
 
     def close(self) -> None:
+        previous = self._state_snapshot()
+        previous_storage = self.storage
         self.dependencies.reset_runtime()
         if self.storage is not None:
             self.storage.stop()
@@ -334,8 +335,16 @@ class RecordSession:
             "pendingSeatSwitch": None,
             "visibleHands": False,
         })
+        self.dependencies.storage_changed(None, previous_storage, previous)
 
     def import_mortal(
+        self, report, source_url, source_import_url=None, reconstruct_walls=False, seed=None,
+    ):
+        prepared, reconstruction = self.prepare_mortal(report, source_url, source_import_url, reconstruct_walls, seed)
+        self.activate_load(prepared)
+        return reconstruction
+
+    def prepare_mortal(
         self,
         report: Any,
         source_url: Any,
@@ -359,32 +368,39 @@ class RecordSession:
         game.setdefault("treeRevision", 1)
         game["metadata"]["sourceImportUrl"] = str(source_import_url or source_url or "")
         reconstruction = reconstruct_imported_walls(game, seed, generated_at=now_iso()) if reconstruct_walls else None
-        self._activate_imported(game, controlled_seat)
-        return reconstruction
+        return self._prepare_imported(game, controlled_seat), reconstruction
 
     def import_custom(self, raw_input: Any, reconstruct_walls: bool = False, seed: Any = None) -> Any:
+        prepared, reconstruction = self.prepare_custom(raw_input, reconstruct_walls, seed)
+        self.activate_load(prepared)
+        return reconstruction
+
+    def prepare_custom(self, raw_input, reconstruct_walls=False, seed=None):
         document = normalize_custom_tenhou_input(raw_input)
         game, controlled_seat = build_custom_tenhou_game(document, self._next_game_id(), now_iso())
         self.dependencies.repair_reaction_decisions(game)
         game.setdefault("treeRevision", 1)
         reconstruction = reconstruct_imported_walls(game, seed, generated_at=now_iso()) if reconstruct_walls else None
-        self._activate_imported(game, controlled_seat)
-        return reconstruction
+        return self._prepare_imported(game, controlled_seat), reconstruction
 
     def export_custom(self) -> dict:
         self.ensure_loaded()
         return export_custom_tenhou(self._state["game"])
 
     def import_file(self, path: str, reconstruct_walls=False, seed=None):
+        prepared, reconstruction = self.prepare_file(path, reconstruct_walls, seed)
+        self.activate_load(prepared)
+        return reconstruction
+
+    def prepare_file(self, path, reconstruct_walls=False, seed=None):
         kind, document = read_replay_file(path)
         if kind == 'tenhou':
-            return self.import_custom(json.dumps(document, ensure_ascii=False), reconstruct_walls, seed)
+            return self.prepare_custom(json.dumps(document, ensure_ascii=False), reconstruct_walls, seed)
         game, seat = build_mjai_game(document, self._next_game_id(), now_iso(), path)
         self.dependencies.repair_reaction_decisions(game)
         game.setdefault('treeRevision', 1)
         reconstruction = reconstruct_imported_walls(game, seed, generated_at=now_iso()) if reconstruct_walls else None
-        self._activate_imported(game, seat)
-        return reconstruction
+        return self._prepare_imported(game, seat), reconstruction
 
     def reconstruct_walls(self, seed: Any = None) -> dict:
         self.ensure_loaded()
@@ -397,33 +413,12 @@ class RecordSession:
         self.dependencies.invalidate_auto_timeline()
         return result
 
-    def _activate_imported(self, game: Game, controlled_seat: int) -> None:
-        previous = self._state_snapshot()
-        previous_storage = self.storage
-        self.dependencies.reset_runtime()
-        try:
-            self.storage = None
-            self._state.update({
-                "game": game,
-                "gameLoaded": True,
-                "mode": "research",
-                "controlledSeat": controlled_seat,
-                "pendingSeatSwitch": None,
-                "visibleHands": False,
-            })
-            self.storage = self._new_storage(game, {key: self._state[key] for key in self._STATE_FIELDS
-                                                    if key not in ('game', 'gameLoaded')})
-            self.dependencies.request_opponent_analysis(self.dependencies.current_snapshot())
-        except Exception:
-            if self.storage is not None:
-                self.storage.stop()
-            self.storage = previous_storage
-            self._restore_after_failure(previous)
-            raise
-        self._analysis_packer = AnalysisCachePacker()
-        self._file_writer = RecordFileWriter()
-        if previous_storage is not None:
-            previous_storage.stop()
+    def _prepare_imported(self, game: Game, controlled_seat: int) -> PreparedRecordLoad:
+        tree_view.normalize_current_cursor(game, controlled_seat)
+        state = dict(mode='research', controlledSeat=controlled_seat, pendingSeatSwitch=None, visibleHands=False)
+        storage = self._new_storage(game, state)
+        return PreparedRecordLoad(game, 'research', controlled_seat, False,
+                                  AnalysisCachePacker(), RecordFileWriter(), storage)
 
     @staticmethod
     def _hydrate_match_state(game: Game) -> None:

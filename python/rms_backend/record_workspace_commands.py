@@ -35,7 +35,13 @@ class RecordWorkspaceCommands:
         self._now_iso = now_iso
 
     def create(self, request_id: Any, command: str) -> dict[str, Any]:
-        self._record_session.create()
+        return self.activate_created(request_id, command, self.prepare_create())
+
+    def prepare_create(self):
+        return self._record_session.prepare_create()
+
+    def activate_created(self, request_id, command, prepared):
+        self._record_session.activate_load(prepared)
         return self._view_builder.build_response(
             request_id,
             command,
@@ -52,13 +58,24 @@ class RecordWorkspaceCommands:
         command: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        reconstruction = self._record_session.import_mortal(
-            payload.get("report"),
-            payload.get("sourceUrl"),
-            payload.get("sourceImportUrl"),
-            bool(payload.get("reconstructWalls")),
-            payload.get("seed"),
-        )
+        return self.activate_reconstruction(request_id, command, self.prepare_reconstruction(command, payload))
+
+    def prepare_reconstruction(self, command, payload):
+        if command == 'import_mortal_report':
+            return self._record_session.prepare_mortal(
+                payload.get("report"), payload.get("sourceUrl"), payload.get("sourceImportUrl"),
+                bool(payload.get("reconstructWalls")), payload.get("seed"))
+        if command == 'import_custom_tenhou':
+            return self._record_session.prepare_custom(payload.get('input'),
+                bool(payload.get('reconstructWalls')), payload.get('seed'))
+        if command == 'import_replay_file':
+            return self._record_session.prepare_file(payload.get('path'),
+                bool(payload.get('reconstructWalls')), payload.get('seed'))
+        raise ValueError('Unsupported reconstructed import.')
+
+    def activate_reconstruction(self, request_id, command, candidate):
+        prepared, reconstruction = candidate
+        self._record_session.activate_load(prepared)
         return self._reconstruction_response(request_id, command, reconstruction)
 
     def import_custom(
@@ -67,12 +84,7 @@ class RecordWorkspaceCommands:
         command: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        reconstruction = self._record_session.import_custom(
-            payload.get("input"),
-            bool(payload.get("reconstructWalls")),
-            payload.get("seed"),
-        )
-        return self._reconstruction_response(request_id, command, reconstruction)
+        return self.activate_reconstruction(request_id, command, self.prepare_reconstruction(command, payload))
 
     def export_custom(self, request_id: Any, command: str) -> dict[str, Any]:
         return self._view_builder.build_response(
@@ -82,10 +94,7 @@ class RecordWorkspaceCommands:
         )
 
     def import_file(self, request_id: Any, command: str, payload: dict[str, Any]) -> dict[str, Any]:
-        reconstruction = self._record_session.import_file(
-            payload.get('path'), bool(payload.get('reconstructWalls')), payload.get('seed'),
-        )
-        return self._reconstruction_response(request_id, command, reconstruction)
+        return self.activate_reconstruction(request_id, command, self.prepare_reconstruction(command, payload))
 
     def set_player_name(self, request_id: Any, command: str, payload: dict[str, Any]) -> dict[str, Any]:
         changed, name = self._record_commands.set_player_name(payload.get('seat'), payload.get('name'))

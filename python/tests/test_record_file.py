@@ -122,7 +122,8 @@ class RecordFileTests(unittest.TestCase):
             'game': game, 'gameLoaded': True, 'mode': 'research',
             'controlledSeat': 0, 'pendingSeatSwitch': None, 'visibleHands': True,
         }
-        session = RecordSession(state, SimpleNamespace(reset_runtime=lambda: None))
+        session = RecordSession(state, SimpleNamespace(
+            reset_runtime=lambda: None, storage_changed=lambda *_: None))
         prepared = session.prepare_export()
         session.close()
         self.assertIsNot(prepared.file_writer, session._file_writer)

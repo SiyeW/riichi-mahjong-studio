@@ -37,7 +37,7 @@ class GameSessionResetTest(unittest.TestCase):
         self.assertGreater(len(service.MJAI_STREAMS), 0)
 
         with (
-            mock.patch.object(service.RECORD_SESSION.dependencies, "advance_to_next_user_turn"),
+            mock.patch.object(service.RECORD_SESSION.dependencies, "advance_new_game"),
             mock.patch.object(service.SERVICE_RUNTIME.background, "submit"),
         ):
             service.RECORD_SESSION.create()

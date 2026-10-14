@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from . import game_tree
@@ -26,6 +26,11 @@ class GameTreeCoordinator:
     ) -> None:
         self._state = state
         self._dependencies = dependencies
+
+    def for_private_game(self, game):
+        return GameTreeCoordinator({'game': game, 'mode': 'play'}, replace(
+            self._dependencies, active_draft=lambda: None,
+            invalidate_analysis_timeline=lambda: None, changed_nodes=lambda *args, **kwargs: None))
 
     def refresh_reused_imported_child(
         self,

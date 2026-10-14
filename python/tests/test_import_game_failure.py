@@ -161,9 +161,9 @@ class ImportGameFailureTests(unittest.TestCase):
 
     def test_external_import_initialization_failure_restores_old_record(self):
         for kind in ('mortal', 'tenhou'):
-            for stage in ('get_current_snapshot', 'request_current_opponent_analysis'):
+            for stage in ('backfill_child_comparisons', 'request_current_opponent_analysis'):
                 with self.subTest(kind=kind, stage=stage), ExitStack() as stack:
-                    dependency = 'current_snapshot' if stage == 'get_current_snapshot' else 'request_opponent_analysis'
+                    dependency = 'backfill_child_comparisons' if stage == 'backfill_child_comparisons' else 'request_opponent_analysis'
                     stack.enter_context(patch.object(service.RECORD_SESSION.dependencies, dependency, side_effect=RuntimeError('activation failed')))
                     reset = stack.enter_context(patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'))
                     with self.assertRaisesRegex(RuntimeError, 'activation failed'):

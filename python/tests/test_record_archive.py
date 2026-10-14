@@ -41,9 +41,10 @@ class RecordArchiveTests(unittest.TestCase):
         record, entries, schemas, bodies, expected = self.fixture()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '记录.mjstudio'
-            write_archive(path, record, entries, schemas, bodies)
+            identity = write_archive(path, record, entries, schemas, bodies)
             with patch.object(ArchiveSource, 'read_body', side_effect=AssertionError('eager body read')):
                 archive = read_archive(path.open('rb'))
+            self.assertEqual(identity, archive.source.identity)
             self.assertEqual(archive.record, record)
             self.assertEqual(archive.decode_entry(39), expected[1])
             code = "const fs=require('node:fs'); const {decodeGameRecord}=require('./electron/main/state/game-record-codec'); process.stdout.write(JSON.stringify(decodeGameRecord(fs.readFileSync(process.argv[1]))))"

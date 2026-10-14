@@ -24,6 +24,7 @@ from . import reaction_decision_history
 from . import record_commands
 from . import record_workspace_commands
 from . import record_session
+from . import new_game_candidate
 from . import review_session
 from . import round_actions
 from . import round_progression
@@ -622,12 +623,13 @@ RECORD_SESSION = record_session.RecordSession(
     record_session.RecordSessionDependencies(
         reset_runtime=reset_runtime_for_game_change,
         create_empty_game=create_empty_game,
-        advance_to_next_user_turn=GAME_FLOW.advance,
+        advance_new_game=lambda game, seat: new_game_candidate.advance_new_game(
+            game, seat, tree=TREE_EDITS, flow=GAME_FLOW, reactions=REACTION_DECISIONS,
+            choose_ai=choose_ai_action_for_snapshot),
         prewarm_action_engine=_prewarm_record_action_engine,
         repair_reaction_decisions=REACTION_DECISIONS.repair,
         backfill_child_comparisons=DECISION_ANALYSIS.backfill_child_comparisons,
         update_child_comparisons=DECISION_ANALYSIS.update_child_comparisons,
-        current_snapshot=get_current_snapshot,
         request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
         purge_mjai_cache=MJAI_STREAMS.purge_game,
         invalidate_auto_timeline=AUTO_ANALYSIS.invalidate_timeline,
