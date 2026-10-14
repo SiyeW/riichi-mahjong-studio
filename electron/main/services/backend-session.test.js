@@ -79,6 +79,19 @@ test('an empty session restarts without trying to export a game', async () => {
   assert.equal(calls.includes('import_game_record'), false)
 })
 
+test('recovery does not send an import until the previous process exits', async () => {
+  const { backend, session, calls } = fixture()
+  let finishExit
+  backend.restart = () => new Promise(resolve => { finishExit = resolve })
+  const restarting = session.restart()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(calls.includes('import_game_record'), false)
+  assert.equal(session.restart(), restarting)
+  finishExit()
+  await restarting
+  assert.equal(calls.includes('import_game_record'), true)
+})
+
 test('a stopped session without a snapshot can restart empty, then accept requests', async () => {
   const { backend, session, calls } = fixture(false)
   backend.running = false

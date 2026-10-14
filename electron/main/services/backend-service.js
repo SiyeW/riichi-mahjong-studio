@@ -182,7 +182,7 @@ function createBackendService(options = {}) {
       backendProcess.start()
     },
     stopAll() {
-      backendProcess.stop()
+      return backendProcess.stop()
     },
   }
 }

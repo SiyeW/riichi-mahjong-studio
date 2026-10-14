@@ -17,11 +17,21 @@ function createBackendProcess({
   formatStartError = (processName, message) => `${processName} failed to start: ${message}`,
 }) {
   let child = null
+  let stopping = null
+  let restarting = null
   let serviceReady = false
   let nextRequestId = 1
   const pendingRequests = new Map()
   const queuedRequests = new Map()
   let onUnsolicitedEvent = null
+
+  function notifyStopped(error) {
+    try {
+      onUnsolicitedEvent?.({ type: 'service_stopped', ...(error ? { error } : {}) })
+    } catch (callbackError) {
+      console.error(`[${name}] output handler failed:`, callbackError)
+    }
+  }
 
   function rejectPendingRequests(error) {
     pendingRequests.forEach(({ reject }) => reject(error))
@@ -31,7 +41,7 @@ function createBackendProcess({
 
   function dispatchRequest(requestId, message, timeoutMs) {
     const pending = pendingRequests.get(requestId)
-    if (!child || !pending) return
+    if (!child || stopping || !pending) return
     clearTimeout(pending.startupTimer)
     // null means an owned operation: keep tracking until a definitive reply or
     // process failure. A timeout cannot cancel a state-changing file operation.
@@ -86,37 +96,42 @@ function createBackendProcess({
     } catch (error) {
       const message = formatStartError(name, error instanceof Error ? error.message : String(error))
       rejectPendingRequests(new Error(message))
-      onUnsolicitedEvent?.({ type: 'service_stopped', error: message })
+      notifyStopped(message)
       return
     }
     child = spawnedChild
+    function exited(error) {
+      if (child !== spawnedChild) return
+      const operation = stopping
+      rejectPendingRequests(new Error(error || `${name} exited before responding.`))
+      child = null
+      serviceReady = false
+      stopping = null
+      if (!operation) notifyStopped(error)
+      operation?.resolve()
+    }
     let lineChunks = []
     let lineBytes = 0
 
     spawnedChild.on('error', (err) => {
       if (child !== spawnedChild) return
       console.error(`[${name}] spawn error: ${err.message}`)
-      rejectPendingRequests(new Error(formatStartError(name, err.message)))
-      child = null
-      serviceReady = false
-      onUnsolicitedEvent?.({ type: 'service_stopped', error: formatStartError(name, err.message) })
+      const message = formatStartError(name, err.message)
+      if (!spawnedChild.pid) exited(message) // Failed spawn has no live process.
+      else stop(message)
     })
 
     spawnedChild.stdin.on('error', (error) => {
       if (child !== spawnedChild) return
-      rejectPendingRequests(error)
-      child = null
-      serviceReady = false
-      spawnedChild.kill()
-      onUnsolicitedEvent?.({ type: 'service_stopped', error: error.message })
+      stop(error.message)
     })
 
     spawnedChild.stdout.on('data', (chunk) => {
-      if (child !== spawnedChild) return
+      if (child !== spawnedChild || stopping) return
       // Search each byte once. Joining a growing string and rescanning it for
       // every chunk makes multi-megabyte record responses quadratic.
       let offset = 0
-      while (offset < chunk.length && child === spawnedChild) {
+      while (offset < chunk.length && child === spawnedChild && !stopping) {
         const newline = chunk.indexOf(10, offset)
         const end = newline < 0 ? chunk.length : newline
         const part = chunk.subarray(offset, end)
@@ -139,10 +154,7 @@ function createBackendProcess({
     spawnedChild.on('exit', (code) => {
       if (child !== spawnedChild) return
       console.log(`[${name}] exited with code ${code}`)
-      rejectPendingRequests(new Error(`${name} exited before responding.`))
-      child = null
-      serviceReady = false
-      onUnsolicitedEvent?.({ type: 'service_stopped', error: `${name} exited with code ${code}` })
+      exited()
     })
   }
 
@@ -186,24 +198,32 @@ function createBackendProcess({
     }
   }
 
-  function stop() {
-    if (!child) {
-      return
-    }
-    rejectPendingRequests(new Error(`${name} stopped before responding.`))
+  function stop(error) {
+    if (stopping) return stopping.promise
+    if (!child) return Promise.resolve()
+    rejectPendingRequests(new Error(error || `${name} stopped before responding.`))
     const stoppedChild = child
-    child = null
+    let resolve
+    const promise = new Promise(done => { resolve = done })
+    stopping = { child: stoppedChild, promise, resolve }
     serviceReady = false
-    stoppedChild.kill()
-    onUnsolicitedEvent?.({ type: 'service_stopped' })
+    notifyStopped(error)
+    // kill() requests termination; it does not release this process's ownership.
+    // Keep the child until its exit event, including a false kill() return.
+    try { stoppedChild.kill() } catch (killError) {
+      console.error(`[${name}] termination request failed:`, killError)
+    }
+    return promise
   }
 
   function restart() {
-    stop()
-    start()
+    if (restarting) return restarting
+    restarting = stop().then(() => { start() }).finally(() => { restarting = null })
+    return restarting
   }
 
   function sendRequest(command, payload = {}, timeoutMs = 15_000) {
+    if (stopping) return Promise.reject(new Error(`${name} is waiting for its previous process to exit.`))
     start()
 
     if (!child) {
@@ -259,6 +279,9 @@ function createBackendProcess({
     },
     isRunning() {
       return Boolean(child)
+    },
+    isStopping() {
+      return Boolean(stopping)
     },
   }
 }

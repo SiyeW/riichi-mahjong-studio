@@ -3,7 +3,7 @@ const test = require('node:test')
 const { EventEmitter } = require('node:events')
 const { createBackendProcess } = require('./backend-process')
 
-function fixture() {
+function fixture({ autoExit = true } = {}) {
   const children = []
   const events = []
   const backend = createBackendProcess({
@@ -15,7 +15,7 @@ function fixture() {
       child.stdin = new EventEmitter()
       child.messages = []
       child.stdin.write = (text, callback) => { child.messages.push(JSON.parse(text)); callback?.() }
-      child.kill = () => { child.killed = true }
+      child.kill = () => { child.killed = true; if (autoExit) child.emit('exit', 0); return true }
       child.output = payload => child.stdout.emit('data', Buffer.from(JSON.stringify(payload) + '\n'))
       children.push(child)
       return child
@@ -109,7 +109,7 @@ test('large split replies and subsequent lines are delivered once and in order',
   backend.stop()
 })
 
-test('restarting inside an event callback discards remaining lines from that process', () => {
+test('restarting inside an event callback discards remaining lines from that process', async () => {
   const { backend, children } = fixture()
   const received = []
   backend.onEvent(event => {
@@ -118,6 +118,7 @@ test('restarting inside an event callback discards remaining lines from that pro
   })
   backend.start()
   children[0].stdout.emit('data', Buffer.from('{"type":"restart-now"}\n{"type":"stale"}\n'))
+  await backend.restart()
   assert.deepEqual(received, ['restart-now', 'service_stopped'])
   assert.equal(children.length, 2)
   backend.stop()
@@ -141,7 +142,7 @@ test('restart rejects old requests and ignores old replies, readiness and exit',
   const rejected = assert.rejects(oldRequest, /stopped before responding/)
   const old = children[0]
   old.output({ type: 'service_ready' })
-  backend.restart()
+  await backend.restart()
   await rejected
   assert.equal(old.killed, true)
   const nextRequest = backend.sendRequest('new')
@@ -207,4 +208,42 @@ test('a stopped process notifies once and its later exit is ignored', () => {
   assert.equal(events.length, 1)
   backend.stop()
   assert.equal(events.length, 2)
+})
+
+test('restart and new requests cannot overlap a process that has not actually exited', async () => {
+  const { backend, children, events } = fixture({ autoExit: false })
+  backend.start()
+  children[0].output({ type: 'service_ready' })
+  const restarting = backend.restart()
+  assert.equal(backend.restart(), restarting)
+  backend.start()
+  assert.equal(children.length, 1)
+  assert.equal(backend.isRunning(), true)
+  assert.equal(backend.isStopping(), true)
+  await assert.rejects(backend.sendRequest('must-not-write'), /previous process to exit/)
+  children[0].output({ type: 'stale' })
+  children[0].emit('exit', 0)
+  await restarting
+  assert.equal(children.length, 2)
+  assert.equal(backend.isStopping(), false)
+  assert.deepEqual(events.map(event => event.type), ['service_ready', 'service_stopped'])
+  const stopping = backend.stop()
+  children[1].emit('exit', 0)
+  await stopping
+  assert.equal(backend.isRunning(), false)
+})
+
+test('a failed termination request never falsely releases process ownership', async () => {
+  const { backend, children } = fixture({ autoExit: false })
+  backend.start()
+  children[0].kill = () => false
+  const stopping = backend.stop()
+  assert.equal(backend.stop(), stopping)
+  await Promise.resolve()
+  assert.equal(backend.isRunning(), true)
+  backend.start()
+  assert.equal(children.length, 1)
+  children[0].emit('exit', 1)
+  await stopping
+  assert.equal(backend.isRunning(), false)
 })

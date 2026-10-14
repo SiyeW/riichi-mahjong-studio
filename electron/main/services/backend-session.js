@@ -101,7 +101,7 @@ function createBackendSession(backend, checkpointOptions = {}) {
           recovery = { record, visibility: state.analysisVisibility }
         }
       }
-      backend.restart()
+      await backend.restart()
       const recoveryGeneration = generation
       const requestRecovery = async (...args) => {
         const result = await backend.sendRequest(...args)
