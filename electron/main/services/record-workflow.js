@@ -1,6 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const { randomUUID } = require('node:crypto')
+const { acquireRecordLease } = require('./record-live-lease')
 const { withCurrentRecord } = require('../state/record-operation')
 const { loadSettings } = require('../state/settings')
 const {
@@ -27,6 +27,7 @@ function createRecordWorkflow({
   let publishedRecordDirty = false
 
   function publishRecordDirty(force = false) {
+    if (backendGateway.getRecordRuntime) gameFileStore.observeRuntime(backendGateway.getRecordRuntime())
     const dirty = gameFileStore.isDirty()
     if (!force && dirty === publishedRecordDirty) return dirty
     publishedRecordDirty = dirty
@@ -49,51 +50,51 @@ function createRecordWorkflow({
 
   async function writeCurrentGameRecord(targetPath, options = {}) {
     const {
-      markSaved = true,
-      recovery = false,
       rememberPath = true,
       onStage = () => {},
     } = options
-    const exportedRevision = gameFileStore.getRevision()
-    const sourcePath = gameFileStore.getCurrentPath()
-    await withCurrentRecord(gameFileStore, async () => {
-      const stagingPath = `${targetPath}.${randomUUID()}.tmp`
-      try {
-        const result = await withCurrentRecord(gameFileStore, async () => {
-          onStage('encoding')
-          await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
-          return backendGateway.exportGameRecordToFile(stagingPath, {
-            appVersion: app.getVersion(), recovery,
-            compressed: path.extname(targetPath).toLowerCase() !== '.json',
-          })
-        })
-        // The backend has fsynced and closed the complete staging file. Never
-        // publish it if the user has replaced the record during preparation.
-        onStage('writing')
-        await fs.promises.rename(stagingPath, targetPath)
-        return result
-      } finally {
-        await fs.promises.rm(stagingPath, { force: true }).catch(() => {})
+    targetPath = path.resolve(targetPath)
+    const targetIdentity = process.platform === 'win32' ? targetPath.toLowerCase() : targetPath
+    const lease = await acquireRecordLease('save-target', targetIdentity)
+    const recordGeneration = gameFileStore.getRecordGeneration()
+    let token, stagingPath, promoted = false
+    try {
+      const previous = await fs.promises.stat(targetPath).catch(error => {
+        if (error.code === 'ENOENT') return null
+        throw error
+      })
+      onStage('encoding')
+      await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
+      token = await backendGateway.captureRecordSave(targetPath, app.getVersion())
+      stagingPath = `${targetPath}.${token.saveId}.tmp`
+      await backendGateway.writeRecordSave(token, stagingPath)
+      const current = await fs.promises.stat(targetPath).catch(error => {
+        if (error.code === 'ENOENT') return null
+        throw error
+      })
+      if (Boolean(previous) !== Boolean(current) || previous &&
+          (previous.size !== current.size || previous.mtimeMs !== current.mtimeMs || previous.ino !== current.ino)) {
+        throw new Error('The save target changed while the record was being written.')
       }
-    })
-    if (recovery) gameFileStore.writeRecoverySourcePath(sourcePath)
-    if (rememberPath) gameFileStore.setCurrentPath(targetPath)
-    if (markSaved) gameFileStore.markSaved(exportedRevision)
+      lease.assertOwned()
+      onStage('writing')
+      await fs.promises.rename(stagingPath, targetPath)
+      promoted = true
+      await backendGateway.acknowledgeRecordSave(token)
+      if (recordGeneration === gameFileStore.getRecordGeneration() && rememberPath) gameFileStore.setCurrentPath(targetPath)
+    } catch (error) {
+      if (token && !promoted) await backendGateway.abortRecordSave(token).catch(() => {})
+      throw error
+    } finally {
+      if (stagingPath) await fs.promises.rm(stagingPath, { force: true }).catch(() => {})
+      await lease.release()
+    }
     const recordDirty = publishRecordDirty(true)
     return {
       path: targetPath,
       recordDirty,
       recoveryRecord: gameFileStore.isRecoveryRecord(),
     }
-  }
-
-  function writeRecoveryGameRecord(onStage = () => {}) {
-    return writeCurrentGameRecord(gameFileStore.getRecoveryPath(), {
-      markSaved: false,
-      recovery: true,
-      rememberPath: false,
-      onStage,
-    })
   }
 
   async function saveGameAs() {
@@ -114,7 +115,9 @@ function createRecordWorkflow({
   }
 
   async function importGameRecordFile(filePath) {
-    const response = await backendGateway.importGameRecordFile(filePath)
+    const response = await backendGateway.importGameRecordFile(filePath,
+      { clean: isNativeRecordPath(filePath) && !gameFileStore.isRecoveryPath(filePath),
+        target: gameFileStore.isRecoveryPath(filePath) ? '' : filePath })
     const record = { metadata: response.recordMetadata }
     const isNativeRecord = isNativeRecordPath(filePath)
     const managedRecoveryRecord = gameFileStore.isRecoveryPath(filePath)
@@ -165,10 +168,21 @@ function createRecordWorkflow({
     if (startupRecoveryAttempted) return null
     startupRecoveryAttempted = true
     const settings = loadSettings(appOptions)
-    const recoveryPath = gameFileStore.resolveRecoveryPathForRestore()
-    if (!settings.records?.saveRecoveryOnExit || !fs.existsSync(recoveryPath)) return null
+    if (!settings.records?.saveRecoveryOnExit) return null
     try {
-      return await importGameRecordFile(recoveryPath)
+      const response = await backendGateway.restoreRecordRecovery()
+      if (response) {
+        const runtime = backendGateway.getRecordRuntime()
+        gameFileStore.openRecoveryRecord(runtime?.savedPath || '', t('record.unsavedName'))
+        beginRecordTracking({ dirty: runtime?.contentRevision !== runtime?.savedContentRevision,
+          nodeId: response.view?.currentNodeId })
+        return { ...response, path: runtime?.savedPath || '', recordDirty: gameFileStore.isDirty(), recoveryRecord: true }
+      }
+      // Narrow one-time reader for existing released recovery files; new exits
+      // never create another portable recovery snapshot.
+      const recoveryPath = gameFileStore.resolveRecoveryPathForRestore()
+      if (fs.existsSync(recoveryPath)) return await importGameRecordFile(recoveryPath)
+      return null
     } catch (error) {
       console.error('[record] failed to restore exit recovery record:', error)
       const mainWindow = getMainWindow()
@@ -192,7 +206,6 @@ function createRecordWorkflow({
     restoreStartupRecovery,
     saveGame,
     saveGameAs,
-    writeRecoveryGameRecord,
   }
 }
 

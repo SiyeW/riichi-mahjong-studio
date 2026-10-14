@@ -9,7 +9,7 @@ from rms_backend.analysis_cache_storage import expand_record_analysis_caches
 from rms_backend.game_record_storage import copy_game_for_record, serialize_game_record_parts
 
 
-class CheckpointExportTests(unittest.TestCase):
+class RecordProjectionTests(unittest.TestCase):
     def test_persisted_projection_matches_full_copy_and_never_mutates_source(self):
         game = service.create_empty_game(123456)
         snapshot = game['nodes'][game['currentNodeId']]['snapshot']
@@ -103,9 +103,8 @@ class CheckpointExportTests(unittest.TestCase):
             'game': game, 'gameLoaded': True, 'mode': 'research',
             'controlledSeat': 0, 'pendingSeatSwitch': None, 'visibleHands': True,
         }):
-            result = service._export_recovery_checkpoint(
-                'request', 'export_recovery_checkpoint'
-            )
+            result = {'record': service.RECORD_SESSION.serialize_authored_export(
+                service.RECORD_SESSION.prepare_authored_export())}
             record = result['record']
             self.assertEqual(game, before, 'compaction must not mutate the live record')
             frozen = copy.deepcopy(record)
@@ -128,9 +127,8 @@ class CheckpointExportTests(unittest.TestCase):
             'game': game, 'gameLoaded': True, 'mode': 'play',
             'controlledSeat': 0, 'pendingSeatSwitch': None, 'visibleHands': False,
         }):
-            result = service._export_recovery_checkpoint(
-                'request', 'export_recovery_checkpoint'
-            )
+            result = {'record': service.RECORD_SESSION.serialize_authored_export(
+                service.RECORD_SESSION.prepare_authored_export())}
 
         exported_node = result['record']['game']['nodes'][node_id]
         self.assertNotIn('analysisCache', exported_node)
@@ -174,10 +172,10 @@ class CheckpointExportTests(unittest.TestCase):
             'game': game, 'gameLoaded': True, 'mode': 'play',
             'controlledSeat': 0, 'pendingSeatSwitch': None, 'visibleHands': False,
         }):
-            prepared = service.RECORD_SESSION.prepare_recovery_checkpoint()
+            prepared = service.RECORD_SESSION.prepare_authored_export()
             node['comment'] = 'after'
             node['children'].append('second')
-            record = service.RECORD_SESSION.serialize_prepared_recovery_checkpoint(
+            record = service.RECORD_SESSION.serialize_authored_export(
                 prepared
             )
 
@@ -195,33 +193,6 @@ class CheckpointExportTests(unittest.TestCase):
         expand_record_analysis_caches(record)
         record['game']['nodes'][node_id][OPPONENT_ANALYSIS_CACHE_FIELD]['test']['probabilities'].clear()
         self.assertEqual(node[OPPONENT_ANALYSIS_CACHE_FIELD]['test']['probabilities'], [0.2, 0.8])
-
-    def test_checkpoint_exports_record_without_building_or_consuming_ui_state(self):
-        record = {'game': {'gameId': 'test'}}
-        prepared = ({'gameId': 'test'}, {})
-        with patch.object(service.RECORD_SESSION, 'prepare_recovery_checkpoint', return_value=prepared) as prepare, \
-             patch.object(service.RECORD_SESSION, 'serialize_prepared_recovery_checkpoint', return_value=record) as serialize, \
-             patch.object(service.VIEW_BUILDER, 'build_view_payload', side_effect=AssertionError('unneeded view')), \
-             patch.object(service.VIEW_BUILDER, 'build_state_payload', side_effect=AssertionError('unneeded runtime state')):
-            result = service._export_recovery_checkpoint(
-                'request', 'export_recovery_checkpoint'
-            )
-        self.assertIs(result['record'], record)
-        self.assertEqual(result['request_id'], 'request')
-        self.assertNotIn('view', result)
-        self.assertIn('analysisVisibility', result['state'])
-        prepare.assert_called_once_with()
-        serialize.assert_called_once_with(prepared)
-
-    def test_normal_export_returns_record_metadata_not_a_stale_view(self):
-        with patch.object(service.RECORD_SESSION, 'prepare_export', return_value=({}, {})), \
-             patch.object(service.RECORD_SESSION, 'serialize_prepared_export', return_value={'game': {}}), \
-             patch.object(service.VIEW_BUILDER, 'build_response', side_effect=AssertionError('unneeded view')) as build:
-            result = service._export_game_record('request', 'export_game_record')
-        self.assertEqual(result['record'], {'game': {}})
-        self.assertEqual(result['request_id'], 'request')
-        self.assertNotIn('view', result)
-        build.assert_not_called()
 
     def test_full_save_detaches_edits_and_cache_maps_before_packing(self):
         game = service.create_empty_game(123456)
@@ -242,27 +213,6 @@ class CheckpointExportTests(unittest.TestCase):
         saved = record['game']['nodes'][node_id]
         self.assertEqual(saved['comment'], 'before')
         self.assertEqual(saved['analysisCache']['model'], result)
-
-    def test_full_save_packs_outside_the_gameplay_lock(self):
-        import threading
-        acquired = []
-
-        def serialize(_prepared):
-            def probe():
-                locked = service._STATE_LOCK.acquire(timeout=0.5)
-                acquired.append(locked)
-                if locked:
-                    service._STATE_LOCK.release()
-            thread = threading.Thread(target=probe)
-            thread.start()
-            thread.join()
-            return {}
-
-        with patch.object(service.RECORD_SESSION, 'prepare_export', return_value=({}, {})), \
-             patch.object(service.RECORD_SESSION, 'serialize_prepared_export', side_effect=serialize), \
-             patch.object(service.VIEW_BUILDER, 'build_response', return_value={}):
-            service._export_game_record('request', 'export_game_record')
-        self.assertEqual(acquired, [True])
 
 
 if __name__ == '__main__':

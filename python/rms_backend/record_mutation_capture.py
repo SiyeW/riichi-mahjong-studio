@@ -36,6 +36,18 @@ class RecordMutationCapture:
                     for key in game['nodes'][node_id].get(field, {}):
                         active['cleared'].add(result_slot(node_id, field, key))
 
+    def comparisons_changed(self, game, updates):
+        """Model completion must not leave changed tree facts only in RAM."""
+        if not updates:
+            return
+        identities = [update['id'] for update in updates]
+        if self._active is not None and self._active['game'] is game:
+            self._active['attributes'].update(identities)
+            return
+        storage = self.storage()
+        if storage is not None and self.state.get('game') is game:
+            storage.accept_authored(attributes={key: node_attributes(game['nodes'][key]) for key in identities})
+
     @staticmethod
     def _metadata(game):
         return copy.deepcopy({f'game:{key}': value for key, value in game.items()
@@ -62,7 +74,7 @@ class RecordMutationCapture:
             before = node_attributes(game['nodes'][node_id]) if node_id in game['nodes'] else None
         else:
             before = None
-        if command in ('clear_analysis_caches', 'reconstruct_walls'):
+        if command == 'clear_analysis_caches':
             active['cleared'].update(slot for slot, _ in storage.results.live_slots())
         if not simple and command in _AUTHORED:
             active['snapshots'].add(game['currentNodeId'])

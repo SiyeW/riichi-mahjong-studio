@@ -1,9 +1,9 @@
 const { buildSettings, loadSettings, saveSettings } = require('../state/settings')
 
-function registerSettingsIpc(ipcMain, appOptions) {
+function registerSettingsIpc(ipcMain, appOptions, settingsChanged = () => {}) {
   ipcMain.handle('settings:get', () => buildSettings(loadSettings(appOptions), appOptions))
 
-  ipcMain.handle('settings:save', (event, patch) => {
+  ipcMain.handle('settings:save', async (event, patch) => {
     const current = loadSettings(appOptions)
     const next = {
       ...current,
@@ -34,6 +34,7 @@ function registerSettingsIpc(ipcMain, appOptions) {
       },
     }
     saveSettings(next, appOptions)
+    await settingsChanged(next)
     return buildSettings(next, appOptions)
   })
 }

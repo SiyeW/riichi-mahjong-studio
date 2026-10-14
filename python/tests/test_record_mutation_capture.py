@@ -52,6 +52,30 @@ def environment():
 
 
 class RecordMutationCaptureTests(unittest.TestCase):
+    def test_background_comparisons_join_pending_authored_rows_and_survive_restore(self):
+        with environment() as (game, state, storage, writer, journal, tree, commands):
+            with journal.command('submit_user_action', {}):
+                child = tree.create_node(game, 'n_0', {'type': 'dahai', 'actor': 0, 'pai': '1m'}, {'matchState': {}})
+            # The new child's authored row is still coalesced, not yet on disk.
+            game['nodes'][child]['comparison'] = {'chosenProbability': .42}
+            journal.comparisons_changed(game, [{'id': child}])
+            storage.wait_authored(storage.cutoff())
+            self.assertEqual(writer.ready.result().restore_index()['nodes'][child]['attributes']['comparison'],
+                             {'chosenProbability': .42})
+
+    def test_wall_completion_preserves_owned_results_when_observed_inputs_do_not_change(self):
+        with environment() as (game, state, storage, writer, journal, tree, commands):
+            slot = result_slot('n_0', 'analysisCache', 'key')
+            identity = storage.accept_analysis(storage.reserve_analysis(), slot, {'probability': .5},
+                                               epoch=0, kind='decision', seat=0)
+            reference = AnalysisReference(storage.results, identity)
+            game['nodes']['n_0']['analysisCache']['key'] = reference
+            with journal.command('reconstruct_walls', {}):
+                game['nodes']['n_0']['snapshot']['fullWall'] = ['1m'] * 136
+            storage.wait_authored(storage.cutoff())
+            self.assertEqual(dict(storage.results.live_slots())[slot], identity)
+            self.assertIs(game['nodes']['n_0']['analysisCache']['key'], reference)
+
     def test_comment_never_copies_a_snapshot_and_noop_does_not_dirty_content_or_cursor(self):
         with environment() as (game, state, storage, writer, journal, tree, commands):
             class NoCopy(dict):

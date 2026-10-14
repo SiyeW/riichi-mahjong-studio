@@ -42,6 +42,7 @@ class DecisionAnalysisDependencies:
     emit: Callable[[dict[str, Any]], None]
     read_presenter: Any = None
     record_access: Any = None
+    comparisons_changed: Callable[..., None] = lambda *args: None
 
 
 class DecisionAnalysisSession:
@@ -255,6 +256,7 @@ class DecisionAnalysisSession:
             updates.append(
                 {"id": child_id, "comparison": copy.deepcopy(comparison)}
             )
+        self.dependencies.comparisons_changed(game, updates)
         return updates
 
     def backfill_child_comparisons(

@@ -67,3 +67,20 @@ test('late name replies cannot change a replacement record', async () => {
     assert.equal(f.names.drafts.size, 0)
   } finally { f.scope.stop() }
 })
+
+test('reopening the same game ID is a different editing session', async () => {
+  let resolve!: (value: { name: string }) => void
+  const f = fixture(() => new Promise(yes => { resolve = yes }))
+  try {
+    f.view.viewToken = { sessionId: 'first', nodeId: 'n_1', seat: 0, mode: 'research', intent: 0 } as GameView['viewToken']
+    f.names.draft(0, 'Old file instance')
+    const flushing = f.names.flush()
+    f.view.viewToken = { ...f.view.viewToken!, sessionId: 'reopened' }
+    f.view.playerNames = ['Replacement', '', '', '']
+    resolve({ name: 'Old file instance' })
+    await flushing
+    assert.equal(f.view.gameId, 'game')
+    assert.equal(f.view.playerNames[0], 'Replacement')
+    assert.equal(f.names.drafts.size, 0)
+  } finally { f.scope.stop() }
+})

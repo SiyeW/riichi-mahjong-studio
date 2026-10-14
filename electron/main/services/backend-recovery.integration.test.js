@@ -13,139 +13,175 @@ const { compactAnalysisCaches } = require('../state/analysis-cache-storage')
 
 const root = path.resolve(__dirname, '../../..')
 const python = path.join(root, '.conda-backend', process.platform === 'win32' ? 'python.exe' : 'bin/python')
+const supported = { skip: !fs.existsSync(python), timeout: 60_000 }
+const cleanupOwners = new WeakMap()
 
-test('native file import and save preserve caches and pending edits across both runtimes',
-  { skip: !fs.existsSync(python), timeout: 30_000 }, async () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-record-file-test-'))
-    const env = { RMS_PORTABLE_DIR: directory, RMS_BACKEND_CONFIG: path.join(directory, 'config.json') }
-    let backendClosed
-    const backend = createBackendProcess({
-      name: 'record-file-test', pythonExecutable: python, scriptPath: null,
-      args: ['-m', 'rms_backend'], cwd: path.join(root, 'python'), env,
-      spawnProcess: (...args) => {
-        const child = spawn(...args)
-        backendClosed = new Promise(resolve => child.once('close', resolve))
-        return child
-      },
+function runtime(context, directory) {
+  let owners = cleanupOwners.get(context)
+  if (!owners) {
+    owners = { sessions: [], directories: [] }
+    cleanupOwners.set(context, owners)
+    context.after(async () => {
+      for (const session of owners.sessions.reverse()) await session.shutdown()
+      for (const folder of owners.directories) fs.rmSync(folder, { recursive: true, force: true })
     })
-    const session = createBackendSession(backend)
-    backend.onEvent(event => session.handleEvent(event))
-    try {
-      const record = JSON.parse(execFileSync(python, ['-c',
-        'import json; from rms_backend import service; service.STATE["game"] = service.create_empty_game(123456); service.STATE["gameLoaded"] = True; service.STATE["mode"] = "research"; print(json.dumps(service.RECORD_SESSION.serialize()))',
-      ], { cwd: path.join(root, 'python'), env: { ...process.env, ...env }, encoding: 'utf8' }))
-      const nodeId = record.game.currentNodeId
-      const decision = { probability: 0.25, entries: [{ action: 'dahai', probability: 1 }] }
-      const opponent = { outputs: { probability: 0, tiles: { '5mr': 1, '5m': 0.5 } } }
-      record.game.nodes[nodeId].analysisCache = { 'm3::0::discard::source': decision }
-      record.game.nodes[nodeId].opponentAnalysisCache = { 'o5::0::public::source': opponent }
-      record.metadata = { recovery: { kind: 'unsaved-exit', sourcePath: 'private' } }
-      const input = path.join(directory, 'input.mjstudio')
-      fs.writeFileSync(input, encodeGameRecord(compactAnalysisCaches(record)))
-      const imported = await session.sendRequest('import_game_record', { path: input }, null)
-      assert.equal(imported.recordMetadata.recovery.kind, 'unsaved-exit')
-      assert.equal(imported.state.gameLoaded, true)
-      const store = createGameFileStore(directory)
-      store.beginRecord({ dirty: true, nodeId })
-      store.setCurrentPath(path.join(directory, 'saved.mjstudio'))
-      const workflow = createRecordWorkflow({
-        app: { getVersion: () => 'test' }, appOptions: {}, dialog: {}, gameFileStore: store,
-        backendGateway: { exportGameRecordToFile: (filePath, options) => session.exportGameRecordToFile(filePath, options) },
-        getMainWindow: () => null, t: key => key,
-      })
-      const editing = session.sendRequest('set_node_comment', { nodeId, comment: '评论・牌譜🀄' })
-      const saved = await workflow.saveGame()
-      await editing
-      const decoded = decodeGameRecord(fs.readFileSync(saved.path))
-      const damagedBlock = Buffer.from(fs.readFileSync(saved.path))
-      damagedBlock[damagedBlock.length - 1] ^= 1
-      assert.throws(() => decodeGameRecord(damagedBlock), /Damaged analysis result block/)
-      assert.equal(decoded.game.nodes[nodeId].comment, '评论・牌譜🀄')
-      assert.deepEqual(decoded.game.nodes[nodeId].analysisCache['m3::0::discard::source'], decision)
-      assert.deepEqual(decoded.game.nodes[nodeId].opponentAnalysisCache['o5::0::public::source'], opponent)
-      assert.equal(decoded.metadata.recovery, undefined)
-      assert.equal(decoded.metadata.appVersion, 'test')
-      const recovery = await workflow.writeRecoveryGameRecord()
-      const recoveryRecord = decodeGameRecord(fs.readFileSync(recovery.path))
-      assert.deepEqual(recoveryRecord.game, decoded.game)
-      assert.equal(recoveryRecord.metadata.recovery.kind, 'unsaved-exit')
-      const restored = await session.sendRequest('import_game_record', { path: saved.path }, null)
-      assert.equal(restored.view.currentNodeId, nodeId)
-      const again = await session.sendRequest('export_game_record', {}, null)
-      assert.equal(again.record.game.nodes[nodeId].comment, '评论・牌譜🀄')
-      fs.writeFileSync(input, 'damaged json')
-      await assert.rejects(session.sendRequest('import_game_record', { path: input }, null))
-      assert.equal((await session.sendRequest('get_game_view')).view.currentNodeId, nodeId)
-      assert.equal(fs.readdirSync(directory).some(name => name.endsWith('.tmp')), false)
-    } finally {
-      backend.stop()
-      // A stop request is not process exit. Lazy file sources legitimately
-      // retain handles until released; await the isolated process before cleanup.
-      await backendClosed
-      fs.rmSync(directory, { recursive: true, force: true })
-    }
+  }
+  if (!directory) {
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-incremental-record-'))
+    owners.directories.push(directory)
+  }
+  let child
+  const backend = createBackendProcess({ name: 'record-integration', pythonExecutable: python,
+    scriptPath: null, args: ['-m', 'rms_backend'], cwd: path.join(root, 'python'),
+    env: { RMS_PORTABLE_DIR: directory, RMS_BACKEND_CONFIG: path.join(directory, 'config.json') },
+    spawnProcess(...args) { child = spawn(...args); return child },
   })
+  const session = createBackendSession(backend, { workspaceRoot: path.join(directory, 'records', '.recovery', 'workspaces') })
+  backend.onEvent(session.handleEvent)
+  owners.sessions.push(session)
+  const store = createGameFileStore(directory)
+  const workflow = createRecordWorkflow({ app: { getVersion: () => 'test' }, appOptions: {}, dialog: {}, gameFileStore: store,
+    backendGateway: { captureRecordSave: session.captureSave, writeRecordSave: session.writeSave,
+      acknowledgeRecordSave: session.acknowledgeSave, abortRecordSave: session.abortSave,
+      getRecordRuntime: session.getRuntime }, getMainWindow: () => null, t: key => key })
+  return { directory, backend, session, store, workflow, child: () => child }
+}
 
-test('real backend crash restores an unsaved comment and selected node from the checkpoint',
-  { skip: !fs.existsSync(python), timeout: 30_000 }, async () => {
-    const portableDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-recovery-test-'))
-    let child
-    let capture
-    let stopped
-    let checkpointFinished
-    const captured = new Promise(resolve => { checkpointFinished = resolve })
-    const backend = createBackendProcess({
-      name: 'recovery-test', pythonExecutable: python,
-      scriptPath: null,
-      args: ['-m', 'rms_backend'],
-      cwd: path.join(root, 'python'),
-      env: { RMS_PORTABLE_DIR: portableDir },
-      spawnProcess(...args) { child = spawn(...args); return child },
-    })
-    const send = backend.sendRequest
-    backend.sendRequest = async (...args) => {
-      const response = await send(...args)
-      if (args[0] === 'export_recovery_checkpoint') checkpointFinished()
-      return response
-    }
-    const session = createBackendSession(backend, {
-      schedule(callback) { capture = callback; return 1 }, cancel() { capture = null },
-    })
-    backend.onEvent(event => {
-      session.handleEvent(event)
-      if (event.type === 'service_stopped') stopped?.()
-    })
-    try {
-      const record = JSON.parse(execFileSync(python, ['-c',
-        'import json; from rms_backend import service; service.STATE["game"] = service.create_empty_game(123456); service.STATE["gameLoaded"] = True; service.STATE["mode"] = "research"; print(json.dumps(service.RECORD_SESSION.serialize()))',
-      ], { cwd: path.join(root, 'python'), env: { ...process.env, RMS_PORTABLE_DIR: portableDir }, encoding: 'utf8' }))
-      const created = await session.sendRequest('import_game_record', { record })
-      const node = created.view.currentNodeId
-      await session.sendRequest('set_node_comment', { nodeId: node, comment: 'unsaved recovery test' })
-      capture()
-      await captured
-      await new Promise(resolve => setImmediate(resolve))
-      const exited = new Promise(resolve => { stopped = resolve })
-      child.kill()
-      await exited
-      const restored = await session.restart()
-      assert.equal(restored.state.gameLoaded, true)
-      assert.equal(restored.view.currentNodeId, node)
-      const exported = await session.sendRequest('export_game_record')
-      assert.equal(JSON.stringify(exported.record).includes('unsaved recovery test'), true)
-      await session.sendRequest('close_game')
-      assert.equal(session.hasCheckpoint(), false)
-      const emptyExited = new Promise(resolve => { stopped = resolve })
-      child.kill()
-      await emptyExited
-      const empty = await session.restart()
-      assert.equal(empty.state.gameLoaded, false)
-      assert.equal(empty.view.currentNodeId, null)
-      const reopened = await session.sendRequest('import_game_record', { record })
-      assert.equal(reopened.state.gameLoaded, true)
-    } finally {
-      backend.stop()
-      // This directory was created by this test, never the user's portable data.
-      fs.rmSync(portableDir, { recursive: true, force: true })
-    }
-  })
+function recordFixture(directory) {
+  return JSON.parse(execFileSync(python, ['-c',
+    'import json; from rms_backend import service; service.STATE["game"] = service.create_empty_game(123456); service.STATE["gameLoaded"] = True; service.STATE["mode"] = "research"; print(json.dumps(service.RECORD_SESSION.serialize()))',
+  ], { cwd: path.join(root, 'python'), env: { ...process.env, RMS_PORTABLE_DIR: directory,
+    RMS_BACKEND_CONFIG: path.join(directory, 'config.json') }, encoding: 'utf8' }))
+}
+
+test('native import, authored edit and V2 save preserve real action/analysis facts across runtimes', supported, async context => {
+  const { directory, session, store, workflow } = runtime(context)
+  const record = recordFixture(directory)
+  const nodeId = record.game.currentNodeId
+  const decision = { probability: 0.25, entries: [{ action: 'dahai', probability: 1 }] }
+  const opponent = { outputs: { probability: 0, tiles: { '5mr': 1, '5m': 0.5 } } }
+  record.game.nodes[nodeId].analysisCache = { 'm3::0::discard::source': decision }
+  record.game.nodes[nodeId].opponentAnalysisCache = { 'o5::0::public::source': opponent }
+  const input = path.join(directory, 'input.mjstudio')
+  fs.writeFileSync(input, encodeGameRecord(compactAnalysisCaches(record)))
+  const imported = await session.sendRequest('import_game_record', { path: input })
+  assert.equal(imported.state.gameLoaded, true)
+  store.beginRecord({ dirty: false, nodeId })
+  const target = path.join(directory, 'saved.mjstudio')
+  store.setCurrentPath(target)
+  const edit = session.sendRequest('set_node_comment', { nodeId, comment: '评论・牌譜🀄' })
+  const saved = await workflow.saveGame()
+  await edit
+  const bytes = fs.readFileSync(saved.path)
+  assert.equal(bytes.subarray(0, 8).toString(), 'MJSTBLK2')
+  const decoded = decodeGameRecord(bytes)
+  assert.equal(decoded.game.nodes[nodeId].comment, '评论・牌譜🀄')
+  assert.deepEqual(decoded.game.nodes[nodeId].analysisCache['m3::0::discard::source'], decision)
+  assert.deepEqual(decoded.game.nodes[nodeId].opponentAnalysisCache['o5::0::public::source'], opponent)
+  assert.equal(saved.recordDirty, false)
+  assert.equal(decoded.metadata.appVersion, 'test')
+  fs.writeFileSync(input, 'damaged json')
+  await assert.rejects(session.sendRequest('import_game_record', { path: input }))
+  assert.equal((await session.sendRequest('get_game_view')).view.currentNodeId, nodeId)
+  assert.equal(fs.readdirSync(directory).some(name => name.endsWith('.tmp')), false)
+})
+
+test('a main claim survives real backend death; another instance cannot steal it and restart restores durable edits', supported, async context => {
+  const first = runtime(context)
+  const created = await first.session.sendRequest('import_game_record', { record: recordFixture(first.directory) })
+  const nodeId = created.view.currentNodeId
+  const identity = first.session.getRuntime().workspaceId
+  await first.session.sendRequest('set_node_comment', { nodeId, comment: 'durable unsaved comment' })
+  await first.session.sendRequest('record_flush', { workspaceId: identity })
+  const second = runtime(context, first.directory)
+  assert.equal(await second.session.restoreStartup(), null)
+  const child = first.child()
+  const exited = new Promise(resolve => child.once('close', resolve))
+  child.kill()
+  await exited
+  assert.equal(first.session.needsRecovery(), true)
+  assert.equal(await second.session.restoreStartup(), null)
+  const restored = await first.session.restart()
+  assert.equal(restored.view.nodeComment, 'durable unsaved comment')
+  assert.equal(restored.view.currentNodeId, nodeId)
+  assert.equal(first.session.getRuntime().workspaceId, identity)
+  const oldScope = first.session.getRuntime().session
+  await first.session.sendRequest('import_game_record', { record: recordFixture(first.directory) })
+  await assert.rejects(first.backend.sendRequest('set_node_comment', { nodeId, comment: 'stale', recordScope: oldScope }), /SCOPE_CHANGED/)
+})
+
+test('dirty exit retains incremental workspace and a new main restores it without a portable exit snapshot', supported, async context => {
+  const first = runtime(context)
+  const created = await first.session.sendRequest('import_game_record', { record: recordFixture(first.directory) })
+  await first.session.sendRequest('set_node_comment', { nodeId: created.view.currentNodeId, comment: 'exit recovery' })
+  const prepared = await first.session.prepareClose(true)
+  assert.equal(prepared.recovery.kind, 'workspace')
+  await first.session.confirmClose()
+  await first.session.shutdown()
+  assert.equal(fs.existsSync(first.store.getRecoveryPath()), false)
+  const second = runtime(context, first.directory)
+  const restored = await second.session.restoreStartup()
+  assert.equal(restored.view.nodeComment, 'exit recovery')
+  assert.equal(restored.state.gameLoaded, true)
+})
+
+test('clean exit restores the saved source plus current bookmark and retention-off does not return it', supported, async context => {
+  const first = runtime(context)
+  const created = await first.session.sendRequest('import_game_record', { record: recordFixture(first.directory) })
+  first.store.beginRecord({ dirty: true, nodeId: created.view.currentNodeId })
+  first.store.setCurrentPath(path.join(first.directory, 'clean.mjstudio'))
+  await first.workflow.saveGame()
+  await first.session.sendRequest('toggle_visible_hands')
+  const prepared = await first.session.prepareClose(true)
+  assert.equal(prepared.recovery.kind, 'source')
+  assert.equal(prepared.recovery.bookmark.visibleHands, true)
+  await first.session.confirmClose()
+  await first.session.shutdown()
+  const second = runtime(context, first.directory)
+  const restored = await second.session.restoreStartup()
+  assert.equal(restored.state.visibleHands, true)
+  assert.equal(restored.view.currentNodeId, created.view.currentNodeId)
+  const disabled = await second.session.prepareClose(false)
+  assert.equal(disabled.recovery, null)
+  await second.session.confirmClose()
+  await second.session.shutdown()
+  const third = runtime(context, first.directory)
+  assert.equal(await third.session.restoreStartup(), null)
+})
+
+test('a promoted save with a lost ACK reconciles its exact intent after real backend death', supported, async context => {
+  const first = runtime(context)
+  await first.session.sendRequest('import_game_record', { record: recordFixture(first.directory) })
+  const target = path.join(first.directory, 'lost-ack.mjstudio')
+  const token = await first.session.captureSave(target, 'test')
+  const stage = `${target}.${token.saveId}.tmp`
+  await first.session.writeSave(token, stage)
+  fs.renameSync(stage, target)
+  const child = first.child()
+  const exited = new Promise(resolve => child.once('close', resolve))
+  child.kill()
+  await exited
+  const restored = await first.session.restart()
+  assert.deepEqual(restored.saveReconciliationErrors, [])
+  assert.equal(first.session.getRuntime().savedPath, target)
+  assert.equal(first.session.getRuntime().savedContentRevision, token.contentRevision)
+  const prepared = await first.session.prepareClose(true)
+  assert.equal(prepared.recovery.kind, 'source')
+  assert.equal(prepared.recovery.path, target)
+  await first.session.cancelClose()
+})
+
+test('queued frontend scopes reject old sessions and implicit actions in superseded visits', supported, async context => {
+  const first = runtime(context)
+  const record = recordFixture(first.directory)
+  const created = await first.session.sendRequest('import_game_record', { record })
+  const scope = created.view.viewToken
+  await first.session.sendRequest('jump_to_node', { nodeId: created.view.currentNodeId, navigationIntent: 2 })
+  await assert.rejects(first.session.sendRequest('advance_game', { recordViewScope: scope }), /SCOPE_CHANGED/)
+  // Explicit comment edits remain valid after browsing within their own record.
+  await first.session.sendRequest('set_node_comment', { nodeId: created.view.currentNodeId, comment: 'valid', recordViewScope: scope })
+  await first.session.sendRequest('import_game_record', { record })
+  await assert.rejects(first.session.sendRequest('set_node_comment', { nodeId: created.view.currentNodeId,
+    comment: 'old queued edit', recordViewScope: scope }), /SCOPE_CHANGED/)
+  assert.notEqual((await first.session.sendRequest('get_game_view')).view.nodeComment, 'old queued edit')
+})

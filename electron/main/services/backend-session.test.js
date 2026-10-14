@@ -1,253 +1,156 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const { randomUUID } = require('node:crypto')
 const { createBackendSession } = require('./backend-session')
 
-function fixture(loaded = true, checkpointOptions = {}) {
+function fixture() {
   const calls = []
-  const record = { game: { gameId: 'game-a', currentNodeId: 'branch-2', nodes: { 'branch-2': { comment: 'unsaved' } } } }
+  let active = null
+  let current = null
+  const workspaces = {
+    allocate: async () => randomUUID(), getActive: () => active,
+    activate: async id => { active = id; calls.push('activate') },
+    abandon: async () => {}, discardActive: async () => { active = null },
+    released: async () => {}, retainClose: async () => { calls.push('retain') },
+    cancelClose: async () => {}, recoverable: async () => [], updateRetention: async () => {},
+    shutdown: async () => { active = null },
+  }
   const backend = {
-    loaded,
-    running: true,
+    running: true, failPrepare: false, failRestore: false,
     isRunning() { return this.running },
-    restart() { this.running = true; calls.push('restart') },
-    async sendRequest(command, payload) {
+    async restart() { this.running = true; calls.push('restart') },
+    async stop() { this.running = false },
+    async sendRequest(command, payload = {}) {
       calls.push(command)
-      if (command === 'export_game_record' || command === 'export_recovery_checkpoint') {
-        return { record, state: { analysisVisibility: { opponentAnalysis: true } } }
+      if (command === 'create_game') current = { workspaceId: payload.workspaceId, session: randomUUID(),
+        contentRevision: 1, cursorSequence: 1, savedContentRevision: 0, savedCursorSequence: 0, pathIntent: 0, savedPath: '' }
+      if (command === 'record_restore') {
+        if (this.failRestore) throw new Error('restore failed')
+        current = { ...current, session: randomUUID() }
       }
-      if (command === 'import_game_record') {
-        assert.deepEqual(payload.record, record)
-        if (backend.failImport) throw new Error('import failed')
-      }
-      return { state: { gameLoaded: backend.loaded, analysisVisibility: { opponentAnalysis: true } }, view: { gameId: 'game-a', currentNodeId: 'branch-2' } }
+      if (command === 'record_close_prepare' && this.failPrepare) throw new Error('durability failed')
+      if (command === 'close_game') current = null
+      const response = { state: { gameLoaded: Boolean(current) }, view: { currentNodeId: current ? 'branch-2' : null },
+        recordRuntime: current && { ...current } }
+      if (command === 'record_close_prepare') response.result = { closeId: payload.closeId, recovery: { kind: 'workspace', workspaceId: active } }
+      if (command === 'record_save_capture') response.result = { ...payload, session: current.session,
+        contentRevision: current.contentRevision, cursorSequence: current.cursorSequence }
+      return response
     },
   }
-  return { backend, session: createBackendSession(backend, checkpointOptions), calls }
+  const session = createBackendSession(backend, { workspaces })
+  return { backend, session, calls, workspaces }
 }
 
-test('restart exports before stopping and returns only after restoration and visibility sync', async () => {
+test('restart retains a finite workspace barrier and restores by identity without whole-record snapshots', async () => {
   const { session, calls } = fixture()
-  const result = await session.restart()
-  assert.equal(result.ok, true)
-  assert.equal(result.view.currentNodeId, 'branch-2')
-  assert.deepEqual(calls, ['get_status', 'export_game_record', 'restart', 'import_game_record', 'set_analysis_visibility', 'get_game_view'])
-})
-
-test('restart waits for outstanding edits, rejects new operations and coalesces duplicate restarts', async () => {
-  const { backend, session, calls } = fixture()
-  const send = backend.sendRequest
-  let finish
-  backend.sendRequest = (command, payload) => command === 'edit'
-    ? new Promise(resolve => { finish = resolve }) : send(command, payload)
-  const edit = session.sendRequest('edit')
-  const restart = session.restart()
-  assert.equal(session.restart(), restart)
-  await assert.rejects(session.sendRequest('create_game'), /recovery/)
-  assert.deepEqual(calls, [])
-  finish({})
-  await edit
-  await restart
-})
-
-test('export failure leaves the original process intact', async () => {
-  const { backend, session, calls } = fixture()
-  const send = backend.sendRequest
-  backend.sendRequest = async (command, payload) => {
-    if (command === 'export_game_record') throw new Error('export failed')
-    return send(command, payload)
-  }
-  await assert.rejects(session.restart(), /export failed/)
-  assert.equal(calls.includes('restart'), false)
-  await session.sendRequest('get_status')
-})
-
-test('failed import retains its snapshot for retry and blocks replacement games', async () => {
-  const { backend, session, calls } = fixture()
-  backend.failImport = true
-  await assert.rejects(session.restart(), /import failed/)
-  await assert.rejects(session.sendRequest('create_game'), /recovery/)
-  backend.failImport = false
-  await session.restart()
-  assert.equal(calls.filter(call => call === 'export_game_record').length, 1)
-  await session.sendRequest('get_status')
-})
-
-test('an empty session restarts without trying to export a game', async () => {
-  const { session, calls } = fixture(false)
-  await session.restart()
-  assert.equal(calls.includes('export_game_record'), false)
-  assert.equal(calls.includes('import_game_record'), false)
-})
-
-test('recovery does not send an import until the previous process exits', async () => {
-  const { backend, session, calls } = fixture()
-  let finishExit
-  backend.restart = () => new Promise(resolve => { finishExit = resolve })
-  const restarting = session.restart()
-  await new Promise(resolve => setImmediate(resolve))
-  assert.equal(calls.includes('import_game_record'), false)
-  assert.equal(session.restart(), restarting)
-  finishExit()
-  await restarting
-  assert.equal(calls.includes('import_game_record'), true)
-})
-
-test('a stopped session without a snapshot can restart empty, then accept requests', async () => {
-  const { backend, session, calls } = fixture(false)
-  backend.running = false
-  session.handleEvent({ type: 'service_stopped' })
-  assert.equal(session.hasCheckpoint(), false)
-  const result = await session.restart()
-  assert.equal(result.state.gameLoaded, false)
-  assert.equal(calls.includes('export_game_record'), false)
-  assert.equal(calls.includes('import_game_record'), false)
-  await session.sendRequest('get_status')
-  assert.equal(session.needsRecovery(), false)
-})
-
-test('an empty response after import is not a successful recovery', async () => {
-  const { backend, session } = fixture()
-  const send = backend.sendRequest
-  backend.sendRequest = (command, payload) => command === 'get_game_view'
-    ? Promise.resolve({ state: { gameLoaded: false }, view: {} }) : send(command, payload)
-  await assert.rejects(session.restart(), /did not confirm/)
-  await assert.rejects(session.sendRequest('create_game'), /recovery/)
-})
-
-test('a final reply followed by backend exit cannot mark recovery successful', async () => {
-  const { backend, session } = fixture()
-  const send = backend.sendRequest
-  backend.sendRequest = async (command, payload) => {
-    const response = await send(command, payload)
-    if (command === 'get_game_view') {
-      backend.running = false
-      session.handleEvent({ type: 'service_stopped' })
-    }
-    return response
-  }
-  await assert.rejects(session.restart(), /stopped during recovery/)
-  assert.equal(session.needsRecovery(), true)
-  assert.equal(session.hasCheckpoint(), true)
-  backend.sendRequest = send
-  await session.restart()
-  assert.equal(session.needsRecovery(), false)
-})
-
-test('a crash restores the latest completed checkpoint without exporting from the dead process', async () => {
-  let capture
-  const { backend, session, calls } = fixture(true, { schedule(callback) { capture = callback; return 1 }, cancel() {} })
   await session.sendRequest('create_game')
-  capture()
-  await new Promise(resolve => setImmediate(resolve))
+  calls.length = 0
+  const response = await session.restart()
+  assert.equal(response.ok, true)
+  assert.deepEqual(calls, ['record_close_capture', 'record_close_prepare', 'restart', 'record_restore', 'record_confirm_activation'])
+  assert.equal(response.view.currentNodeId, 'branch-2')
+})
+
+test('failed restart durability leaves the old process intact and unfreezes its record', async () => {
+  const { backend, session, calls } = fixture()
+  await session.sendRequest('create_game')
+  backend.failPrepare = true
+  await assert.rejects(session.restart(), /durability failed/)
+  assert.equal(calls.includes('restart'), false)
+  assert.equal(calls.at(-1), 'record_close_cancel')
+  await session.sendRequest('set_node_comment', { nodeId: 'branch-2', comment: 'still editable' })
+})
+
+test('crash keeps the main claim and restores no data from a dead process', async () => {
+  const { backend, session, calls } = fixture()
+  await session.sendRequest('create_game')
+  const id = session.getRuntime().workspaceId
   backend.running = false
   session.handleEvent({ type: 'service_stopped' })
-  await assert.rejects(session.sendRequest('get_status'), /recovery/)
-  assert.equal(session.needsRecovery(), true)
-  const exports = calls.filter(call => call === 'export_game_record').length
+  assert.equal(session.hasCheckpoint(), true)
+  await assert.rejects(session.sendRequest('get_game_view'), /recovery/)
+  calls.length = 0
   await session.restart()
-  assert.equal(calls.filter(call => call === 'export_game_record').length, exports)
+  assert.deepEqual(calls, ['restart', 'record_restore', 'record_confirm_activation'])
+  assert.equal(session.getRuntime().workspaceId, id)
   assert.equal(session.needsRecovery(), false)
 })
 
-test('a settled response from before the stop is rejected before applying its state', async () => {
+test('failed restore remains retryable and never silently becomes an empty record', async () => {
+  const { backend, session } = fixture()
+  await session.sendRequest('create_game')
+  backend.running = false
+  session.handleEvent({ type: 'service_stopped' })
+  backend.failRestore = true
+  await assert.rejects(session.restart(), /restore failed/)
+  assert.equal(session.hasCheckpoint(), true)
+  await assert.rejects(session.sendRequest('create_game'), /recovery/)
+  backend.failRestore = false
+  await session.restart()
+  assert.equal(session.needsRecovery(), false)
+})
+
+test('actual previous-process exit precedes private restore and duplicate restarts coalesce', async () => {
+  const { backend, session, calls } = fixture()
+  await session.sendRequest('create_game')
+  let release
+  backend.restart = () => new Promise(resolve => { release = resolve })
+  const restarting = session.restart()
+  assert.equal(session.restart(), restarting)
+  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve))
+  assert.equal(calls.includes('record_restore'), false)
+  release()
+  await restarting
+  assert.equal(calls.includes('record_restore'), true)
+})
+
+test('settled pre-crash replies cannot apply after the generation changes', async () => {
   const { backend, session } = fixture()
   let finish
   backend.sendRequest = () => new Promise(resolve => { finish = resolve })
   const request = session.sendRequest('get_game_view')
-  finish({ state: { gameLoaded: true }, view: { gameId: 'game-a' } })
+  finish({ state: { gameLoaded: true } })
   session.handleEvent({ type: 'service_stopped' })
   await assert.rejects(request, /stopped before the response/)
 })
 
-test('reimporting a record with the same game ID cannot recover its predecessor', async () => {
-  let capture
-  const { backend, session } = fixture(true, { schedule(callback) { capture = callback; return 1 }, cancel() {} })
-  await session.sendRequest('create_game')
-  capture()
-  await new Promise(resolve => setImmediate(resolve))
-  await session.sendRequest('create_game')
-  backend.running = false
-  session.handleEvent({ type: 'service_stopped' })
-  assert.equal(session.hasCheckpoint(), false)
-  backend.loaded = false
+test('empty close/crash can restart empty without manufacturing a recovery record', async () => {
+  const { session, calls } = fixture()
   await session.restart()
+  assert.equal(calls.includes('record_restore'), false)
+  await session.sendRequest('create_game')
+  await session.sendRequest('close_game')
+  assert.equal(session.hasCheckpoint(), false)
+  session.handleEvent({ type: 'service_stopped' })
+  const response = await session.restart()
+  assert.equal(response.state.gameLoaded, false)
 })
 
-test('navigation and transient analysis controls do not schedule full-record checkpoints', async () => {
-  const scheduled = []
-  const { session } = fixture(true, {
-    schedule(callback, delay) { scheduled.push({ callback, delay }); return scheduled.length },
-    cancel() {},
-  })
-
-  await session.sendRequest('jump_to_node')
-  await session.sendRequest('set_analysis_visibility')
-  await session.sendRequest('start_auto_analysis')
-  await session.sendRequest('cancel_auto_analysis')
-  assert.equal(scheduled.length, 0)
-
-  await session.sendRequest('set_mode')
-  assert.equal(scheduled.length, 1)
-})
-
-test('derived analysis cache events do not repeatedly export the recovery record', async () => {
-  const scheduled = []
-  const { session } = fixture(true, {
-    schedule(callback, delay) { scheduled.push({ callback, delay }); return scheduled.length },
-    cancel() {},
-  })
-
-  await session.sendRequest('jump_to_node')
-  session.handleEvent({ type: 'record_changed', change: 'decision_analysis_cache' })
-  session.handleEvent({ type: 'record_changed', change: 'opponent_analysis_cache' })
-  assert.equal(scheduled.length, 0)
-
-  session.handleEvent({ type: 'record_changed', change: 'user_authored_change' })
-  assert.equal(scheduled.length, 1)
-})
-
-test('full saves always ask the backend for a current file, not a crash checkpoint', async () => {
+test('cancel close does not wait for its durability barrier and late prepare cannot confirm', async () => {
   const { backend, session, calls } = fixture()
-  const requests = []
-  const send = backend.sendRequest
-  backend.sendRequest = (command, payload, timeout) => {
-    requests.push({ command, payload, timeout })
-    return send(command, payload)
-  }
-  await session.exportGameRecordToFile('first.tmp', { recovery: false })
-  await session.exportGameRecordToFile('second.tmp', { recovery: true })
-  assert.equal(calls.filter(command => command === 'export_game_record').length, 2)
-  assert.deepEqual(requests.map(({ payload, timeout }) => ({ payload, timeout })), [
-    { payload: { path: 'first.tmp', recovery: false }, timeout: null },
-    { payload: { path: 'second.tmp', recovery: true }, timeout: null },
-  ])
+  await session.sendRequest('create_game')
+  let finish
+  const send = backend.sendRequest.bind(backend)
+  backend.sendRequest = (command, data) => command === 'record_close_prepare'
+    ? new Promise(resolve => { finish = () => resolve({ result: { recovery: {} } }) }) : send(command, data)
+  const preparing = session.prepareClose(true)
+  for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve))
+  await session.cancelClose()
+  assert.equal(calls.at(-1), 'record_close_cancel')
+  await session.sendRequest('set_node_comment', { nodeId: 'branch-2', comment: 'resumed' })
+  finish()
+  assert.equal(await preparing, null)
+  await assert.rejects(session.confirmClose(), /no prepared/)
 })
 
-test('save waits for submitted edits before entering the independent export lane', async () => {
-  const { backend, session, calls } = fixture()
-  const send = backend.sendRequest
-  let finish
-  backend.sendRequest = (command, ...args) => command === 'set_node_comment'
-    ? new Promise(resolve => { finish = resolve }) : send(command, ...args)
-  const edit = session.sendRequest('set_node_comment')
-  const saving = session.exportGameRecordToFile('record.tmp')
-  await Promise.resolve()
-  assert.equal(calls.includes('export_game_record'), false)
-  finish({})
-  await edit
-  await saving
-  assert.equal(calls.includes('export_game_record'), true)
-})
-
-test('save does not wait for unrelated engine inspection', { timeout: 1000 }, async () => {
-  const { backend, session } = fixture()
-  const send = backend.sendRequest
-  let finish
-  backend.sendRequest = (command, ...args) => command === 'describe_engine'
-    ? new Promise(resolve => { finish = resolve }) : send(command, ...args)
-  const inspection = session.sendRequest('describe_engine')
-  const saved = await session.exportGameRecordToFile('record.tmp')
-  assert.ok(saved.record)
-  finish({})
-  await inspection
+test('a failed main activation marker blocks old-renderer edits instead of abandoning an activated backend', async () => {
+  const { session, workspaces } = fixture()
+  await session.sendRequest('create_game')
+  const original = workspaces.getActive()
+  workspaces.activate = async () => { throw new Error('manifest disk full') }
+  await assert.rejects(session.sendRequest('create_game'), /manifest disk full/)
+  assert.equal(workspaces.getActive(), original)
+  assert.equal(session.needsRecovery(), true)
+  await assert.rejects(session.sendRequest('set_node_comment', { nodeId: 'branch-2', comment: 'stale' }), /recovery/)
 })

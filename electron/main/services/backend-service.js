@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { createBackendProcess } = require('./backend-process')
 const { createBackendSession } = require('./backend-session')
-const { migrateSettings } = require('../state/settings')
+const { loadSettings, migrateSettings } = require('../state/settings')
 
 function resolveDevelopmentPython(resourceRoot, env = process.env) {
   const explicit = String(env.RMS_BACKEND_PYTHON || env.MJAI_BACKEND_PYTHON || '').trim()
@@ -50,8 +50,12 @@ function createBackendService(options = {}) {
     },
   })
 
-  const backendSession = createBackendSession(backendProcess)
   let onEvent = null
+  const backendSession = createBackendSession(backendProcess, {
+    workspaceRoot: path.join(options.portableDir || process.cwd(), 'records', '.recovery', 'workspaces'),
+    retain: () => loadSettings(options).records?.saveRecoveryOnExit !== false,
+    onFault: error => onEvent?.({ type: 'service_recovery_failed', error: String(error.message || error) }),
+  })
   backendProcess.onEvent(event => {
     backendSession.handleEvent(event)
     onEvent?.(event.type === 'service_stopped'
@@ -69,9 +73,16 @@ function createBackendService(options = {}) {
       getGameView() {
         return backendSession.sendRequest('get_game_view')
       },
-      exportGameRecordToFile(filePath, options) {
-        return backendSession.exportGameRecordToFile(filePath, options)
-      },
+      captureRecordSave: backendSession.captureSave,
+      writeRecordSave: backendSession.writeSave,
+      acknowledgeRecordSave: backendSession.acknowledgeSave,
+      abortRecordSave: backendSession.abortSave,
+      prepareRecordClose: backendSession.prepareClose,
+      cancelRecordClose: backendSession.cancelClose,
+      confirmRecordClose: backendSession.confirmClose,
+      restoreRecordRecovery: backendSession.restoreStartup,
+      getRecordRuntime: backendSession.getRuntime,
+      updateRecordRetention: backendSession.updateRetention,
       describeEngine(profile) {
         return backendSession.sendRequest('describe_engine', profile, 30_000)
       },
@@ -81,8 +92,8 @@ function createBackendService(options = {}) {
       unloadEngine(kind, profileId) {
         return backendSession.sendRequest('unload_engine', { kind, profileId }, 30_000)
       },
-      importGameRecordFile(filePath) {
-        return backendSession.sendRequest('import_game_record', { path: filePath }, null)
+      importGameRecordFile(filePath, savedBaseline) {
+        return backendSession.sendRequest('import_game_record', { path: filePath, savedBaseline }, null)
       },
       importMortalReport(report, sourceUrl, options = {}) {
         return backendSession.sendRequest('import_mortal_report', {
@@ -105,8 +116,8 @@ function createBackendService(options = {}) {
           path: filePath, reconstructWalls: Boolean(options.reconstructWalls), seed: options.seed,
         }, null)
       },
-      setPlayerName(seat, name) {
-        return backendSession.sendRequest('set_player_name', { seat, name })
+      setPlayerName(seat, name, recordViewScope) {
+        return backendSession.sendRequest('set_player_name', { seat, name, recordViewScope })
       },
       exportCustomTenhou() {
         return backendSession.sendRequest('export_custom_tenhou')
@@ -117,11 +128,11 @@ function createBackendService(options = {}) {
       closeGame() {
         return backendSession.sendRequest('close_game')
       },
-      advanceGame() {
-        return backendSession.sendRequest('advance_game')
+      advanceGame(recordViewScope) {
+        return backendSession.sendRequest('advance_game', { recordViewScope })
       },
-      confirmPendingReview() {
-        return backendSession.sendRequest('confirm_pending_review')
+      confirmPendingReview(recordViewScope) {
+        return backendSession.sendRequest('confirm_pending_review', { recordViewScope })
       },
       setMode(mode) {
         return backendSession.sendRequest('set_mode', { mode })
@@ -141,14 +152,14 @@ function createBackendService(options = {}) {
       jumpToNode(nodeId, treeRevision, navigationIntent) {
         return backendSession.sendRequest('jump_to_node', { nodeId, treeRevision, navigationIntent })
       },
-      setMainBranch(nodeId) {
-        return backendSession.sendRequest('set_main_branch', { nodeId })
+      setMainBranch(nodeId, recordViewScope) {
+        return backendSession.sendRequest('set_main_branch', { nodeId, recordViewScope })
       },
-      setNodeComment(nodeId, comment) {
-        return backendSession.sendRequest('set_node_comment', { nodeId, comment })
+      setNodeComment(nodeId, comment, recordViewScope) {
+        return backendSession.sendRequest('set_node_comment', { nodeId, comment, recordViewScope })
       },
-      deleteNode(nodeId) {
-        return backendSession.sendRequest('delete_node', { nodeId })
+      deleteNode(nodeId, recordViewScope) {
+        return backendSession.sendRequest('delete_node', { nodeId, recordViewScope })
       },
       restartBackend() {
         return backendSession.restart()
@@ -182,7 +193,7 @@ function createBackendService(options = {}) {
       backendProcess.start()
     },
     stopAll() {
-      return backendProcess.stop()
+      return backendSession.shutdown()
     },
   }
 }

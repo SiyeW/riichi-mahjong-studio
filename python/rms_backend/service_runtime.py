@@ -26,6 +26,8 @@ class ServiceRuntime:
         self._request_executors = {
             "command": executor_factory(max_workers=1),
             "checkpoint": executor_factory(max_workers=1),
+            "record_control": executor_factory(max_workers=1),
+            "record_release": executor_factory(max_workers=1),
             "status": executor_factory(max_workers=1),
             "metrics": executor_factory(max_workers=1),
             "engine_inspection": executor_factory(max_workers=1),
@@ -60,8 +62,15 @@ class ServiceRuntime:
     @staticmethod
     def request_lane(command: str) -> str:
         return {
-            "export_recovery_checkpoint": "checkpoint",
-            "export_game_record": "checkpoint",
+            "record_save_write": "checkpoint",
+            "record_close_prepare": "checkpoint",
+            "record_save_committed": "record_control",
+            "record_save_abort": "record_control",
+            "record_close_cancel": "record_control",
+            "record_close_confirm": "record_control",
+            "record_wait_released": "record_release",
+            "record_abandon": "record_release",
+            "record_flush": "checkpoint",
             "get_status": "status",
             "get_runtime_metrics": "metrics",
             "describe_engine": "engine_inspection",

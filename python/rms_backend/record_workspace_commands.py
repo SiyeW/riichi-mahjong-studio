@@ -120,6 +120,20 @@ class RecordWorkspaceCommands:
             raise ValueError("Supply either a record file path or a record, not both.")
         writer = RecordFileWriter()
         record = read_record_file(payload["path"], writer=writer) if "path" in payload else payload.get("record")
+        expected = payload.get('expectedSource')
+        if expected is not None:
+            origin = getattr(record, 'origin', None)
+            if origin is None or origin.source.identity != expected:
+                raise ValueError('Recovery source identity changed.')
+        bookmark = payload.get('bookmark')
+        if bookmark is not None:
+            node_id = bookmark.get('currentNodeId')
+            if node_id not in record.get('game', {}).get('nodes', {}):
+                raise ValueError('Recovery bookmark is not in the saved record.')
+            record['game']['currentNodeId'] = node_id
+            record['game']['pendingReview'] = bookmark.get('pendingReview')
+            record.setdefault('state', {}).update({key: value for key, value in bookmark.items()
+                                                   if key not in ('currentNodeId', 'pendingReview')})
         prepared = self._record_session.prepare_load(record, take_ownership=True, file_writer=writer)
         return prepared, record.get('metadata') or {}
 

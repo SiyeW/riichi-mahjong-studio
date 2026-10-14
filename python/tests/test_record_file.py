@@ -193,20 +193,6 @@ class RecordFileTests(unittest.TestCase):
                     self.assertEqual(read_record_file(path)["game"], {})
         self.assertEqual(record, original)
 
-    def test_file_export_returns_no_bulk_record_and_fsyncs_before_completion(self):
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "staging.tmp"
-            with patch.object(service.RECORD_SESSION, "prepare_export", return_value=SimpleNamespace(file_writer=RecordFileWriter())), \
-                 patch.object(service.RECORD_SESSION, "serialize_prepared_export", return_value={"game": {}}), \
-                 patch.object(service.VIEW_BUILDER, "build_response", side_effect=AssertionError('Save rebuilt a game view')), \
-                 patch("rms_backend.record_file.os.fsync") as sync:
-                result = service._export_game_record(1, "export_game_record", {"path": str(path)})
-            sync.assert_called_once()
-            self.assertNotIn("record", result)
-            self.assertNotIn('view', result)
-            self.assertNotIn('state', result)
-            self.assertEqual(read_record_file(path)["game"], {})
-
 
 if __name__ == '__main__':
     unittest.main()

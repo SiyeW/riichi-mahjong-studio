@@ -357,6 +357,10 @@ class RecordWorkspace:
         return dict(saveId=save_id, workspaceId=self.workspace_id, contentRevision=row[0],
                     cursorSequence=row[1], target=row[2], pathIntent=row[3], committed=bool(row[4]))
 
+    def pending_save_intents(self):
+        with self.reader() as db:
+            return list(db.execute('SELECT id,content,cursor,target,intent FROM saves WHERE committed=0'))
+
     def abort_save(self, save_id):
         with self.transaction():
             self._db.execute('DELETE FROM saves WHERE id=? AND committed=0', (save_id,))

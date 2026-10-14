@@ -1,4 +1,6 @@
-export type NodeCommentUpdate = { key: string; nodeId: string; comment: string }
+import type { RecordCommandScope } from './contracts/game'
+
+export type NodeCommentUpdate = { key: string; nodeId: string; comment: string; scope?: RecordCommandScope }
 
 export function nodeCommentKey(gameId: string | null | undefined, nodeId: string | null | undefined) {
   return gameId && nodeId ? `${gameId}\u0000${nodeId}` : ''
@@ -12,9 +14,9 @@ export function createNodeCommentQueue(
   const pending = new Map<string, NodeCommentUpdate>()
   let queue: Promise<void> = Promise.resolve()
 
-  function set(key: string, nodeId: string, comment: string) {
+  function set(key: string, nodeId: string, comment: string, scope?: RecordCommandScope) {
     // Identity distinguishes separate edits, including A -> B -> A.
-    const update = { key, nodeId, comment }
+    const update = { key, nodeId, comment, scope }
     drafts.set(key, update)
     pending.set(key, update)
   }

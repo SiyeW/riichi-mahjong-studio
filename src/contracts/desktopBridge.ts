@@ -1,5 +1,5 @@
 import type { EngineDescription, EngineSettings } from './engines'
-import type { GameView } from './game'
+import type { GameView, RecordCommandScope } from './game'
 import type {
   BackendResponse,
   PythonEvent,
@@ -50,18 +50,19 @@ export interface DesktopBridge {
   getGameView: () => Promise<BackendResponse>
   createGame: () => Promise<StudioStatus>
   closeGame: () => Promise<BackendResponse>
-  advanceGame: () => Promise<BackendResponse>
-  confirmPendingReview: () => Promise<BackendResponse>
+  advanceGame: (scope?: RecordCommandScope) => Promise<BackendResponse>
+  confirmPendingReview: (scope?: RecordCommandScope) => Promise<BackendResponse>
   submitUserAction: (action: {
     type: string
     pai?: string
     variant?: string
     fromDrawn?: boolean
     candidateId?: string
+    recordViewScope?: RecordCommandScope
   }) => Promise<BackendResponse>
   jumpToNode: (nodeId: string, treeRevision?: number, navigationIntent?: number) => Promise<BackendResponse>
-  setMainBranch: (nodeId: string) => Promise<BackendResponse>
-  setNodeComment: (nodeId: string, comment: string) => Promise<{
+  setMainBranch: (nodeId: string, scope?: RecordCommandScope) => Promise<BackendResponse>
+  setNodeComment: (nodeId: string, comment: string, scope?: RecordCommandScope) => Promise<{
     request_id: string
     command: string
     nodeId: string
@@ -69,7 +70,7 @@ export interface DesktopBridge {
     changed: boolean
     timestamp: string
   }>
-  deleteNode: (nodeId: string) => Promise<BackendResponse>
+  deleteNode: (nodeId: string, scope?: RecordCommandScope) => Promise<BackendResponse>
   getRecordDirty: () => Promise<boolean>
   saveGame: () => Promise<RecordSaveResult | null>
   saveGameAs: () => Promise<RecordSaveResult | null>
@@ -88,7 +89,7 @@ export interface DesktopBridge {
   }) => Promise<RecordImportResult>
   selectRecordImportFile: () => Promise<string | null>
   importReplayFile: (payload: { path: string; reconstructWalls?: boolean; seed?: string }) => Promise<RecordImportResult>
-  setPlayerName: (seat: number, name: string) => Promise<{ seat: number; name: string; changed: boolean }>
+  setPlayerName: (seat: number, name: string, scope?: RecordCommandScope) => Promise<{ seat: number; name: string; changed: boolean }>
   exportCustomTenhou: () => Promise<{
     tenhou: string
     mortal: string

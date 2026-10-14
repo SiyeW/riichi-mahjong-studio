@@ -7,6 +7,7 @@ from threading import RLock
 
 from .record_resource_manager import workspace_identity
 from .record_stored_export import StoredRecordExport
+from .record_archive import read_archive
 
 TOKEN_FIELDS = ('saveId', 'workspaceId', 'session', 'contentRevision', 'cursorSequence', 'pathIntent', 'target')
 
@@ -36,6 +37,8 @@ class RecordSaveOperations:
     def capture(self, identity, save_id, target, intent, app_version=''):
         save_id = workspace_identity(save_id)
         target = str(Path(target).resolve())
+        if Path(target).is_relative_to(self.resources.root):
+            raise ValueError('Portable saves cannot overwrite private recovery resources.')
         if type(intent) is not int or intent <= 0:
             raise ValueError('Invalid save path intent.')
         with self._lock:
@@ -140,6 +143,30 @@ class RecordSaveOperations:
             return self._remember(token)
         finally:
             self.resources.release(resource)
+
+    def reconcile(self, resource):
+        """Only pending intents, only native directories; never scan saved bodies."""
+        errors = []
+        writer = resource.storage.writer
+        for save_id, content, cursor, target, intent in writer.submit('pending_save_intents').result():
+            try:
+                with open(target, 'rb') as file:
+                    archive = read_archive(file)
+                    saved = archive.record.get('metadata', {}).get('save')
+                    expected = dict(id=save_id, workspace=resource.storage.identity,
+                                    content=content, cursor=cursor, intent=intent)
+                    if saved != expected:
+                        writer.submit('abort_save', save_id).result()
+                        continue
+                    file_identity = archive.source.identity
+                writer.submit('save_committed', save_id, content, cursor, file_identity).result()
+                self.resources.mark_saved(resource, dict(saveId=save_id, contentRevision=content,
+                    cursorSequence=cursor, target=target, pathIntent=intent), file_identity)
+            except FileNotFoundError:
+                writer.submit('abort_save', save_id).result()
+            except (OSError, ValueError, EOFError) as error:
+                errors.append(dict(saveId=save_id, error=str(error)))
+        return errors
 
     def _release(self, save_id, operation):
         if self._operations.get(save_id) is operation:

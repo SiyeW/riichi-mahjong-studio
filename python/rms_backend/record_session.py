@@ -132,12 +132,12 @@ class RecordSession:
     def normalize_mode(value: Any) -> str:
         return "research" if value == "research" else "play"
 
-    def prepare_recovery_checkpoint(self) -> tuple[Game, dict[str, Any]]:
+    def prepare_authored_export(self) -> tuple[Game, dict[str, Any]]:
         """Detach mutable record structure while the caller holds the state lock.
 
         Node snapshots are immutable after a node is committed. Copy node
         dictionaries and their mutable tree links here, then leave the expensive
-        compact authored projection and recursive copy to the checkpoint worker.
+        compact authored projection and recursive copy to the caller off-lock.
         """
         self.ensure_loaded()
         live_game = self._state["game"]
@@ -168,10 +168,10 @@ class RecordSession:
         return prepared_game, state_copy
 
     @staticmethod
-    def serialize_prepared_recovery_checkpoint(
+    def serialize_authored_export(
         prepared: tuple[Game, dict[str, Any]],
     ) -> dict:
-        """Finish a detached recovery snapshot without holding live-state locks."""
+        """Finish a detached authored projection without holding live-state locks."""
         game, state = prepared
         return serialize_game_record_parts(copy_game_for_record(game), copy.deepcopy(state))
 
@@ -187,7 +187,7 @@ class RecordSession:
             self.ensure_loaded()
             state = {key: self._state[key] for key in self._STATE_FIELDS if key not in ('game', 'gameLoaded')}
             return StoredRecordExport(self.storage, self._state['game'], state)
-        game, state = self.prepare_recovery_checkpoint()
+        game, state = self.prepare_authored_export()
         game = copy_game_for_record(game)
         live_nodes = self._state["game"]["nodes"]
         for node_id, node in game["nodes"].items():

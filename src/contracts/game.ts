@@ -290,6 +290,8 @@ export interface GameTreeView {
   rounds?: RoundSummary[]
 }
 
+export type RecordCommandScope = Pick<AnalysisViewToken, 'sessionId' | 'nodeId' | 'seat' | 'mode' | 'intent'>
+
 export interface AnalysisViewToken {
   sessionId: string
   sequence: number

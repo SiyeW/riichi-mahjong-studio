@@ -2,171 +2,119 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { randomUUID } = require('node:crypto')
 const test = require('node:test')
 const { createGameFileStore } = require('../state/game-file-store')
-const { decodeGameRecord, encodeGameRecord } = require('../state/game-record-codec')
 const { createRecordWorkflow } = require('./record-workflow')
 
-test('record dirty publication is deduplicated and forced record starts still publish', () => {
-  let dirty = false
+function fixture(context, options = {}) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-record-workflow-'))
+  context.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  const store = createGameFileStore(directory)
+  store.ensureDefaultDirectory()
+  store.beginRecord({ dirty: true, nodeId: 'node-1' })
+  const target = path.join(directory, 'records', 'round.mjstudio')
+  store.setCurrentPath(target)
+  const calls = []
   const messages = []
-  const gameFileStore = {
-    beginRecord: ({ dirty: nextDirty }) => { dirty = nextDirty },
-    isDirty: () => dirty,
-    markDirty: () => { dirty = true },
+  const gateway = {
+    captureRecordSave: async (destination, version) => {
+      calls.push('capture')
+      assert.equal(version, 'test')
+      return { saveId: randomUUID(), target: destination, revision: store.getRevision() }
+    },
+    writeRecordSave: async (token, stage) => {
+      calls.push('write')
+      assert.equal(stage, `${token.target}.${token.saveId}.tmp`)
+      fs.writeFileSync(stage, 'complete new record')
+      return options.write?.(token, stage, store)
+    },
+    acknowledgeRecordSave: async token => { calls.push('ack'); store.markSaved(token.revision) },
+    abortRecordSave: async () => { calls.push('abort') },
+    ...options.gateway,
   }
-  const workflow = createRecordWorkflow({
-    app: { getVersion: () => '1.0.0' },
-    appOptions: {},
-    dialog: {},
-    backendGateway: {},
-    gameFileStore,
+  const workflow = createRecordWorkflow({ app: { getVersion: () => 'test' }, appOptions: {},
+    dialog: options.dialog || {}, backendGateway: gateway, gameFileStore: store,
     getMainWindow: () => ({ isDestroyed: () => false, webContents: { send: (...args) => messages.push(args) } }),
-    t: (key) => key,
-  })
+    t: key => key })
+  return { workflow, store, target, directory, calls, messages, gateway }
+}
 
-  assert.equal(workflow.publishRecordDirty(), false)
-  assert.deepEqual(messages, [])
-  workflow.markRecordDirty()
+test('dirty publications are deduplicated and forced starts still publish', context => {
+  const { workflow, messages } = fixture(context)
+  workflow.publishRecordDirty()
   workflow.markRecordDirty()
   assert.deepEqual(messages, [['record:dirty-changed', true]])
-  workflow.beginRecordTracking({ dirty: true, nodeId: 'node' })
-  assert.deepEqual(messages, [
-    ['record:dirty-changed', true],
-    ['record:dirty-changed', true],
-  ])
+  workflow.beginRecordTracking({ dirty: true })
+  assert.equal(messages.length, 2)
 })
 
-test('saving promotes a backend staging file and tracks the saved revision', async (context) => {
-  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-record-workflow-'))
-  context.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }))
-
-  const messages = []
-  const gameFileStore = createGameFileStore(temporaryDirectory)
-  const targetPath = path.join(temporaryDirectory, 'records', 'round.mjstudio')
-  gameFileStore.beginRecord({ dirty: true, nodeId: 'node-1' })
-  gameFileStore.setCurrentPath(targetPath)
-  const workflow = createRecordWorkflow({
-    app: { getVersion: () => '1.2.3' },
-    appOptions: {},
-    dialog: {},
-    backendGateway: {
-      exportGameRecordToFile: async (filePath, options) => {
-        assert.notEqual(filePath, targetPath)
-        assert.equal(path.dirname(filePath), path.dirname(targetPath))
-        assert.deepEqual(options, { appVersion: '1.2.3', recovery: false, compressed: true })
-        fs.writeFileSync(filePath, encodeGameRecord({ game: { nodes: { 'node-1': {} } } }))
-        return { state: { phase: 'ready' }, view: { currentNodeId: 'node-1' } }
-      },
-    },
-    gameFileStore,
-    getMainWindow: () => ({
-      isDestroyed: () => false,
-      webContents: { send: (...args) => messages.push(args) },
-    }),
-    t: (key) => key,
-  })
-
+test('save promotes a complete staging file before acknowledgement and removes staging', async context => {
+  const { workflow, store, target, calls, messages } = fixture(context)
   const result = await workflow.saveGame()
-
-  assert.deepEqual(result, {
-    path: targetPath,
-    recordDirty: false,
-    recoveryRecord: false,
-  })
-  assert.equal(gameFileStore.getCurrentPath(), targetPath)
-  assert.equal(gameFileStore.isDirty(), false)
+  assert.deepEqual(calls, ['capture', 'write', 'ack'])
+  assert.equal(fs.readFileSync(target, 'utf8'), 'complete new record')
+  assert.equal(result.recordDirty, false)
+  assert.equal(store.isDirty(), false)
   assert.deepEqual(messages, [['record:dirty-changed', false]])
-  assert.deepEqual(decodeGameRecord(fs.readFileSync(targetPath)).game.nodes, { 'node-1': {} })
-  assert.deepEqual(fs.readdirSync(path.dirname(targetPath)), ['round.mjstudio'])
+  assert.deepEqual(fs.readdirSync(path.dirname(target)), ['round.mjstudio'])
 })
 
-test('changing record during encoding cannot mark the replacement saved', async context => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-save-generation-'))
-  context.after(() => fs.rmSync(directory, { recursive: true, force: true }))
-  const store = createGameFileStore(directory)
-  store.beginRecord({ dirty: true })
-  const workflow = createRecordWorkflow({
-    app: { getVersion: () => 'test' }, appOptions: {}, dialog: {}, gameFileStore: store,
-    backendGateway: { exportGameRecordToFile: async filePath => {
-      fs.writeFileSync(filePath, 'old record')
-      store.beginRecord({ dirty: true })
-      return {}
-    } },
-    getMainWindow: () => null, t: key => key,
-  })
-  await assert.rejects(workflow.writeRecoveryGameRecord(), /record changed/)
-  assert.equal(store.isDirty(), true)
-  assert.equal(fs.existsSync(store.getRecoveryPath()), false)
-  assert.deepEqual(fs.readdirSync(path.dirname(store.getRecoveryPath())), [])
-})
-
-test('opening a record starts in the portable records folder', async (context) => {
-  const portableDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-open-record-'))
-  context.after(() => fs.rmSync(portableDirectory, { recursive: true, force: true }))
-  const gameFileStore = createGameFileStore(portableDirectory)
-  gameFileStore.ensureDefaultDirectory()
-  let openOptions = null
-  const workflow = createRecordWorkflow({
-    app: { getVersion: () => '1.0.0' },
-    appOptions: {},
-    dialog: {
-      showOpenDialog: async (_window, options) => {
-        openOptions = options
-        return { canceled: true, filePaths: [] }
-      },
-    },
-    backendGateway: {},
-    gameFileStore,
-    getMainWindow: () => null,
-    t: (key) => key,
-  })
-
-  assert.equal(await workflow.openGame(), null)
-  assert.equal(openOptions.defaultPath, path.join(portableDirectory, 'records'))
-  assert.deepEqual(openOptions.filters[0].extensions, ['mjstudio', 'mjtrain', 'json'])
-  assert.equal(fs.existsSync(openOptions.defaultPath), true)
-})
-
-test('a failed staged save preserves the old file, dirty state, and removes partial output', async context => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-failed-save-'))
-  context.after(() => fs.rmSync(directory, { recursive: true, force: true }))
-  const store = createGameFileStore(directory)
-  const target = path.join(directory, 'saved.mjstudio')
-  fs.writeFileSync(target, 'previous complete file')
-  store.setCurrentPath(target)
-  store.beginRecord({ dirty: true })
-  const workflow = createRecordWorkflow({
-    app: { getVersion: () => 'test' }, appOptions: {}, dialog: {}, gameFileStore: store,
-    backendGateway: { exportGameRecordToFile: async filePath => {
-      fs.writeFileSync(filePath, 'partial')
-      throw new Error('disk full')
-    } },
-    getMainWindow: () => null, t: key => key,
-  })
+test('a failed stage preserves previous data, keeps dirty and aborts only the unpromoted save', async context => {
+  const { workflow, store, target, calls } = fixture(context, { write: () => { throw new Error('disk full') } })
+  fs.writeFileSync(target, 'previous')
   await assert.rejects(workflow.saveGame(), /disk full/)
-  assert.equal(fs.readFileSync(target, 'utf8'), 'previous complete file')
+  assert.equal(fs.readFileSync(target, 'utf8'), 'previous')
   assert.equal(store.isDirty(), true)
-  assert.deepEqual(fs.readdirSync(directory), ['saved.mjstudio'])
+  assert.deepEqual(calls, ['capture', 'write', 'abort'])
+  assert.deepEqual(fs.readdirSync(path.dirname(target)), ['round.mjstudio'])
 })
 
-test('open waits for the backend file import before applying recovery metadata', async context => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-file-open-'))
-  context.after(() => fs.rmSync(directory, { recursive: true, force: true }))
-  const store = createGameFileStore(directory)
-  store.beginRecord({ dirty: true, nodeId: 'old' })
+test('a failed ACK never deletes the already promoted file or aborts its durable intent', async context => {
+  const { workflow, target, calls } = fixture(context, { gateway: {
+    acknowledgeRecordSave: async () => { calls.push('ack'); throw new Error('backend exited') },
+  } })
+  await assert.rejects(workflow.saveGame(), /backend exited/)
+  assert.equal(fs.readFileSync(target, 'utf8'), 'complete new record')
+  assert.equal(calls.includes('abort'), false)
+})
+
+test('external target replacement is detected before promotion', async context => {
+  const { workflow, target } = fixture(context, { write: token => fs.writeFileSync(token.target, 'externally edited content') })
+  fs.writeFileSync(target, 'previous')
+  await assert.rejects(workflow.saveGame(), /target changed/)
+  assert.equal(fs.readFileSync(target, 'utf8'), 'externally edited content')
+})
+
+test('an old captured save may finish its artifact but cannot change the new record path', async context => {
+  const { workflow, store, target } = fixture(context, { write: (_token, _stage, recordStore) => {
+    recordStore.beginRecord({ dirty: true })
+    recordStore.prepareUnsavedRecord('replacement')
+  } })
+  await workflow.saveGame()
+  assert.equal(fs.readFileSync(target, 'utf8'), 'complete new record')
+  assert.equal(store.getCurrentPath(), null)
+  assert.equal(store.isDirty(), true)
+})
+
+test('open starts in the portable records folder and does not change state when cancelled', async context => {
+  let openOptions
+  const { workflow, store, directory } = fixture(context, { dialog: {
+    showOpenDialog: async (_window, options) => { openOptions = options; return { canceled: true, filePaths: [] } },
+  } })
   const generation = store.getRecordGeneration()
-  const target = path.join(directory, 'recovery.mjstudio')
+  assert.equal(await workflow.openGame(), null)
+  assert.equal(openOptions.defaultPath, path.join(directory, 'records'))
+  assert.deepEqual(openOptions.filters[0].extensions, ['mjstudio', 'mjtrain', 'json'])
+  assert.equal(store.getRecordGeneration(), generation)
+})
+
+test('open applies recovery metadata only after the prepared backend candidate succeeds', async context => {
   let finish
-  const workflow = createRecordWorkflow({
-    app: {}, appOptions: {}, gameFileStore: store,
-    dialog: { showOpenDialog: async () => ({ canceled: false, filePaths: [target] }) },
-    backendGateway: { importGameRecordFile: filePath => {
-      assert.equal(filePath, target)
-      return new Promise(resolve => { finish = resolve })
-    } },
-    getMainWindow: () => null, t: key => key,
-  })
+  const { workflow, store, target } = fixture(context, { dialog: {
+    showOpenDialog: async () => ({ canceled: false, filePaths: [target] }),
+  }, gateway: { importGameRecordFile: () => new Promise(resolve => { finish = resolve }) } })
+  const generation = store.getRecordGeneration()
   const opening = workflow.openGame()
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(store.getRecordGeneration(), generation)
@@ -177,42 +125,4 @@ test('open waits for the backend file import before applying recovery metadata',
   assert.equal(result.recordDirty, true)
   assert.equal(result.view.currentNodeId, 'new')
   assert.notEqual(store.getRecordGeneration(), generation)
-})
-
-test('exit recovery uses the same full file export without marking the record saved', async (context) => {
-  const portableDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-recovery-workflow-'))
-  context.after(() => fs.rmSync(portableDirectory, { recursive: true, force: true }))
-  const gameFileStore = createGameFileStore(portableDirectory)
-  gameFileStore.beginRecord({ dirty: true, nodeId: 'node-1' })
-  const calls = []
-  const workflow = createRecordWorkflow({
-    app: { getVersion: () => '1.2.3' },
-    appOptions: {},
-    dialog: {},
-    backendGateway: {
-      exportGameRecordToFile: async (filePath, options) => {
-        assert.equal(options.recovery, true)
-        calls.push('recovery')
-        fs.writeFileSync(filePath, encodeGameRecord({ metadata: {
-          recovery: { kind: 'unsaved-exit', schemaVersion: 3 },
-        } }))
-        return {
-          state: { gameLoaded: true },
-          view: { currentNodeId: 'node-1' },
-        }
-      },
-    },
-    gameFileStore,
-    getMainWindow: () => null,
-    t: (key) => key,
-  })
-
-  const result = await workflow.writeRecoveryGameRecord()
-  assert.deepEqual(calls, ['recovery'])
-  assert.equal(result.path, gameFileStore.getRecoveryPath())
-  assert.equal(gameFileStore.isDirty(), true)
-  assert.deepEqual(decodeGameRecord(fs.readFileSync(result.path)).metadata.recovery, {
-    kind: 'unsaved-exit',
-    schemaVersion: 3,
-  })
 })

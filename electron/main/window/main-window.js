@@ -19,7 +19,9 @@ function createMainWindow({
   isDev,
   rendererUrl,
   gameFileStore,
-  writeRecoveryGameRecord,
+  prepareRecordClose,
+  cancelRecordClose,
+  confirmRecordClose,
   t,
   loadSettingsImpl = loadSettings,
   saveSettingsImpl = saveSettings,
@@ -114,10 +116,12 @@ function createMainWindow({
   let exitRequested = false
   let closeIsSlow = false
   let slowClosePrompt = null
+  let closeAttempt = 0
   const publishCloseState = (active, stage = '') => {
     if (!window.isDestroyed()) window.webContents.send('record:close-state', { active, stage })
   }
-  const askAboutSlowClose = () => {
+  const askAboutSlowClose = (attempt = closeAttempt) => {
+    if (attempt !== closeAttempt) return Promise.resolve()
     if (!closeInProgress || closeAllowed || window.isDestroyed()) return Promise.resolve()
     if (slowClosePrompt) return slowClosePrompt
     slowClosePrompt = dialog.showMessageBox(window, {
@@ -128,8 +132,12 @@ function createMainWindow({
       defaultId: 0,
       cancelId: 1,
     }).then(result => {
+      if (attempt !== closeAttempt) return
       if (result.response === 1) {
         exitRequested = false
+        closeInProgress = false
+        closeAttempt++
+        void cancelRecordClose?.().catch(error => console.error('[close] cancellation failed:', error))
         publishCloseState(false)
       } else if (result.response === 2) {
         closeAllowed = true
@@ -150,6 +158,7 @@ function createMainWindow({
       return
     }
     closeInProgress = true
+    const attempt = ++closeAttempt
     exitRequested = true
     closeIsSlow = false
     publishCloseState(true, 'preparing')
@@ -157,8 +166,9 @@ function createMainWindow({
       // This is a choice to keep waiting, not a failed/cancelled save. The
       // original operation retains ownership until its actual completion.
       const slowTimer = setTimeoutImpl(() => {
+        if (attempt !== closeAttempt) return
         closeIsSlow = true
-        void askAboutSlowClose()
+        void askAboutSlowClose(attempt)
       }, 30_000)
       slowTimer?.unref?.()
       let stageStarted = performance.now()
@@ -167,7 +177,7 @@ function createMainWindow({
         console.info(`[close] ${activeStage}: ${Math.round(performance.now() - stageStarted)} ms`)
         activeStage = stage
         stageStarted = performance.now()
-        if (exitRequested) publishCloseState(true, stage)
+        if (attempt === closeAttempt && exitRequested) publishCloseState(true, stage)
       }
       try {
         await persistBeforeCloseImpl(
@@ -175,20 +185,21 @@ function createMainWindow({
             unavailableMessage: t('native.rendererUnavailable'),
             onSlow: () => stageChanged('waiting'),
           }),
-          () => loadSettingsImpl(appOptions).records?.saveRecoveryOnExit && gameFileStore.isDirty(),
-          () => writeRecoveryGameRecord(stageChanged),
+          () => true,
+          () => prepareRecordClose(stageChanged),
           stageChanged,
         )
         console.info(`[close] ${activeStage}: ${Math.round(performance.now() - stageStarted)} ms`)
         clearTimeoutImpl(slowTimer)
         if (slowClosePrompt) await slowClosePrompt
-        if (!exitRequested || closeAllowed || window.isDestroyed()) return
+        if (attempt !== closeAttempt || !exitRequested || closeAllowed || window.isDestroyed()) return
+        await confirmRecordClose()
         closeAllowed = true
         window.close()
       } catch (error) {
         clearTimeoutImpl(slowTimer)
         if (slowClosePrompt) await slowClosePrompt
-        if (closeAllowed || window.isDestroyed()) return
+        if (attempt !== closeAttempt || closeAllowed || window.isDestroyed()) return
         console.error(`[close] ${activeStage} failed after ${Math.round(performance.now() - stageStarted)} ms:`, error)
         const result = await dialog.showMessageBox(window, {
           type: 'error',
@@ -204,11 +215,14 @@ function createMainWindow({
           window.close()
           return
         }
+        await cancelRecordClose?.()
       } finally {
         clearTimeoutImpl(slowTimer)
-        closeInProgress = false
-        closeIsSlow = false
-        if (!closeAllowed) publishCloseState(false)
+        if (attempt === closeAttempt) {
+          closeInProgress = false
+          closeIsSlow = false
+          if (!closeAllowed) publishCloseState(false)
+        }
       }
     })()
   })

@@ -1,6 +1,7 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { sameViewRequestContext } from './analysisPosition'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
+import { recordCommandScope } from './recordCommandScope.ts'
 import type { GameTreeNode, GameView, GameViewTransitionDirection, RoundSummary } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 
@@ -45,11 +46,11 @@ const nodeCommentDraft = ref('')
 const nodeComments = createNodeCommentQueue(
   async (update) => {
     if (!window.studioAPI?.setNodeComment) throw new Error('Node comment service unavailable')
-    return window.studioAPI.setNodeComment(update.nodeId, update.comment)
+    return window.studioAPI.setNodeComment(update.nodeId, update.comment, update.scope)
   },
   (update, comment) => {
     if (
-      nodeCommentKey(gameView.gameId, gameView.currentNodeId) === update.key
+      commentKey(gameView) === update.key
       && nodeCommentDraft.value === update.comment
     ) nodeCommentDraft.value = comment
   },
@@ -69,17 +70,21 @@ function cancelPendingWheelNavigation() {
   wheelNavigationGeneration = 0
 }
 
+function commentKey(view: GameView, nodeId = view.currentNodeId) {
+  return nodeCommentKey(view.viewToken?.sessionId || view.gameId, nodeId)
+}
+
 function syncNodeCommentFromView(view: GameView) {
-  const key = nodeCommentKey(view.gameId, view.currentNodeId)
+  const key = commentKey(view)
   nodeCommentDraft.value = nodeComments.get(key) ?? String(view.nodeComment || '')
 }
 
 function onNodeCommentInput() {
   const nodeId = gameView.currentNodeId
-  const key = nodeCommentKey(gameView.gameId, nodeId)
+  const key = commentKey(gameView, nodeId)
   if (!nodeId || !key) return
   const comment = nodeCommentDraft.value
-  nodeComments.set(key, nodeId, comment)
+  nodeComments.set(key, nodeId, comment, recordCommandScope(gameView))
   markRecordDirty()
   if (nodeCommentSaveTimer !== null) window.clearTimeout(nodeCommentSaveTimer)
   nodeCommentSaveTimer = window.setTimeout(() => {
@@ -103,7 +108,7 @@ function flushNodeCommentInBackground() {
 }
 
 function discardNodeCommentDraft(nodeId: string) {
-  const key = nodeCommentKey(gameView.gameId, nodeId)
+  const key = commentKey(gameView, nodeId)
   if (!key) return
   nodeComments.discard(key)
 }
@@ -151,7 +156,7 @@ async function setCurrentNodeAsMainBranch() {
   deleteNodeConfirmationId.value = null
   nodeMutationRequestInFlight.value = true
   try {
-    const response = await window.studioAPI.setMainBranch(gameView.currentNodeId)
+    const response = await window.studioAPI.setMainBranch(gameView.currentNodeId, recordCommandScope(gameView))
     applyStatus(response.state)
     applyGameView(response.view)
   } finally {
@@ -170,7 +175,7 @@ async function deleteCurrentNode() {
   nodeMutationRequestInFlight.value = true
   try {
     discardNodeCommentDraft(nodeId)
-    const response = await window.studioAPI.deleteNode(nodeId)
+    const response = await window.studioAPI.deleteNode(nodeId, recordCommandScope(gameView))
     cancelPendingWheelNavigation()
     branchReturnMap.value = {}
     applyStatus(response.state)

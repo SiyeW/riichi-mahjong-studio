@@ -58,7 +58,8 @@ test('main window saves size after resize and does not rewrite settings on close
     isDev: true,
     rendererUrl: 'http://127.0.0.1:5173',
     gameFileStore,
-    writeRecoveryGameRecord: async () => calls.push(['writeRecoveryGameRecord']),
+    prepareRecordClose: async () => calls.push(['prepareRecordClose']),
+    confirmRecordClose: async () => calls.push(['confirmRecordClose']),
     t: (key) => key,
     loadSettingsImpl: () => structuredClone(settings),
     saveSettingsImpl: (value) => { savedSettings = value; settingsSaveCount += 1 },
@@ -102,7 +103,8 @@ test('main window saves size after resize and does not rewrite settings on close
     ['send', 'record:close-state', { active: true, stage: 'flushing' }],
     ['requestRendererFlush', window, ipcMain, 'native.closeSaveTimeout'],
     ['send', 'record:close-state', { active: true, stage: 'recovery' }],
-    ['writeRecoveryGameRecord'],
+    ['prepareRecordClose'],
+    ['confirmRecordClose'],
     ['close'],
   ])
 })
@@ -137,7 +139,7 @@ test('development window retries a failed main-frame load and cancels pending re
     isDev: true,
     rendererUrl: 'http://127.0.0.1:5173',
     gameFileStore: {},
-    writeRecoveryGameRecord: async () => {},
+    prepareRecordClose: async () => {}, confirmRecordClose: async () => {},
     t: (key) => key,
     loadSettingsImpl: () => ({ window: { width: 1200, height: 800 } }),
     setTimeoutImpl: (callback) => { timers.push(callback); return timers.length },
@@ -182,7 +184,8 @@ test('canceling a failed close restores interaction and permits a later complete
     gameFileStore: { isDirty: () => true }, t: key => key,
     loadSettingsImpl: () => ({ window: { width: 1200, height: 800 }, records: { saveRecoveryOnExit: true } }),
     requestRendererFlushImpl: async () => { if (++flushes === 1) throw new Error('pending edit failed') },
-    writeRecoveryGameRecord: async onStage => { writes += 1; onStage('encoding'); onStage('writing') },
+    prepareRecordClose: async onStage => { writes += 1; onStage('encoding'); onStage('writing') },
+    confirmRecordClose: async () => {}, cancelRecordClose: async () => {},
   })
   const requestClose = () => window.emit('close', { preventDefault() {} })
   requestClose()
@@ -226,7 +229,8 @@ test('a slow save remains owned after canceling exit and its late completion can
     gameFileStore: { isDirty: () => true }, t: key => key,
     loadSettingsImpl: () => ({ window: { width: 1200, height: 800 }, records: { saveRecoveryOnExit: true } }),
     requestRendererFlushImpl: async () => {},
-    writeRecoveryGameRecord: async () => { writes += 1; await new Promise(resolve => { finish = resolve }) },
+    prepareRecordClose: async () => { writes += 1; await new Promise(resolve => { finish = resolve }) },
+    confirmRecordClose: async () => {}, cancelRecordClose: async () => {},
   })
   window.emit('close', { preventDefault() {} })
   await new Promise(resolve => setImmediate(resolve))

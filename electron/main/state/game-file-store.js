@@ -73,8 +73,10 @@ function createGameFileStore(baseDir) {
   let savedRevision = 0
   let currentNodeId = null
   let recoveryRecord = false
+  let backendRuntime = null
 
   function isDirty() {
+    if (backendRuntime) return backendRuntime.contentRevision !== backendRuntime.savedContentRevision
     return recordActive && revision !== savedRevision
   }
 
@@ -108,6 +110,9 @@ function createGameFileStore(baseDir) {
   return {
     getCurrentPath() {
       return currentPath
+    },
+    observeRuntime(runtime) {
+      backendRuntime = runtime || null
     },
     setCurrentPath(nextPath) {
       currentPath = nextPath || null

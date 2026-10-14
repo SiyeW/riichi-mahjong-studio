@@ -23,6 +23,7 @@ class StatefulCommandDispatcher:
         capture_mutation: Callable[..., Any] | None = None,
         prepare_analysis_use: Callable[[], Any] = lambda: None,
         use_prepared_analysis: Callable[..., Any] = lambda prepared: nullcontext(),
+        validate_record_scope: Callable[..., None] = lambda command, data: None,
     ) -> None:
         self._state_lock = state_lock
         self._configure_thinking_time = configure_thinking_time
@@ -34,6 +35,7 @@ class StatefulCommandDispatcher:
         self._gameplay = gameplay_commands
         self._capture_mutation = capture_mutation or (lambda command, payload: nullcontext())
         self._prepare_analysis_use, self._use_prepared_analysis = prepare_analysis_use, use_prepared_analysis
+        self.validate_record_scope = validate_record_scope
 
     def dispatch(
         self,
@@ -74,6 +76,7 @@ class StatefulCommandDispatcher:
             return self._dispatch_locked(request_id, command, data)
 
     def _dispatch_locked(self, request_id, command, data):
+        self.validate_record_scope(command, data)
         self._configure_thinking_time()
         if self._run_debug_scenario(command):
             return self._view_builder.build_response(request_id, command)

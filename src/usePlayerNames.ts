@@ -1,13 +1,17 @@
 import { reactive, ref, watch } from 'vue'
-import type { GameView } from './contracts/game'
+import type { GameView, RecordCommandScope } from './contracts/game'
+import { recordCommandScope } from './recordCommandScope.ts'
 
 export function usePlayerNames(gameView: GameView, markDirty: () => void) {
   const drafts = reactive(new Map<number, string>())
+  const draftScopes = new Map<number, RecordCommandScope | undefined>()
+  const sessionKey = () => gameView.viewToken?.sessionId || gameView.gameId
   const error = ref('')
   let pending: Promise<void> | null = null
 
   function draft(seat: number, name: string) {
     drafts.set(seat, name)
+    draftScopes.set(seat, recordCommandScope(gameView))
     markDirty()
   }
 
@@ -17,25 +21,25 @@ export function usePlayerNames(gameView: GameView, markDirty: () => void) {
       return flush()
     }
     if (!drafts.size) return
-    const gameId = gameView.gameId
+    const gameId = sessionKey()
     const saving = async () => {
       for (const [seat, name] of [...drafts]) {
-        if (gameView.gameId !== gameId) return
+        if (sessionKey() !== gameId) return
         if (!window.studioAPI) throw new Error('Studio bridge unavailable')
-        const result = await window.studioAPI.setPlayerName(seat, name)
-        if (gameView.gameId !== gameId) return
+        const result = await window.studioAPI.setPlayerName(seat, name, draftScopes.get(seat))
+        if (sessionKey() !== gameId) return
         const names = [...(gameView.playerNames || ['', '', '', ''])]
         names[seat] = result.name
         gameView.playerNames = names
-        if (drafts.get(seat) === name) drafts.delete(seat)
+        if (drafts.get(seat) === name) { drafts.delete(seat); draftScopes.delete(seat) }
       }
     }
     pending = saving()
     try {
       await pending
-      if (gameView.gameId === gameId) error.value = ''
+      if (sessionKey() === gameId) error.value = ''
     } catch (failure) {
-      if (gameView.gameId === gameId) error.value = failure instanceof Error ? failure.message : String(failure)
+      if (sessionKey() === gameId) error.value = failure instanceof Error ? failure.message : String(failure)
       throw failure
     } finally {
       pending = null
@@ -43,9 +47,10 @@ export function usePlayerNames(gameView: GameView, markDirty: () => void) {
     if (drafts.size) await flush()
   }
 
-  watch(() => gameView.gameId, () => {
+  watch(sessionKey, () => {
     drafts.clear()
+    draftScopes.clear()
     error.value = ''
   }, { flush: 'sync' })
-  return { drafts, error, draft, flush, cancel: (seat: number) => drafts.delete(seat) }
+  return { drafts, error, draft, flush, cancel: (seat: number) => { draftScopes.delete(seat); return drafts.delete(seat) } }
 }

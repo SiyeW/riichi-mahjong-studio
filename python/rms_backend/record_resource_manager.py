@@ -54,14 +54,17 @@ class RecordResourceManager:
         self._transport_error = None
 
     @contextmanager
-    def candidate(self, identity):
+    def candidate(self, identity, *, baseline=None):
         identity = workspace_identity(identity)
         previous = getattr(self._local, 'identity', None)
+        previous_baseline = getattr(self._local, 'baseline', None)
         self._local.identity = identity
+        self._local.baseline = baseline
         try:
             yield
         finally:
             self._local.identity = previous
+            self._local.baseline = previous_baseline
             with self._lock:
                 abandoned = self._resources.get(identity)
                 if abandoned is not None and abandoned is not self._active and abandoned.activation is None:
@@ -91,6 +94,11 @@ class RecordResourceManager:
                 self._resources[identity] = resource
             storage.initialize(game, state, origin=origin).result()
             resource.initial_cursor = storage.cursor_sequence
+            baseline = getattr(self._local, 'baseline', None)
+            if baseline is not None:
+                self._set_baseline(resource, clean=bool(baseline.get('clean')),
+                    target=baseline.get('target', ''),
+                    file_identity=origin.source.identity if origin else None)
             return storage
         except Exception:
             with self._lock:
@@ -177,6 +185,9 @@ class RecordResourceManager:
 
     def set_baseline(self, identity, *, clean, target='', file_identity=None):
         resource = self.resource(identity, active=True)
+        self._set_baseline(resource, clean=clean, target=target, file_identity=file_identity)
+
+    def _set_baseline(self, resource, *, clean, target='', file_identity=None):
         content = 1 if clean else 0
         cursor = resource.initial_cursor if clean else 0
         resource.storage.writer.submit('saved_baseline', content, cursor, target, file_identity).result()
@@ -264,6 +275,15 @@ class RecordResourceManager:
         if resource is not None:
             return resource.released.result()
         return outcome
+
+    def abandon(self, identity):
+        with self._condition:
+            resource = self._resources.get(workspace_identity(identity))
+            if resource is self._active and resource is not None:
+                raise ValueError('An activated record cannot be abandoned as a failed preparation.')
+            if resource is not None and resource.disposition is None:
+                self._retire(resource, 'retained' if resource.restored else 'discarded')
+        return self.wait_released(identity) or dict(workspaceId=identity, disposition='discarded', retirementError=None)
 
     def shutdown(self):
         with self._condition:

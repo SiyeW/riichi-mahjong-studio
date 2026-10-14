@@ -84,7 +84,6 @@ const {
   restoreStartupRecovery,
   saveGame,
   saveGameAs,
-  writeRecoveryGameRecord,
 } = createRecordWorkflow({
   app,
   appOptions,
@@ -118,7 +117,10 @@ function openMainWindow() {
     isDev,
     rendererUrl,
     gameFileStore,
-    writeRecoveryGameRecord,
+    prepareRecordClose: (stageChanged) => backend.backendGateway.prepareRecordClose(
+      Boolean(loadSettings(appOptions).records?.saveRecoveryOnExit), stageChanged),
+    cancelRecordClose: backend.backendGateway.cancelRecordClose,
+    confirmRecordClose: backend.backendGateway.confirmRecordClose,
     t,
   })
   startStartupServices()
@@ -127,7 +129,7 @@ function openMainWindow() {
 
 function registerIpcHandlers() {
   registerStartupEngineRestore(ipcMain, () => engineIpcController.restoreLoadedProfiles())
-  registerSettingsIpc(ipcMain, appOptions)
+  registerSettingsIpc(ipcMain, appOptions, backend.backendGateway.updateRecordRetention)
   registerApplicationIpc({
     ipcMain,
     appOptions,
@@ -201,6 +203,15 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
-  backend.stopAll()
+let quitReady = false
+let quitPending = null
+app.on('before-quit', (event) => {
+  if (quitReady) return
+  // A first quit still goes through the window's edit/recovery close guard.
+  if (mainWindow && !mainWindow.isDestroyed()) { event.preventDefault(); mainWindow.close(); return }
+  event.preventDefault()
+  if (!quitPending) quitPending = backend.stopAll().then(() => {
+    quitReady = true
+    app.quit()
+  }).catch(error => { quitPending = null; console.error('[shutdown] backend did not exit:', error) })
 })

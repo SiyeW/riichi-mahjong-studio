@@ -49,9 +49,9 @@ from .service_helpers import actor_just_drew, now_iso
 from .service_runtime import ServiceRuntime
 from .record_view_context import RecordViewContext
 from .analysis_read_presenter import AnalysisReadPresenter
-from .record_stored_export import StoredRecordExport
 from .record_mutation_capture import RecordMutationCapture
 from .record_analysis_access import RecordAnalysisAccess
+from .record_lifecycle import RecordLifecycle
 from .rule_kernel import (
     can_ankan,
     can_declare_riichi,
@@ -104,6 +104,9 @@ def debug_flow(message):
 
 
 def emit(payload):
+    lifecycle = globals().get('RECORD_LIFECYCLE')
+    if lifecycle is not None and payload.get('type') == 'record_changed':
+        payload = {**payload, 'recordRuntime': lifecycle.resources.runtime()}
     if payload.get('type') in ('analysis_ready', 'opponent_analysis_ready'):
         with _STATE_LOCK:
             payload = VIEW_CONTEXT.tag_event(payload)
@@ -204,6 +207,7 @@ DECISION_ANALYSIS = decision_analysis_session.DecisionAnalysisSession(
     ENGINE_MANAGEMENT,
     SERVICE_RUNTIME.background,
     decision_analysis_session.DecisionAnalysisDependencies(
+        comparisons_changed=RECORD_MUTATIONS.comparisons_changed,
         play_prefetch_owns=lambda node_id, analysis_key: PLAY_PREFETCH.owns_decision(
             node_id, analysis_key
         ),
@@ -747,53 +751,13 @@ STATEFUL_COMMANDS = stateful_command_dispatcher.StatefulCommandDispatcher(
     use_prepared_analysis=DECISION_ANALYSIS.use_prepared,
 )
 
-
-def _export_recovery_checkpoint(request_id, command):
-    # Only detach the mutable tree structure while foreground commands are
-    # excluded. Recursive copying and storage normalization run afterwards on
-    # the dedicated checkpoint executor.
-    with _STATE_LOCK:
-        prepared = RECORD_SESSION.prepare_recovery_checkpoint()
-        visibility = {
-            "decisionRecommendations": bool(
-                STATE.get("decisionRecommendationsEnabled", True)
-            ),
-            "opponentAnalysis": bool(STATE.get("opponentAnalysisEnabled", False)),
-        }
-    return {
-        "request_id": request_id,
-        "command": command,
-        "record": RECORD_SESSION.serialize_prepared_recovery_checkpoint(prepared),
-        "state": {"analysisVisibility": visibility},
-    }
+RECORD_LIFECYCLE = None
 
 
-def _export_game_record(request_id, command, payload=None):
-    with _STATE_LOCK:
-        prepared = RECORD_SESSION.prepare_export()
-    # Save completion is metadata, not an old renderer snapshot. Building a
-    # complete view here also used to force unrelated cold analyses to load.
-    response = {'request_id': request_id, 'command': command, 'timestamp': now_iso()}
-    if isinstance(prepared, StoredRecordExport):
-        if not payload or 'path' not in payload:
-            prepared.close()
-            raise ValueError('Record workspace recovery uses its durable identity, not an in-memory export.')
-        response['save'] = prepared.write(payload['path'], target=payload.get('target'),
-                                         save_id=payload.get('saveId'), app_version=payload.get('appVersion', ''))
-        return response
-    # Do not hold the gameplay lock while packing all cached predictions.
-    native_file = bool(payload and 'path' in payload and payload.get('compressed', True))
-    record = (RECORD_SESSION.serialize_prepared_export(prepared, for_file=True)
-              if native_file else RECORD_SESSION.serialize_prepared_export(prepared))
-    if payload and "path" in payload:
-        prepared.file_writer.write(payload["path"], record,
-                          compressed=payload.get("compressed", True),
-                          app_version=payload.get("appVersion", ""),
-                          recovery=payload.get("recovery", False))
-    else:
-        # In-memory records are only needed for backend crash/restart recovery.
-        response["record"] = record
-    return response
+def _dispatch_record_command(request_id, command, payload):
+    if RECORD_LIFECYCLE is not None:
+        return RECORD_LIFECYCLE.dispatch(request_id, command, payload)
+    return STATEFUL_COMMANDS.dispatch(request_id, command, payload)
 
 
 COMMAND_TRANSPORT = command_transport.CommandTransport(
@@ -801,9 +765,7 @@ COMMAND_TRANSPORT = command_transport.CommandTransport(
     view_builder=VIEW_BUILDER,
     engine_management=ENGINE_MANAGEMENT,
     collect_runtime_metrics=runtime_metrics.collect_runtime_memory_metrics,
-    export_recovery_checkpoint=_export_recovery_checkpoint,
-    export_game_record=_export_game_record,
-    dispatch_stateful=STATEFUL_COMMANDS.dispatch,
+    dispatch_stateful=_dispatch_record_command,
     emit=emit,
     now_iso=now_iso,
 )
@@ -814,6 +776,13 @@ SERVICE_RUNTIME.add_shutdown(ACTION_RECOMMENDATIONS.shutdown)
 
 
 def main():
+    global RECORD_LIFECYCLE
+    RECORD_LIFECYCLE = RecordLifecycle(
+        PORTABLE_ROOT / 'records' / '.recovery' / 'workspaces',
+        lambda: SERVICE_RUNTIME.record_codec, RECORD_SESSION, _STATE_LOCK,
+        STATEFUL_COMMANDS, VIEW_BUILDER, view_context=VIEW_CONTEXT, emit=emit,
+        cancel_analysis=reset_runtime_for_game_change)
+    SERVICE_RUNTIME.add_shutdown(RECORD_LIFECYCLE.shutdown)
     SERVICE_RUNTIME.run(
         sys.stdin,
         service_name="backend",
