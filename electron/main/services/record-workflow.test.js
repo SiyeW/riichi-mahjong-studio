@@ -71,8 +71,6 @@ test('saving promotes a backend staging file and tracks the saved revision', asy
 
   assert.deepEqual(result, {
     path: targetPath,
-    state: { phase: 'ready' },
-    view: { currentNodeId: 'node-1' },
     recordDirty: false,
     recoveryRecord: false,
   })

@@ -722,7 +722,9 @@ def _export_recovery_checkpoint(request_id, command):
 def _export_game_record(request_id, command, payload=None):
     with _STATE_LOCK:
         prepared = RECORD_SESSION.prepare_export()
-        response = VIEW_BUILDER.build_response(request_id, command)
+    # Save completion is metadata, not an old renderer snapshot. Building a
+    # complete view here also used to force unrelated cold analyses to load.
+    response = {'request_id': request_id, 'command': command, 'timestamp': now_iso()}
     # Do not hold the gameplay lock while packing all cached predictions.
     native_file = bool(payload and 'path' in payload and payload.get('compressed', True))
     record = (RECORD_SESSION.serialize_prepared_export(prepared, for_file=True)

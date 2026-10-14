@@ -17,6 +17,8 @@ export interface RecordFileResult {
   recoveryRecord: boolean
 }
 
+export type RecordSaveResult = Pick<RecordFileResult, 'path' | 'recordDirty' | 'recoveryRecord'>
+
 export interface CloseState {
   active: boolean
   stage: 'preparing' | 'flushing' | 'waiting' | 'recovery' | 'encoding' | 'writing' | ''
@@ -69,8 +71,8 @@ export interface DesktopBridge {
   }>
   deleteNode: (nodeId: string) => Promise<BackendResponse>
   getRecordDirty: () => Promise<boolean>
-  saveGame: () => Promise<RecordFileResult | null>
-  saveGameAs: () => Promise<RecordFileResult | null>
+  saveGame: () => Promise<RecordSaveResult | null>
+  saveGameAs: () => Promise<RecordSaveResult | null>
   openGame: () => Promise<RecordFileResult | null>
   showRecordInFolder: () => Promise<boolean>
   restoreStartupRecovery: () => Promise<RecordFileResult | null>

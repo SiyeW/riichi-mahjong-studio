@@ -18,7 +18,8 @@ class StatefulCommandDispatcherTests(unittest.TestCase):
             start_auto=mock.Mock(return_value={"analysis": True}),
         )
         self.record = SimpleNamespace(
-            import_record=mock.Mock(return_value={"record": True}),
+            prepare_import=mock.Mock(return_value='prepared'),
+            activate_import=mock.Mock(return_value={"record": True}),
         )
         self.view_control = SimpleNamespace(
             set_mode=mock.Mock(return_value={"mode": True}),
@@ -47,12 +48,27 @@ class StatefulCommandDispatcherTests(unittest.TestCase):
         )
 
         self.assertEqual(result, {"record": True})
-        self.record.import_record.assert_called_once_with(
+        self.record.prepare_import.assert_called_once_with(payload)
+        self.record.activate_import.assert_called_once_with(
             "request",
             "import_game_record",
-            payload,
+            'prepared',
         )
         self.configure_thinking_time.assert_called_once_with()
+
+    def test_import_preparation_does_not_hold_live_state_lock(self):
+        ready = threading.Event()
+        def prepare(_payload):
+            def status():
+                with self.dispatcher._state_lock:
+                    ready.set()
+            reader = threading.Thread(target=status)
+            reader.start()
+            self.assertTrue(ready.wait(1), 'File preparation blocked live state readers')
+            reader.join()
+            return 'candidate'
+        self.record.prepare_import.side_effect = prepare
+        self.dispatcher.dispatch(1, 'import_game_record', {'path': 'test'})
 
     def test_debug_scenario_returns_fresh_view(self):
         self.run_debug_scenario.return_value = True

@@ -69,6 +69,16 @@ class PreparedRecordExport:
     file_writer: RecordFileWriter
 
 
+@dataclass(frozen=True)
+class PreparedRecordLoad:
+    game: Game
+    mode: str
+    controlled_seat: int
+    visible_hands: bool
+    analysis_packer: AnalysisCachePacker
+    file_writer: RecordFileWriter
+
+
 class RecordSession:
     """Owns replacing, importing, exporting, and closing the active record."""
 
@@ -172,6 +182,12 @@ class RecordSession:
 
     def load(self, record: Any, *, take_ownership: bool = False,
              file_writer: RecordFileWriter | None = None) -> None:
+        self.activate_load(self.prepare_load(record, take_ownership=take_ownership,
+                                             file_writer=file_writer))
+
+    def prepare_load(self, record: Any, *, take_ownership: bool = False,
+                     file_writer: RecordFileWriter | None = None) -> PreparedRecordLoad:
+        """Validate/hydrate a private candidate without touching the live session."""
         if not isinstance(record, dict):
             raise ValueError("Record must be an object.")
         # IPC/file decoding already yields a private object. Other callers keep
@@ -203,10 +219,16 @@ class RecordSession:
         migrate_discard_tsumogiri(game)
         migrate_terminal_table_scores(game)
 
-        candidate = game
         mode = "research" if self.is_read_only(game) else self.normalize_mode(state.get("mode"))
         controlled_seat = normalize_seat(state.get("controlledSeat", 0))
         visible_hands = bool(state.get("visibleHands"))
+        tree_view.normalize_current_cursor(game, controlled_seat)
+        return PreparedRecordLoad(game, mode, controlled_seat, visible_hands, analysis_packer,
+                                  file_writer if take_ownership and file_writer is not None else RecordFileWriter())
+
+    def activate_load(self, prepared: PreparedRecordLoad) -> None:
+        """Commit only an already prepared candidate under the short state lock."""
+        candidate = prepared.game
         previous = self._state_snapshot()
         self.dependencies.reset_runtime()
         try:
@@ -214,20 +236,19 @@ class RecordSession:
             self._state.update({
                 "game": candidate,
                 "gameLoaded": True,
-                "mode": mode,
-                "controlledSeat": controlled_seat,
+                "mode": prepared.mode,
+                "controlledSeat": prepared.controlled_seat,
                 "pendingSeatSwitch": None,
-                "visibleHands": visible_hands,
+                "visibleHands": prepared.visible_hands,
             })
-            tree_view.normalize_current_cursor(candidate, controlled_seat)
             self.dependencies.backfill_child_comparisons(candidate)
-            if mode == "research":
+            if prepared.mode == "research":
                 self.dependencies.request_opponent_analysis()
         except Exception:
             self._restore_after_failure(previous)
             raise
-        self._analysis_packer = analysis_packer
-        self._file_writer = file_writer if take_ownership and file_writer is not None else RecordFileWriter()
+        self._analysis_packer = prepared.analysis_packer
+        self._file_writer = prepared.file_writer
 
     def create(self) -> None:
         seed = random.randint(100000, 999999)

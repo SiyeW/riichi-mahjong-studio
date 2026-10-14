@@ -35,8 +35,16 @@ class StatefulCommandDispatcher:
         command: str,
         payload: dict[str, Any] | None,
     ) -> dict[str, Any]:
+        data = payload or {}
+        if command == 'import_game_record':
+            # The command executor serializes record edits, but candidate file
+            # I/O/legacy hydration must not exclude status, inference completion
+            # or other owners merely because they also use the game-state lock.
+            prepared = self._record.prepare_import(data)
+            with self._state_lock:
+                self._configure_thinking_time()
+                return self._record.activate_import(request_id, command, prepared)
         with self._state_lock:
-            data = payload or {}
             self._configure_thinking_time()
             if self._run_debug_scenario(command):
                 return self._view_builder.build_response(request_id, command)
@@ -82,9 +90,6 @@ class StatefulCommandDispatcher:
             "set_player_name": lambda: self._record.set_player_name(request_id, command, payload),
             "export_custom_tenhou": lambda: self._record.export_custom(
                 request_id, command
-            ),
-            "import_game_record": lambda: self._record.import_record(
-                request_id, command, payload
             ),
             "jump_to_node": lambda: self._record.jump(
                 request_id, command, payload

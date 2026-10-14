@@ -104,13 +104,21 @@ class RecordWorkspaceCommands:
         command: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        return self.activate_import(request_id, command, self.prepare_import(payload))
+
+    def prepare_import(self, payload):
         if "path" in payload and "record" in payload:
             raise ValueError("Supply either a record file path or a record, not both.")
         writer = RecordFileWriter()
         record = read_record_file(payload["path"], writer=writer) if "path" in payload else payload.get("record")
-        self._record_session.load(record, take_ownership=True, file_writer=writer)
+        prepared = self._record_session.prepare_load(record, take_ownership=True, file_writer=writer)
+        return prepared, record.get('metadata') or {}
+
+    def activate_import(self, request_id, command, candidate):
+        prepared, metadata = candidate
+        self._record_session.activate_load(prepared)
         return self._view_builder.build_response(request_id, command, {
-            "recordMetadata": record.get("metadata") or {},
+            "recordMetadata": metadata,
         })
 
     def jump(

@@ -197,11 +197,13 @@ class RecordFileTests(unittest.TestCase):
             path = Path(directory) / "staging.tmp"
             with patch.object(service.RECORD_SESSION, "prepare_export", return_value=SimpleNamespace(file_writer=RecordFileWriter())), \
                  patch.object(service.RECORD_SESSION, "serialize_prepared_export", return_value={"game": {}}), \
-                 patch.object(service.VIEW_BUILDER, "build_response", return_value={"view": {}}), \
+                 patch.object(service.VIEW_BUILDER, "build_response", side_effect=AssertionError('Save rebuilt a game view')), \
                  patch("rms_backend.record_file.os.fsync") as sync:
                 result = service._export_game_record(1, "export_game_record", {"path": str(path)})
             sync.assert_called_once()
             self.assertNotIn("record", result)
+            self.assertNotIn('view', result)
+            self.assertNotIn('state', result)
             self.assertEqual(read_record_file(path)["game"], {})
 
 

@@ -213,13 +213,15 @@ class CheckpointExportTests(unittest.TestCase):
         prepare.assert_called_once_with()
         serialize.assert_called_once_with(prepared)
 
-    def test_normal_export_keeps_the_existing_response(self):
+    def test_normal_export_returns_record_metadata_not_a_stale_view(self):
         with patch.object(service.RECORD_SESSION, 'prepare_export', return_value=({}, {})), \
              patch.object(service.RECORD_SESSION, 'serialize_prepared_export', return_value={'game': {}}), \
-             patch.object(service.VIEW_BUILDER, 'build_response', return_value={'view': 'unchanged'}) as build:
+             patch.object(service.VIEW_BUILDER, 'build_response', side_effect=AssertionError('unneeded view')) as build:
             result = service._export_game_record('request', 'export_game_record')
-        self.assertEqual(result, {'view': 'unchanged', 'record': {'game': {}}})
-        build.assert_called_once()
+        self.assertEqual(result['record'], {'game': {}})
+        self.assertEqual(result['request_id'], 'request')
+        self.assertNotIn('view', result)
+        build.assert_not_called()
 
     def test_full_save_detaches_edits_and_cache_maps_before_packing(self):
         game = service.create_empty_game(123456)

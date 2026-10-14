@@ -56,7 +56,7 @@ function createRecordWorkflow({
     } = options
     const exportedRevision = gameFileStore.getRevision()
     const sourcePath = gameFileStore.getCurrentPath()
-    const response = await withCurrentRecord(gameFileStore, async () => {
+    await withCurrentRecord(gameFileStore, async () => {
       const stagingPath = `${targetPath}.${randomUUID()}.tmp`
       try {
         const result = await withCurrentRecord(gameFileStore, async () => {
@@ -82,8 +82,6 @@ function createRecordWorkflow({
     const recordDirty = publishRecordDirty(true)
     return {
       path: targetPath,
-      state: response.state,
-      view: response.view,
       recordDirty,
       recoveryRecord: gameFileStore.isRecoveryRecord(),
     }

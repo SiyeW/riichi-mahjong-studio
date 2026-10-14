@@ -98,7 +98,9 @@ class ImportGameFailureTests(unittest.TestCase):
                      patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime') as reset:
                     with self.assertRaisesRegex(RuntimeError, 'import failed'):
                         service.RECORD_SESSION.load(copy.deepcopy(self.record))
-                    self.assertEqual(reset.call_count, 2)
+                    # Cursor normalization now belongs to private candidate
+                    # preparation; its failure must not stop the live runtime.
+                    self.assertEqual(reset.call_count, 0 if stage == 'normalize_current_tree_cursor' else 2)
                 self.assert_old_record_preserved()
 
     def test_invalid_session_state_does_not_stop_current_runtime(self):
