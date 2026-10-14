@@ -107,6 +107,11 @@ class RecordArchiveTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Damaged'):
                 write_archive(Path(directory) / 'failed-staging', record, entries, schemas,
                               [PortableBody.from_source(archive.source, i) for i in range(2)])
+            incomplete = Path(directory) / 'incomplete-base'
+            with self.assertRaisesRegex(ValueError, 'Damaged'):
+                archive.source.detach(incomplete)
+            self.assertFalse(incomplete.exists())
+            self.assertFalse(archive.source.detached)
             del archive
             gc.collect()
 

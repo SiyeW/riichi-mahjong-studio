@@ -223,6 +223,9 @@ class RecordBlockTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'Damaged analysis'):
                 RecordFileWriter().write(target, record)
             self.assertFalse(target.exists())
+            self.assertFalse(hidden.entry.source.detached)  # Failed copy cannot adopt a mixed/corrupt base.
+            del hidden, record
+            gc.collect()
 
     def test_bad_directory_rejected_and_source_closed(self):
         with tempfile.TemporaryDirectory() as directory:

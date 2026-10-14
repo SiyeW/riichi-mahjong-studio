@@ -40,6 +40,9 @@ class ResultVersion:
     encoded: bytes | None = None
     persistence_error: Exception | None = None
     compact_opponent: bool = False
+    source_codec: str = 'input'
+    previous_body: str | None = None
+    source_locator: dict | None = None
 
 
 class RecordResultStore:
@@ -54,6 +57,7 @@ class RecordResultStore:
         self._encoded_pending = 0
         self._durable_schema_count = 0
         self._closed = False
+        self._clears, self._clear_failures = {}, set()
 
     @classmethod
     def restore(cls, identity, scheduler, writer, *, index=None, budget=32 * 1024 * 1024):
@@ -74,11 +78,14 @@ class RecordResultStore:
             row = bodies.get(body_id)
             if row is None:
                 version = store.register(slot, fields=summary.get('fields'), kind=summary.get('kind', 'opponent'),
-                                         seat=summary.get('seat'), revision=revision, epoch=epoch, identity=version_id)
-                store._versions[version].error = AnalysisReadError('Analysis was not durably stored before the previous process stopped.')
+                                         seat=summary.get('seat'), revision=revision, epoch=epoch, identity=version_id,
+                                         source_locator=summary.get('source'))
+                store._versions[version].error = AnalysisReadError(
+                    'Saved analysis needs its original source.' if summary.get('source')
+                    else 'Analysis was not durably stored before the previous process stopped.')
                 continue
             _, codec, length, digest, base, offset, namespace = row
-            if codec != POLICY or namespace != identity or not 0 < length <= RESULT_LIMIT + 65536:
+            if codec not in (POLICY, 'packed-json-v1') or namespace != identity or not 0 < length <= RESULT_LIMIT + 65536:
                 raise ValueError('Unsupported recovery analysis body owner/codec.')
             if base is None:
                 read = lambda key=body_id: workspace.read_body(key)
@@ -90,31 +97,49 @@ class RecordResultStore:
                     if len(data) != count or hashlib.sha256(data).digest() != expected:
                         raise AnalysisReadError('Damaged recovery base body.')
                     return data
-            portable = PortableBody(length, digest, lambda read=read: iter((read(),)))
+            portable = PortableBody(length, digest, lambda read=read: iter((read(),))) if codec == POLICY else None
+            if codec == 'packed-json-v1':
+                read = lambda read=read, fields=summary.get('fields'): ('v1', read(), fields)
             store.register(slot, fields=summary.get('fields'), kind=summary.get('kind', 'opponent'),
                            seat=summary.get('seat'), read=read, portable=portable, body_id=body_id,
-                           revision=revision, epoch=epoch, identity=version_id)
+                           revision=revision, epoch=epoch, identity=version_id, source_codec=codec)
         return store
 
     def reserve(self, *, foreground=False):
         with self._lock:
             if self._closed or (not foreground and (
-                    self._encoded_pending >= 8 * 1024 * 1024 or self.writer.metrics()['error'])):
+                    self._encoded_pending >= 8 * 1024 * 1024 or self.writer.metrics()['error'] or self._clear_failures)):
                 return None
         return self.scheduler.reserve(foreground=foreground)
 
     def register(self, slot, *, fields, kind='opponent', seat=None, raw=None,
-                 read=None, portable=None, body_id=None, revision=0, epoch=0, identity=None):
+                 read=None, portable=None, body_id=None, revision=0, epoch=0, identity=None, source_codec='input',
+                 source_locator=None):
         """Adopt a source reference without reading/decoding any result."""
         with self._lock:
             if self._closed or slot in self._slots:
                 raise ValueError('Record slot is not available for source adoption.')
             version = ResultVersion(identity or uuid4().hex, slot, revision, epoch, kind,
-                                    seat, fields, raw, read, portable, body_id)
+                                    seat, fields, raw, read, portable, body_id, source_codec=source_codec,
+                                    source_locator=source_locator)
             self._versions[version.identity] = version
             self._slots[slot] = version.identity
             self._epochs[slot] = epoch
             return version.identity
+
+    def bind_source_input(self, identity, result):
+        with self._lock:
+            version = self._versions[identity]
+            if version.revision or version.source_locator is None or version.portable is not None:
+                return
+            version.raw = result
+            version.error = None
+
+    def unbound_source_inputs(self):
+        with self._lock:
+            return tuple((version.identity, version.source_locator) for version in self._versions.values()
+                         if version.source_locator is not None and version.raw is None and version.read is None
+                         and version.portable is None and self._slots.get(version.slot) == version.identity)
 
     def accept(self, slot, result, *, revision, epoch, reservation, kind='opponent', seat=None):
         """Transfer immutable accepted input. Capacity must be reserved first."""
@@ -167,6 +192,9 @@ class RecordResultStore:
         data, canonical = reply['data'], reply['canonical']
         with self._lock:
             self.schemas.extend(reply['schemas'])
+            if version.source_codec != POLICY:
+                version.previous_body, version.body_id = version.body_id, None
+                version.source_codec = POLICY
             self._encoded_pending += len(data)
             version.fields = reply['fields']
             version.encoded = data
@@ -183,8 +211,9 @@ class RecordResultStore:
     def _persist(self, version):
         data = version.encoded
         length, digest = len(data), hashlib.sha256(data).digest()
-        body_id = version.body_id or uuid4().hex
         with self._lock:
+            body_id = version.body_id or uuid4().hex
+            version.body_id = body_id
             schema_count = len(self.schemas)
             schemas = list(enumerate(self.schemas[self._durable_schema_count:], self._durable_schema_count))
         kwargs = dict(codec=POLICY, namespace=self.identity, data=data, schemas=schemas)
@@ -195,7 +224,10 @@ class RecordResultStore:
                 future = self.writer.submit('store_result', version.identity, body=True, body_id=body_id,
                                             summary={'fields': version.fields, 'kind': version.kind, 'seat': version.seat}, **kwargs)
             else:
-                future = self.writer.submit('cache_body', body_id, body=True, **kwargs)
+                future = self.writer.submit('cache_body', body_id, body=True, version=version.identity,
+                                            slot=version.slot, epoch=version.epoch,
+                                            summary={'fields': version.fields, 'kind': version.kind, 'seat': version.seat},
+                                            expected_body=version.previous_body, **kwargs)
         except Exception as error:
             version.persistence_error = error
             durable.set_exception(error)
@@ -236,6 +268,14 @@ class RecordResultStore:
     def slot(self, slot):
         with self._lock:
             return self._slots.get(slot)
+
+    def has_slot(self, slot):
+        with self._lock:
+            return slot in self._epochs
+
+    def live_slots(self):
+        with self._lock:
+            return tuple(self._slots.items())
 
     def hot(self, identity):
         return self.cache.get(identity)
@@ -299,7 +339,26 @@ class RecordResultStore:
                 epoch = self._epochs.get(slot, 0) + 1
                 self._epochs[slot] = epoch
                 tombstones.append((slot, epoch))
-            return self.writer.submit('clear_slots', revision, tombstones)
+            self._clears[revision] = tombstones
+        return self.retry_clear(revision)
+
+    def retry_clear(self, revision):
+        with self._lock:
+            tombstones = self._clears[revision]
+        try:
+            future = self.writer.submit('clear_slots', revision, tombstones)
+        except Exception as error:
+            future = Future()
+            future.set_exception(error)
+        def finished(write):
+            with self._lock:
+                if write.exception() is None:
+                    self._clears.pop(revision, None)
+                    self._clear_failures.discard(revision)
+                else:
+                    self._clear_failures.add(revision)
+        future.add_done_callback(finished)
+        return future
 
     @contextmanager
     def capture(self, identities=None):
@@ -349,6 +408,7 @@ class RecordResultStore:
     def metrics(self):
         with self._lock:
             return {**self.cache.metrics(), 'encodedPendingBytes': self._encoded_pending,
+                    'failedClears': len(self._clear_failures),
                     **self.writer.metrics()}
 
     def close(self):

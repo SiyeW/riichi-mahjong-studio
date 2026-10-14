@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+from .analysis_cache_codec import JsonReference
 
 
 ANALYSIS_SOURCES_FIELD = "analysisSources"
@@ -123,7 +124,7 @@ def find_stale_cache_entry(game, node, current_key, cache_field):
             and isinstance(result, dict)
             and not result.get("error")
         ):
-            payload = copy.deepcopy(result)
+            payload = copy.deepcopy(result.resolve() if isinstance(result, JsonReference) else result)
             payload["cacheStatus"] = "stale"
             payload["cacheSource"] = copy.deepcopy(
                 (game.get(ANALYSIS_SOURCES_FIELD) or {}).get(candidate["sourceId"])
@@ -194,6 +195,6 @@ def same_analysis_context(left, right):
 
 
 def attach_analysis_context(result, context):
-    payload = copy.deepcopy(result)
+    payload = copy.deepcopy(result.resolve() if isinstance(result, JsonReference) else result)
     payload["context"] = copy.deepcopy(context)
     return payload

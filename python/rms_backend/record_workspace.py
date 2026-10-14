@@ -183,12 +183,13 @@ class RecordWorkspace:
             self._db.execute('INSERT INTO versions VALUES(?,?,?,NULL,?)',
                              (version, slot, revision, json_bytes(summary or {})))
             current = self._db.execute('SELECT epoch,revision FROM slots WHERE slot=?', (slot,)).fetchone()
-            if current is None or current[0] == epoch and current[1] < revision:
+            if current is None or current[0] <= epoch and current[1] < revision:
                 self._db.execute('INSERT INTO slots VALUES(?,?,?,?) ON CONFLICT(slot) DO UPDATE SET version=excluded.version,epoch=excluded.epoch,revision=excluded.revision',
                                  (slot, version, epoch, revision))
             self._coverage(revision, 'analysis', False)
 
-    def cache_body(self, body_id, *, codec, namespace, data, schemas=()):
+    def cache_body(self, body_id, *, codec, namespace, data, schemas=(), version=None,
+                   slot=None, epoch=0, summary=None, expected_body=None):
         """Read-only legacy conversion backing does not create dirty content."""
         if not isinstance(data, bytes) or not 0 < len(data) <= RESULT_LIMIT + 65536:
             raise ValueError('Invalid encoded cache body.')
@@ -196,6 +197,39 @@ class RecordWorkspace:
         with self.transaction():
             self._schemas(schemas)
             self._body(body_id, codec, namespace, len(data), digest, data, None, None)
+            if version is not None:
+                previous = self._db.execute('SELECT slot,revision,body FROM versions WHERE id=?', (version,)).fetchone()
+                if previous is not None and (previous[:2] != (slot, 0)
+                        or previous[2] not in (expected_body, body_id)):
+                    raise ValueError('Immutable converted source version conflict.')
+                self._db.execute('INSERT OR IGNORE INTO versions VALUES(?,?,0,?,?)',
+                                 (version, slot, body_id, json_bytes(summary or {})))
+                self._db.execute('UPDATE versions SET body=?,summary=? WHERE id=?',
+                                 (body_id, json_bytes(summary or {}), version))
+                current = self._db.execute('SELECT epoch,revision FROM slots WHERE slot=?', (slot,)).fetchone()
+                if current is None or current == (epoch, 0):
+                    self._db.execute('INSERT INTO slots VALUES(?,?,?,0) ON CONFLICT(slot) DO UPDATE SET version=excluded.version',
+                                     (slot, version, epoch))
+
+    def adopt_sources(self, entries, *, schemas=()):
+        """One metadata transaction; imported payloads remain source spans."""
+        with self.transaction():
+            self._schemas(schemas)
+            for entry in entries:
+                version, slot, epoch = (entry[key] for key in ('version', 'slot', 'epoch'))
+                body = entry.get('body')
+                if body is not None:
+                    self._body(body['id'], body['codec'], body['namespace'], body['length'],
+                               body['digest'], None, body['base'], body['offset'])
+                body_id = body['id'] if body is not None else None
+                old = self._db.execute('SELECT slot,revision,body FROM versions WHERE id=?', (version,)).fetchone()
+                if old is not None and old != (slot, 0, body_id):
+                    raise ValueError('Imported source version identity conflict.')
+                self._db.execute('INSERT OR IGNORE INTO versions VALUES(?,?,0,?,?)',
+                                 (version, slot, body_id, json_bytes(entry['summary'])))
+                current = self._db.execute('SELECT epoch,revision FROM slots WHERE slot=?', (slot,)).fetchone()
+                if current is None:
+                    self._db.execute('INSERT INTO slots VALUES(?,?,?,0)', (slot, version, epoch))
 
     def _schemas(self, schemas):
         for index, schema in schemas:
@@ -209,7 +243,10 @@ class RecordWorkspace:
         old = self._db.execute('SELECT codec,namespace,length,digest,data,base,offset FROM bodies WHERE id=?',
                                (body_id,)).fetchone()
         if old is not None:
-            if old[:4] != (codec, namespace, length, digest) or data is not None and old[4] is not None and old[4] != data:
+            if (old[:4] != (codec, namespace, length, digest)
+                    or (old[4] is None) != (data is None)
+                    or data is not None and old[4] != data
+                    or data is None and old[5:] != (base, offset)):
                 raise ValueError('Recovery body fingerprint collision.')
             # A base-span hit requires byte comparison by the source owner
             # before this method; fingerprints alone are not equivalence.
@@ -244,8 +281,14 @@ class RecordWorkspace:
 
     def clear_slots(self, revision, slots):
         with self.transaction():
+            receipt = self._db.execute('SELECT kind,complete FROM coverage WHERE revision=?', (revision,)).fetchone()
+            if receipt == ('clear', 1):
+                return  # Retried receipt cannot erase a later accepted version.
             self._new_revision(revision)
             for slot, epoch in slots:
+                current = self._db.execute('SELECT revision FROM slots WHERE slot=?', (slot,)).fetchone()
+                if current is not None and current[0] >= revision:
+                    continue
                 self._db.execute('INSERT INTO slots VALUES(?,NULL,?,?) ON CONFLICT(slot) DO UPDATE SET version=NULL,epoch=excluded.epoch,revision=excluded.revision',
                                  (slot, epoch, revision))
             self._coverage(revision, 'clear', True)

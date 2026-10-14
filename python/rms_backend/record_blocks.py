@@ -10,13 +10,13 @@ import shutil
 import struct
 import tempfile
 from threading import RLock
-import weakref
 
 from .analysis_cache_codec import (
     AnalysisReadError, DeferredJsonObject, EncodedJsonValue, JsonReference, index_json_array,
     json_string_seed, pack_json, raw_json_items,
 )
 from .record_binary import DIRECTORY_LIMIT, RESULT_LIMIT, inflate, load_json
+from .record_archive import ArchiveSource, BodyDescriptor
 
 MAGIC = b"MJSTBLK1"
 HEADER = struct.Struct("<8sQ")
@@ -31,45 +31,22 @@ def open_record_source(path):
     return open(path, 'rb')
 
 
-class BlockSource:
+class BlockSource(ArchiveSource):
     """Shared immutable source, released when its last result/export is released."""
 
-    def __init__(self, file, start):
-        self.file, self.start = file, start
-        self.lock = RLock()
-        self.detached = False
-        self._close = weakref.finalize(self, file.close)
-
-    def detach(self):
-        """Preserve original identity and release its path before promotion.
-
-        Copy compressed bytes once at save, not at open. This also protects
-        pending exports and results removed from the live tree on Windows,
-        where an open target can prevent atomic replacement.
-        """
-        with self.lock:
-            if self.detached:
-                return
-            temporary = tempfile.TemporaryFile()
-            try:
-                self.file.seek(0)
-                shutil.copyfileobj(self.file, temporary)
-                temporary.flush()
-            except Exception:
-                temporary.close()
-                raise
-            self._close()
-            self.file = temporary
-            self.detached = True
-            self._close = weakref.finalize(self, temporary.close)
+    def __init__(self, file, start, prefix_digest=None, *, expected_size=None):
+        if prefix_digest is None:
+            position = file.tell()
+            file.seek(0)
+            prefix_digest = hashlib.sha256(file.read(start)).digest()
+            file.seek(position)
+        super().__init__(file, start, (), prefix_digest, expected_size=expected_size)
 
     def read_block(self, descriptor):
-        with self.lock:
-            self.file.seek(self.start + descriptor['offset'])
-            data = self.file.read(descriptor['length'])
-        if len(data) != descriptor['length'] or hashlib.sha256(data).hexdigest() != descriptor['sha256']:
-            raise AnalysisReadError('Damaged analysis result block.')
-        return data
+        if descriptor['length'] > RESULT_LIMIT + 65536:
+            raise AnalysisReadError('Compressed analysis exceeds its size limit.')
+        span = BodyDescriptor(descriptor['offset'], descriptor['length'], bytes.fromhex(descriptor['sha256']))
+        return b''.join(self._body_chunks(span))
 
 
 class BlockEntry:
@@ -127,7 +104,7 @@ class BlockResult(DeferredJsonObject):
         return self.entry._result is None
 
 
-def read_block_record(file, *, writer=None):
+def read_block_record(file, *, writer=None, source_callback=None):
     """Take file ownership; no analysis payload bytes are read at this stage."""
     try:
         header = file.read(HEADER.size)
@@ -137,7 +114,8 @@ def read_block_record(file, *, writer=None):
         size = os.fstat(file.fileno()).st_size
         if magic != MAGIC or length > DIRECTORY_LIMIT + 65536 or length > size - HEADER.size:
             raise ValueError('Invalid indexed record directory length.')
-        manifest = load_json(inflate(file.read(length), DIRECTORY_LIMIT), limit=DIRECTORY_LIMIT)
+        compressed_directory = file.read(length)
+        manifest = load_json(inflate(compressed_directory, DIRECTORY_LIMIT), limit=DIRECTORY_LIMIT)
         if manifest.get('version') != 1:
             raise ValueError('Unsupported indexed record version.')
         record, entries = manifest.get('record'), manifest.get('entries')
@@ -148,7 +126,8 @@ def read_block_record(file, *, writer=None):
             field in node for node in nodes.values() for field in CACHE_FIELDS
         ):
             raise ValueError('Invalid indexed record tree.')
-        source = BlockSource(file, HEADER.size + length)
+        source = BlockSource(file, HEADER.size + length, hashlib.sha256(header + compressed_directory).digest(),
+                             expected_size=size)
         offset, seen, attached = 0, set(), []
         for item in entries:
             node_id, field, key = item.get('node'), item.get('field'), item.get('key')
@@ -173,10 +152,14 @@ def read_block_record(file, *, writer=None):
             attached.append((node_id, field, key, BlockResult(BlockEntry(source, item))))
         if source.start + offset != size:
             raise ValueError('Indexed record has missing or trailing block data.')
+        source.descriptors = tuple(BodyDescriptor(item['offset'], item['length'], bytes.fromhex(item['sha256']))
+                                   for item in entries)
         for node_id, field, key, value in attached:
             nodes[node_id].setdefault(field, {})[key] = value
         if writer is not None and attached:
             writer._block_source = source
+        if source_callback is not None:
+            source_callback(source)
         return record
     except Exception:
         file.close()

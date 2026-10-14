@@ -6,7 +6,10 @@ import copy
 import json
 import random
 from dataclasses import dataclass
-from typing import Any, Callable, MutableMapping
+from typing import TYPE_CHECKING, Any, Callable, MutableMapping
+
+if TYPE_CHECKING:
+    from .record_session_storage import RecordSessionStorage
 
 from . import game_tree
 from . import snapshot_state
@@ -77,6 +80,7 @@ class PreparedRecordLoad:
     visible_hands: bool
     analysis_packer: AnalysisCachePacker
     file_writer: RecordFileWriter
+    storage: RecordSessionStorage | None = None
 
 
 class RecordSession:
@@ -91,11 +95,26 @@ class RecordSession:
         "visibleHands",
     )
 
-    def __init__(self, state: State, dependencies: RecordSessionDependencies):
+    def __init__(self, state: State, dependencies: RecordSessionDependencies, *,
+                 storage_factory: Callable[..., RecordSessionStorage] | None = None):
         self._state = state
         self.dependencies = dependencies
         self._analysis_packer = AnalysisCachePacker()
         self._file_writer = RecordFileWriter()
+        self._storage_factory = storage_factory
+        self.storage = None
+
+    def configure_storage(self, factory):
+        if self._state.get('gameLoaded'):
+            raise RuntimeError('Record storage must be configured before activating a record.')
+        self._storage_factory = factory
+
+    def _new_storage(self, game, state, *, origin=None):
+        if self._storage_factory is None:
+            return None
+        storage = self._storage_factory(game, state, origin=origin)
+        storage.adopt_analyses(game)
+        return storage
 
     def ensure_loaded(self) -> None:
         if not self._state["gameLoaded"] or not self._state["game"]:
@@ -223,15 +242,25 @@ class RecordSession:
         controlled_seat = normalize_seat(state.get("controlledSeat", 0))
         visible_hands = bool(state.get("visibleHands"))
         tree_view.normalize_current_cursor(game, controlled_seat)
+        storage = None
+        if self._storage_factory is not None:
+            storage = self._new_storage(game, {'mode': mode, 'controlledSeat': controlled_seat,
+                                               'pendingSeatSwitch': None, 'visibleHands': visible_hands},
+                                        origin=getattr(record, 'origin', None))
+            # Immutable input fragments now belong to store versions. Do not
+            # retain the legacy packer's aggregate mirror alongside them.
+            analysis_packer, file_writer = AnalysisCachePacker(), RecordFileWriter()
         return PreparedRecordLoad(game, mode, controlled_seat, visible_hands, analysis_packer,
-                                  file_writer if take_ownership and file_writer is not None else RecordFileWriter())
+                                  file_writer if take_ownership and file_writer is not None else RecordFileWriter(), storage)
 
     def activate_load(self, prepared: PreparedRecordLoad) -> None:
         """Commit only an already prepared candidate under the short state lock."""
         candidate = prepared.game
         previous = self._state_snapshot()
+        previous_storage = self.storage
         self.dependencies.reset_runtime()
         try:
+            self.storage = prepared.storage
             self._reserve_game_id(candidate.get("gameId"))
             self._state.update({
                 "game": candidate,
@@ -245,18 +274,25 @@ class RecordSession:
             if prepared.mode == "research":
                 self.dependencies.request_opponent_analysis()
         except Exception:
+            self.storage = previous_storage
+            if prepared.storage is not None:
+                prepared.storage.stop()
             self._restore_after_failure(previous)
             raise
         self._analysis_packer = prepared.analysis_packer
         self._file_writer = prepared.file_writer
+        if previous_storage is not None:
+            previous_storage.stop()
 
     def create(self) -> None:
         seed = random.randint(100000, 999999)
         controlled_seat = random.randint(0, 3)
         game = self.dependencies.create_empty_game(seed)
         previous = self._state_snapshot()
+        previous_storage = self.storage
         self.dependencies.reset_runtime()
         try:
+            self.storage = None
             self._state.update({
                 "controlledSeat": controlled_seat,
                 "pendingSeatSwitch": None,
@@ -265,15 +301,25 @@ class RecordSession:
                 "mode": "play",
             })
             self.dependencies.advance_to_next_user_turn(game)
+            self.storage = self._new_storage(game, {key: self._state[key] for key in self._STATE_FIELDS
+                                                    if key not in ('game', 'gameLoaded')})
             self.dependencies.prewarm_action_engine(controlled_seat)
         except Exception:
+            if self.storage is not None:
+                self.storage.stop()
+            self.storage = previous_storage
             self._restore_after_failure(previous)
             raise
         self._analysis_packer = AnalysisCachePacker()
         self._file_writer = RecordFileWriter()
+        if previous_storage is not None:
+            previous_storage.stop()
 
     def close(self) -> None:
         self.dependencies.reset_runtime()
+        if self.storage is not None:
+            self.storage.stop()
+            self.storage = None
         self._analysis_packer = AnalysisCachePacker()
         self._file_writer = RecordFileWriter()
         self._state.update({
@@ -348,8 +394,10 @@ class RecordSession:
 
     def _activate_imported(self, game: Game, controlled_seat: int) -> None:
         previous = self._state_snapshot()
+        previous_storage = self.storage
         self.dependencies.reset_runtime()
         try:
+            self.storage = None
             self._state.update({
                 "game": game,
                 "gameLoaded": True,
@@ -358,12 +406,19 @@ class RecordSession:
                 "pendingSeatSwitch": None,
                 "visibleHands": False,
             })
+            self.storage = self._new_storage(game, {key: self._state[key] for key in self._STATE_FIELDS
+                                                    if key not in ('game', 'gameLoaded')})
             self.dependencies.request_opponent_analysis(self.dependencies.current_snapshot())
         except Exception:
+            if self.storage is not None:
+                self.storage.stop()
+            self.storage = previous_storage
             self._restore_after_failure(previous)
             raise
         self._analysis_packer = AnalysisCachePacker()
         self._file_writer = RecordFileWriter()
+        if previous_storage is not None:
+            previous_storage.stop()
 
     @staticmethod
     def _hydrate_match_state(game: Game) -> None:

@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import gzip
+import copy
+from dataclasses import dataclass
+import hashlib
 import os
+from pathlib import Path
 import zlib
 
 from .record_blocks import MAGIC, CACHE_FIELDS, open_record_source, read_block_record, write_block_record, json_bytes
 from .record_binary import LEGACY_LIMIT, load_json
+from .record_archive import ArchiveSource, MAGIC as MAGIC_V2, read_archive
 
 # Favor interactive saves over the last few percent of disk compression.
 # Unchanged analysis still reuses its already-compressed block.
@@ -15,6 +20,33 @@ _COMPRESSION_LEVEL = 3
 
 
 _ANALYSIS_PREFIX = b',"analysisCacheStorage":'
+
+
+@dataclass(frozen=True)
+class RecordOrigin:
+    path: str
+    format: str
+    source: ArchiveSource
+
+    def descriptor(self):
+        return {'path': self.path, 'format': self.format, 'base': self.source.base_path, **self.source.identity}
+
+    def __deepcopy__(self, _memo):
+        return self
+
+
+class RecordDocument(dict):
+    """Owned input plus a private source identity, never persisted as user copy."""
+
+    def __init__(self, record, origin):
+        super().__init__(record)
+        self.origin = origin
+
+    def __deepcopy__(self, memo):
+        result = RecordDocument({}, self.origin)
+        memo[id(self)] = result
+        result.update(copy.deepcopy(dict(self), memo))
+        return result
 
 
 def _gzip_members(data):
@@ -45,14 +77,33 @@ def read_record_file(path: str, *, writer: RecordFileWriter | None = None) -> di
     Analysis packing must independently confirm that its storage is unchanged.
     """
     source = open_record_source(path)
-    if source.read(len(MAGIC)) == MAGIC:
+    try:
+        return _read_record_source(source, str(Path(path).resolve()), writer)
+    except Exception:
+        source.close()
+        raise
+
+
+def _read_record_source(source, path, writer):
+    magic = source.read(len(MAGIC))
+    if magic == MAGIC_V2:
         source.seek(0)
-        return read_block_record(source, writer=writer)
-    with source:
+        archive = read_archive(source)
+        return RecordDocument(archive.take_record(), RecordOrigin(path, 'v2', archive.source))
+    if magic == MAGIC:
         source.seek(0)
-        data = source.read(LEGACY_LIMIT + 1)
-        if len(data) > LEGACY_LIMIT:
-            raise ValueError('Legacy record exceeds its input limit.')
+        owners = []
+        record = read_block_record(source, writer=writer, source_callback=owners.append)
+        return RecordDocument(record, RecordOrigin(path, 'v1', owners[0]))
+    source.seek(0)
+    data = source.read(LEGACY_LIMIT + 1)
+    if len(data) > LEGACY_LIMIT:
+        raise ValueError('Legacy record exceeds its input limit.')
+    origin = RecordOrigin(path, 'legacy-json', ArchiveSource(source, len(data), (), hashlib.sha256(data).digest(),
+                                                           expected_size=len(data)))
+    # Legacy input is already fully owned in memory. Keep its identity, not an
+    # unnecessary handle; an explicit base copy may reopen only this generation.
+    origin.source._close()
     if data.startswith(b"\x1f\x8b"):
         members = _gzip_members(data)
         if (len(members) == 3 and members[0][0].endswith(_ANALYSIS_PREFIX)
@@ -64,10 +115,10 @@ def read_record_file(path: str, *, writer: RecordFileWriter | None = None) -> di
             record["analysisCacheStorage"] = storage
             if writer is not None:
                 writer._analysis_source, writer._analysis_bytes = storage, members[1][1]
-            return record
+            return RecordDocument(record, origin)
         data = b"".join(decoded for decoded, _ in members)
     # Strict decoding must not silently replace damaged authored text.
-    return load_json(data, limit=LEGACY_LIMIT, items_limit=16_000_000)
+    return RecordDocument(load_json(data, limit=LEGACY_LIMIT, items_limit=16_000_000), origin)
 
 
 def _json_bytes(value):

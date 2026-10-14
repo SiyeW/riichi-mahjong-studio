@@ -12,6 +12,16 @@ from rms_backend.record_workspace import RecordWorkspace
 
 
 class RecordWorkspaceTests(unittest.TestCase):
+    def test_delayed_and_retried_clear_cannot_erase_a_newer_epoch_result(self):
+        with tempfile.TemporaryDirectory() as directory, RecordWorkspace(
+                Path(directory) / 'data', workspace_id='a', create=True) as store:
+            store.accept_result(1, slot='slot', epoch=0, version='old')
+            store.authored_delta(2, metadata={'name': 'changed'})
+            store.accept_result(4, slot='slot', epoch=1, version='new')
+            store.clear_slots(3, [('slot', 1)])
+            self.assertEqual(store.restore_index()['slots'][0][3], 'new')
+            store.clear_slots(3, [('slot', 1)])
+            self.assertEqual(store.restore_index()['slots'][0][3], 'new')
     def test_incremental_authored_and_cursor_restore_without_blob_reads(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / '恢复.sqlite'

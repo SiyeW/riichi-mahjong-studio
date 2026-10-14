@@ -34,6 +34,7 @@ class RecordWorkspaceWriterTests(unittest.TestCase):
             code = ('import os,sys; from rms_backend.record_workspace_lease import WorkspaceLease; '
                     'lease=WorkspaceLease(sys.argv[1],"test"); print("locked",flush=True); os._exit(0)')
             result = subprocess.run([sys.executable, '-c', code, str(path)],
+                                    cwd=Path(__file__).resolve().parents[1],
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), 'locked')
