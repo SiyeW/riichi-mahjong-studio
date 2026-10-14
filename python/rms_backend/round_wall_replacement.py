@@ -19,6 +19,8 @@ class RoundWallReplacementDependencies:
     invalidate_analysis_timeline: Callable[[], None]
     promote_mainline: Callable[..., None]
     purge_mjai_cache: Callable[[str], None]
+    deleted_nodes: Callable[..., None] = lambda *args: None
+    changed_nodes: Callable[..., None] = lambda *args, **kwargs: None
 
 
 class RoundWallReplacement:
@@ -92,10 +94,14 @@ class RoundWallReplacement:
             game["rootNodeId"] = new_round_root_id
 
         self._dependencies.purge_decision_analysis(game["gameId"], subtree_ids)
+        self._dependencies.deleted_nodes(game, subtree_ids)
+        if parent_id:
+            self._dependencies.changed_nodes(game, [parent_id])
         for node_id in subtree_ids:
             game["nodes"].pop(node_id, None)
 
         game["nodes"][new_round_root_id] = new_round_root_node
+        self._dependencies.changed_nodes(game, [new_round_root_id], snapshots=True)
         game_tree.mark_tree_changed(game)
         self._dependencies.invalidate_analysis_timeline()
         game["currentNodeId"] = new_round_root_id

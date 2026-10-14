@@ -33,6 +33,7 @@ class OpponentAnalysisDependencies:
     get_auto_analysis_status: Callable[..., dict[str, Any]]
     emit: Callable[[dict[str, Any]], None]
     read_presenter: Any = None
+    record_access: Any = None
 
 
 class OpponentAnalysisSession:
@@ -102,11 +103,15 @@ class OpponentAnalysisSession:
             "terminal": terminal,
         }
 
-    def cache_result(self, result: Any, *, require_current: bool) -> bool:
+    def cache_result(self, result: Any, *, require_current: bool, ticket=None) -> bool:
         with self.state_lock:
-            return self._cache_result_locked(result, require_current=require_current)
+            try:
+                return self._cache_result_locked(result, require_current=require_current, ticket=ticket)
+            finally:
+                if ticket is not None:
+                    self.dependencies.record_access.cancel(ticket)
 
-    def _cache_result_locked(self, result: Any, *, require_current: bool) -> bool:
+    def _cache_result_locked(self, result: Any, *, require_current: bool, ticket=None) -> bool:
         context = result.get("context") if isinstance(result, dict) else None
         if not isinstance(context, dict) or result.get("status") != "ready":
             return False
@@ -116,7 +121,6 @@ class OpponentAnalysisSession:
         ):
             return False
 
-        compact = compact_opponent_analysis(result)
         changed = False
         display_context = self.current_context()
         is_current = same_analysis_context(context, display_context)
@@ -142,12 +146,20 @@ class OpponentAnalysisSession:
             return False
 
         source = self.engine_management.opponent_source(include_display_name=True)
-        register_analysis_source(game, source, result)
-        cache = node.setdefault(OPPONENT_ANALYSIS_CACHE_FIELD, {})
-        prune_stale_cache_entries(cache, cache_key)
-        if cache.get(cache_key) != compact:
-            cache[cache_key] = compact
+        access = self.dependencies.record_access
+        if access is not None and access.enabled(game):
+            compact = access.store(ticket, game, node, cache_key, result, source)
+            if compact is None:
+                return False
             changed = True
+        else:
+            compact = compact_opponent_analysis(result)
+            register_analysis_source(game, source, result)
+            cache = node.setdefault(OPPONENT_ANALYSIS_CACHE_FIELD, {})
+            prune_stale_cache_entries(cache, cache_key)
+            if cache.get(cache_key) != compact:
+                cache[cache_key] = compact
+                changed = True
 
         if changed:
             self.dependencies.set_timeline_cached(
@@ -162,9 +174,9 @@ class OpponentAnalysisSession:
                 }
             )
         if is_current and self.state.get("opponentAnalysisEnabled"):
-            presented = attach_analysis_context(compact, display_context)
-            if display_context.get('terminal'):
-                presented['status'] = 'terminal'
+            presented = self._present_cached(compact, display_context, terminal=display_context.get('terminal', False))
+            if presented.get('status') == 'loading':
+                return True  # The captured read subscription publishes canonical data later.
             self.dependencies.emit(
                 {
                     "type": "opponent_analysis_ready",
@@ -179,9 +191,6 @@ class OpponentAnalysisSession:
                 }
             )
         return True
-
-    def _store_result(self, result: Any) -> None:
-        self.cache_result(result, require_current=True)
 
     def request_current(self, snapshot: Any = None) -> bool:
         with self.state_lock:
@@ -218,20 +227,34 @@ class OpponentAnalysisSession:
                 context["seat"],
                 reveal_all=True,
             )
-            self.predictions.request_predict(
-                snapshot if snapshot is not None else node["snapshot"],
-                context["seat"],
-                self.state["visibleHands"],
-                input_mode=input_mode,
-                context=context,
-                on_complete=self._store_result,
-                mjai_events=prediction_bundle["events"],
-                mjai_prefix_hashes=prediction_bundle["prefixHashes"],
-                mjai_events_hash=prediction_bundle["eventHash"],
-                target_mjai_events=target_bundle["events"],
-                target_mjai_prefix_hashes=target_bundle["prefixHashes"],
-                target_mjai_events_hash=target_bundle["eventHash"],
-            )
+            access = self.dependencies.record_access
+            ticket = None
+            if access is not None and access.enabled(game):
+                if not self.predictions.accepts_requests():
+                    return False
+                ticket = access.reserve(game, 'opponent', foreground=True)
+                if ticket is None:
+                    access.defer(game, 'opponent', self.request_current)
+                    return False
+            try:
+                self.predictions.request_predict(
+                    snapshot if snapshot is not None else node["snapshot"],
+                    context["seat"],
+                    self.state["visibleHands"],
+                    input_mode=input_mode,
+                    context=context,
+                    on_complete=lambda result: self.cache_result(result, require_current=False, ticket=ticket),
+                    mjai_events=prediction_bundle["events"],
+                    mjai_prefix_hashes=prediction_bundle["prefixHashes"],
+                    mjai_events_hash=prediction_bundle["eventHash"],
+                    target_mjai_events=target_bundle["events"],
+                    target_mjai_prefix_hashes=target_bundle["prefixHashes"],
+                    target_mjai_events_hash=target_bundle["eventHash"],
+                )
+            except Exception:
+                if ticket is not None:
+                    access.cancel(ticket)
+                raise
             return True
 
     def current(self) -> dict[str, Any]:
@@ -266,6 +289,18 @@ class OpponentAnalysisSession:
         cached = node.get(OPPONENT_ANALYSIS_CACHE_FIELD, {}).get(context["cacheKey"])
         if isinstance(cached, dict):
             return self._present_cached(cached, context)
+
+        access = self.dependencies.record_access
+        if access is not None and access.enabled(self.state['game']):
+            stale = find_stale_cache_entry(self.state['game'], node, context['cacheKey'],
+                                           OPPONENT_ANALYSIS_CACHE_FIELD, resolve=False)
+            self.request_current(node['snapshot'])
+            if isinstance(stale, dict):
+                return self._present_cached(stale, context)
+            error = self.predictions.activity_error()
+            status = f'prediction_error: {error}' if error else (
+                'loading' if self.predictions.accepts_requests() else 'unavailable')
+            return dict(status=status, error=error, predictions={}, ground_truth={}, context=dict(context))
 
         latest = self.predictions.get_latest()
         latest_context = latest.get("context") if isinstance(latest, dict) else None

@@ -4,7 +4,8 @@ The codec and game loop never wait for renderer transport. This owner has one
 replaceable delivery per kind, not an unbounded executor queue or decoded cache.
 """
 
-from threading import Condition, Thread
+from threading import Condition, Thread, Timer
+from concurrent.futures import Future
 
 from .analysis_cache_codec import AnalysisReadError
 from .record_analysis_refs import AnalysisReference
@@ -18,6 +19,7 @@ class AnalysisReadPresenter:
         self._deliveries = {}
         self._thread = None
         self._closed = False
+        self._retry_timers = {}
 
     @staticmethod
     def _payload(kind, value, context, terminal):
@@ -33,15 +35,51 @@ class AnalysisReadPresenter:
         self._subscriptions[kind] = (reference, token, context, terminal)
         hot = reference.ready_value()
         if hot is not None:
+            self._cancel_retry(kind)
             return self._payload(kind, hot, context, terminal)
         try:
             future = reference.request(group=('visible-analysis', kind))
         except AnalysisReadError as error:
+            self._cancel_retry(kind)
             return self._error(kind, error, context)
+        if future is None:
+            hot = reference.ready_value()
+            if hot is not None:
+                self._cancel_retry(kind)
+                return self._payload(kind, hot, context, terminal)
+            self._retry_read(kind)
+        else:
+            self._cancel_retry(kind)
         if future is not None and self._observed.get(kind) != (reference.identity, future):
             self._observed[kind] = (reference.identity, future)
             future.add_done_callback(lambda done: self._enqueue(kind, reference.identity, done))
         return None
+
+    def _cancel_retry(self, kind):
+        with self._condition:
+            timer = self._retry_timers.pop(kind, None)
+        if timer is not None:
+            timer.cancel()
+
+    def _retry_read(self, kind):
+        with self._condition:
+            if self._closed or kind in self._retry_timers:
+                return
+            def retry():
+                with self.state_lock:
+                    with self._condition:
+                        if self._retry_timers.get(kind) is not timer:
+                            return
+                        self._retry_timers.pop(kind)
+                    subscribed = self._subscriptions.get(kind)
+                    if subscribed is not None:
+                        reference, token, context, terminal = subscribed
+                        if token == self.view_token():
+                            self.publish(reference, kind=kind, context=context, terminal=terminal)
+            timer = Timer(.25, retry)
+            timer.daemon = True
+            self._retry_timers[kind] = timer
+            timer.start()
 
     @staticmethod
     def _error(kind, error, context):
@@ -49,6 +87,15 @@ class AnalysisReadPresenter:
             return dict(status=f'prediction_error: {error}', error=str(error),
                         predictions={}, ground_truth={}, context=dict(context))
         return dict(error=str(error), discardEntries=[], reactionEntries=[])
+
+    def publish(self, reference, *, kind, context=None, terminal=False):
+        """Model completion also publishes if encoding won the subscription race."""
+        ready = self.read(reference, kind=kind, context=context, terminal=terminal)
+        if ready is not None:
+            future = Future()
+            future.set_result(ready)
+            self._observed[kind] = (reference.identity, future)
+            self._enqueue(kind, reference.identity, future)
 
     def _enqueue(self, kind, identity, future):
         if future.cancelled():
@@ -112,3 +159,6 @@ class AnalysisReadPresenter:
             self._observed.clear()
             with self._condition:
                 self._deliveries.clear()
+                for timer in self._retry_timers.values():
+                    timer.cancel()
+                self._retry_timers.clear()

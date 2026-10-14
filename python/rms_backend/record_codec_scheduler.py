@@ -116,6 +116,25 @@ class RecordCodecScheduler:
         for future in cancelled:
             future.cancel()
 
+    def promote_read(self, key, *, group=None):
+        cancelled = []
+        with self._condition:
+            job = self._prefetch.pop(key, None)
+            if job is None:
+                return self._demanded.get(key, (None,))[0]
+            future, work, old_group = job
+            if group is not None:
+                for old_key, old in tuple(self._demanded.items()):
+                    if old[2] == group:
+                        cancelled.append(self._demanded.pop(old_key)[0])
+            if len(self._demanded) >= self._read_limits[0]:
+                cancelled.append(self._demanded.popitem(last=False)[1][0])
+            self._demanded[key] = (future, work, group if group is not None else old_group)
+            self._start()
+        for previous in cancelled:
+            previous.cancel()
+        return future
+
     def codec(self, namespace, schemas, operation, **payload):
         """Called only by a scheduled work item, not by a foreground consumer."""
         identity = (self.client.generation, namespace)

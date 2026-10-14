@@ -7,6 +7,7 @@ from unittest.mock import patch
 from dataclasses import replace
 from concurrent.futures import Future
 import gzip
+from rms_backend.analysis_cache import decision_cache_key
 
 from rms_backend.record_codec_scheduler import RecordCodecScheduler
 from rms_backend.record_session_storage import RecordSessionStorage, result_slot
@@ -39,6 +40,67 @@ def session_storage():
 
 
 class RecordSessionStorageTests(unittest.TestCase):
+    def test_source_less_import_inputs_restore_lazily_and_convert_only_when_requested(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'import.sqlite'
+            writer = RecordWorkspaceWriter(path, 'import', create=True)
+            scheduler = RecordCodecScheduler()
+            storage = RecordSessionStorage('import', scheduler, writer)
+            key = decision_cache_key(0, 'discard', {'id': 'official'})
+            value = {'seat': 0, 'discardEntries': [{'pai': '5mr', 'probability': .123456789}]}
+            game = {'gameId': 'import', 'currentNodeId': 'n', 'nodes': {
+                'n': {'id': 'n', 'snapshot': {}, 'children': [], 'analysisCache': {key: value}}}}
+            try:
+                storage.initialize(game, {'mode': 'research', 'controlledSeat': 0, 'visibleHands': False}).result(3)
+                storage.adopt_analyses(game)
+                storage.wait_authored(storage.cutoff())
+                self.assertIsNone(scheduler.client.pid)
+                identity = game['nodes']['n']['analysisCache'][key].identity
+                self.assertIsNone(storage.results._versions[identity].raw)
+                storage.stop()
+                scheduler.close()
+                writer.close()
+                restored_writer = RecordWorkspaceWriter(path, 'import')
+                restored_scheduler = RecordCodecScheduler()
+                try:
+                    workspace = restored_writer.ready.result(3)
+                    with patch.object(workspace, 'read_input', side_effect=AssertionError('Eager imported analysis read')):
+                        restored, recovered, _ = RecordSessionStorage.restore('import', restored_scheduler, restored_writer)
+                    self.assertIsNone(restored_scheduler.client.pid)
+                    reference = recovered['nodes']['n']['analysisCache'][key]
+                    self.assertEqual(reference.request().result(5), value)
+                    restored.results._versions[identity].durable.result(3)
+                    self.assertEqual(restored.content_revision, storage.content_revision)
+                    with workspace.reader() as db:
+                        self.assertEqual(db.execute('SELECT COUNT(*) FROM inputs').fetchone()[0], 0)
+                    restored.stop()
+                finally:
+                    restored_scheduler.close()
+                    restored_writer.close()
+            finally:
+                storage.stop()
+                scheduler.close()
+                writer.close()
+
+    def test_uncommitted_old_edit_cannot_be_retried_over_a_newer_edit(self):
+        with session_storage() as (session, writer, _):
+            workspace = writer.ready.result()
+            original = workspace.authored_batch
+            workspace.authored_batch = lambda _: (_ for _ in ()).throw(OSError('first batch failed'))
+            _, first = session.accept_authored(attributes={'n': {'comment': 'old', 'children': []}})
+            session.flush_authored()
+            with self.assertRaises(OSError):
+                first.result(3)
+            workspace.authored_batch = original
+            _, later = session.accept_authored(attributes={'n': {'comment': 'new', 'children': []}})
+            session.flush_authored()
+            with self.assertRaisesRegex(OSError, 'earlier authored'):
+                later.result(3)
+            for retry in session.retry_authored():
+                retry.result(3)
+            session.wait_authored(session.cutoff())
+            self.assertEqual(workspace.restore_index()['nodes']['n']['attributes']['comment'], 'new')
+
     def test_slow_cursor_writer_coalesces_rapid_browsing_without_growing_the_queue(self):
         with tempfile.TemporaryDirectory() as directory:
             writer = RecordWorkspaceWriter(Path(directory) / 'cursor.sqlite', 'cursor', create=True)
@@ -56,17 +118,18 @@ class RecordSessionStorageTests(unittest.TestCase):
                         return blocked
                     return submit(operation, *args, **kwargs)
                 with patch.object(writer, 'submit', side_effect=write):
-                    session.move_cursor({'currentNodeId': 'n0'})
+                    session.move_cursor({'selection': 'n0'})
                     for index in range(1, 1001):
-                        session.move_cursor({'currentNodeId': f'n{index}'})
+                        session.move_cursor({'selection': f'n{index}'})
                         if index == 500:
                             captured = session.cutoff()
-                    self.assertEqual(writer.metrics()['queuedWrites'], 0)
+                    self.assertLessEqual(writer.metrics()['queuedWrites'], 1)  # Only the explicit cutoff is protected.
                     self.assertLess(captured.cursor, session.cursor_sequence)
                     blocked.set_result(None)
                     session.wait_authored(captured)
+                    session.wait_authored(session.cutoff())
                     self.assertEqual(writer.ready.result().metadata()['cursor'],
-                                     {'sequence': 1001, 'state': {'currentNodeId': 'n1000'}})
+                                     {'sequence': 1001, 'state': {'selection': 'n1000'}})
                     self.assertEqual(session.content_revision, 0)
             finally:
                 session.stop()
@@ -268,7 +331,7 @@ class RecordSessionStorageTests(unittest.TestCase):
     def test_content_and_cursor_are_independent_and_old_barrier_never_waits_for_new_cursor(self):
         with session_storage() as (session, writer, _):
             workspace = writer.ready.result()
-            session.move_cursor({'currentNodeId': 'earlier'})
+            session.move_cursor({'currentNodeId': 'n', 'controlledSeat': 1})
             cutoff = session.cutoff()
             started, release = threading.Event(), threading.Event()
             original = workspace.cursor
@@ -279,7 +342,7 @@ class RecordSessionStorageTests(unittest.TestCase):
                 return original(sequence, state)
             workspace.cursor = held
             try:
-                session.move_cursor({'currentNodeId': 'later'})
+                session.move_cursor({'currentNodeId': 'n', 'controlledSeat': 2})
                 self.assertTrue(started.wait(2))
                 session.wait_authored(cutoff)
                 self.assertEqual(session.content_revision, cutoff.content)
@@ -287,7 +350,7 @@ class RecordSessionStorageTests(unittest.TestCase):
             finally:
                 release.set()
             session.wait_authored(session.cutoff())
-            self.assertEqual(workspace.metadata()['cursor']['state']['currentNodeId'], 'later')
+            self.assertEqual(workspace.metadata()['cursor']['state']['controlledSeat'], 2)
 
     def test_authored_failure_retains_changed_packets_for_explicit_retry(self):
         with session_storage() as (session, writer, _):

@@ -7,6 +7,7 @@ resurrects a cleared slot. Callers own per-visit subscriptions separately.
 from contextlib import contextmanager
 from collections import OrderedDict
 from concurrent.futures import Future
+from concurrent.futures import CancelledError
 from dataclasses import dataclass
 import hashlib
 from threading import RLock
@@ -47,6 +48,8 @@ class ResultVersion:
     source_locator: dict | None = None
     rescue_backing: object = None
     source_span: tuple | None = None
+    acceptance: dict | None = None
+    encoding: bool = False
 
 
 class RecordResultStore:
@@ -82,6 +85,11 @@ class RecordResultStore:
             summary = index['versionMetadata'].get(version_id) or {}
             row = bodies.get(body_id)
             if row is None:
+                if summary.get('input'):
+                    store.register(slot, fields=summary.get('fields'), kind=summary.get('kind', 'opponent'),
+                        seat=summary.get('seat'), revision=revision, epoch=epoch, identity=version_id,
+                        read=lambda key=version_id: ('json-input', workspace.read_input(key)), source_codec='json-input-v1')
+                    continue
                 version = store.register(slot, fields=summary.get('fields'), kind=summary.get('kind', 'opponent'),
                                          seat=summary.get('seat'), revision=revision, epoch=epoch, identity=version_id,
                                          source_locator=summary.get('source'))
@@ -169,13 +177,23 @@ class RecordResultStore:
             version.raw = result
             version.error = None
 
+    def adopt_inputs(self, identities):
+        workspace = self.writer.ready.result()
+        with self._lock:
+            for identity in identities:
+                version = self._versions.get(identity)
+                if version is not None and version.source_codec == 'json-input-v1' and version.portable is None:
+                    version.raw = None
+                    version.read = lambda key=identity: ('json-input', workspace.read_input(key))
+
     def unbound_source_inputs(self):
         with self._lock:
             return tuple((version.identity, version.source_locator) for version in self._versions.values()
                          if version.source_locator is not None and version.raw is None and version.read is None
                          and version.portable is None and self._slots.get(version.slot) == version.identity)
 
-    def accept(self, slot, result, *, revision, epoch, reservation, kind='opponent', seat=None):
+    def accept(self, slot, result, *, revision, epoch, reservation, kind='opponent', seat=None,
+               superseded=(), metadata=None):
         """Transfer immutable accepted input. Capacity must be reserved first."""
         if reservation is None or reservation.released or reservation.scheduler is not self.scheduler:
             raise ValueError('Inference result has no reserved storage capacity.')
@@ -191,34 +209,40 @@ class RecordResultStore:
             self._versions[version.identity] = version
             self._slots[slot] = version.identity
             self._epochs[slot] = epoch
+            tombstones = self.forget_slots(superseded)
+            version.acceptance = dict(slot=slot, epoch=epoch, version=version.identity,
+                                      summary={'kind': kind, 'seat': seat}, cleared_slots=tombstones,
+                                      metadata=metadata)
             try:
-                self.writer.submit('accept_result', revision, slot=slot, epoch=epoch,
-                                   version=version.identity)
+                self.writer.submit('accept_result', revision, **version.acceptance)
             except Exception as error:
                 version.persistence_error = error
             version.pending = self.scheduler.submit_required(
                 reservation, lambda lane: self._encode(version, lane))
+            version.encoding = True
             self._observe_failure(version)
             return version.identity
 
     def _observe_failure(self, version):
-        def finished(future):
-            if future.cancelled():
-                with self._lock:
-                    if version.pending is not future:
-                        return
-                    version.pending = None
-                    reservation, version.reservation = version.reservation, None
-                if reservation is not None:
-                    reservation.release()
-                return
-            error = future.exception()
+        version.pending.add_done_callback(lambda future: self._settle_pending(version, future))
+
+    def _settle_pending(self, version, future):
+        """A waiter may beat Future callbacks; cleanup remains exactly once."""
+        if future.cancelled():
             with self._lock:
-                if version.pending is future:
-                    if error is not None:
-                        version.error = AnalysisReadError(str(error))
-                    version.pending = None
-        version.pending.add_done_callback(finished)
+                if version.pending is not future:
+                    return
+                version.pending, version.encoding = None, False
+                reservation, version.reservation = version.reservation, None
+            if reservation is not None:
+                reservation.release()
+            return
+        error = future.exception()
+        with self._lock:
+            if version.pending is future:
+                if error is not None:
+                    version.error = AnalysisReadError(str(error))
+                version.pending, version.encoding = None, False
 
     def _encode(self, version, lane):
         # Raw sources/files are retained on any failure. Never fall back to a
@@ -284,6 +308,7 @@ class RecordResultStore:
                                                 lambda: iter((workspace.read_body(body_id),)))
                 version.read = lambda: workspace.read_body(body_id)
                 version.body_id, version.encoded = body_id, None
+                version.acceptance = None
                 self._durable_schema_count = max(self._durable_schema_count, schema_count)
                 self._encoded_pending -= length
                 reservation, version.reservation = version.reservation, None
@@ -308,8 +333,7 @@ class RecordResultStore:
                 return version.durable
         if version.revision:
             # Idempotent obligation retry, before its body. Never republish clear.
-            self.writer.submit('accept_result', version.revision, slot=version.slot,
-                               epoch=version.epoch, version=version.identity)
+            self.writer.submit('accept_result', version.revision, **version.acceptance)
         self._persist(version)
         return version.durable
 
@@ -350,6 +374,10 @@ class RecordResultStore:
         with self._lock:
             return slot in self._epochs
 
+    def epoch(self, slot):
+        with self._lock:
+            return self._epochs.get(slot, 0)
+
     def live_slots(self):
         with self._lock:
             return tuple(self._slots.items())
@@ -373,6 +401,8 @@ class RecordResultStore:
                 if retry and version.pending.done():
                     version.pending = None
                 else:
+                    if not prefetch:
+                        self.scheduler.promote_read((self.identity, identity), group=group)
                     return version.pending
             if self.hot(identity) is not None:
                 return None
@@ -388,10 +418,10 @@ class RecordResultStore:
                 version.pending = self.scheduler.submit_read(
                     (self.identity, identity), work, group=group, prefetch=prefetch)
             elif version.reservation is not None:
+                version.encoding = True
                 if version.revision:
                     try:
-                        self.writer.submit('accept_result', version.revision, slot=version.slot,
-                                           epoch=version.epoch, version=version.identity)
+                        self.writer.submit('accept_result', version.revision, **version.acceptance)
                     except Exception as error:
                         version.persistence_error = error
                 version.pending = self.scheduler.submit_required(
@@ -403,13 +433,24 @@ class RecordResultStore:
                 if reservation is None:
                     return None
                 version.reservation = reservation
-                version.pending = self.scheduler.submit_read(
-                    (self.identity, identity), lambda lane: self._encode(version, lane),
-                    group=group, prefetch=prefetch)
+                version.encoding = True
+                if version.pins:
+                    version.pending = self.scheduler.submit_required(reservation, lambda lane: self._encode(version, lane))
+                else:
+                    version.pending = self.scheduler.submit_read(
+                        (self.identity, identity), lambda lane: self._encode(version, lane),
+                        group=group, prefetch=prefetch)
             self._observe_failure(version)
             return version.pending
 
     def clear(self, slots, *, revision):
+        tombstones = self.forget_slots(slots)
+        with self._lock:
+            self._clears[revision] = tombstones
+        return self.retry_clear(revision)
+
+    def forget_slots(self, slots):
+        """RAM half of a deletion; its caller must persist these tombstones."""
         with self._lock:
             tombstones = []
             for slot in slots:
@@ -419,8 +460,7 @@ class RecordResultStore:
                 epoch = self._epochs.get(slot, 0) + 1
                 self._epochs[slot] = epoch
                 tombstones.append((slot, epoch))
-            self._clears[revision] = tombstones
-        return self.retry_clear(revision)
+            return tombstones
 
     def collect_garbage(self, *, limit=128):
         """Bounded writer maintenance. Snapshot pins beat live-slot deletion."""
@@ -484,14 +524,18 @@ class RecordResultStore:
         """Finite captured-version barrier. Must not be called under game lock."""
         while True:
             with self._lock:
-                pending, portable, error = version.pending, version.portable, version.error
+                pending, portable, error, encoding = version.pending, version.portable, version.error, version.encoding
             if error is not None:
                 raise error
+            if portable is not None and not encoding:
+                return portable  # A display decode has no bearing on reusable save bytes.
             if pending is not None:
-                pending.result()
-                with self._lock:
-                    if version.pending is pending:
-                        version.pending = None
+                try:
+                    pending.result()
+                except CancelledError:
+                    pass  # Obsolete queued view read, not cancellation of this captured export.
+                finally:
+                    self._settle_pending(version, pending)
                 continue
             if portable is not None:
                 return portable
@@ -504,6 +548,7 @@ class RecordResultStore:
                 with self._lock:
                     if version.pending is None and version.portable is None:
                         version.reservation = reservation
+                        version.encoding = True
                         version.pending = self.scheduler.submit_required(
                             reservation, lambda lane: self._encode(version, lane))
                         self._observe_failure(version)

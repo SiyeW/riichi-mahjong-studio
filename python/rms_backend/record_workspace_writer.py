@@ -16,6 +16,7 @@ class RecordWorkspaceWriter:
         self._limit = queue_limit
         self._closing = False
         self._health = None
+        self._authored_error = None
         self.ready = Future()
         self.closed = Future()
         self._thread = Thread(target=self._run, args=(create,), name='record-workspace-writer', daemon=True)
@@ -65,10 +66,16 @@ class RecordWorkspaceWriter:
             try:
                 if workspace is None:
                     self.ready.result()
-                result = getattr(workspace, operation)(*args, **kwargs)
+                if operation == 'authored_batch' and self._authored_error is not None:
+                    raise OSError('An earlier authored batch must be retried before later edits can be persisted.')
+                result = getattr(workspace, 'authored_batch' if operation == 'authored_retry' else operation)(*args, **kwargs)
+                if operation == 'authored_retry':
+                    self._authored_error = None
                 self._health = None
             except Exception as error:
                 self._health = str(error)
+                if operation in ('authored_batch', 'authored_retry'):
+                    self._authored_error = str(error)
                 future.set_exception(error)
             else:
                 future.set_result(result)
@@ -96,7 +103,8 @@ class RecordWorkspaceWriter:
 
     def metrics(self):
         with self._condition:
-            return {'queuedWrites': len(self._urgent) + len(self._bodies), 'error': self._health}
+            return {'queuedWrites': len(self._urgent) + len(self._bodies),
+                    'error': self._authored_error or self._health}
 
     def close(self):
         with self._condition:

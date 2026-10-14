@@ -82,9 +82,11 @@ class RecordSessionStorage:
         self._cursor_future = None
         self._cursor_active = self._cursor_pending = None
         self._cursor_failed = None
+        self._cursor_state = None
         self.origin = None
         self._origin_descriptor = None
         self._source_writes = []
+        self._source_failures = {}
         self.source_error = None
 
     @classmethod
@@ -95,6 +97,7 @@ class RecordSessionStorage:
         session.content_revision = index['contentRevision']
         cursor = index['metadata'].get('cursor') or {'sequence': 0, 'state': {}}
         session.cursor_sequence = cursor['sequence']
+        session._cursor_state = copy.deepcopy(cursor['state'])
         game = {key[5:]: value for key, value in index['metadata'].items() if key.startswith('game:')}
         game['nodes'] = {key: {**node['attributes'], 'snapshot': node['snapshot']}
                          for key, node in index['nodes'].items()}
@@ -164,7 +167,7 @@ class RecordSessionStorage:
         newer private versions. A durable tombstone always beats the source.
         """
         origin = game if source_game is None else source_game
-        source_entries, source_bodies = [], {}
+        source_entries, source_bodies, input_identities = [], {}, []
         for node_id, node in game['nodes'].items():
             source_node = origin.get('nodes', {}).get(node_id) or {}
             for field in ('analysisCache', 'opponentAnalysisCache'):
@@ -208,6 +211,9 @@ class RecordSessionStorage:
                                     'base': str(Path(source.file.name).resolve()), 'offset': source.start + descriptor['offset']}
                         elif self._origin_descriptor is not None:
                             summary['source'] = {'node': node_id, 'field': field, 'key': cache_key}
+                        else:
+                            summary['input'] = True
+                            codec = 'json-input-v1'
                         if body is not None:
                             fingerprint = (body['base'], body['offset'], body['length'], body['digest'])
                             body['id'] = source_bodies.setdefault(fingerprint, uuid4().hex)
@@ -219,6 +225,9 @@ class RecordSessionStorage:
                             source_span=(body['base'], body['offset'], body['length'], body['digest']) if body is not None else None)
                         source_entries.append({'version': identity, 'slot': slot, 'epoch': 0,
                                                'body': body, 'summary': summary})
+                        if summary.get('input'):
+                            source_entries[-1]['input'] = result
+                            input_identities.append(identity)
                     elif source_game is not None:
                         if isinstance(result, EncodedJsonValue):
                             result = result.resolve()
@@ -226,8 +235,7 @@ class RecordSessionStorage:
                     mapped[cache_key] = AnalysisReference(self.results, identity)
                 node[field] = mapped
         if source_entries:
-            self._source_writes.append(self.writer.submit('adopt_sources', source_entries,
-                                                          schemas=list(enumerate(self.results.schemas))))
+            self._write_sources(source_entries, list(enumerate(self.results.schemas)), input_identities)
         for slot, identity in self.results.live_slots():
             node_id, field, cache_key = json.loads(slot)
             if field not in ('analysisCache', 'opponentAnalysisCache'):
@@ -235,6 +243,35 @@ class RecordSessionStorage:
             node = game['nodes'].get(node_id)
             if node is not None:
                 node.setdefault(field, {})[cache_key] = AnalysisReference(self.results, identity)
+
+    def _write_sources(self, entries, schemas, inputs):
+        owned = Future()
+        owned.set_running_or_notify_cancel()
+        try:
+            write = self.writer.submit('adopt_sources', entries, schemas=schemas)
+        except Exception as error:
+            write = Future()
+            write.set_exception(error)
+        self._source_writes.append(owned)
+        def completed(persisted):
+            error = persisted.exception()
+            if error is None:
+                self.results.adopt_inputs(inputs)
+                entries.clear()
+                owned.set_result(None)
+            else:
+                with self._lock:
+                    self._source_failures[owned] = (entries, schemas, inputs)
+                owned.set_exception(OSError(str(error)))
+        write.add_done_callback(completed)
+        return owned
+
+    def retry_sources(self):
+        with self._lock:
+            failed = tuple(self._source_failures.items())
+            self._source_failures.clear()
+            self._source_writes = [write for write in self._source_writes if write not in dict(failed)]
+        return tuple(self._write_sources(*packet) for _write, packet in failed)
 
     @property
     def origin_descriptor(self):
@@ -307,21 +344,21 @@ class RecordSessionStorage:
                 self._timer.start()
             return revision, future
 
-    def flush_authored(self):
+    def flush_authored(self, *, retry=False):
         with self._lock:
             timer, self._timer = self._timer, None
             batch, self._queued = self._queued, {}
+            if batch:
+                try:
+                    persisted = self.writer.submit('authored_retry' if retry else 'authored_batch',
+                                                   [(rev, batch[rev][0]) for rev in sorted(batch)])
+                except Exception as error:
+                    self._failed.update(batch)
+                    persisted = Future()
+                    persisted.set_exception(error)
         if timer is not None:
             timer.cancel()
         if not batch:
-            return
-        try:
-            persisted = self.writer.submit('authored_batch', [(rev, row[0]) for rev, row in batch.items()])
-        except Exception as error:
-            with self._lock:
-                self._failed.update(batch)
-            for _packet, future in batch.values():
-                future.set_exception(error)
             return
         def finished(write):
             error = write.exception()
@@ -341,6 +378,7 @@ class RecordSessionStorage:
 
     def retry_authored(self):
         """Explicit off-lock retry; committed uncertain receipts are not replayed."""
+        self.writer.submit('revision_coverage', []).result()  # Drain earlier admitted batch callbacks first.
         with self._lock:
             failed = dict(self._failed)
         coverage = self.writer.submit('revision_coverage', list(failed)).result()
@@ -361,11 +399,17 @@ class RecordSessionStorage:
                 else:
                     self._obligations[revision] = future
                     self._queued[revision] = (packet, future)
-        self.flush_authored()
+        self.flush_authored(retry=True)
         return tuple(futures)
 
     def move_cursor(self, state):
         with self._lock:
+            if state == self._cursor_state:
+                return self.cursor_sequence
+            # A bookmark must not overtake the authored rows it references.
+            # Only queue ownership is transferred here, never filesystem I/O.
+            self.flush_authored()
+            self._cursor_state = copy.deepcopy(state)
             self.cursor_sequence += 1
             if self._cursor_pending is None:
                 future = Future()
@@ -418,12 +462,13 @@ class RecordSessionStorage:
         with self._lock:
             if not self._accepting:
                 return None
-            if self._failed:
+            if self._failed or self._source_failures:
                 return None
             reservation = self.results.reserve(foreground=foreground)
             return AnalysisAdmission(self.session_id, self._generation, reservation) if reservation is not None else None
 
-    def accept_analysis(self, reservation_context, slot, result, *, epoch, kind='opponent', seat=None):
+    def accept_analysis(self, reservation_context, slot, result, *, epoch, kind='opponent', seat=None,
+                        superseded=(), metadata=None):
         reservation = reservation_context.reservation
         with self._lock:
             if (not self._accepting or reservation_context.session != self.session_id
@@ -439,7 +484,8 @@ class RecordSessionStorage:
                 reservation.release()
                 raise ValueError('Invalid record analysis address.') from None
             version = self.results.accept(slot, result, revision=self.content_revision + 1, epoch=epoch,
-                                          reservation=reservation, kind=kind, seat=seat)
+                                          reservation=reservation, kind=kind, seat=seat,
+                                          superseded=superseded, metadata=metadata)
             if version is not None:
                 self.content_revision += 1
             return version
@@ -472,8 +518,17 @@ class RecordSessionStorage:
             if freeze:
                 self._accepting = False
                 self._generation += 1
+            # Queue the exact finite bookmark now, before later cursor writes.
+            # A shared coalesced future could otherwise wait for a later edit or
+            # failed node that did not belong to this save/close cutoff.
+            self.flush_authored()
+            try:
+                cursor_write = self.writer.submit('cursor', self.cursor_sequence, copy.deepcopy(self._cursor_state or {}))
+            except Exception as error:
+                cursor_write = Future()
+                cursor_write.set_exception(error)
             return RecordCutoff(self.session_id, self._generation, self.content_revision,
-                                self.cursor_sequence, self._cursor_future, freeze)
+                                self.cursor_sequence, cursor_write, freeze)
 
     def cancel_close(self, cutoff):
         with self._lock:

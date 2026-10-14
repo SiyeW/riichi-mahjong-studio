@@ -15,6 +15,7 @@ import sqlite3
 from threading import get_ident
 
 from .record_binary import DIRECTORY_LIMIT, RESULT_LIMIT, json_bytes, load_json
+from .analysis_body_codec import POLICY
 
 WORKSPACE_VERSION = 1
 SCHEMA = """
@@ -40,6 +41,8 @@ CREATE TABLE slots (
 );
 CREATE INDEX versions_body ON versions(body);
 CREATE INDEX slots_version ON slots(version);
+CREATE TABLE inputs (version TEXT PRIMARY KEY REFERENCES versions(id) ON DELETE CASCADE,
+                     data BLOB NOT NULL, digest BLOB NOT NULL CHECK(length(digest)=32));
 CREATE TABLE coverage (revision INTEGER PRIMARY KEY, kind TEXT NOT NULL, complete INTEGER NOT NULL);
 CREATE TABLE saves (id TEXT PRIMARY KEY, content INTEGER NOT NULL, cursor INTEGER NOT NULL,
                     target TEXT NOT NULL, committed INTEGER NOT NULL DEFAULT 0);
@@ -141,7 +144,7 @@ class RecordWorkspace:
                 self._authored_update(revision, **packet)
 
     def _authored_update(self, revision, *, nodes=None, deleted=(), attributes=None,
-                         metadata=None, rounds=None, deleted_rounds=()):
+                         metadata=None, rounds=None, deleted_rounds=(), cleared_slots=(), deleted_metadata=()):
         self._new_revision(revision)
         for node_id, node in (nodes or {}).items():
             self._db.execute('INSERT INTO nodes VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET snapshot=excluded.snapshot, attributes=excluded.attributes',
@@ -160,12 +163,20 @@ class RecordWorkspace:
                              (round_id, json_bytes(value)))
         for round_id in deleted_rounds:
             self._db.execute('DELETE FROM rounds WHERE id=?', (round_id,))
+        for key in deleted_metadata:
+            if not key.startswith('game:'):
+                raise ValueError('Only authored game metadata can be removed.')
+            self._db.execute('DELETE FROM metadata WHERE key=?', (key,))
+        self._clear_slot_rows(revision, cleared_slots)
         self._coverage(revision, 'authored', True)
 
     def cursor(self, sequence, state):
         if type(sequence) is not int or sequence < 0:
             raise ValueError('Invalid cursor sequence.')
         with self.transaction():
+            node_id = state.get('currentNodeId')
+            if node_id is not None and not self._db.execute('SELECT 1 FROM nodes WHERE id=?', (node_id,)).fetchone():
+                raise ValueError('Recovery cursor cannot precede its authored node.')
             old = self._db.execute("SELECT value FROM metadata WHERE key='cursor'").fetchone()
             current = _json(old[0]) if old else None
             if current is not None and current['sequence'] == sequence and current['state'] != state:
@@ -173,7 +184,7 @@ class RecordWorkspace:
             if current is None or current['sequence'] < sequence:
                 self._set('cursor', {'sequence': sequence, 'state': state})
 
-    def accept_result(self, revision, *, slot, epoch, version, summary=None):
+    def accept_result(self, revision, *, slot, epoch, version, summary=None, cleared_slots=(), metadata=None):
         """Persist the obligation, not a false claim that RAM-only data survived."""
         with self.transaction():
             previous = self._db.execute('SELECT slot,revision FROM versions WHERE id=?', (version,)).fetchone()
@@ -184,6 +195,11 @@ class RecordWorkspace:
             self._new_revision(revision)
             self._db.execute('INSERT INTO versions VALUES(?,?,?,NULL,?)',
                              (version, slot, revision, json_bytes(summary or {})))
+            self._clear_slot_rows(revision, cleared_slots)
+            for key, value in (metadata or {}).items():
+                if key != 'game:analysisSources':
+                    raise ValueError('Analysis acceptance may only update its provenance metadata.')
+                self._set(key, value)
             current = self._db.execute('SELECT epoch,revision FROM slots WHERE slot=?', (slot,)).fetchone()
             if current is None or current[0] <= epoch and current[1] < revision:
                 self._db.execute('INSERT INTO slots VALUES(?,?,?,?) ON CONFLICT(slot) DO UPDATE SET version=excluded.version,epoch=excluded.epoch,revision=excluded.revision',
@@ -208,6 +224,7 @@ class RecordWorkspace:
                                  (version, slot, body_id, json_bytes(summary or {})))
                 self._db.execute('UPDATE versions SET body=?,summary=? WHERE id=?',
                                  (body_id, json_bytes(summary or {}), version))
+                self._db.execute('DELETE FROM inputs WHERE version=?', (version,))
                 current = self._db.execute('SELECT epoch,revision FROM slots WHERE slot=?', (slot,)).fetchone()
                 if current is None or current == (epoch, 0):
                     self._db.execute('INSERT INTO slots VALUES(?,?,?,0) ON CONFLICT(slot) DO UPDATE SET version=excluded.version',
@@ -226,9 +243,21 @@ class RecordWorkspace:
                 body_id = body['id'] if body is not None else None
                 old = self._db.execute('SELECT slot,revision,body FROM versions WHERE id=?', (version,)).fetchone()
                 if old is not None and old != (slot, 0, body_id):
+                    converted = self._db.execute('SELECT codec,namespace FROM bodies WHERE id=?', (old[2],)).fetchone()
+                    if old[:2] == (slot, 0) and converted == (POLICY, self.workspace_id):
+                        continue  # A successful demanded conversion may beat an uncertain catalog retry.
                     raise ValueError('Imported source version identity conflict.')
                 self._db.execute('INSERT OR IGNORE INTO versions VALUES(?,?,0,?,?)',
                                  (version, slot, body_id, json_bytes(entry['summary'])))
+                if 'input' in entry:
+                    data = json_bytes(entry['input'])
+                    if len(data) > RESULT_LIMIT:
+                        raise ValueError('Imported analysis input exceeds its size limit.')
+                    existing = self._db.execute('SELECT data FROM inputs WHERE version=?', (version,)).fetchone()
+                    if existing is not None and existing[0] != data:
+                        raise ValueError('Imported analysis input identity conflict.')
+                    self._db.execute('INSERT INTO inputs VALUES(?,?,?) ON CONFLICT(version) DO NOTHING',
+                                     (version, data, hashlib.sha256(data).digest()))
                 current = self._db.execute('SELECT epoch,revision FROM slots WHERE slot=?', (slot,)).fetchone()
                 if current is None:
                     self._db.execute('INSERT INTO slots VALUES(?,?,?,0)', (slot, version, epoch))
@@ -287,13 +316,16 @@ class RecordWorkspace:
             if receipt == ('clear', 1):
                 return  # Retried receipt cannot erase a later accepted version.
             self._new_revision(revision)
-            for slot, epoch in slots:
-                current = self._db.execute('SELECT revision FROM slots WHERE slot=?', (slot,)).fetchone()
-                if current is not None and current[0] >= revision:
-                    continue
-                self._db.execute('INSERT INTO slots VALUES(?,NULL,?,?) ON CONFLICT(slot) DO UPDATE SET version=NULL,epoch=excluded.epoch,revision=excluded.revision',
-                                 (slot, epoch, revision))
+            self._clear_slot_rows(revision, slots)
             self._coverage(revision, 'clear', True)
+
+    def _clear_slot_rows(self, revision, slots):
+        for slot, epoch in slots:
+            current = self._db.execute('SELECT revision FROM slots WHERE slot=?', (slot,)).fetchone()
+            if current is not None and current[0] >= revision:
+                continue
+            self._db.execute('INSERT INTO slots VALUES(?,NULL,?,?) ON CONFLICT(slot) DO UPDATE SET version=NULL,epoch=excluded.epoch,revision=excluded.revision',
+                             (slot, epoch, revision))
 
     def save_intent(self, save_id, content, cursor, target):
         with self.transaction():
@@ -386,6 +418,14 @@ class RecordWorkspace:
         if len(data) != length or hashlib.sha256(data).digest() != digest:
             raise ValueError('Damaged recovery analysis body.')
         return data
+
+    def read_input(self, identity):
+        with self.reader() as db:
+            row = db.execute('SELECT CASE WHEN length(data)<=? THEN data END,digest FROM inputs WHERE version=?',
+                             (RESULT_LIMIT, identity)).fetchone()
+        if row is None or row[0] is None or hashlib.sha256(row[0]).digest() != row[1]:
+            raise ValueError('Imported analysis input is missing or damaged.')
+        return row[0]
 
     def missing_coverage(self, through):
         with self.reader() as db:

@@ -48,6 +48,25 @@ def stored(store, writer, value):
 
 
 class AnalysisReadPresenterTests(unittest.TestCase):
+    def test_temporary_capacity_pressure_retries_one_current_read_without_starting_inference(self):
+        with environment() as (store, lane, writer, lock, state, visits, presenter, events, delivered):
+            value = dict(status='ready', outputs={'extension': [0, .5, 1]})
+            identity = store.register('saved', fields={'status': [True, 'ready'], 'outputs': [False, None]}, raw=value)
+            reference = AnalysisReference(store, identity)
+            blocked = lane.reserve(foreground=True)
+            try:
+                with lock:
+                    for _ in range(100):
+                        self.assertIsNone(presenter.read(reference, kind='opponent', context=dict(cacheEpoch=1)))
+                    self.assertEqual(len(presenter._retry_timers), 1)
+                    self.assertIsNone(lane.client.pid)
+                blocked.release()
+                self.assertTrue(delivered.wait(5))
+                self.assertEqual(events[0]['opponentAnalysis']['outputs'], value['outputs'])
+                self.assertEqual(presenter._retry_timers, {})
+            finally:
+                blocked.release()
+
     def test_cold_read_never_blocks_game_lock_and_delivers_an_oversize_body(self):
         with environment() as (store, lane, writer, lock, state, visits, presenter, events, delivered):
             original = dict(status='ready', outputs={'extension': [0, .25, 1]})

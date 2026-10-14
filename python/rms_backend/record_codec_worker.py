@@ -73,6 +73,7 @@ class CodecJobs:
             import sqlite3
             return {'pid': os.getpid(), 'serviceImported': 'rms_backend.service' in sys.modules,
                     'modelsImported': any(name in sys.modules for name in ('torch', 'onnxruntime')),
+                    'numpyImported': 'numpy' in sys.modules,
                     'sqliteVersion': sqlite3.sqlite_version}
         if operation == 'bind':
             self.codec = AnalysisBodyCodec(payload['schemas'])

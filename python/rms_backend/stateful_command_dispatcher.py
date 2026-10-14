@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from threading import RLock
 from typing import Any
 
@@ -19,6 +20,7 @@ class StatefulCommandDispatcher:
         record_commands: Any,
         view_control_commands: Any,
         gameplay_commands: Any,
+        capture_mutation: Callable[..., Any] | None = None,
     ) -> None:
         self._state_lock = state_lock
         self._configure_thinking_time = configure_thinking_time
@@ -28,6 +30,7 @@ class StatefulCommandDispatcher:
         self._record = record_commands
         self._view_control = view_control_commands
         self._gameplay = gameplay_commands
+        self._capture_mutation = capture_mutation or (lambda command, payload: nullcontext())
 
     def dispatch(
         self,
@@ -44,7 +47,7 @@ class StatefulCommandDispatcher:
             with self._state_lock:
                 self._configure_thinking_time()
                 return self._record.activate_import(request_id, command, prepared)
-        with self._state_lock:
+        with self._state_lock, self._capture_mutation(command, data):
             self._configure_thinking_time()
             if self._run_debug_scenario(command):
                 return self._view_builder.build_response(request_id, command)

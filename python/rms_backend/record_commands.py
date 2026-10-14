@@ -28,6 +28,8 @@ class RecordCommandDependencies:
     request_opponent_analysis: Callable[..., Any]
     promote_mainline: Callable[..., Any]
     invalidate_auto_timeline: Callable[[], None]
+    deleted_nodes: Callable[..., None] = lambda *args: None
+    changed_nodes: Callable[..., None] = lambda *args, **kwargs: None
 
 
 class RecordCommands:
@@ -102,6 +104,9 @@ class RecordCommands:
         self.dependencies.cancel_auto_analysis("节点已删除")
         self.dependencies.purge_background_analysis(game.get("gameId"), subtree_ids)
         self.dependencies.purge_mjai_cache(game.get("gameId"))
+
+        self.dependencies.deleted_nodes(game, subtree_ids)
+        self.dependencies.changed_nodes(game, [parent_id])
 
         parent["children"] = remaining_children
         if parent.get("mainChildId") == node_id:

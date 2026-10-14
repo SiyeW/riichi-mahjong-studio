@@ -38,6 +38,7 @@ class DecisionAnalysisDependencies:
     build_state: Callable[[], dict[str, Any]]
     emit: Callable[[dict[str, Any]], None]
     read_presenter: Any = None
+    record_access: Any = None
 
 
 class DecisionAnalysisSession:
@@ -99,6 +100,9 @@ class DecisionAnalysisSession:
         self._completed.difference_update(completed_keys)
 
     def cancel_pending(self) -> None:
+        if self.dependencies.record_access is not None:
+            with self.state_lock:
+                self.dependencies.record_access.cancel(role='foreground', kind='decision')
         for future in list(self._tasks.values()):
             try:
                 future.cancel()
@@ -140,6 +144,7 @@ class DecisionAnalysisSession:
         result: Any,
         *,
         source: Optional[dict[str, Any]] = None,
+        ticket=None,
     ) -> Optional[dict[str, Any]]:
         if (
             not isinstance(game, dict)
@@ -158,6 +163,9 @@ class DecisionAnalysisSession:
         expected_source_id = (cache_key_context(cache_key) or {}).get("sourceId")
         if expected_source_id != resolved_source["id"]:
             return None
+        access = self.dependencies.record_access
+        if access is not None and access.enabled(game):
+            return access.store(ticket, game, node, cache_key, result, resolved_source)
         register_analysis_source(game, resolved_source, result)
         compact = copy.deepcopy(result)
         compact.pop("engineFingerprint", None)
@@ -328,6 +336,14 @@ class DecisionAnalysisSession:
             snapshot,
             controlled_seat=seat,
         )
+        access, ticket = self.dependencies.record_access, None
+        if access is not None and access.enabled(game):
+            if not self.action_gateway.accepts_requests():
+                return
+            ticket = access.reserve(game, 'decision', foreground=True)
+            if ticket is None:
+                access.defer(game, 'decision', self.request_current)
+                return
 
         def task() -> dict[str, Any]:
             started_at = time.perf_counter()
@@ -384,6 +400,7 @@ class DecisionAnalysisSession:
                             current_node,
                             analysis_key,
                             result,
+                            ticket=ticket,
                         )
                         if stored is not None:
                             self.dependencies.set_timeline_cached(
@@ -396,7 +413,10 @@ class DecisionAnalysisSession:
                                 seat,
                             )
                             should_mark_completed = True
-                    if self.state.get("decisionRecommendationsEnabled", True):
+                    if isinstance(stored if should_mark_completed else None, AnalysisReference):
+                        self.publish_current(current_node, stored)
+                    elif self.state.get("decisionRecommendationsEnabled", True) and (
+                        access is None or not access.enabled(game) or isinstance(result, dict) and result.get('error')):
                         self.dependencies.emit(
                             {
                                 "type": "analysis_ready",
@@ -414,6 +434,8 @@ class DecisionAnalysisSession:
                 except Exception:  # pylint: disable=broad-except
                     pass
                 finally:
+                    if ticket is not None:
+                        access.cancel(ticket)
                     if self._tasks.get(task_key) is future:
                         self._tasks.pop(task_key, None)
                     if should_mark_completed:
@@ -427,9 +449,26 @@ class DecisionAnalysisSession:
                             }
                         )
 
-        future = self.executor.submit(task)
+        try:
+            future = self.executor.submit(task)
+        except Exception:
+            if ticket is not None:
+                access.cancel(ticket)
+            raise
         self._tasks[task_key] = future
         future.add_done_callback(complete)
+
+    def request_current(self):
+        game = self.state.get('game')
+        if self.state.get('gameLoaded') and isinstance(game, dict):
+            node = game.get('nodes', {}).get(game.get('currentNodeId'))
+            if isinstance(node, dict):
+                self.submit_background(node, node['snapshot'])
+
+    def publish_current(self, node, reference):
+        if (self.state.get('decisionRecommendationsEnabled', True)
+                and self.state['game'].get('currentNodeId') == node.get('id')):
+            self.dependencies.read_presenter.publish(reference, kind='decision')
 
     def get_or_schedule(
         self,
@@ -549,14 +588,22 @@ class DecisionAnalysisSession:
         else:
             return None
 
+        access, ticket = self.dependencies.record_access, None
+        resolved = None
         try:
             if analysis_key not in current_node["analysisCache"]:
+                if access is not None and access.enabled(self.state['game']):
+                    ticket = access.reserve(self.state['game'], 'decision', foreground=True)
+                    if ticket is None:
+                        access.defer(self.state['game'], 'decision', self.request_current)
+                        return None
                 resolved = resolver()
                 cached_analysis = self.store(
                     self.state["game"],
                     current_node,
                     analysis_key,
                     resolved,
+                    ticket=ticket,
                 )
                 self.dependencies.set_timeline_cached(
                     "decision",
@@ -565,6 +612,11 @@ class DecisionAnalysisSession:
                     and not cached_analysis.get("error"),
                 )
             cached = current_node.get("analysisCache", {}).get(analysis_key)
+            if isinstance(cached, AnalysisReference):
+                self.dependencies.read_presenter.read(cached, kind='decision')
+                # Review consumes the already obtained policy result locally;
+                # display waits for canonical publication and never blocks here.
+                return ready_analysis(cached) or resolved
             if isinstance(cached, dict) and getattr(cached, 'pending_io', False):
                 self.update_child_comparisons(self.state['game'], current_node, cached,
                                               int(self.state['controlledSeat']), only_missing=True)
@@ -572,6 +624,9 @@ class DecisionAnalysisSession:
         except Exception as error:  # pylint: disable=broad-except
             empty["error"] = str(error)
             return empty
+        finally:
+            if ticket is not None:
+                access.cancel(ticket)
 
     def ensure_cached(
         self,
@@ -610,21 +665,11 @@ class DecisionAnalysisSession:
             if bg_future.done():
                 try:
                     result = bg_future.result()
-                    self._tasks.pop(task_key, None)
+                    result = result.get('analysis') if isinstance(result, dict) and 'analysis' in result else result
                     if isinstance(result, dict) and not result.get("error"):
-                        stored = self.store(
-                            self.state["game"],
-                            current_node,
-                            analysis_key,
-                            result,
-                        )
-                        if stored is not None:
-                            self.dependencies.set_timeline_cached(
-                                "decision", current_node.get("id"), True
-                            )
-                            return stored
+                        return result  # Its completion callback owns the admission and cache write.
                 except Exception:  # pylint: disable=broad-except
-                    self._tasks.pop(task_key, None)
+                    return None
             return None
 
         if analysis_key in current_node["analysisCache"]:
@@ -638,14 +683,4 @@ class DecisionAnalysisSession:
         analysis = self.resolve_current(current_node, snapshot, legal_actions)
         if analysis is None or analysis.get("error"):
             return None
-        stored = self.store(
-            self.state["game"],
-            current_node,
-            analysis_key,
-            analysis,
-        )
-        if stored is not None:
-            self.dependencies.set_timeline_cached(
-                "decision", current_node.get("id"), True
-            )
-        return stored
+        return analysis  # resolve_current already owns the single cache write.

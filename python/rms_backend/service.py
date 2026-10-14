@@ -49,6 +49,8 @@ from .service_runtime import ServiceRuntime
 from .record_view_context import RecordViewContext
 from .analysis_read_presenter import AnalysisReadPresenter
 from .record_stored_export import StoredRecordExport
+from .record_mutation_capture import RecordMutationCapture
+from .record_analysis_access import RecordAnalysisAccess
 from .rule_kernel import (
     can_ankan,
     can_declare_riichi,
@@ -110,10 +112,12 @@ def emit(payload):
 
 
 SERVICE_RUNTIME = ServiceRuntime(emit=emit, now_iso=now_iso)
+RECORD_MUTATIONS = RecordMutationCapture(STATE, lambda: RECORD_SESSION.storage)
 
 
 def _invalidate_engine_analysis(reason):
     with _STATE_LOCK:
+        RECORD_ANALYSIS.cancel()
         AUTO_ANALYSIS.cancel(reason)
         PLAY_PREFETCH.cancel()
         active_game = STATE.get("game")
@@ -126,6 +130,7 @@ def _invalidate_engine_analysis(reason):
 
 def _prepare_for_engine_unload():
     with _STATE_LOCK:
+        RECORD_ANALYSIS.cancel()
         AUTO_ANALYSIS.cancel("分析引擎已卸载")
         PLAY_PREFETCH.cancel()
         active_game = STATE.get("game")
@@ -158,6 +163,16 @@ VIEW_CONTEXT = RecordViewContext(STATE, lambda: (
     ENGINE_MANAGEMENT.decision_cache_epoch, ENGINE_MANAGEMENT.opponent_cache_epoch))
 ANALYSIS_READS = AnalysisReadPresenter(_STATE_LOCK, VIEW_CONTEXT.current, emit)
 SERVICE_RUNTIME.add_shutdown(ANALYSIS_READS.close)
+RECORD_ANALYSIS = RecordAnalysisAccess(STATE, _STATE_LOCK, lambda: RECORD_SESSION.storage,
+    lambda kind: ENGINE_MANAGEMENT.decision_cache_epoch if kind == 'decision' else ENGINE_MANAGEMENT.opponent_cache_epoch)
+
+
+def _cancel_record_analysis():
+    with _STATE_LOCK:
+        RECORD_ANALYSIS.cancel()
+
+
+SERVICE_RUNTIME.add_shutdown(_cancel_record_analysis)
 
 
 OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
@@ -175,6 +190,7 @@ OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
         get_auto_analysis_status=lambda **kwargs: AUTO_ANALYSIS.status(**kwargs),
         emit=emit,
         read_presenter=ANALYSIS_READS,
+        record_access=RECORD_ANALYSIS,
     ),
 )
 
@@ -204,6 +220,7 @@ DECISION_ANALYSIS = decision_analysis_session.DecisionAnalysisSession(
         build_state=lambda: VIEW_BUILDER.build_state_payload(),
         emit=emit,
         read_presenter=ANALYSIS_READS,
+        record_access=RECORD_ANALYSIS,
     ),
 )
 
@@ -234,6 +251,7 @@ AUTO_ANALYSIS = auto_analysis_session.AutoAnalysisSession(
             *args, **kwargs
         ),
         emit=emit,
+        record_access=RECORD_ANALYSIS,
     ),
 )
 
@@ -350,6 +368,8 @@ PLAY_PREFETCH = play_prefetch_session.PlayPrefetchSession(
             *args, **kwargs
         ),
         emit=emit,
+        changed_nodes=RECORD_MUTATIONS.changed_nodes,
+        record_access=RECORD_ANALYSIS,
     ),
 )
 
@@ -408,6 +428,7 @@ def get_current_snapshot():
 
 
 def reset_runtime_for_game_change():
+    RECORD_ANALYSIS.cancel()
     PLAY_PREFETCH.cancel()
     AUTO_ANALYSIS.reset_for_game_change()
     ENGINE_MANAGEMENT.advance_cache_epochs()
@@ -522,6 +543,7 @@ TREE_EDITS = game_tree_coordinator.GameTreeCoordinator(
         is_meaningful_decision=action_is_meaningful_decision,
         active_draft=lambda: PLAY_PREFETCH.active_draft(),
         invalidate_analysis_timeline=lambda: AUTO_ANALYSIS.invalidate_timeline(),
+        changed_nodes=RECORD_MUTATIONS.changed_nodes,
     ),
 )
 
@@ -538,6 +560,8 @@ ROUND_WALL_REPLACEMENT = round_wall_replacement.RoundWallReplacement(
         invalidate_analysis_timeline=AUTO_ANALYSIS.invalidate_timeline,
         promote_mainline=TREE_EDITS.promote_path_to_mainline,
         purge_mjai_cache=MJAI_STREAMS.purge_game,
+        deleted_nodes=RECORD_MUTATIONS.deleted_nodes,
+        changed_nodes=RECORD_MUTATIONS.changed_nodes,
     ),
 )
 
@@ -626,6 +650,8 @@ RECORD_COMMANDS = record_commands.RecordCommands(
         request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
         promote_mainline=TREE_EDITS.promote_path_to_mainline,
         invalidate_auto_timeline=AUTO_ANALYSIS.invalidate_timeline,
+        deleted_nodes=RECORD_MUTATIONS.deleted_nodes,
+        changed_nodes=RECORD_MUTATIONS.changed_nodes,
     ),
 )
 
@@ -713,6 +739,7 @@ STATEFUL_COMMANDS = stateful_command_dispatcher.StatefulCommandDispatcher(
     record_commands=RECORD_WORKSPACE_COMMANDS,
     view_control_commands=VIEW_CONTROL_COMMANDS,
     gameplay_commands=GAMEPLAY_COMMANDS,
+    capture_mutation=RECORD_MUTATIONS.command,
 )
 
 

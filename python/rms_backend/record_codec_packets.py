@@ -37,6 +37,12 @@ def materialize_packet(packet):
     kind, *payload = packet
     if kind in ('scalar', 'plain'):
         return payload[0]
+    if kind == 'json-input':
+        from .record_binary import RESULT_LIMIT, load_json
+        value = load_json(payload[0], limit=RESULT_LIMIT)
+        if not isinstance(value, dict):
+            raise ValueError('Imported analysis input must be an object.')
+        return value
     if kind == 'object':
         return {key: materialize_packet(child) for key, child in payload[0]}
     if kind == 'array':
