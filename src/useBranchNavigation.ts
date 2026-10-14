@@ -16,6 +16,9 @@ export function useBranchNavigation(options: {
   markRecordDirty: () => void
   applyStatus: (status: StudioStatus) => void
   applyGameView: (view: GameView, direction?: GameViewTransitionDirection) => void
+  expectAnalysisVisit: (intent: number, nodeId: string) => void
+  invalidateAnalysisVisit: () => void
+  settleAnalysisVisit: () => void
 }) {
   const {
     gameView,
@@ -29,6 +32,9 @@ export function useBranchNavigation(options: {
     markRecordDirty,
     applyStatus,
     applyGameView,
+    expectAnalysisVisit,
+    invalidateAnalysisVisit,
+    settleAnalysisVisit,
   } = options
 
 const branchReturnMap = ref<Record<string, string>>({})
@@ -185,6 +191,7 @@ function resolveNodeTransitionDirection(nodeId: string): GameViewTransitionDirec
 function currentViewRequestContext() {
   return {
     gameId: gameView.gameId, seat: status.controlledSeat, mode: status.mode,
+    sessionId: gameView.viewToken?.sessionId,
     generation: getGameplayResponseGeneration(), intent: latestNavigationIntentId,
   }
 }
@@ -194,6 +201,7 @@ async function jumpToNode(nodeId: string, navigationIntentId?: number) {
   cancelPendingWheelNavigation()
   const intentId = navigationIntentId ?? ++latestNavigationIntentId
   latestNavigationIntentId = Math.max(latestNavigationIntentId, intentId)
+  expectAnalysisVisit(intentId, nodeId)
   const requestContext = currentViewRequestContext()
   wheelNavigationCursorNodeId = nodeId
   const targetNode = nodeMapById.value.get(nodeId)
@@ -204,7 +212,16 @@ async function jumpToNode(nodeId: string, navigationIntentId?: number) {
       [targetNode.parentId]: nodeId,
     }
   }
-  const response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision)
+  let response
+  try {
+    response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision, intentId)
+  } catch (error) {
+    if (intentId === latestNavigationIntentId) {
+      wheelNavigationCursorNodeId = gameView.currentNodeId
+      settleAnalysisVisit()
+    }
+    throw error
+  }
   if (intentId !== latestNavigationIntentId || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
   applyStatus(response.state)
   applyGameView(response.view, transitionDirection)
@@ -222,11 +239,14 @@ async function dispatchQueuedWheelNavigation() {
   wheelNavigationRequestInFlight = true
 
   try {
-    const response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision)
+    const response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision, generation)
     if (generation !== wheelNavigationGeneration || generation !== latestNavigationIntentId
       || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
     applyStatus(response.state)
     applyGameView(response.view, transitionDirection)
+  } catch (error) {
+    if (generation === latestNavigationIntentId) settleAnalysisVisit()
+    console.error('Failed to navigate record:', error)
   } finally {
     wheelNavigationRequestInFlight = false
     if (generation === wheelNavigationGeneration && !wheelNavigationQueuedNodeId) {
@@ -285,9 +305,8 @@ function navigateTreeByOffset(offset: number) {
   }
 
   wheelNavigationCursorNodeId = targetNodeId
-  if (wheelNavigationGeneration === 0) {
-    wheelNavigationGeneration = ++latestNavigationIntentId
-  }
+  wheelNavigationGeneration = ++latestNavigationIntentId
+  expectAnalysisVisit(wheelNavigationGeneration, targetNodeId)
   wheelNavigationQueuedNodeId = targetNodeId
   wheelNavigationQueuedDirection = transitionDirection
   void dispatchQueuedWheelNavigation()
@@ -300,6 +319,7 @@ function navigateTreeByOffset(offset: number) {
   }
 
   function invalidateNavigation() {
+    invalidateAnalysisVisit()
     latestNavigationIntentId += 1
     cancelPendingWheelNavigation()
   }

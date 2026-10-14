@@ -29,6 +29,8 @@ class RendererViewDependencies:
     auto_analysis: Any
     consume_thinking_time: Callable[[], float]
     now_iso: Callable[[], str]
+    view_token: Callable[[], dict | None] = lambda: None
+    begin_visit: Callable[[int], None] = lambda intent: None
 
 
 class RendererView:
@@ -41,6 +43,9 @@ class RendererView:
     ) -> None:
         self.state = state
         self.dependencies = dependencies
+
+    def begin_visit(self, intent: int) -> None:
+        self.dependencies.begin_visit(intent)
 
     def normalize_tree_cursor(
         self,
@@ -83,6 +88,7 @@ class RendererView:
 
     def build_view_payload(self, compact_tree: bool = False) -> dict[str, Any]:
         if not self.state["gameLoaded"] or not self.state["game"]:
+            self.dependencies.view_token()
             return self._empty_view()
 
         game = self.state["game"]
@@ -95,6 +101,7 @@ class RendererView:
         snapshot = current_node["snapshot"]
         self.dependencies.sync_snapshot(snapshot)
         opponent_analysis = None
+        view_token = self.dependencies.view_token()
         if self.state.get("opponentAnalysisEnabled"):
             opponent_analysis = self.dependencies.opponent_analysis.current()
         legal_actions = self.dependencies.get_node_legal_actions(
@@ -116,6 +123,7 @@ class RendererView:
         )
         return {
             "gameId": game["gameId"],
+            "viewToken": view_token,
             "matchId": game.get("matchId") or game["gameId"],
             "readOnly": bool(metadata.get("readOnly")),
             "sourceUrl": metadata.get("sourceUrl"),

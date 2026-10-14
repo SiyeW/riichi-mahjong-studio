@@ -207,6 +207,7 @@ class RecordResultStore:
         # available even when durable writes are slow/failed. The reservation
         # remains held until the storage writer owns the accepted bytes.
         self._persist(version)
+        return canonical
 
     def _persist(self, version):
         data = version.encoded
@@ -307,6 +308,7 @@ class RecordResultStore:
                     reply = lane.codec(self.identity, self.schemas, 'read',
                                        data=version.read(), fields=version.fields)
                     self.cache.put(identity, reply['canonical'], reply['residentBytes'], reloadable=True)
+                    return reply['canonical']
                 version.pending = self.scheduler.submit_read(
                     (self.identity, identity), work, group=group, prefetch=prefetch)
             elif version.reservation is not None:

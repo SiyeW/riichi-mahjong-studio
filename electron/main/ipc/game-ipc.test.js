@@ -99,14 +99,14 @@ test('game IPC projects game changes into record tracking without dirtying uncom
 
   await handlers.get('game:advance')()
   await handlers.get('game:advance')()
-  await handlers.get('game:jump-to-node')(null, 'target', 7)
+  await handlers.get('game:jump-to-node')(null, 'target', 7, 13)
   await handlers.get('game:close')()
 
   assert.deepEqual(calls, [
     ['setCurrentNodeId', 'advance-1'],
     ['setCurrentNodeId', 'advance-2'],
     ['markRecordDirty'],
-    ['jumpToNode', 'target', 7],
+    ['jumpToNode', 'target', 7, 13],
     ['markCurrentNode', 'jumpToNode-node'],
     ['publishRecordDirty', undefined],
     ['closeGame'],

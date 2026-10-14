@@ -1456,6 +1456,9 @@ const {
   markRecordDirty: () => markRecordDirty(),
   applyStatus,
   applyGameView,
+  expectAnalysisVisit: (intent, nodeId) => handlePythonEvent.expectAnalysisVisit(intent, nodeId),
+  invalidateAnalysisVisit: () => handlePythonEvent.invalidateAnalysisVisit(),
+  settleAnalysisVisit: () => handlePythonEvent.commitAnalysisVisit(gameView.viewToken),
 })
 
 const playerNames = usePlayerNames(gameView, () => markRecordDirty())
@@ -1566,6 +1569,7 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
     pendingReview: gameView.pendingReview,
   }
   const isNewGame = nextView.gameId !== gameView.gameId
+    || nextView.viewToken?.sessionId !== gameView.viewToken?.sessionId
   const nextAnalysis = resolveNextDecisionAnalysis(nextView, isNewGame)
   const previousPendingDiscard = pendingDiscardFromTable(gameView.table)
   const previousPendingSignature = pendingDiscardSignature(previousPendingDiscard)
@@ -1588,6 +1592,7 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
     resetBranchNavigationForNewGame()
   }
   gameView.gameId = nextView.gameId
+  gameView.viewToken = nextView.viewToken
   gameView.matchId = nextView.matchId
   gameView.readOnly = Boolean(nextView.readOnly)
   gameView.sourceUrl = nextView.sourceUrl || null
@@ -1642,6 +1647,7 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   }
   if (showWallView.value) void refreshWallView()
   if (showCustomTenhouExport.value) customTenhouExportRefreshKey.value += 1
+  handlePythonEvent.commitAnalysisVisit(nextView.viewToken)
 }
 
 function hasRecommendationAnalysis(): boolean {
@@ -1852,6 +1858,12 @@ const handlePythonEvent = createPythonEventRouter({
   applyOpponentAnalysisEvent,
   cacheDecisionAnalysis,
 })
+
+watch(gameFileOperation, (operation, previous) => {
+  const replacesRecord = (value: typeof operation) => value === 'open' || value === 'create' || value === 'import'
+  if (replacesRecord(operation)) handlePythonEvent.expectRecordReplacement()
+  else if (replacesRecord(previous)) handlePythonEvent.commitAnalysisVisit(gameView.viewToken)
+}, { flush: 'sync' })
 
 let lastUiScaleWheelAt = 0
 function onUiScaleWheel(event: WheelEvent) {

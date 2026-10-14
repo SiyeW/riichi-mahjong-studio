@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('studioAPI', {
   advanceGame: () => ipcRenderer.invoke('game:advance'),
   confirmPendingReview: () => ipcRenderer.invoke('game:confirm-review'),
   submitUserAction: (action) => ipcRenderer.invoke('game:submit-action', action),
-  jumpToNode: (nodeId, treeRevision) => ipcRenderer.invoke('game:jump-to-node', nodeId, treeRevision),
+  jumpToNode: (nodeId, treeRevision, navigationIntent) => ipcRenderer.invoke('game:jump-to-node', nodeId, treeRevision, navigationIntent),
   setMainBranch: (nodeId) => ipcRenderer.invoke('game:set-main-branch', nodeId),
   setNodeComment: (nodeId, comment) => ipcRenderer.invoke('game:set-node-comment', nodeId, comment),
   deleteNode: (nodeId) => ipcRenderer.invoke('game:delete-node', nodeId),

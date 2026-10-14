@@ -127,9 +127,15 @@ class RecordWorkspaceCommands:
         command: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
+        if 'navigationIntent' in payload:
+            intent = payload['navigationIntent']
+            if not isinstance(intent, int) or isinstance(intent, bool) or intent < 0:
+                raise ValueError('Navigation intent must be a nonnegative integer.')
         stayed_in_round = self._record_commands.jump(
             str(payload.get("nodeId") or "")
         )
+        if 'navigationIntent' in payload:
+            self._view_builder.begin_visit(payload['navigationIntent'])
         try:
             client_tree_revision = int(payload.get("treeRevision"))
         except (TypeError, ValueError):

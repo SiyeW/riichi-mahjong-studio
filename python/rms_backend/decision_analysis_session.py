@@ -9,6 +9,7 @@ from typing import Any, Callable, MutableMapping, Optional
 
 from .action_recommendation_adapter import analyze_action_choices, analyze_discard_choices
 from .analysis_cache_codec import AnalysisReadError
+from .record_analysis_refs import AnalysisReference, ready_analysis
 from .auto_analysis_plan import is_terminal_analysis_node
 from .analysis_cache import (
     cache_key_context,
@@ -36,6 +37,7 @@ class DecisionAnalysisDependencies:
     set_timeline_cached: Callable[[str, str, bool], None]
     build_state: Callable[[], dict[str, Any]]
     emit: Callable[[dict[str, Any]], None]
+    read_presenter: Any = None
 
 
 class DecisionAnalysisSession:
@@ -263,7 +265,7 @@ class DecisionAnalysisSession:
                 self.engine_management.decision_source(),
             )
             analysis = (parent_node.get("analysisCache") or {}).get(analysis_key)
-            if getattr(analysis, 'pending_io', False) and parent_node is not game['nodes'].get(game.get('currentNodeId')):
+            if getattr(analysis, 'pending_io', False):
                 # Saved comparisons remain visible. Missing derived comparisons
                 # are filled when their frame is visited, not by reading every
                 # unopened analysis block during record activation.
@@ -451,12 +453,14 @@ class DecisionAnalysisSession:
         analysis_key = self.cache_key(snapshot)
         if analysis_key in current_node.get("analysisCache", {}):
             cached = current_node["analysisCache"][analysis_key]
+            if isinstance(cached, AnalysisReference):
+                return self.dependencies.read_presenter.read(cached, kind='decision')
             if getattr(cached, 'pending_io', False):
                 self.update_child_comparisons(self.state['game'], current_node, cached,
                                               int(self.state['controlledSeat']), only_missing=True)
             return copy.deepcopy(cached)
         if not self.action_gateway.accepts_requests():
-            return find_stale_cache_entry(
+            return self._stale_analysis(
                 self.state.get("game"),
                 current_node,
                 analysis_key,
@@ -470,12 +474,19 @@ class DecisionAnalysisSession:
         ):
             return None
         self.submit_background(current_node, snapshot)
-        return find_stale_cache_entry(
+        return self._stale_analysis(
             self.state.get("game"),
             current_node,
             analysis_key,
             "analysisCache",
         )
+
+    def _stale_analysis(self, game, node, key, field):
+        cached = find_stale_cache_entry(game, node, key, field, resolve=False)
+        if isinstance(cached, AnalysisReference):
+            result = self.dependencies.read_presenter.read(cached, kind='decision')
+            return {**result, 'cacheStatus': 'stale'} if result is not None else None
+        return find_stale_cache_entry(game, node, key, field) if cached is not None else None
 
     def resolve_current(
         self,
@@ -581,7 +592,11 @@ class DecisionAnalysisSession:
 
         analysis_key = self.cache_key(snapshot)
         if analysis_key in current_node["analysisCache"]:
-            return current_node["analysisCache"][analysis_key]
+            cached = current_node["analysisCache"][analysis_key]
+            if isinstance(cached, AnalysisReference):
+                self.dependencies.read_presenter.read(cached, kind='decision')
+                return ready_analysis(cached)
+            return cached
         if not self.action_gateway.accepts_requests():
             return None
 

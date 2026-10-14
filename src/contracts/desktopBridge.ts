@@ -59,7 +59,7 @@ export interface DesktopBridge {
     fromDrawn?: boolean
     candidateId?: string
   }) => Promise<BackendResponse>
-  jumpToNode: (nodeId: string, treeRevision?: number) => Promise<BackendResponse>
+  jumpToNode: (nodeId: string, treeRevision?: number, navigationIntent?: number) => Promise<BackendResponse>
   setMainBranch: (nodeId: string) => Promise<BackendResponse>
   setNodeComment: (nodeId: string, comment: string) => Promise<{
     request_id: string

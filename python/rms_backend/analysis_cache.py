@@ -108,7 +108,7 @@ def prune_stale_cache_entries(cache, current_key):
             del cache[cache_key]
 
 
-def find_stale_cache_entry(game, node, current_key, cache_field):
+def find_stale_cache_entry(game, node, current_key, cache_field, *, resolve=True):
     current = cache_key_context(current_key)
     cache = node.get(cache_field) if isinstance(node, dict) else None
     if current is None or not isinstance(cache, dict):
@@ -124,6 +124,8 @@ def find_stale_cache_entry(game, node, current_key, cache_field):
             and isinstance(result, dict)
             and not result.get("error")
         ):
+            if not resolve and isinstance(result, JsonReference):
+                return result
             payload = copy.deepcopy(result.resolve() if isinstance(result, JsonReference) else result)
             payload["cacheStatus"] = "stale"
             payload["cacheSource"] = copy.deepcopy(

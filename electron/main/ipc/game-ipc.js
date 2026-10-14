@@ -42,8 +42,8 @@ function registerGameIpc({
     markRecordDirty()
     return response
   })
-  ipcMain.handle('game:jump-to-node', async (event, nodeId, treeRevision) => {
-    const response = await backendGateway.jumpToNode(nodeId, treeRevision)
+  ipcMain.handle('game:jump-to-node', async (event, nodeId, treeRevision, navigationIntent) => {
+    const response = await backendGateway.jumpToNode(nodeId, treeRevision, navigationIntent)
     gameFileStore.markCurrentNode(response.view?.currentNodeId)
     publishRecordDirty()
     return response

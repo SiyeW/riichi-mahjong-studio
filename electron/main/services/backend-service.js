@@ -138,8 +138,8 @@ function createBackendService(options = {}) {
       submitUserAction(action) {
         return backendSession.sendRequest('submit_user_action', action)
       },
-      jumpToNode(nodeId, treeRevision) {
-        return backendSession.sendRequest('jump_to_node', { nodeId, treeRevision })
+      jumpToNode(nodeId, treeRevision, navigationIntent) {
+        return backendSession.sendRequest('jump_to_node', { nodeId, treeRevision, navigationIntent })
       },
       setMainBranch(nodeId) {
         return backendSession.sendRequest('set_main_branch', { nodeId })

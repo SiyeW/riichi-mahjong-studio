@@ -188,7 +188,9 @@ class AutoAnalysisPlanTest(unittest.TestCase):
             ) as request:
                 self.assertFalse(service.OPPONENT_ANALYSIS.request_current())
                 request.assert_not_called()
-            self.assertEqual(service.OPPONENT_ANALYSIS.current()["status"], "terminal")
+            # Missing predecessor data retains the previous presentation, rather
+            # than publishing an empty terminal result that clears the panels.
+            self.assertEqual(service.OPPONENT_ANALYSIS.current()["status"], "loading")
             cache_key = service.OPPONENT_ANALYSIS.cache_key()
             cached = {"status": "ready", "predictions": {"opponents": {"kamicha": [0.2, 0.8]}}}
             start_node["opponentAnalysisCache"] = {cache_key: cached}

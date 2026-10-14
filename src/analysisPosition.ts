@@ -4,6 +4,7 @@ export function decisionPositionKey(gameId: string | null | undefined, nodeId: s
 }
 
 export type ViewRequestContext = {
+  sessionId?: string
   gameId: string | null | undefined
   seat: number
   mode: string
@@ -12,7 +13,7 @@ export type ViewRequestContext = {
 }
 
 export function sameViewRequestContext(before: ViewRequestContext, current: ViewRequestContext): boolean {
-  return before.gameId === current.gameId && before.seat === current.seat
+  return before.sessionId === current.sessionId && before.gameId === current.gameId && before.seat === current.seat
     && before.mode === current.mode && before.generation === current.generation
     && before.intent === current.intent
 }

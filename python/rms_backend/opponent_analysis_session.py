@@ -14,12 +14,14 @@ from .analysis_cache import (
     attach_analysis_context,
     compact_opponent_analysis,
     find_stale_cache_entry,
+    cache_key_context,
     opponent_analysis_cache_key,
     prune_stale_cache_entries,
     register_analysis_source,
     same_analysis_context,
 )
 from .service_helpers import now_iso
+from .record_analysis_refs import AnalysisReference
 
 
 @dataclass(frozen=True)
@@ -30,6 +32,7 @@ class OpponentAnalysisDependencies:
     set_timeline_cached: Callable[[str, str, bool], None]
     get_auto_analysis_status: Callable[..., dict[str, Any]]
     emit: Callable[[dict[str, Any]], None]
+    read_presenter: Any = None
 
 
 class OpponentAnalysisSession:
@@ -55,6 +58,15 @@ class OpponentAnalysisSession:
             return "full-information"
         return "public"
 
+    def display_input_mode(self, node):
+        # Loaded providers govern inference, never access to already saved facts.
+        if self.state.get('visibleHands'):
+            for key in (node or {}).get(OPPONENT_ANALYSIS_CACHE_FIELD, {}):
+                address = cache_key_context(key)
+                if address and address['seat'] == int(self.state['controlledSeat']) and address['mode'] == 'full-information':
+                    return 'full-information'
+        return self.input_mode()
+
     def cache_key(self, seat: Optional[int] = None) -> str:
         resolved_seat = (
             int(self.state["controlledSeat"]) if seat is None else int(seat)
@@ -77,13 +89,15 @@ class OpponentAnalysisSession:
             return None
         terminal = is_terminal_analysis_node(game["nodes"][node_id])
         seat = int(self.state["controlledSeat"])
-        input_mode = self.input_mode()
+        node = game['nodes'][node_id]
+        source_node = preceding_prediction_node(game, node_id) if terminal else node
+        input_mode = self.display_input_mode(source_node)
         return {
             "gameId": game.get("gameId"),
             "nodeId": node_id,
             "seat": seat,
             "inputMode": input_mode,
-            "cacheKey": self.cache_key(seat),
+            "cacheKey": self.build_cache_key(seat, input_mode),
             "cacheEpoch": self.engine_management.opponent_cache_epoch,
             "terminal": terminal,
         }
@@ -104,7 +118,13 @@ class OpponentAnalysisSession:
 
         compact = compact_opponent_analysis(result)
         changed = False
-        is_current = same_analysis_context(context, self.current_context())
+        display_context = self.current_context()
+        is_current = same_analysis_context(context, display_context)
+        if not is_current and display_context and display_context.get('terminal'):
+            source_node = preceding_prediction_node(self.state['game'], display_context['nodeId'])
+            is_current = bool(source_node and source_node['id'] == context.get('nodeId') and all(
+                context.get(key) == display_context.get(key)
+                for key in ('gameId', 'seat', 'cacheKey', 'cacheEpoch')))
         seat = int(context.get("seat", -1))
         if require_current and not is_current:
             return False
@@ -117,7 +137,7 @@ class OpponentAnalysisSession:
             not isinstance(node, dict)
             or is_terminal_analysis_node(node)
             or not cache_key
-            or cache_key != self.cache_key(seat)
+            or cache_key != self.build_cache_key(seat, context.get('inputMode', 'public'))
         ):
             return False
 
@@ -142,13 +162,16 @@ class OpponentAnalysisSession:
                 }
             )
         if is_current and self.state.get("opponentAnalysisEnabled"):
+            presented = attach_analysis_context(compact, display_context)
+            if display_context.get('terminal'):
+                presented['status'] = 'terminal'
             self.dependencies.emit(
                 {
                     "type": "opponent_analysis_ready",
                     "gameId": context.get("gameId"),
-                    "nodeId": context.get("nodeId"),
+                    "nodeId": display_context.get("nodeId"),
                     "seat": seat,
-                    "opponentAnalysis": attach_analysis_context(compact, context),
+                    "opponentAnalysis": presented,
                     "autoAnalysis": self.dependencies.get_auto_analysis_status(
                         include_timeline=self.state.get("mode") == "research"
                     ),
@@ -181,6 +204,8 @@ class OpponentAnalysisSession:
             if self.dependencies.auto_analysis_owns("opponent", context["nodeId"]):
                 return False
             input_mode = context["inputMode"]
+            if input_mode not in self.predictions.supported_input_modes():
+                return False
             prediction_bundle = self.dependencies.build_mjai_stream_bundle(
                 game,
                 context["nodeId"],
@@ -228,15 +253,19 @@ class OpponentAnalysisSession:
             if not isinstance(cached, dict) and node is not None:
                 cached = find_stale_cache_entry(
                     self.state["game"], node, context["cacheKey"], OPPONENT_ANALYSIS_CACHE_FIELD,
+                    resolve=False,
                 )
             if isinstance(cached, dict) and cached.get("status") == "ready":
-                result = attach_analysis_context(cached, context)
-                result["status"] = "terminal"
-                return result
+                return self._present_cached(cached, context, terminal=True)
             return {
-                "status": "terminal", "predictions": {}, "ground_truth": {},
+                "status": "loading", "predictions": {}, "ground_truth": {},
                 "context": context,
             }
+
+        node = self.state["game"]["nodes"][context["nodeId"]]
+        cached = node.get(OPPONENT_ANALYSIS_CACHE_FIELD, {}).get(context["cacheKey"])
+        if isinstance(cached, dict):
+            return self._present_cached(cached, context)
 
         latest = self.predictions.get_latest()
         latest_context = latest.get("context") if isinstance(latest, dict) else None
@@ -246,25 +275,21 @@ class OpponentAnalysisSession:
         ):
             return latest
 
-        node = self.state["game"]["nodes"][context["nodeId"]]
-        cached = node.get(OPPONENT_ANALYSIS_CACHE_FIELD, {}).get(context["cacheKey"])
-        if isinstance(cached, dict):
-            return attach_analysis_context(cached, context)
-
         stale = find_stale_cache_entry(
             self.state["game"],
             node,
             context["cacheKey"],
             OPPONENT_ANALYSIS_CACHE_FIELD,
+            resolve=False,
         )
         if same_analysis_context(latest_context, context):
             if isinstance(stale, dict):
-                return attach_analysis_context(stale, context)
+                return self._present_cached(stale, context)
             return latest
 
         self.request_current(node["snapshot"])
         if isinstance(stale, dict):
-            return attach_analysis_context(stale, context)
+            return self._present_cached(stale, context)
         latest = self.predictions.get_latest()
         latest_context = latest.get("context") if isinstance(latest, dict) else None
         if same_analysis_context(latest_context, context):
@@ -275,3 +300,14 @@ class OpponentAnalysisSession:
             "ground_truth": {"opponents": {}, "ron_wait": {}},
             "context": copy.deepcopy(context),
         }
+
+    def _present_cached(self, cached, context, *, terminal=False):
+        if isinstance(cached, AnalysisReference):
+            result = self.dependencies.read_presenter.read(
+                cached, kind='opponent', context=context, terminal=terminal)
+            return result if result is not None else dict(
+                status='loading', predictions={}, ground_truth={}, context=dict(context))
+        result = attach_analysis_context(cached, context)
+        if terminal:
+            result['status'] = 'terminal'
+        return result

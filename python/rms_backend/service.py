@@ -46,6 +46,8 @@ from .opponent_prediction_coordinator import OpponentPredictionCoordinator
 from .service_debug import DebugScenarioDependencies, run_debug_scenario
 from .service_helpers import actor_just_drew, now_iso
 from .service_runtime import ServiceRuntime
+from .record_view_context import RecordViewContext
+from .analysis_read_presenter import AnalysisReadPresenter
 from .rule_kernel import (
     can_ankan,
     can_declare_riichi,
@@ -98,6 +100,9 @@ def debug_flow(message):
 
 
 def emit(payload):
+    if payload.get('type') in ('analysis_ready', 'opponent_analysis_ready'):
+        with _STATE_LOCK:
+            payload = VIEW_CONTEXT.tag_event(payload)
     with _EMIT_LOCK:
         sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
         sys.stdout.flush()
@@ -148,6 +153,12 @@ ENGINE_MANAGEMENT = engine_management.EngineManagement(
 )
 
 
+VIEW_CONTEXT = RecordViewContext(STATE, lambda: (
+    ENGINE_MANAGEMENT.decision_cache_epoch, ENGINE_MANAGEMENT.opponent_cache_epoch))
+ANALYSIS_READS = AnalysisReadPresenter(_STATE_LOCK, VIEW_CONTEXT.current, emit)
+SERVICE_RUNTIME.add_shutdown(ANALYSIS_READS.close)
+
+
 OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
     STATE,
     _STATE_LOCK,
@@ -162,6 +173,7 @@ OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
         ),
         get_auto_analysis_status=lambda **kwargs: AUTO_ANALYSIS.status(**kwargs),
         emit=emit,
+        read_presenter=ANALYSIS_READS,
     ),
 )
 
@@ -190,6 +202,7 @@ DECISION_ANALYSIS = decision_analysis_session.DecisionAnalysisSession(
         ),
         build_state=lambda: VIEW_BUILDER.build_state_payload(),
         emit=emit,
+        read_presenter=ANALYSIS_READS,
     ),
 )
 
@@ -398,6 +411,7 @@ def reset_runtime_for_game_change():
     AUTO_ANALYSIS.reset_for_game_change()
     ENGINE_MANAGEMENT.advance_cache_epochs()
     DECISION_ANALYSIS.reset()
+    ANALYSIS_READS.reset()
     MJAI_STREAMS.clear()
     LEGAL_ACTIONS.clear_cache()
     OPPONENT_PREDICTIONS.cancel_all()
@@ -555,6 +569,8 @@ VIEW_BUILDER = renderer_view.RendererView(
         auto_analysis=AUTO_ANALYSIS,
         consume_thinking_time=get_and_reset_ai_thinking_time_s,
         now_iso=now_iso,
+        view_token=VIEW_CONTEXT.current,
+        begin_visit=VIEW_CONTEXT.begin_visit,
     ),
 )
 

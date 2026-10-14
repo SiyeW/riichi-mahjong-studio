@@ -290,7 +290,21 @@ export interface GameTreeView {
   rounds?: RoundSummary[]
 }
 
+export interface AnalysisViewToken {
+  sessionId: string
+  sequence: number
+  intent: number
+  gameId: string
+  nodeId: string
+  seat: number
+  mode: string
+  visibleHands: boolean
+  decisionEpoch: number
+  opponentEpoch: number
+}
+
 export interface GameView {
+  viewToken?: AnalysisViewToken | null
   gameId: string | null
   playerNames?: string[]
   matchId?: string | null

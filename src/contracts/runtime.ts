@@ -1,5 +1,5 @@
 import type { ModelActivityState, ModelRuntimeState } from './engines'
-import type { GameTreeNode, GameView } from './game'
+import type { AnalysisViewToken, GameTreeNode, GameView } from './game'
 
 export interface AutoAnalysisStatus {
   status: 'idle' | 'running' | 'canceled' | 'completed'
@@ -85,6 +85,7 @@ export interface BackendResponse {
 }
 
 export interface PythonEvent {
+  viewToken?: AnalysisViewToken | null
   hasCheckpoint?: boolean
   view?: GameView
   type: string
