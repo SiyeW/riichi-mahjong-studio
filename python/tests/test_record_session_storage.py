@@ -64,12 +64,18 @@ class RecordSessionStorageTests(unittest.TestCase):
                 restored_scheduler = RecordCodecScheduler()
                 try:
                     workspace = restored_writer.ready.result(3)
-                    with patch.object(workspace, 'read_input', side_effect=AssertionError('Eager imported analysis read')):
+                    with patch.object(workspace, 'read_input_packet', side_effect=AssertionError('Eager imported analysis read')):
                         restored, recovered, _ = RecordSessionStorage.restore('import', restored_scheduler, restored_writer)
                     self.assertIsNone(restored_scheduler.client.pid)
                     reference = recovered['nodes']['n']['analysisCache'][key]
+                    previous_reader = restored.results._versions[identity].read
                     self.assertEqual(reference.request().result(5), value)
                     restored.results._versions[identity].durable.result(3)
+                    packet = previous_reader()
+                    self.assertEqual(packet[0], 'canonical-input')
+                    reused = restored_scheduler.submit_read('old-input-reader', lambda lane: lane.codec(
+                        'import', restored.results.schemas, 'input', packet=packet)).result(5)
+                    self.assertEqual(reused['canonical'], value)
                     self.assertEqual(restored.content_revision, storage.content_revision)
                     with workspace.reader() as db:
                         self.assertEqual(db.execute('SELECT COUNT(*) FROM inputs').fetchone()[0], 0)

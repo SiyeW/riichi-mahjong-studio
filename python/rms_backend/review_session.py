@@ -395,8 +395,7 @@ class ReviewSession:
         proposed_node_id = pending_review["proposedNodeId"]
         parent_snapshot = game["nodes"][parent_id]["snapshot"]
         parent_node = game["nodes"][parent_id]
-        analysis_key = self.decision_analysis.cache_key(parent_snapshot)
-        self.decision_analysis.ensure_cached(parent_node, parent_snapshot)
+        analysis = None if confirm_proposed else self.decision_analysis.ensure_cached(parent_node, parent_snapshot)
 
         if confirm_proposed:
             chosen_node_id = proposed_node_id
@@ -413,9 +412,9 @@ class ReviewSession:
                             self.dependencies.refresh_reused_child(game, existing_id, action, next_snapshot)
                         else:
                             chosen_node_id = self.dependencies.create_node(game, parent_id, action, next_snapshot)
-                            if analysis_key in parent_node["analysisCache"]:
+                            if isinstance(analysis, dict):
                                 comparison = build_special_action_comparison_result(
-                                    parent_node["analysisCache"][analysis_key],
+                                    analysis,
                                     action_type,
                                     self.state["controlledSeat"],
                                     variant,
@@ -434,9 +433,9 @@ class ReviewSession:
                         self.dependencies.refresh_reused_child(game, existing_id, action, next_snapshot)
                     else:
                         chosen_node_id = self.dependencies.create_node(game, parent_id, action, next_snapshot)
-                        if analysis_key in parent_node["analysisCache"]:
+                        if isinstance(analysis, dict):
                             comparison = build_comparison_result(
-                                parent_node["analysisCache"][analysis_key],
+                                analysis,
                                 tile,
                                 self.state["controlledSeat"],
                                 from_drawn,
@@ -455,9 +454,9 @@ class ReviewSession:
                             self.dependencies.refresh_reused_child(game, existing_id, action, next_snapshot)
                         else:
                             chosen_node_id = self.dependencies.create_node(game, parent_id, action, next_snapshot)
-                            if analysis_key in parent_node["analysisCache"]:
+                            if isinstance(analysis, dict):
                                 comparison = build_comparison_result(
-                                    parent_node["analysisCache"][analysis_key],
+                                    analysis,
                                     tile,
                                     self.state["controlledSeat"],
                                     from_drawn,
@@ -477,15 +476,15 @@ class ReviewSession:
                             self.dependencies.refresh_reused_child(game, existing_id, action, next_snapshot)
                         else:
                             chosen_node_id = self.dependencies.create_node(game, parent_id, action, next_snapshot)
-                            if analysis_key in parent_node["analysisCache"]:
+                            if isinstance(analysis, dict):
                                 comparison = build_special_action_comparison_result(
-                                    parent_node["analysisCache"][analysis_key],
+                                    analysis,
                                     action_type,
-                                self.state["controlledSeat"],
-                                variant,
-                            )
-                            if comparison is not None:
-                                game["nodes"][chosen_node_id]["comparison"] = comparison
+                                    self.state["controlledSeat"],
+                                    variant,
+                                )
+                                if comparison is not None:
+                                    game["nodes"][chosen_node_id]["comparison"] = comparison
             else:
                 if not action_type:
                     raise ValueError("An action type must be provided to finalize a reaction review.")
@@ -505,9 +504,9 @@ class ReviewSession:
                         self.dependencies.refresh_reused_child(game, existing_id, action, next_snapshot)
                     else:
                         chosen_node_id = self.dependencies.create_node(game, parent_id, action, next_snapshot)
-                    if analysis_key in parent_node["analysisCache"]:
+                    if isinstance(analysis, dict):
                         comparison = build_reaction_comparison_result(
-                            parent_node["analysisCache"][analysis_key],
+                            analysis,
                             action_type,
                             self.state["controlledSeat"],
                             variant,
@@ -606,12 +605,11 @@ class ReviewSession:
             raise ValueError("Only the controlled seat can declare this action.")
 
         next_snapshot, action = self.create_special_snapshot(current_snapshot, action_type, variant, source="user")
-        analysis_key = self.decision_analysis.cache_key(current_snapshot)
         comparison = None
-        self.decision_analysis.ensure_cached(current_node, current_snapshot)
-        if analysis_key in current_node["analysisCache"]:
+        analysis = self.decision_analysis.ensure_cached(current_node, current_snapshot)
+        if isinstance(analysis, dict):
             comparison = build_special_action_comparison_result(
-                current_node["analysisCache"][analysis_key],
+                analysis,
                 action_type,
                 actor,
                 variant,
@@ -662,13 +660,12 @@ class ReviewSession:
 
         next_snapshot, action = self.create_discard_snapshot(current_snapshot, tile, source="user", from_drawn=from_drawn)
 
-        analysis_key = self.decision_analysis.cache_key(current_snapshot)
         comparison = None
         force_commit = current_snapshot.get("pendingRiichiSeat") == actor
-        self.decision_analysis.ensure_cached(current_node, current_snapshot)
-        if analysis_key in current_node["analysisCache"]:
+        analysis = self.decision_analysis.ensure_cached(current_node, current_snapshot)
+        if isinstance(analysis, dict):
             comparison = build_comparison_result(
-                current_node["analysisCache"][analysis_key],
+                analysis,
                 tile,
                 actor,
                 from_drawn,
@@ -716,12 +713,11 @@ class ReviewSession:
             raise ValueError(f"Tile {tile} not in hand.")
 
         next_snapshot, action = self.create_discard_snapshot(current_snapshot, tile, source="user", from_drawn=from_drawn)
-        analysis_key = self.decision_analysis.cache_key(current_snapshot)
         comparison = None
-        self.decision_analysis.ensure_cached(current_node, current_snapshot)
-        if analysis_key in current_node["analysisCache"]:
+        analysis = self.decision_analysis.ensure_cached(current_node, current_snapshot)
+        if isinstance(analysis, dict):
             comparison = build_comparison_result(
-                current_node["analysisCache"][analysis_key],
+                analysis,
                 tile,
                 actor,
                 from_drawn,
@@ -787,11 +783,10 @@ class ReviewSession:
         snapshot_state.persist(next_snapshot)
         child_id = self.dependencies.create_node(game, parent_id, action, next_snapshot)
 
-        analysis_key = self.decision_analysis.cache_key(parent_snapshot)
-        self.decision_analysis.ensure_cached(parent_node, parent_snapshot)
-        if analysis_key in parent_node["analysisCache"]:
+        analysis = self.decision_analysis.ensure_cached(parent_node, parent_snapshot)
+        if isinstance(analysis, dict):
             comparison = build_special_action_comparison_result(
-                parent_node["analysisCache"][analysis_key],
+                analysis,
                 "none",
                 actor,
                 action.get("variant"),
@@ -826,12 +821,11 @@ class ReviewSession:
             variant,
             candidate_id,
         )
-        analysis_key = self.decision_analysis.cache_key(current_snapshot)
         comparison = None
-        self.decision_analysis.ensure_cached(current_node, current_snapshot)
-        if analysis_key in current_node["analysisCache"]:
+        analysis = self.decision_analysis.ensure_cached(current_node, current_snapshot)
+        if isinstance(analysis, dict):
             comparison = build_reaction_comparison_result(
-                current_node["analysisCache"][analysis_key],
+                analysis,
                 action_type,
                 self.state["controlledSeat"],
                 variant,

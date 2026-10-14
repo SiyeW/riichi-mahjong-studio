@@ -21,6 +21,8 @@ class StatefulCommandDispatcher:
         view_control_commands: Any,
         gameplay_commands: Any,
         capture_mutation: Callable[..., Any] | None = None,
+        prepare_analysis_use: Callable[[], Any] = lambda: None,
+        use_prepared_analysis: Callable[..., Any] = lambda prepared: nullcontext(),
     ) -> None:
         self._state_lock = state_lock
         self._configure_thinking_time = configure_thinking_time
@@ -31,6 +33,7 @@ class StatefulCommandDispatcher:
         self._view_control = view_control_commands
         self._gameplay = gameplay_commands
         self._capture_mutation = capture_mutation or (lambda command, payload: nullcontext())
+        self._prepare_analysis_use, self._use_prepared_analysis = prepare_analysis_use, use_prepared_analysis
 
     def dispatch(
         self,
@@ -47,14 +50,27 @@ class StatefulCommandDispatcher:
             with self._state_lock:
                 self._configure_thinking_time()
                 return self._record.activate_import(request_id, command, prepared)
+        if command == 'submit_user_action':
+            with self._state_lock:
+                prepared = self._prepare_analysis_use()
+            if prepared is not None:
+                try:
+                    prepared.load()  # Requested policy only; never I/O/codec waits under the game lock.
+                    with self._state_lock, self._use_prepared_analysis(prepared), self._capture_mutation(command, data):
+                        return self._dispatch_locked(request_id, command, data)
+                finally:
+                    prepared.close()
         with self._state_lock, self._capture_mutation(command, data):
-            self._configure_thinking_time()
-            if self._run_debug_scenario(command):
-                return self._view_builder.build_response(request_id, command)
-            handler = self._handlers(request_id, command, data).get(command)
-            if handler is None:
-                raise ValueError(f"Unsupported command: {command}")
-            return handler()
+            return self._dispatch_locked(request_id, command, data)
+
+    def _dispatch_locked(self, request_id, command, data):
+        self._configure_thinking_time()
+        if self._run_debug_scenario(command):
+            return self._view_builder.build_response(request_id, command)
+        handler = self._handlers(request_id, command, data).get(command)
+        if handler is None:
+            raise ValueError(f"Unsupported command: {command}")
+        return handler()
 
     def _handlers(
         self,

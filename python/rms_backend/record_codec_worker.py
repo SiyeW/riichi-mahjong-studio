@@ -68,6 +68,18 @@ class CodecJobs:
             self.codec = AnalysisBodyCodec(self.codec.schemas[:self._encode_checkpoint])
         self._encode_checkpoint = None
 
+    def _input(self, packet):
+        if packet[0] == 'canonical-input':
+            return self.codec.decode(inflate(packet[1], RESULT_LIMIT))
+        return materialize_packet(packet)
+
+    @staticmethod
+    def _view_reply(canonical, fields):
+        if fields is not None and (set(canonical) != set(fields) or any(
+                meta[0] and canonical[key] != meta[1] for key, meta in fields.items())):
+            raise ValueError('Analysis summary does not match its body.')
+        return {'canonical': canonical, 'residentBytes': resident_size(canonical)}
+
     def run(self, operation, payload):
         if operation == 'ping':
             import sqlite3
@@ -84,7 +96,7 @@ class CodecJobs:
         if operation == 'encode':
             count = len(self.codec.schemas)
             self._encode_checkpoint = count
-            result = (materialize_packet(payload['packet']) if 'packet' in payload else payload['result'])
+            result = (self._input(payload['packet']) if 'packet' in payload else payload['result'])
             if payload.get('compactOpponent'):
                 from .analysis_cache import compact_opponent_analysis
                 result = compact_opponent_analysis(result)
@@ -100,11 +112,10 @@ class CodecJobs:
             return self.codec.decode(inflate(payload['data'], RESULT_LIMIT))
         if operation == 'read':
             canonical = self.codec.decode(inflate(payload['data'], RESULT_LIMIT))
-            fields = payload.get('fields')
-            if fields is not None and (set(canonical) != set(fields) or any(
-                    meta[0] and canonical[key] != meta[1] for key, meta in fields.items())):
-                raise ValueError('Analysis summary does not match its body.')
-            return {'canonical': canonical, 'residentBytes': resident_size(canonical)}
+            return self._view_reply(canonical, payload.get('fields'))
+        if operation == 'input':
+            canonical = self._input(payload['packet'])
+            return self._view_reply(canonical, payload.get('fields'))
         raise ValueError('Unknown codec operation.')
 
 

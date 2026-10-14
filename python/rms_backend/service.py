@@ -740,6 +740,8 @@ STATEFUL_COMMANDS = stateful_command_dispatcher.StatefulCommandDispatcher(
     view_control_commands=VIEW_CONTROL_COMMANDS,
     gameplay_commands=GAMEPLAY_COMMANDS,
     capture_mutation=RECORD_MUTATIONS.command,
+    prepare_analysis_use=DECISION_ANALYSIS.prepare_use,
+    use_prepared_analysis=DECISION_ANALYSIS.use_prepared,
 )
 
 

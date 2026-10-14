@@ -5,11 +5,13 @@ from __future__ import annotations
 import copy
 import time
 from dataclasses import dataclass
+from contextlib import contextmanager
 from typing import Any, Callable, MutableMapping, Optional
 
 from .action_recommendation_adapter import analyze_action_choices, analyze_discard_choices
 from .analysis_cache_codec import AnalysisReadError
 from .record_analysis_refs import AnalysisReference, ready_analysis
+from .decision_analysis_use import DecisionAnalysisUse
 from .auto_analysis_plan import is_terminal_analysis_node
 from .analysis_cache import (
     cache_key_context,
@@ -61,6 +63,7 @@ class DecisionAnalysisSession:
         self.dependencies = dependencies
         self._tasks: dict[tuple[Any, ...], Any] = {}
         self._completed: set[tuple[Any, ...]] = set()
+        self._active_use = None
 
     @staticmethod
     def _task_key(game: Any, node_id: Any, analysis_key: Any) -> tuple[Any, ...]:
@@ -488,6 +491,9 @@ class DecisionAnalysisSession:
             return None
         if not legal_actions:
             return None
+        if (self._active_use is not None and self._active_use.node is current_node
+                and self._active_use.matches(self.state, self.engine_management.decision_cache_epoch)):
+            return self._active_use.value
 
         analysis_key = self.cache_key(snapshot)
         if analysis_key in current_node.get("analysisCache", {}):
@@ -596,8 +602,9 @@ class DecisionAnalysisSession:
                     ticket = access.reserve(self.state['game'], 'decision', foreground=True)
                     if ticket is None:
                         access.defer(self.state['game'], 'decision', self.request_current)
-                        return None
                 resolved = resolver()
+                if ticket is None and access is not None and access.enabled(self.state['game']):
+                    return resolved  # Actual review may use policy while derived storage is paused.
                 cached_analysis = self.store(
                     self.state["game"],
                     current_node,
@@ -636,6 +643,9 @@ class DecisionAnalysisSession:
         if not self.state.get("decisionRecommendationsEnabled", True):
             return None
         self.dependencies.sync_snapshot(snapshot)
+        if (self._active_use is not None and self._active_use.node is current_node
+                and self._active_use.matches(self.state, self.engine_management.decision_cache_epoch)):
+            return self._active_use.value
         if snapshot.get("phase") not in (
             "draw_or_discard",
             "discard",
@@ -684,3 +694,26 @@ class DecisionAnalysisSession:
         if analysis is None or analysis.get("error"):
             return None
         return analysis  # resolve_current already owns the single cache write.
+
+    def prepare_use(self):
+        if not self.state.get('gameLoaded') or not self.state.get('decisionRecommendationsEnabled', True):
+            return None
+        game = self.state['game']
+        node = game['nodes'][game['currentNodeId']]
+        key = self.cache_key(node['snapshot'])
+        reference = node.get('analysisCache', {}).get(key)
+        if not isinstance(reference, AnalysisReference):
+            return None
+        return DecisionAnalysisUse(reference, game, node, int(self.state['controlledSeat']), key,
+                                   self.engine_management.decision_cache_epoch)
+
+    @contextmanager
+    def use_prepared(self, prepared):
+        if (not prepared.matches(self.state, self.engine_management.decision_cache_epoch)
+                or self.cache_key(prepared.node['snapshot']) != prepared.cache_key):
+            raise ValueError('The decision analysis changed before the action could be applied.')
+        previous, self._active_use = self._active_use, prepared
+        try:
+            yield
+        finally:
+            self._active_use = previous

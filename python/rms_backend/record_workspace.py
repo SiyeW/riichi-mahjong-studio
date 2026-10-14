@@ -419,13 +419,20 @@ class RecordWorkspace:
             raise ValueError('Damaged recovery analysis body.')
         return data
 
-    def read_input(self, identity):
+    def read_input_packet(self, identity):
         with self.reader() as db:
-            row = db.execute('SELECT CASE WHEN length(data)<=? THEN data END,digest FROM inputs WHERE version=?',
-                             (RESULT_LIMIT, identity)).fetchone()
-        if row is None or row[0] is None or hashlib.sha256(row[0]).digest() != row[1]:
+            row = db.execute('SELECT CASE WHEN length(i.data)<=? THEN i.data END,i.digest,'
+                             'CASE WHEN length(b.data)<=? THEN b.data END,b.digest,b.codec,b.namespace '
+                             'FROM versions v LEFT JOIN inputs i ON i.version=v.id '
+                             'LEFT JOIN bodies b ON b.id=v.body WHERE v.id=?',
+                             (RESULT_LIMIT, RESULT_LIMIT + 65536, identity)).fetchone()
+        if row is not None and row[0] is not None and hashlib.sha256(row[0]).digest() == row[1]:
+            return ('json-input', row[0])
+        if (row is not None and row[2] is not None and row[4:] == (POLICY, self.workspace_id)
+                and hashlib.sha256(row[2]).digest() == row[3]):
+            return ('canonical-input', row[2])  # Conversion and input deletion commit atomically.
+        else:
             raise ValueError('Imported analysis input is missing or damaged.')
-        return row[0]
 
     def missing_coverage(self, through):
         with self.reader() as db:

@@ -14,12 +14,12 @@ from threading import RLock
 from uuid import uuid4
 
 from .analysis_body_codec import POLICY
-from .analysis_cache_codec import AnalysisReadError
+from .analysis_cache_codec import AnalysisReadError, JsonReference
 from .decoded_analysis_cache import DecodedAnalysisCache
 from .record_archive import PortableBody
 from .record_codec_packets import result_packet
 from .record_binary import RESULT_LIMIT
-from .record_body_backing import RescueBodyBacking
+from .record_body_backing import FileSpanSource, RescueBodyBacking
 
 
 @dataclass
@@ -66,6 +66,7 @@ class RecordResultStore:
         self._closed = False
         self._clears, self._clear_failures = {}, set()
         self._orphans = OrderedDict()
+        self._source_locations = {}
 
     @classmethod
     def restore(cls, identity, scheduler, writer, *, index=None, budget=32 * 1024 * 1024):
@@ -88,7 +89,7 @@ class RecordResultStore:
                 if summary.get('input'):
                     store.register(slot, fields=summary.get('fields'), kind=summary.get('kind', 'opponent'),
                         seat=summary.get('seat'), revision=revision, epoch=epoch, identity=version_id,
-                        read=lambda key=version_id: ('json-input', workspace.read_input(key)), source_codec='json-input-v1')
+                        read=lambda key=version_id: workspace.read_input_packet(key), source_codec='json-input-v1')
                     continue
                 version = store.register(slot, fields=summary.get('fields'), kind=summary.get('kind', 'opponent'),
                                          seat=summary.get('seat'), revision=revision, epoch=epoch, identity=version_id,
@@ -102,15 +103,11 @@ class RecordResultStore:
                 raise ValueError('Unsupported recovery analysis body owner/codec.')
             if base is None:
                 read = lambda key=body_id: workspace.read_body(key)
+                portable = PortableBody(length, digest, lambda read=read: iter((read(),))) if codec == POLICY else None
             else:
-                def read(path=base, start=offset, count=length, expected=digest):
-                    with open(path, 'rb') as source:
-                        source.seek(start)
-                        data = source.read(count)
-                    if len(data) != count or hashlib.sha256(data).digest() != expected:
-                        raise AnalysisReadError('Damaged recovery base body.')
-                    return data
-            portable = PortableBody(length, digest, lambda read=read: iter((read(),))) if codec == POLICY else None
+                backing = store._file_backing(base)
+                read = lambda backing=backing, start=offset, count=length, expected=digest: backing.read(start, count, expected)
+                portable = backing.body(offset, length, digest) if codec == POLICY else None
             if codec == 'packed-json-v1':
                 read = lambda read=read, fields=summary.get('fields'): ('v1', read(), fields)
             store.register(slot, fields=summary.get('fields'), kind=summary.get('kind', 'opponent'),
@@ -118,6 +115,12 @@ class RecordResultStore:
                            revision=revision, epoch=epoch, identity=version_id, source_codec=codec,
                            source_span=(base, offset, length, digest) if base is not None else None)
         return store
+
+    def _file_backing(self, path):
+        with self._lock:
+            if path not in self._source_locations:
+                self._source_locations[path] = FileSpanSource(path)
+            return self._source_locations[path]
 
     def reserve(self, *, foreground=False):
         with self._lock:
@@ -151,21 +154,18 @@ class RecordResultStore:
     def adopt_base(self, old_path, new_path):
         """Rebind file-backed readers after the exact base is durably owned."""
         with self._lock:
+            backing = self._file_backing(old_path)
+            backing.adopt(new_path)
+            self._source_locations[new_path] = backing
             for version in self._versions.values():
                 if version.source_span is None or version.source_span[0] != old_path:
                     continue
                 _, offset, length, digest = version.source_span
                 version.source_span = (new_path, offset, length, digest)
-                def read(path=new_path, start=offset, count=length, expected=digest):
-                    with open(path, 'rb') as source:
-                        source.seek(start)
-                        data = source.read(count)
-                    if len(data) != count or hashlib.sha256(data).digest() != expected:
-                        raise AnalysisReadError('Damaged recovery base body.')
-                    return data
+                read = lambda start=offset, count=length, expected=digest: backing.read(start, count, expected)
                 if version.source_codec == POLICY:
                     version.read = read
-                    version.portable = PortableBody(length, digest, lambda read=read: iter((read(),)))
+                    version.portable = backing.body(offset, length, digest)
                 elif version.raw is None:
                     version.read = lambda read=read, fields=version.fields: ('v1', read(), fields)
 
@@ -184,7 +184,7 @@ class RecordResultStore:
                 version = self._versions.get(identity)
                 if version is not None and version.source_codec == 'json-input-v1' and version.portable is None:
                     version.raw = None
-                    version.read = lambda key=identity: ('json-input', workspace.read_input(key))
+                    version.read = lambda key=identity: workspace.read_input_packet(key)
 
     def unbound_source_inputs(self):
         with self._lock:
@@ -261,7 +261,7 @@ class RecordResultStore:
             version.encoded = data
             version.portable = PortableBody.from_bytes(data)
             version.source_span = None
-            version.read = lambda: version.encoded
+            version.read = lambda data=data: data
             version.raw = None
             version.error = None
         self.cache.put(version.identity, canonical, reply['residentBytes'], reloadable=True)
@@ -554,6 +554,42 @@ class RecordResultStore:
                         self._observe_failure(version)
                     else:
                         reservation.release()
+
+    def load_for_use(self, version):
+        """A bounded actual policy task, independent of write/encoding admission.
+
+        The caller pins this immutable version and waits OUTSIDE the game lock.
+        Fresh decision input is already lossless policy data. Durable legacy
+        inputs may be read without first creating a new canonical backing.
+        Returned data lives only for the actual command, not visited history.
+        """
+        if version.kind != 'decision':
+            raise ValueError('Gameplay use requires decision analysis.')
+        with self._lock:
+            if version.error is not None:
+                raise version.error
+            raw = version.raw
+            if version.revision and isinstance(raw, dict) and not isinstance(raw, JsonReference):
+                return raw
+        hot = self.hot(version.identity)
+        if hot is not None:
+            return hot
+        def read(lane):
+            hot = self.hot(version.identity)
+            if hot is not None:
+                return hot
+            with self._lock:
+                raw, provider, portable, fields, error = (version.raw, version.read, version.portable,
+                                                          version.fields, version.error)
+            if error is not None:
+                raise error
+            if portable is not None:
+                reply = lane.codec(self.identity, self.schemas, 'read', data=provider(), fields=fields)
+            else:
+                packet = result_packet(raw) if raw is not None else provider()
+                reply = lane.codec(self.identity, self.schemas, 'input', packet=packet, fields=fields)
+            return reply['canonical']
+        return self.scheduler.submit_read((self.identity, 'command-use', version.identity), read).result()
 
     def metrics(self):
         with self._lock:
