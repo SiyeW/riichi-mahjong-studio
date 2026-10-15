@@ -7,6 +7,7 @@ import { _electron as electron, chromium } from 'playwright'
 import { checkWorkspaceDock } from './check-workspace-dock.mjs'
 import { checkReplayWorkflow } from './check-replay-workflow.mjs'
 import { checkRendererRecovery } from './check-renderer-recovery.mjs'
+import { checkDiscardMotion } from './check-discard-motion.mjs'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
 const root = path.resolve(import.meta.dirname, '..')
@@ -356,6 +357,10 @@ try {
   await page.locator('.settings-modal').waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.analysisCheck.settingsSaves.at(-1).records.analysisCacheMiB), 64)
   uiChecks: {
+  if (process.env.RMS_UI_DISCARD_ONLY) {
+    await checkDiscardMotion(page)
+    break uiChecks
+  }
   if (!performanceOnly) {
   await page.evaluate(() => {
     window.analysisCheck.vm.closeState.active = true
@@ -2027,6 +2032,7 @@ try {
   assert.equal(reverseDiscardFlight.duringFlight.returnedSlotHidden, true, 'the returned hand slot stays hidden during its reverse flight')
   assert.equal(reverseDiscardFlight.afterFlight.ghost, false, 'the returning ghost is removed after it reaches the hand')
   assert.equal(reverseDiscardFlight.afterFlight.returnedSlotHidden, false, 'the restored hand tile becomes visible after the reverse flight')
+  await checkDiscardMotion(page)
   if (process.env.RMS_COUNT_BASELINE_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_COUNT_BASELINE_SCREENSHOT })
   }
@@ -3208,7 +3214,8 @@ try {
   }
   }
   assert.deepEqual(errors, [])
-  console.log(process.env.RMS_UI_RECORD_IO_ONLY ? 'Record I/O UI checks passed.' : performanceOnly
+  console.log(process.env.RMS_UI_DISCARD_ONLY ? 'Discard motion and wheel-progress checks passed.'
+    : process.env.RMS_UI_RECORD_IO_ONLY ? 'Record I/O UI checks passed.' : performanceOnly
     ? 'Analysis UI performance scenario passed.'
     : 'Analysis UI: events, hover, navigation motion, cache, geometry, artwork and workspace docking passed.')
 } catch (error) {

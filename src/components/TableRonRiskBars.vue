@@ -91,6 +91,11 @@ interface RonRiskCanvasGeometry {
 }
 
 let renderGeometry: RonRiskCanvasGeometry | null = null
+let measuredStructure = ''
+
+function structureKey() {
+  return `${props.visible}:` + props.slots.map(slot => `${Number(slot.isDrawn)}${Number(slot.isGap)}:${slot.risks.map(risk => risk.key).join(',')}`).join(';')
+}
 
 function targetScales(): number[][] {
   return props.slots.map(slot => (
@@ -153,6 +158,7 @@ function measureGeometry() {
     })
   }).filter((track): track is CanvasBox & { color: string } => Boolean(track))
   renderGeometry = { width, height, thresholdLine, tracks }
+  measuredStructure = structureKey()
 }
 
 function render() {
@@ -262,7 +268,7 @@ useResponsiveGeometry(rootElement, updateGeometry, {
 
 watch(() => [props.slots, props.adaptiveMax, props.showThreshold, props.visible, props.reduceMotion], () => {
   void nextTick(() => {
-    measureGeometry()
+    if (!renderGeometry || measuredStructure !== structureKey()) measureGeometry()
     animate()
   })
 }, { immediate: true, flush: 'post' })

@@ -373,10 +373,13 @@ function updateCanvasGeometry() {
 useResponsiveGeometry(sectionElement, updateCanvasGeometry, { styleAncestorSelector: '.dock-module' })
 watch(() => [props.analysis, props.controlledSeat, props.dealer, props.reduceMotion, props.perceptualSurface], () => {
   void nextTick(() => {
-    measureCanvasGeometry()
+    if (!canvasGeometry) measureCanvasGeometry()
     animateCanvas()
   })
 }, { immediate: true, flush: 'post' })
+watch(() => [props.controlledSeat, props.perceptualSurface], () => {
+  void nextTick(updateCanvasGeometry)
+}, { flush: 'post' })
 onBeforeUnmount(stopCanvasAnimation)
 
 function deltaBarStyle(value: number | null) {

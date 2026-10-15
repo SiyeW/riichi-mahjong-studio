@@ -458,12 +458,18 @@ const scheduleCountBarGeometry = useResponsiveGeometry(countGridElement, () => {
   renderCountCanvases()
 }, { resizeAncestorSelector: '.analysis-tiles-view', styleAncestorSelector: '.dock-module' })
 function setCountCanvasElement(key: string, row: readonly string[], element: unknown) {
+  if (countCanvasElements.get(key)?.canvas === element) return
   if (!(element instanceof HTMLCanvasElement)) countCanvasElements.delete(key)
   else countCanvasElements.set(key, { canvas: element as CountCanvasElement, row })
   scheduleCountBarGeometry()
 }
 
 function setSourceCanvasElement(key: string, source: TileSource, element: unknown) {
+  const existing = sourceCanvasElements.get(key)
+  if (existing && existing.canvas === element) {
+    existing.source = source
+    return
+  }
   if (!(element instanceof HTMLCanvasElement)) sourceCanvasElements.delete(key)
   else sourceCanvasElements.set(key, { canvas: element as CountCanvasElement, source })
   scheduleCountBarGeometry()
@@ -548,10 +554,15 @@ watch(() => [props.analysis, props.table, props.controlledSeat, props.reduceMoti
     || !hasCountPrediction(countHoverTooltip.value.prediction)
   )) clearCountTooltip()
   void nextTick(() => {
-    scheduleCountBarGeometry()
     animateCountCanvases()
   })
 }, { flush: 'post', immediate: true })
+// Prediction changes do not change the chart's layout. Measure again only
+// when its actual tile/source structure or legend text changes (plus resize).
+watch([
+  () => countSourceTiles.value.map(entry => entry.tile).join(','),
+  () => countSources.value.map(source => `${source.key}:${source.label}`).join(','),
+], scheduleCountBarGeometry, { flush: 'post' })
 watch(theoreticalBaselineAvailable, (available) => {
   if (!available) theoreticalBaselineEnabled.value = false
 })

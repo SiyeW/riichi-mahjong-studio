@@ -1405,7 +1405,9 @@ const {
 })
 
 function registerTreeScrollElement(element: Element | null) {
-  treeScrollEl.value = element instanceof HTMLElement ? element : null
+  const next = element instanceof HTMLElement ? element : null
+  if (treeScrollEl.value === next) return
+  treeScrollEl.value = next
   if (treeScrollEl.value) void nextTick(updateTreeViewport)
 }
 

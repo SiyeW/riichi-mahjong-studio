@@ -110,14 +110,16 @@ export function useVirtualizedTreeViewport<
     const currentDot = options.currentDot()
     if (!container || !currentDot) return
     const padding = 18
-    const viewTop = container.scrollTop
-    const viewBottom = viewTop + container.clientHeight
+    const viewTop = viewport.top
+    const height = viewport.height
+    if (height <= 0) return
+    const viewBottom = viewTop + height
     const dotTop = currentDot.y - padding
     const dotBottom = currentDot.y + padding
     if (dotTop < viewTop) {
       container.scrollTop = Math.max(0, dotTop)
     } else if (dotBottom > viewBottom) {
-      container.scrollTop = Math.max(0, dotBottom - container.clientHeight)
+      container.scrollTop = Math.max(0, dotBottom - height)
     }
   }
 
@@ -155,7 +157,6 @@ export function useVirtualizedTreeViewport<
     options.currentNodeId,
     async () => {
       await nextTick()
-      updateTreeViewport()
       if (!autoFollowSuspended) keepCurrentTreeDotVisible()
     },
   )

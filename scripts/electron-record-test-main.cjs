@@ -16,13 +16,23 @@ backendModule.createBackendService = options => {
     global.recordDesktopTest.lastSaveToken = token
     return token
   }
+  if (process.env.RMS_RECORD_MOTION_PROFILE) {
+    const jump = backend.backendGateway.jumpToNode
+    backend.backendGateway.jumpToNode = async (...args) => {
+      const start = performance.now()
+      const result = await jump(...args)
+      global.recordDesktopTest.navigation.push({ requested: args[0], returned: result.view.currentNodeId,
+        milliseconds: performance.now() - start })
+      return result
+    }
+  }
   return backend
 }
 const storeModule = require('../electron/main/state/game-file-store')
 const createStore = storeModule.createGameFileStore
 storeModule.createGameFileStore = () => createStore(directory)
 
-global.recordDesktopTest = { dialogs: [], nextOpen: path.join(directory, 'records', 'example-record.mjstudio') }
+global.recordDesktopTest = { dialogs: [], navigation: [], nextOpen: path.join(directory, 'records', 'example-record.mjstudio') }
 dialog.showOpenDialog = async (_window, options) => {
   global.recordDesktopTest.dialogs.push({ type: 'open', defaultPath: options.defaultPath })
   const file = global.recordDesktopTest.nextOpen
@@ -41,7 +51,9 @@ app.on('browser-window-created', (_event, window) => {
   window.setSkipTaskbar(true)
   window.setOpacity(0)
   window.webContents.setBackgroundThrottling(false)
-  window.show = () => {}
+  // Motion profiling needs a foreground-renderable surface; keep it fully
+  // transparent and non-focusable, so it never takes over the user's desktop.
+  window.show = process.env.RMS_RECORD_MOTION_PROFILE ? () => window.showInactive() : () => {}
   window.maximize = () => {}
 })
 require(path.join(root, 'electron', 'main', 'index.js'))

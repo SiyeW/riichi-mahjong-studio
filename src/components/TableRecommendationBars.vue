@@ -77,6 +77,11 @@ const canvasElement = ref<RecommendationCanvasElement | null>(null)
 let geometry: CanvasGeometry | null = null
 let displayedValues: number[] = []
 let animationFrame = 0
+let measuredStructure = ''
+
+function structureKey() {
+  return props.slots.map(slot => `${Number(slot.isDrawn)}${Number(slot.isGap)}`).join(',')
+}
 
 function targetValues(): number[] {
   return props.slots.map(slot => Math.max(0, Math.min(1, Number(slot.value) || 0)))
@@ -121,6 +126,7 @@ function measureGeometry() {
     emptyColor: rootStyle.getPropertyValue('--bar-empty-bg').trim(),
     fillColor: rootStyle.getPropertyValue('--decision-recommendation-color').trim(),
   }
+  measuredStructure = structureKey()
 }
 
 function render() {
@@ -206,7 +212,7 @@ useResponsiveGeometry(rootElement, updateGeometry, {
 
 watch(() => [props.slots, props.visible, props.reduceMotion], () => {
   void nextTick(() => {
-    measureGeometry()
+    if (!geometry || measuredStructure !== structureKey()) measureGeometry()
     animate()
   })
 }, { immediate: true, flush: 'post' })

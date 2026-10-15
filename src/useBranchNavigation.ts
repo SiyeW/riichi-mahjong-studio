@@ -1,5 +1,5 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
-import { sameViewRequestContext } from './analysisPosition'
+import { sameViewRequestContext, sameViewRequestScope } from './analysisPosition'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
 import { recordCommandScope } from './recordCommandScope.ts'
 import type { GameTreeNode, GameView, GameViewTransitionDirection, RoundSummary } from './contracts/game'
@@ -63,8 +63,12 @@ let wheelNavigationQueuedDirection: GameViewTransitionDirection | null = null
 let wheelNavigationRequestInFlight = false
 let wheelNavigationGeneration = 0
 let latestNavigationIntentId = 0
+let wheelNavigationEpoch = 0
+let wheelNavigationDirection: GameViewTransitionDirection | null = null
 
 function cancelPendingWheelNavigation() {
+  wheelNavigationEpoch += 1
+  wheelNavigationDirection = null
   wheelNavigationQueuedNodeId = null
   wheelNavigationQueuedDirection = null
   wheelNavigationGeneration = 0
@@ -238,6 +242,7 @@ async function dispatchQueuedWheelNavigation() {
   const nodeId = wheelNavigationQueuedNodeId
   const transitionDirection = wheelNavigationQueuedDirection ?? resolveNodeTransitionDirection(nodeId)
   const generation = wheelNavigationGeneration
+  const epoch = wheelNavigationEpoch
   const requestContext = currentViewRequestContext()
   wheelNavigationQueuedNodeId = null
   wheelNavigationQueuedDirection = null
@@ -245,8 +250,11 @@ async function dispatchQueuedWheelNavigation() {
 
   try {
     const response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision, generation)
-    if (generation !== wheelNavigationGeneration || generation !== latestNavigationIntentId
-      || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
+    // Keep making visible progress during a same-direction wheel burst, even
+    // when another wheel target queued before this reply. Reversal, explicit
+    // jumps and record/seat/mode changes still invalidate the old burst.
+    if (epoch !== wheelNavigationEpoch
+      || !sameViewRequestScope(requestContext, currentViewRequestContext())) return
     applyStatus(response.state)
     applyGameView(response.view, transitionDirection)
   } catch (error) {
@@ -256,6 +264,7 @@ async function dispatchQueuedWheelNavigation() {
     wheelNavigationRequestInFlight = false
     if (generation === wheelNavigationGeneration && !wheelNavigationQueuedNodeId) {
       wheelNavigationGeneration = 0
+      wheelNavigationDirection = null
       wheelNavigationCursorNodeId = gameView.currentNodeId
     }
     if (wheelNavigationQueuedNodeId) {
@@ -309,6 +318,8 @@ function navigateTreeByOffset(offset: number) {
     transitionDirection = 'forward'
   }
 
+  if (wheelNavigationDirection && wheelNavigationDirection !== transitionDirection) wheelNavigationEpoch += 1
+  wheelNavigationDirection = transitionDirection
   wheelNavigationCursorNodeId = targetNodeId
   wheelNavigationGeneration = ++latestNavigationIntentId
   expectAnalysisVisit(wheelNavigationGeneration, targetNodeId)

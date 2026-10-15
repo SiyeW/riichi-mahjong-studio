@@ -12,8 +12,11 @@ export type ViewRequestContext = {
   intent: number
 }
 
-export function sameViewRequestContext(before: ViewRequestContext, current: ViewRequestContext): boolean {
+export function sameViewRequestScope(before: ViewRequestContext, current: ViewRequestContext): boolean {
   return before.sessionId === current.sessionId && before.gameId === current.gameId && before.seat === current.seat
     && before.mode === current.mode && before.generation === current.generation
-    && before.intent === current.intent
+}
+
+export function sameViewRequestContext(before: ViewRequestContext, current: ViewRequestContext): boolean {
+  return sameViewRequestScope(before, current) && before.intent === current.intent
 }

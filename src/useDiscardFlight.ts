@@ -29,11 +29,15 @@ export function useDiscardFlight(options: {
 
 let pendingDiscardFlightFrame = 0
 let pendingDiscardFlightAnimation: Animation | null = null
+let pendingDiscardFlightEffects: Animation[] = []
+let pendingDiscardFlightGeneration = 0
 let pendingDiscardFlightBackOverlay: HTMLElement | null = null
 let pendingDiscardFlightRegularPose: HTMLElement | null = null
 let pendingDiscardFlightTarget: HTMLElement | null = null
 let pendingDiscardReturnFrame = 0
 let pendingDiscardReturnAnimation: Animation | null = null
+let pendingDiscardReturnEffects: Animation[] = []
+let pendingDiscardReturnGeneration = 0
 let pendingDiscardReturnGhost: HTMLElement | null = null
 let pendingDiscardReturnDestination: HTMLElement | null = null
 let autoAdvanceMotionNotBefore = 0
@@ -56,12 +60,16 @@ function pendingDiscardSignature(pending: PendingDiscardView | null): string {
 }
 
 function cancelPendingDiscardFlight() {
+  pendingDiscardFlightGeneration += 1
   if (pendingDiscardFlightFrame) {
     cancelAnimationFrame(pendingDiscardFlightFrame)
     pendingDiscardFlightFrame = 0
   }
+  if (pendingDiscardFlightAnimation) pendingDiscardFlightAnimation.onfinish = null
   pendingDiscardFlightAnimation?.cancel()
   pendingDiscardFlightAnimation = null
+  pendingDiscardFlightEffects.forEach(animation => animation.cancel())
+  pendingDiscardFlightEffects = []
   pendingDiscardFlightBackOverlay?.remove()
   pendingDiscardFlightBackOverlay = null
   pendingDiscardFlightRegularPose?.remove()
@@ -72,6 +80,8 @@ function cancelPendingDiscardFlight() {
 }
 
 function clearPendingDiscardReturnFlight() {
+  pendingDiscardReturnEffects.forEach(animation => animation.cancel())
+  pendingDiscardReturnEffects = []
   pendingDiscardReturnGhost?.remove()
   pendingDiscardReturnDestination?.style.removeProperty('visibility')
   pendingDiscardReturnGhost = null
@@ -79,10 +89,12 @@ function clearPendingDiscardReturnFlight() {
 }
 
 function cancelPendingDiscardReturnFlight() {
+  pendingDiscardReturnGeneration += 1
   if (pendingDiscardReturnFrame) {
     cancelAnimationFrame(pendingDiscardReturnFrame)
     pendingDiscardReturnFrame = 0
   }
+  if (pendingDiscardReturnAnimation) pendingDiscardReturnAnimation.onfinish = null
   pendingDiscardReturnAnimation?.cancel()
   pendingDiscardReturnAnimation = null
   clearPendingDiscardReturnFlight()
@@ -111,18 +123,17 @@ function createDiscardFlightBackOverlay(
   overlay.setAttribute('aria-hidden', 'true')
   overlay.style.width = sourceStyle.width
   overlay.style.height = sourceStyle.height
-  overlay.style.left = `${sourceImage.offsetLeft}px`
+  // Preserve right alignment in CSS: offsetLeft rounds fractional tile widths
+  // and makes the upper player's face/back edges separate during the fade.
+  const rightAligned = sourceStyle.cssFloat === 'right' && sourceStyle.position !== 'absolute'
+  overlay.style.left = rightAligned ? 'auto' : `${sourceImage.offsetLeft}px`
   overlay.style.top = `${sourceImage.offsetTop}px`
-  overlay.style.right = 'auto'
+  overlay.style.right = rightAligned ? '0px' : 'auto'
   overlay.style.bottom = 'auto'
   overlay.style.transform = sourceStyle.transform
   overlay.style.transformOrigin = sourceStyle.transformOrigin
   overlay.style.opacity = `${initialOpacity}`
   tile.appendChild(overlay)
-  const sourceRect = sourceImage.getBoundingClientRect()
-  const overlayRect = overlay.getBoundingClientRect()
-  overlay.style.left = `${sourceImage.offsetLeft + sourceRect.left - overlayRect.left}px`
-  overlay.style.top = `${sourceImage.offsetTop + sourceRect.top - overlayRect.top}px`
   return overlay
 }
 
@@ -133,7 +144,7 @@ function animateDiscardBackOverlay(
 ) {
   const visible = direction === 'reveal' ? '1' : '0'
   const hidden = direction === 'reveal' ? '0' : '1'
-  overlay.animate(
+  return overlay.animate(
     [
       { opacity: hidden, offset: 0 },
       { opacity: hidden, offset: 0.2 },
@@ -192,7 +203,7 @@ function animateDiscardPoseSwap(
 ) {
   const regularVisible = direction === 'settle' ? '1' : '0'
   const regularHidden = direction === 'settle' ? '0' : '1'
-  regularPose.animate(
+  const regularAnimation = regularPose.animate(
     [
       { opacity: regularVisible, offset: 0 },
       { opacity: regularVisible, offset: 0.2 },
@@ -201,7 +212,7 @@ function animateDiscardPoseSwap(
     ],
     { duration, easing: 'linear', fill: 'forwards' },
   )
-  settledImage.animate(
+  const settledAnimation = settledImage.animate(
     [
       { opacity: regularHidden, offset: 0 },
       { opacity: regularHidden, offset: 0.2 },
@@ -210,6 +221,7 @@ function animateDiscardPoseSwap(
     ],
     { duration, easing: 'linear', fill: 'forwards' },
   )
+  return [regularAnimation, settledAnimation]
 }
 
 function preparePendingDiscardReturnFlight(seat: number): PendingDiscardReturnFlight | null {
@@ -305,9 +317,11 @@ function resolvePendingDiscardReturnDestination(flight: PendingDiscardReturnFlig
 }
 
 function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) {
+  const generation = ++pendingDiscardReturnGeneration
   pendingDiscardReturnGhost = flight.ghost
   pendingDiscardReturnDestination = flight.destination
   void nextTick(() => {
+    if (generation !== pendingDiscardReturnGeneration) return
     pendingDiscardReturnFrame = requestAnimationFrame(() => {
       pendingDiscardReturnFrame = 0
       if (!flight.ghost.isConnected) {
@@ -324,10 +338,10 @@ function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) 
       const duration = getUiMotionDurationMs()
       const easing = getUiMotionEasing()
       if (flight.backOverlay) {
-        animateDiscardBackOverlay(flight.backOverlay, 'reveal', duration)
+        pendingDiscardReturnEffects = [animateDiscardBackOverlay(flight.backOverlay, 'reveal', duration)]
       }
       if (flight.regularPose && flight.settledImage) {
-        animateDiscardPoseSwap(flight.regularPose, flight.settledImage, 'restore', duration)
+        pendingDiscardReturnEffects = animateDiscardPoseSwap(flight.regularPose, flight.settledImage, 'restore', duration)
       }
       pendingDiscardReturnAnimation = flight.ghost.animate(
         [
@@ -337,6 +351,7 @@ function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) 
         { duration, easing, fill: 'forwards' },
       )
       pendingDiscardReturnAnimation.onfinish = () => {
+        if (generation !== pendingDiscardReturnGeneration) return
         pendingDiscardReturnAnimation = null
         // Keep the exact endpoint visible for one paint before revealing the hand tile.
         pendingDiscardReturnFrame = requestAnimationFrame(() => {
@@ -346,16 +361,15 @@ function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) 
           })
         })
       }
-      pendingDiscardReturnAnimation.oncancel = () => {
-        pendingDiscardReturnAnimation = null
-      }
     })
   })
 }
 
 function schedulePendingDiscardFlight(seat: number) {
   if (reduceMotionEnabled.value) return
+  const generation = ++pendingDiscardFlightGeneration
   void nextTick(() => {
+    if (generation !== pendingDiscardFlightGeneration) return
     const gap = document.querySelector<HTMLElement>(`[data-hand-gap-seat="${seat}"]`)
     const target = document.querySelector<HTMLElement>(`[data-pending-discard-seat="${seat}"]`)
     const targetTile = target?.querySelector<HTMLElement>('.tileImg')
@@ -402,10 +416,10 @@ function schedulePendingDiscardFlight(seat: number) {
       const finalTransform = getComputedStyle(target).transform
       const settledTransform = finalTransform === 'none' ? 'translate(0px, 0px)' : finalTransform
       if (backOverlay) {
-        animateDiscardBackOverlay(backOverlay, 'hide', duration)
+        pendingDiscardFlightEffects = [animateDiscardBackOverlay(backOverlay, 'hide', duration)]
       }
       if (regularPose) {
-        animateDiscardPoseSwap(regularPose, targetTile, 'settle', duration)
+        pendingDiscardFlightEffects = animateDiscardPoseSwap(regularPose, targetTile, 'settle', duration)
       }
 
       pendingDiscardFlightAnimation = target.animate(
@@ -415,18 +429,16 @@ function schedulePendingDiscardFlight(seat: number) {
         ],
         { duration, easing },
       )
-      pendingDiscardFlightAnimation.pause()
-      pendingDiscardFlightAnimation.currentTime = 0
+      // Face, pose and translation start together on this frame. Pausing only
+      // translation lets the face change before the tile even leaves the hand.
       target.style.removeProperty('visibility')
-      pendingDiscardFlightFrame = requestAnimationFrame(() => {
-        pendingDiscardFlightFrame = 0
-        if (!target.isConnected || pendingDiscardFlightAnimation === null) return
-        holdAutoAdvanceForTableMotion(duration)
-        scheduleAutoAdvance()
-        pendingDiscardFlightAnimation.play()
-      })
+      holdAutoAdvanceForTableMotion(duration)
+      scheduleAutoAdvance()
       pendingDiscardFlightAnimation.onfinish = () => {
+        if (generation !== pendingDiscardFlightGeneration) return
         pendingDiscardFlightAnimation = null
+        pendingDiscardFlightEffects.forEach(animation => animation.cancel())
+        pendingDiscardFlightEffects = []
         backOverlay?.remove()
         regularPose?.remove()
         if (pendingDiscardFlightBackOverlay === backOverlay) {
@@ -440,22 +452,6 @@ function schedulePendingDiscardFlight(seat: number) {
           pendingDiscardFlightTarget = null
         }
         scheduleAutoAdvance()
-      }
-      pendingDiscardFlightAnimation.oncancel = () => {
-        pendingDiscardFlightAnimation = null
-        backOverlay?.remove()
-        regularPose?.remove()
-        if (pendingDiscardFlightBackOverlay === backOverlay) {
-          pendingDiscardFlightBackOverlay = null
-        }
-        if (pendingDiscardFlightRegularPose === regularPose) {
-          pendingDiscardFlightRegularPose = null
-        }
-        target.style.removeProperty('visibility')
-        if (pendingDiscardFlightTarget === target) {
-          target.style.removeProperty('will-change')
-          pendingDiscardFlightTarget = null
-        }
       }
     })
   })

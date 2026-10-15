@@ -238,9 +238,10 @@ function animateRiskCanvases() {
 }
 
 function setRiskCanvasElement(key: string, element: unknown) {
+  if (riskCanvasElements.get(key)?.canvas === element) return
   if (!(element instanceof HTMLCanvasElement)) riskCanvasElements.delete(key)
   else riskCanvasElements.set(key, { canvas: element as RiskCanvasElement, row: tileRows.find(row => row[0] === key) || [] })
-  renderRiskCanvases()
+  scheduleRiskGeometry()
 }
 
 function updateRiskGeometry() {
@@ -277,7 +278,7 @@ function updateRiskGeometry() {
   renderRiskCanvases()
 }
 
-useResponsiveGeometry(riskGridElement, updateRiskGeometry, {
+const scheduleRiskGeometry = useResponsiveGeometry(riskGridElement, updateRiskGeometry, {
   resizeAncestorSelector: '.analysis-tiles-view',
   styleAncestorSelector: '.dock-module',
 })

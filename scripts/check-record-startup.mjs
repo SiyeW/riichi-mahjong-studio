@@ -25,9 +25,13 @@ async function launch() {
   const page = await application.firstWindow()
   page.setDefaultTimeout(30_000)
   page.on('pageerror', error => errors.push(error.message))
+  if (process.env.RMS_RECORD_MOTION_PROFILE) page.on('console', message => {
+    if (message.type() === 'error') console.error(message.text())
+  })
   await page.locator('.shell:not(.tile-artwork-pending)').waitFor()
   await page.locator('.record-operation-overlay').waitFor({ state: 'hidden' })
-  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false)
+  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), Boolean(process.env.RMS_RECORD_MOTION_PROFILE))
+  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()), false)
   return page
 }
 async function closeWindow() {
@@ -55,6 +59,65 @@ try {
     initial.view.currentNodeId)
   assert.equal(await page.locator('[inert]').count(), 0)
   assert.equal(JSON.parse(await fs.readFile(path.join(recovery, 'legacy-migration.json'), 'utf8')).version, 1)
+
+  if (process.env.RMS_RECORD_MOTION_PROFILE) {
+    const client = await page.context().newCDPSession(page)
+    await client.send('Performance.enable')
+    await client.send('Profiler.enable')
+    await client.send('Profiler.start')
+    const traceEvents = []
+    if (process.env.RMS_RECORD_MOTION_TRACE) {
+      client.on('Tracing.dataCollected', ({ value }) => traceEvents.push(...value))
+      await client.send('Tracing.start', { categories: 'devtools.timeline,blink,cc', transferMode: 'ReportEvents' })
+    }
+    const before = await client.send('Performance.getMetrics')
+    const motion = await page.evaluate(async () => {
+      const frameTimes = [], visits = [], longTasks = [], zooms = new Set()
+      const vm = document.querySelector('#app').__vue_app__._instance.setupState
+      const initial = { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode }
+      const observer = new PerformanceObserver(list => longTasks.push(...list.getEntries().map(({ startTime, duration }) => ({ startTime, duration }))))
+      observer.observe({ type: 'longtask' })
+      let active = true
+      const sample = now => {
+        frameTimes.push(now)
+        zooms.add(vm.tableZoom)
+        if (visits.at(-1) !== vm.gameView.currentNodeId) visits.push(vm.gameView.currentNodeId)
+        if (active) requestAnimationFrame(sample)
+      }
+      requestAnimationFrame(sample)
+      for (const direction of [-1, 1]) for (let i = 0; i < 20; i++) {
+        document.querySelector('.grid-main').dispatchEvent(new WheelEvent('wheel', { deltaY: direction * 100, bubbles: true, cancelable: true }))
+        await new Promise(resolve => setTimeout(resolve, 80))
+      }
+      await new Promise(resolve => setTimeout(resolve, 350))
+      active = false
+      observer.disconnect()
+      const intervals = frameTimes.slice(1).map((time, index) => time - frameTimes[index]).sort((a, b) => a - b)
+      return { initial, final: { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode },
+        backendNode: (await window.studioAPI.getGameView()).view.currentNodeId,
+        zooms: [...zooms], visits: visits.length, frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
+        p95: intervals[Math.floor(intervals.length * .95)], max: intervals.at(-1), longTasks }
+    })
+    const after = await client.send('Performance.getMetrics')
+    const { profile } = await client.send('Profiler.stop')
+    if (process.env.RMS_RECORD_MOTION_TRACE) {
+      const complete = new Promise(resolve => client.once('Tracing.tracingComplete', resolve))
+      await client.send('Tracing.end')
+      await complete
+    }
+    await client.detach()
+    const first = Object.fromEntries(before.metrics.map(({ name, value }) => [name, value]))
+    const work = Object.fromEntries(after.metrics.filter(({ name }) => /Duration|Count/.test(name))
+      .map(({ name, value }) => [name, value - (first[name] || 0)]))
+    const totals = new Map()
+    profile.samples.forEach((id, index) => totals.set(id, (totals.get(id) || 0) + profile.timeDeltas[index]))
+    const hotFunctions = profile.nodes.map(node => ({ ...node.callFrame, milliseconds: (totals.get(node.id) || 0) / 1000 }))
+      .sort((a, b) => b.milliseconds - a.milliseconds).slice(0, 35)
+    const navigation = await application.evaluate(() => global.recordDesktopTest.navigation)
+    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, hotFunctions, profile, navigation, traceEvents }))
+    console.log(JSON.stringify({ motion, work, navigation }))
+    assert.ok(motion.visits >= 10, 'the motion probe must observe actual renderer frame commits')
+  }
 
   await page.locator('.toolbar').getByRole('button', { name: '关闭', exact: true }).click()
   await page.locator('.toolbar').getByRole('button', { name: '丢弃', exact: true }).click()

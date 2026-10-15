@@ -56,7 +56,12 @@ export function createAnalysisVisitInbox() {
 
   function commit(token: AnalysisViewToken | null | undefined) {
     if (!token) { reset(); return }
+    const intermediateWheelVisit = expected && committed?.sessionId === token.sessionId
+      && token.intent < expected.intent
     committed = token
+    // A completed intermediate table may be painted while the wheel's next
+    // target is pending. Keep that target and its early result authoritative.
+    if (intermediateWheelVisit) return
     expected = null
     invalidated = false
     replacing = false

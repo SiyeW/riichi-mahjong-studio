@@ -32,6 +32,18 @@ test('ABA visits and a newer wheel target never accept an obsolete result', () =
   assert.deepEqual(applied, ['new A'])
 })
 
+test('an intermediate wheel table preserves the newer pending analysis delivery', () => {
+  const inbox = createAnalysisVisitInbox(), applied: string[] = []
+  inbox.commit(token(1))
+  inbox.expect(3, 'C')
+  inbox.receive('opponent', token(3, 'C'), () => applied.push('C'))
+  inbox.commit(token(2, 'B'))
+  inbox.receive('opponent', token(2, 'B'), () => applied.push('late B'))
+  assert.deepEqual(applied, [])
+  inbox.commit(token(3, 'C'))
+  assert.deepEqual(applied, ['C'])
+})
+
 test('only the latest early delivery per kind is retained; new sessions invalidate it', () => {
   const inbox = createAnalysisVisitInbox(), applied: number[] = []
   inbox.commit(token(1))

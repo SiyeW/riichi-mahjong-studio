@@ -86,8 +86,11 @@ function updateAdaptiveButtonGrid(element: HTMLElement, options: AdaptiveButtonG
     gap,
     options,
   )
-  element.style.setProperty('--adaptive-button-columns', String(columns))
-  element.dataset.adaptiveColumns = String(columns)
+  const value = String(columns)
+  if (element.style.getPropertyValue('--adaptive-button-columns') !== value) {
+    element.style.setProperty('--adaptive-button-columns', value)
+  }
+  if (element.dataset.adaptiveColumns !== value) element.dataset.adaptiveColumns = value
 }
 
 function scheduleAdaptiveButtonGrid(element: HTMLElement) {
@@ -116,7 +119,13 @@ export const vAdaptiveButtonGrid: ObjectDirective<HTMLElement, AdaptiveButtonGri
   updated(element, binding) {
     const state = adaptiveButtonGridStates.get(element)
     if (!state) return
+    const previous = state.options
     state.options = binding.value
+    if (previous.spanLastWhenIncomplete === binding.value.spanLastWhenIncomplete
+      && previous.columns.length === binding.value.columns.length
+      && previous.columns.every((value, index) => value === binding.value.columns[index])) return
+    // Text changes and resizing have their own observers. A parent rerender
+    // with an equivalent inline options object does not require measurement.
     scheduleAdaptiveButtonGrid(element)
   },
   unmounted(element) {
