@@ -1,4 +1,5 @@
-// Full production entrypoint, isolated files/dialogs and a non-interactive window.
+// Full production entrypoint and isolated files/dialogs. Normal interactive
+// surfaces require explicit opt-in; ordinary correctness tests stay invisible.
 const path = require('node:path')
 const { app, dialog, screen } = require('electron')
 const directory = process.env.RMS_RECORD_DESKTOP_TEST_DIR
@@ -51,21 +52,28 @@ app.on('browser-window-created', (_event, window) => {
   const visibleMotion = Boolean(process.env.RMS_RECORD_MOTION_PROFILE)
     && process.env.RMS_RECORD_MOTION_VISIBLE === '1'
   const focusedMotion = visibleMotion && process.env.RMS_RECORD_MOTION_FOCUSED === '1'
+  const nativeSurface = focusedMotion && process.env.RMS_RECORD_MOTION_NATIVE_SURFACE === '1'
+  global.recordDesktopTest.surfaceMode = nativeSurface ? 'native'
+    : visibleMotion ? 'layered-diagnostic' : 'invisible-correctness'
   // Ordinary record tests stay invisible; focused performance testing needs a
   // second explicit opt-in and current user authority. Never show on the taskbar.
   window.setFocusable(focusedMotion)
-  window.setSkipTaskbar(true)
-  window.setOpacity(visibleMotion ? 1 : 0)
+  if (!nativeSurface) {
+    window.setSkipTaskbar(true)
+    window.setOpacity(visibleMotion ? 1 : 0)
+  }
   if (visibleMotion) {
     window.setBounds(screen.getPrimaryDisplay().workArea)
-    window.setIgnoreMouseEvents(true)
+    if (!nativeSurface) window.setIgnoreMouseEvents(true)
   }
   window.webContents.setBackgroundThrottling(false)
   // Motion profiling needs a renderable surface; keep it non-focusable.
   // Opaque display testing is explicit opt-in and uses no native
   // desktop-control tool. Hidden/transparent results are not displayed FPS.
+  const show = window.show.bind(window)
   window.show = process.env.RMS_RECORD_MOTION_PROFILE ? () => {
-    window.showInactive()
+    if (nativeSurface) show()
+    else window.showInactive()
     if (focusedMotion) window.focus()
   } : () => {}
   window.maximize = () => {}

@@ -1,4 +1,4 @@
-export const ARTWORK_CACHE_VERSION = 1
+export const ARTWORK_CACHE_VERSION = 2
 const DATABASE_NAME = 'rms-tile-artwork'
 const STORE_NAME = 'faces'
 
@@ -18,10 +18,21 @@ export function sufficientArtwork(
   maximumWidth: number,
 ): entry is CachedTileArtwork {
   return Boolean(entry && entry.version === ARTWORK_CACHE_VERSION && entry.sourceHash === hash
-    && Number.isSafeInteger(entry.pixelWidth) && entry.pixelWidth >= width && entry.pixelWidth <= maximumWidth
-    && entry.pixelHeight === Math.ceil(entry.pixelWidth * 4 / 3)
-    && entry.blob instanceof Blob && entry.blob.type === 'image/svg+xml'
+    && Number.isSafeInteger(entry.pixelWidth) && entry.pixelWidth % 3 === 0
+    && entry.pixelWidth >= width && entry.pixelWidth <= maximumWidth
+    && entry.pixelHeight === entry.pixelWidth * 4 / 3
+    && entry.blob instanceof Blob && entry.blob.type === 'image/png'
     && entry.blob.size > 0 && entry.blob.size <= entry.pixelWidth * entry.pixelHeight * 8 + 1024)
+}
+
+export async function artworkPngHeaderMatches(entry: CachedTileArtwork): Promise<boolean> {
+  // Check dimensions before asking the decoder to allocate a cached image.
+  const bytes = await entry.blob.slice(0, 24).arrayBuffer()
+  if (bytes.byteLength !== 24) return false
+  const header = new DataView(bytes)
+  return header.getUint32(0) === 0x89504e47 && header.getUint32(4) === 0x0d0a1a0a
+    && header.getUint32(8) === 13 && header.getUint32(12) === 0x49484452
+    && header.getUint32(16) === entry.pixelWidth && header.getUint32(20) === entry.pixelHeight
 }
 
 // This is disposable acceleration data, not user content or a close barrier.
@@ -93,28 +104,24 @@ export async function decodeArtwork(src: string): Promise<HTMLImageElement> {
   return image
 }
 
-export async function rasterizeTileArtwork(id: string, sourceHash: string, image: HTMLImageElement, width: number): Promise<CachedTileArtwork> {
-  // Retain the source's intrinsic geometry. CSS padding, inset, corner radius,
-  // brightness and interactive tone remain live and are never baked in.
-  if (image.naturalWidth !== 300 || image.naturalHeight !== 400) throw new Error('Unexpected tile artwork geometry')
-  const height = Math.ceil(width * 4 / 3)
+export function createTileArtworkRasterizer(width: number) {
+  if (width % 3 !== 0) throw new Error('Artwork pixels must preserve the source aspect')
+  const height = width * 4 / 3
   const canvas = new OffscreenCanvas(width, height)
-  const context = canvas.getContext('2d')
+  // Our output is CPU PNG bytes, not a display surface. Avoid a GPU readback
+  // and one graphics resource per face; reuse one bounded scratch buffer.
+  const context = canvas.getContext('2d', { willReadFrequently: true })
   if (!context) throw new Error('Artwork canvas unavailable')
-  context.drawImage(image, 0, 0, width, height)
-  const png = await canvas.convertToBlob({ type: 'image/png' })
-  const data = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result))
-    reader.onerror = () => reject(reader.error)
-    reader.readAsDataURL(png)
-  })
-  // A bitmap-only <img> takes a different intrinsic-fitting/paint path in Blink.
-  // Preserve the original SVG viewport while replacing its expensive paths by
-  // one image. The child's none fit prevents rounded PNG height letterboxing.
-  const blob = new Blob([
-    '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400" viewBox="0 0 300 400">',
-    `<image width="300" height="400" preserveAspectRatio="none" href="${data}"/></svg>`,
-  ], { type: 'image/svg+xml' })
-  return { id, sourceHash, version: ARTWORK_CACHE_VERSION, pixelWidth: width, pixelHeight: height, blob }
+  return {
+    async rasterize(id: string, sourceHash: string, image: HTMLImageElement): Promise<CachedTileArtwork> {
+      // CSS padding, inset, corner radius, brightness and interactive tone stay
+      // live. Only the original face paths enter the cache.
+      if (image.naturalWidth !== 300 || image.naturalHeight !== 400) throw new Error('Unexpected tile artwork geometry')
+      context.clearRect(0, 0, width, height)
+      context.drawImage(image, 0, 0, width, height)
+      const blob = await canvas.convertToBlob({ type: 'image/png' })
+      return { id, sourceHash, version: ARTWORK_CACHE_VERSION, pixelWidth: width, pixelHeight: height, blob }
+    },
+    close() { canvas.width = 0; canvas.height = 0 },
+  }
 }

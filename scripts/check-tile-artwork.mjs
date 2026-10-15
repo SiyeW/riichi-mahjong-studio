@@ -27,6 +27,11 @@ async function launch(options = {}) {
   await page.addInitScript(({ failStorage, failRaster, disposeEarly, busy }) => {
     window.artworkDraws = 0
     window.artworkUrls = new Set()
+    window.artworkCanvases = []
+    const Canvas = OffscreenCanvas
+    window.OffscreenCanvas = class extends Canvas {
+      constructor(width, height) { super(width, height); window.artworkCanvases.push(this) }
+    }
     const draw = OffscreenCanvasRenderingContext2D.prototype.drawImage
     OffscreenCanvasRenderingContext2D.prototype.drawImage = function (...args) {
       window.artworkDraws++
@@ -57,10 +62,12 @@ async function ready(page, label, expectedDraws) {
   await page.waitForFunction(() => [...document.querySelectorAll('.tileImg')].every(image => image.src.startsWith('blob:')))
   await page.waitForFunction(() => window.artworkUrls.size === 40)
   const result = await page.evaluate(() => ({ draws: window.artworkDraws, urls: window.artworkUrls.size,
+    scratchBuffersReleased: window.artworkCanvases.every(canvas => canvas.width === 0 && canvas.height === 0),
     geometry: [...document.querySelectorAll('.tileImg')].map(image => ({ width: image.naturalWidth, height: image.naturalHeight })) }))
   assert.equal(result.draws, expectedDraws, label)
   assert.equal(result.urls, 40, 'one complete known-face generation')
-  assert.ok(result.geometry.every(image => image.width === 300 && image.height === 400), 'original intrinsic geometry')
+  assert.equal(result.scratchBuffersReleased, true, 'finished generations release their shared scratch buffer')
+  assert.ok(result.geometry.every(image => image.width * 4 === image.height * 3), 'original exact intrinsic aspect')
   rounds.push({ label, ...result, geometry: undefined })
 }
 async function damage(page, mutate) {
@@ -73,7 +80,7 @@ async function damage(page, mutate) {
         if (mutate === 'missing') store.delete(entry.id)
         else { if (mutate === 'version') entry.version--
           if (mutate === 'source') entry.sourceHash = 'outdated'
-          if (mutate === 'body') entry.blob = new Blob(['not svg'], { type: 'image/svg+xml' })
+          if (mutate === 'body') entry.blob = new Blob(['not png'], { type: 'image/png' })
           store.put(entry) }
       }
       tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error)
@@ -104,7 +111,7 @@ try {
   assert.equal(await page.evaluate(() => window.artworkDraws), 41, 'shrinking reuses sufficient coverage')
   const client = await page.context().newCDPSession(page)
   if (electronApp) await electronApp.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.setZoomFactor(3))
-  else await client.send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1000, deviceScaleFactor: 3, mobile: false })
+  else await client.send('Emulation.setDeviceMetricsOverride', { width: 1800, height: 1200, deviceScaleFactor: 3, mobile: false })
   try {
     await page.waitForFunction(() => window.devicePixelRatio === 3 && window.artworkDraws === 81)
   } catch (error) {
@@ -123,6 +130,7 @@ try {
   assert.equal(await page.evaluate(() => window.artworkDraws), 81, 'over-budget demand keeps vectors, never blurry cached upscaling')
   await page.evaluate(() => window.artworkTest.unmount())
   await page.waitForFunction(() => window.artworkUrls.size === 0)
+  await page.waitForFunction(() => window.artworkCanvases.every(canvas => canvas.width === 0 && canvas.height === 0))
   await close()
   page = await launch({ failStorage: true })
   await ready(page, 'unavailable storage remains optional', 40)

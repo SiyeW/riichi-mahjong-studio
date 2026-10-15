@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { createServer } from 'vite'
 import { _electron as electron } from 'playwright'
 
@@ -32,7 +33,8 @@ async function launch() {
   await page.locator('.record-operation-overlay').waitFor({ state: 'hidden' })
   assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), Boolean(process.env.RMS_RECORD_MOTION_PROFILE))
   assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()),
-    process.env.RMS_RECORD_MOTION_FOCUSED === '1' && process.env.RMS_RECORD_MOTION_VISIBLE === '1')
+    Boolean(process.env.RMS_RECORD_MOTION_PROFILE && process.env.RMS_RECORD_MOTION_FOCUSED === '1'
+      && process.env.RMS_RECORD_MOTION_VISIBLE === '1'))
   return page
 }
 async function closeWindow() {
@@ -83,12 +85,25 @@ try {
       await page.waitForFunction(() => [...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
         .every(image => image.src.startsWith('blob:')), null, { timeout: 30_000 })
     }
-    const artwork = await page.evaluate(() => ({ pixelRatio: window.devicePixelRatio,
+    const artwork = await page.evaluate(async () => ({ pixelRatio: window.devicePixelRatio,
+      formats: await Promise.all([...new Set([...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
+        .map(image => image.src))].map(async src => (await (await fetch(src)).blob()).type)),
+      minimumBitmapCoverage: Math.min(...[...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
+        .filter(image => image.src.startsWith('blob:')).map(image => {
+          const style = getComputedStyle(image)
+          const width = parseFloat(style.width) - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+          return image.naturalWidth / (width * window.devicePixelRatio)
+        })),
       images: [...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
         .reduce((counts, image) => { counts[image.src.startsWith('blob:') ? 'cached' : 'vector']++; return counts }, { cached: 0, vector: 0 }) }))
+    if (process.env.RMS_RECORD_MOTION_WAIT_ARTWORK === '1') {
+      assert.ok(artwork.formats.every(type => type === 'image/png'), 'every rendered face uses an ordinary cached bitmap')
+      assert.ok(artwork.minimumBitmapCoverage >= 1, 'cached pixels cover actual content demand')
+    }
     const surface = await application.evaluate(({ BrowserWindow, screen }) => {
       const window = BrowserWindow.getAllWindows()[0]
       return { visible: window.isVisible(), focused: window.isFocused(), opacity: window.getOpacity(),
+        mode: global.recordDesktopTest.surfaceMode,
         bounds: window.getBounds(), display: screen.getDisplayMatching(window.getBounds()) }
     })
     const visibility = await page.evaluate(() => document.visibilityState)
@@ -107,7 +122,8 @@ try {
     const traceEvents = []
     if (process.env.RMS_RECORD_MOTION_TRACE) {
       client.on('Tracing.dataCollected', ({ value }) => traceEvents.push(...value))
-      await client.send('Tracing.start', { categories: 'devtools.timeline,blink,cc,benchmark,gpu,viz,disabled-by-default-devtools.timeline.frame', transferMode: 'ReportEvents' })
+      const categories = 'devtools.timeline,blink,cc,benchmark,gpu,viz,disabled-by-default-devtools.timeline.frame'
+      await client.send('Tracing.start', { categories: process.env.RMS_RECORD_MOTION_TRACE_CATEGORIES || categories, transferMode: 'ReportEvents' })
     }
     const before = await client.send('Performance.getMetrics')
     const motion = await page.evaluate(async (pair) => {
@@ -197,8 +213,10 @@ try {
       .sort((a, b) => b.milliseconds - a.milliseconds).slice(0, 35)
     const navigation = await application.evaluate(() => global.recordDesktopTest.navigation)
     await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents,
+      source: { bytes: (await fs.stat(source)).size, sha256: createHash('sha256').update(await fs.readFile(source)).digest('hex') },
       surface: { ...surface, documentVisibility: visibility },
       evidence: { nativeControlUsed: false, overlayState: process.env.RMS_RECORD_MOTION_OVERLAY_STATE || 'unverified',
+        nativeWindowSurface: surface.mode === 'native',
         frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
     const { callbackArrivals, callbackTimelineStamps, ...motionSummary } = motion
     console.log(JSON.stringify({ motion: motionSummary, work, navigation }))

@@ -1,7 +1,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 import { getUiMotionDurationMs } from './uiMotion'
 import { artworkPixelWidth, artworkWidthFitsBudget, maximumArtworkPixelWidth } from './tiles/artworkDemand'
-import { artworkSourceHash, decodeArtwork, openArtworkCache, rasterizeTileArtwork, sufficientArtwork } from './tiles/artworkCache'
+import { artworkPngHeaderMatches, artworkSourceHash, createTileArtworkRasterizer, decodeArtwork, openArtworkCache, sufficientArtwork } from './tiles/artworkCache'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
@@ -47,6 +47,7 @@ export function useTileArtwork(t: Translate, uiScale: Readonly<Ref<number>>) {
   let idleRequest = 0
   let finishIdle: ((ready: boolean) => void) | null = null
   let densityQuery: MediaQueryList | null = null
+  let cacheFailureReported = false
   const fetchController = new AbortController()
   const artworkCache = openArtworkCache()
   const maximumWidth = maximumArtworkPixelWidth(tileArtworkSources.length)
@@ -107,6 +108,7 @@ export function useTileArtwork(t: Translate, uiScale: Readonly<Ref<number>>) {
         let coverage = maximumWidth
         const sources: Record<string, string> = {}
         const images: HTMLImageElement[] = []
+        let rasterizer: ReturnType<typeof createTileArtworkRasterizer> | undefined
         try {
           for (const [id, source] of Object.entries(tileAssetModules)) {
             if (!await waitForQuiet() || width < requestedWidth.value) break
@@ -115,7 +117,8 @@ export function useTileArtwork(t: Translate, uiScale: Readonly<Ref<number>>) {
             const hash = await artworkSourceHash(await response.text())
             let entry = await artworkCache.read(id)
             let url: string | undefined
-            if (sufficientArtwork(entry, hash, width, maximumWidth) && entry.id === id) {
+            if (sufficientArtwork(entry, hash, width, maximumWidth) && entry.id === id && await artworkPngHeaderMatches(entry)) {
+              if (!await waitForQuiet()) break
               url = URL.createObjectURL(entry.blob)
               try { images.push(await decodeArtwork(url)) }
               catch { URL.revokeObjectURL(url); url = undefined }
@@ -123,7 +126,8 @@ export function useTileArtwork(t: Translate, uiScale: Readonly<Ref<number>>) {
             if (!url) {
               const image = await decodeArtwork(source)
               if (!await waitForQuiet()) break
-              entry = await rasterizeTileArtwork(id, hash, image, width)
+              rasterizer ||= createTileArtworkRasterizer(width)
+              entry = await rasterizer.rasterize(id, hash, image)
               url = URL.createObjectURL(entry.blob)
               try { images.push(await decodeArtwork(url)) }
               catch (error) { URL.revokeObjectURL(url); throw error }
@@ -145,11 +149,15 @@ export function useTileArtwork(t: Translate, uiScale: Readonly<Ref<number>>) {
           cachedImages = images
           publishedWidth = coverage
           cachedSources.value = sources
-        } catch {
+        } catch (error) {
           Object.values(sources).forEach(url => URL.revokeObjectURL(url))
           // Optional acceleration must never affect bootstrap or navigation.
+          if (!disposed && !cacheFailureReported) {
+            cacheFailureReported = true
+            console.warn('[tile-artwork] using vector fallback:', error)
+          }
           break
-        }
+        } finally { rasterizer?.close() }
       }
     } finally { preparing = false }
   }

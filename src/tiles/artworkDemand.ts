@@ -2,7 +2,8 @@ import { fittedTableZoom, tableTileWidth } from '../tableGeometry.ts'
 
 // Two generations can coexist briefly during an atomic source-map handoff.
 export const ARTWORK_GENERATION_BYTES = 16 * 1024 * 1024
-export const ARTWORK_SIZE_STEP = 16
+// Divisible by three: every bitmap keeps the original exact 3:4 aspect.
+export const ARTWORK_SIZE_STEP = 24
 
 export function artworkPixelWidth(input: {
   screenWidth: number
