@@ -1,6 +1,6 @@
 // Full production entrypoint, isolated files/dialogs and a non-interactive window.
 const path = require('node:path')
-const { app, dialog } = require('electron')
+const { app, dialog, screen } = require('electron')
 const directory = process.env.RMS_RECORD_DESKTOP_TEST_DIR
 if (!directory) throw new Error('An isolated desktop test directory is required.')
 const root = path.resolve(__dirname, '..')
@@ -46,13 +46,21 @@ dialog.showMessageBox = async (_window, options) => {
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
 app.on('browser-window-created', (_event, window) => {
-  // Never show, focus, maximize or place this test window on the user's taskbar.
+  const visibleMotion = Boolean(process.env.RMS_RECORD_MOTION_PROFILE)
+    && process.env.RMS_RECORD_MOTION_VISIBLE === '1'
+  // Never focus, maximize or place this isolated window on the user's taskbar.
+  // Visible rendering is explicit opt-in; ordinary record tests stay invisible.
   window.setFocusable(false)
   window.setSkipTaskbar(true)
-  window.setOpacity(0)
+  window.setOpacity(visibleMotion ? 1 : 0)
+  if (visibleMotion) {
+    window.setBounds(screen.getPrimaryDisplay().workArea)
+    window.setIgnoreMouseEvents(true)
+  }
   window.webContents.setBackgroundThrottling(false)
-  // Motion profiling needs a foreground-renderable surface; keep it fully
-  // transparent and non-focusable, so it never takes over the user's desktop.
+  // Motion profiling needs a renderable surface; keep it non-focusable.
+  // Opaque display testing is explicit opt-in and uses no native
+  // desktop-control tool. Hidden/transparent results are not displayed FPS.
   window.show = process.env.RMS_RECORD_MOTION_PROFILE ? () => window.showInactive() : () => {}
   window.maximize = () => {}
 })

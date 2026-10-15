@@ -61,7 +61,33 @@ try {
   assert.equal(JSON.parse(await fs.readFile(path.join(recovery, 'legacy-migration.json'), 'utf8')).version, 1)
 
   if (process.env.RMS_RECORD_MOTION_PROFILE) {
+    const pair = process.env.RMS_RECORD_MOTION_PAIR?.split(',')
+    if (pair && (pair.length !== 2 || pair.some(node => !node.trim()))) {
+      throw new Error('RMS_RECORD_MOTION_PAIR must contain previous,next node IDs.')
+    }
+    if (process.env.RMS_RECORD_MOTION_SEAT !== undefined) {
+      const seat = Number(process.env.RMS_RECORD_MOTION_SEAT)
+      assert.ok(Number.isInteger(seat) && seat >= 0 && seat < 4, 'motion seat must be 0-3')
+      await page.evaluate(async seat => {
+        const vm = document.querySelector('#app').__vue_app__._instance.setupState
+        if (vm.status.controlledSeat !== seat) vm.applyStatus(await window.studioAPI.requestSeatSwitch(seat))
+      }, seat)
+    }
+    if (pair) await page.evaluate(async ([previous]) => {
+      const vm = document.querySelector('#app').__vue_app__._instance.setupState
+      vm.applyGameView((await window.studioAPI.jumpToNode(previous)).view)
+    }, pair)
     await page.waitForTimeout(350)
+    const surface = await application.evaluate(({ BrowserWindow, screen }) => {
+      const window = BrowserWindow.getAllWindows()[0]
+      return { visible: window.isVisible(), focused: window.isFocused(), opacity: window.getOpacity(),
+        bounds: window.getBounds(), display: screen.getDisplayMatching(window.getBounds()) }
+    })
+    const visibility = await page.evaluate(() => document.visibilityState)
+    if (process.env.RMS_RECORD_MOTION_VISIBLE === '1') {
+      assert.equal(surface.opacity, 1)
+      assert.equal(visibility, 'visible', 'an occluded surface is not a visible rendering baseline')
+    }
     const client = await page.context().newCDPSession(page)
     await client.send('Performance.enable')
     const recordCpu = !process.env.RMS_RECORD_MOTION_SAMPLE_ONLY
@@ -72,42 +98,83 @@ try {
     const traceEvents = []
     if (process.env.RMS_RECORD_MOTION_TRACE) {
       client.on('Tracing.dataCollected', ({ value }) => traceEvents.push(...value))
-      await client.send('Tracing.start', { categories: 'devtools.timeline,blink,cc', transferMode: 'ReportEvents' })
+      await client.send('Tracing.start', { categories: 'devtools.timeline,blink,cc,benchmark,gpu,viz,disabled-by-default-devtools.timeline.frame', transferMode: 'ReportEvents' })
     }
     const before = await client.send('Performance.getMetrics')
-    const motion = await page.evaluate(async () => {
-      const frameTimes = [], visits = [], longTasks = [], zooms = new Set()
+    const motion = await page.evaluate(async (pair) => {
+      const frameTimes = [], timelineTimes = [], visits = [], longTasks = [], zooms = new Set(), flights = []
       const vm = document.querySelector('#app').__vue_app__._instance.setupState
       const initial = { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode }
+      visits.push(initial.node)
       const observer = new PerformanceObserver(list => longTasks.push(...list.getEntries().map(({ startTime, duration }) => ({ startTime, duration }))))
       observer.observe({ type: 'longtask' })
-      let active = true
-      const sample = now => {
-        frameTimes.push(now)
+      let active = true, frame = 0
+      const sample = timeline => {
+        frameTimes.push(performance.now())
+        timelineTimes.push(timeline)
         zooms.add(vm.tableZoom)
         if (visits.at(-1) !== vm.gameView.currentNodeId) visits.push(vm.gameView.currentNodeId)
-        if (active) requestAnimationFrame(sample)
+        if (active) frame = requestAnimationFrame(sample)
       }
-      requestAnimationFrame(sample)
-      for (const direction of [-1, 1]) for (let i = 0; i < 20; i++) {
-        document.querySelector('.grid-main').dispatchEvent(new WheelEvent('wheel', { deltaY: direction * 100, bubbles: true, cancelable: true }))
-        await new Promise(resolve => setTimeout(resolve, 80))
+      const animate = Element.prototype.animate
+      Element.prototype.animate = function (keyframes, options) {
+        const animation = animate.call(this, keyframes, options)
+        if (this.hasAttribute('data-pending-discard-seat') || this.classList.contains('discard-return-ghost')) {
+          const flight = { node: vm.gameView.currentNodeId, createdAt: performance.now(),
+            duration: Number(animation.effect?.getTiming().duration) || 0,
+            easing: animation.effect?.getTiming().easing, startTime: null }
+          flights.push(flight)
+          void animation.ready.then(() => { flight.startTime = animation.startTime }).catch(() => {})
+        }
+        return animation
       }
-      await new Promise(resolve => setTimeout(resolve, 350))
-      active = false
-      observer.disconnect()
+      frame = requestAnimationFrame(sample)
+      try {
+        if (pair) {
+          for (let round = 0; round < 4; round++) for (const direction of [1, -1]) {
+            document.querySelector('.grid-main').dispatchEvent(new WheelEvent('wheel', {
+              deltaY: direction * 100, bubbles: true, cancelable: true,
+            }))
+            await new Promise(resolve => setTimeout(resolve, 700))
+            const expected = pair[direction > 0 ? 1 : 0]
+            if (vm.gameView.currentNodeId !== expected) throw new Error(`Expected ${expected}, got ${vm.gameView.currentNodeId}`)
+          }
+        } else for (const direction of [-1, 1]) for (let i = 0; i < 20; i++) {
+          document.querySelector('.grid-main').dispatchEvent(new WheelEvent('wheel', { deltaY: direction * 100, bubbles: true, cancelable: true }))
+          await new Promise(resolve => setTimeout(resolve, 80))
+        }
+        await new Promise(resolve => setTimeout(resolve, 350))
+      } finally {
+        active = false
+        cancelAnimationFrame(frame)
+        observer.disconnect()
+        Element.prototype.animate = animate
+      }
       const intervals = frameTimes.slice(1).map((time, index) => time - frameTimes[index]).sort((a, b) => a - b)
       return { initial, final: { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode },
         backendNode: (await window.studioAPI.getGameView()).view.currentNodeId,
         zooms: [...zooms], visits: visits.length, frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
-        p95: intervals[Math.floor(intervals.length * .95)], max: intervals.at(-1), longTasks }
-    })
+        p95: intervals[Math.floor(intervals.length * .95)], max: intervals.at(-1), longTasks,
+        flightWindows: flights.map(flight => {
+          if (!Number.isFinite(flight.startTime)) return { ...flight, callbackCount: null, maximumCallbackGapMs: null }
+          const callbacks = frameTimes.filter(time => time >= flight.startTime && time < flight.startTime + flight.duration)
+          const times = [flight.startTime, ...callbacks, flight.startTime + flight.duration]
+          return { ...flight, callbackCount: callbacks.length,
+            maximumCallbackGapMs: Math.max(...times.slice(1).map((time, index) => time - times[index])) }
+        }), callbackArrivals: frameTimes, callbackTimelineStamps: timelineTimes }
+    }, pair || null)
     const after = await client.send('Performance.getMetrics')
     const { profile } = recordCpu ? await client.send('Profiler.stop') : { profile: { nodes: [], samples: [], timeDeltas: [] } }
     if (process.env.RMS_RECORD_MOTION_TRACE) {
       const complete = new Promise(resolve => client.once('Tracing.tracingComplete', resolve))
-      await client.send('Tracing.end')
-      await complete
+      let timer
+      try {
+        await client.send('Tracing.end')
+        await Promise.race([complete, new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Rendering trace did not complete.')), 15000)
+        })])
+        assert.ok(traceEvents.length, 'a completed trace must contain events')
+      } finally { clearTimeout(timer) }
     }
     await client.detach()
     const first = Object.fromEntries(before.metrics.map(({ name, value }) => [name, value]))
@@ -118,9 +185,14 @@ try {
     const hotFunctions = profile.nodes.map(node => ({ ...node.callFrame, milliseconds: (totals.get(node.id) || 0) / 1000 }))
       .sort((a, b) => b.milliseconds - a.milliseconds).slice(0, 35)
     const navigation = await application.evaluate(() => global.recordDesktopTest.navigation)
-    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, hotFunctions, profile, navigation, traceEvents }))
-    console.log(JSON.stringify({ motion, work, navigation }))
-    assert.ok(motion.visits >= 10, 'the motion probe must observe actual renderer frame commits')
+    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, hotFunctions, profile, navigation, traceEvents,
+      surface: { ...surface, documentVisibility: visibility },
+      evidence: { nativeControlUsed: false, overlayState: process.env.RMS_RECORD_MOTION_OVERLAY_STATE || 'unverified',
+        frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
+    const { callbackArrivals, callbackTimelineStamps, ...motionSummary } = motion
+    console.log(JSON.stringify({ motion: motionSummary, work, navigation }))
+    assert.ok(motion.visits >= (pair ? 9 : 10), 'the motion probe must observe actual renderer frame commits')
+    if (pair) assert.ok(motion.flightWindows.length >= 4, 'the selected pair must exercise actual discard motion')
   }
 
   await page.locator('.toolbar').getByRole('button', { name: '关闭', exact: true }).click()
