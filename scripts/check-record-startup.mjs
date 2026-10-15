@@ -61,10 +61,14 @@ try {
   assert.equal(JSON.parse(await fs.readFile(path.join(recovery, 'legacy-migration.json'), 'utf8')).version, 1)
 
   if (process.env.RMS_RECORD_MOTION_PROFILE) {
+    await page.waitForTimeout(350)
     const client = await page.context().newCDPSession(page)
     await client.send('Performance.enable')
-    await client.send('Profiler.enable')
-    await client.send('Profiler.start')
+    const recordCpu = !process.env.RMS_RECORD_MOTION_SAMPLE_ONLY
+    if (recordCpu) {
+      await client.send('Profiler.enable')
+      await client.send('Profiler.start')
+    }
     const traceEvents = []
     if (process.env.RMS_RECORD_MOTION_TRACE) {
       client.on('Tracing.dataCollected', ({ value }) => traceEvents.push(...value))
@@ -99,7 +103,7 @@ try {
         p95: intervals[Math.floor(intervals.length * .95)], max: intervals.at(-1), longTasks }
     })
     const after = await client.send('Performance.getMetrics')
-    const { profile } = await client.send('Profiler.stop')
+    const { profile } = recordCpu ? await client.send('Profiler.stop') : { profile: { nodes: [], samples: [], timeDeltas: [] } }
     if (process.env.RMS_RECORD_MOTION_TRACE) {
       const complete = new Promise(resolve => client.once('Tracing.tracingComplete', resolve))
       await client.send('Tracing.end')

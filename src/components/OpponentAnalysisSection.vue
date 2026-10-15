@@ -102,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { analysisSurface } from '../analysisSurface'
 import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
 import { scoreModeGeometry } from '../analysisScoreModeGeometry'
@@ -172,27 +172,45 @@ function finitePixels(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+let scoreWidthStyle = ''
+let scoreWidths = new Map<string, number>()
+
 function scoreModeIntrinsicWidths(sample: HTMLElement, labels: readonly string[]): ReadonlyMap<string, number> {
-  const measurer = sample.cloneNode(false) as HTMLElement
-  measurer.removeAttribute('tabindex')
-  measurer.setAttribute('aria-hidden', 'true')
-  Object.assign(measurer.style, {
-    position: 'fixed',
-    visibility: 'hidden',
-    width: 'max-content',
-    maxWidth: 'none',
-    overflow: 'visible',
-    textOverflow: 'clip',
-    pointerEvents: 'none',
-  })
-  sample.parentElement?.appendChild(measurer)
-  const widths = new Map<string, number>()
-  for (const label of new Set(labels)) {
+  const style = getComputedStyle(sample)
+  const signature = [style.font, style.fontVariantNumeric, style.fontFeatureSettings,
+    style.fontVariationSettings, style.letterSpacing, style.wordSpacing, style.textTransform,
+    style.paddingLeft, style.paddingRight, style.borderLeftWidth, style.borderRightWidth].join('|')
+  if (signature !== scoreWidthStyle) { scoreWidthStyle = signature; scoreWidths.clear() }
+  const unique = [...new Set(labels)]
+  const fragment = document.createDocumentFragment()
+  const measurers = unique.filter(label => !scoreWidths.has(label)).map(label => {
+    const measurer = sample.cloneNode(false) as HTMLElement
+    measurer.removeAttribute('tabindex')
+    measurer.setAttribute('aria-hidden', 'true')
+    Object.assign(measurer.style, {
+      position: 'fixed',
+      visibility: 'hidden',
+      width: 'max-content',
+      maxWidth: 'none',
+      overflow: 'visible',
+      textOverflow: 'clip',
+      pointerEvents: 'none',
+    })
     measurer.textContent = label
-    widths.set(label, measurer.getBoundingClientRect().width)
+    fragment.appendChild(measurer)
+    return { label, measurer }
+  })
+  if (measurers.length) sample.parentElement?.appendChild(fragment)
+  try {
+    // Read every intrinsic width before removing any probe. Interleaving each
+    // text write with a measurement forces one global layout per score value.
+    for (const { label, measurer } of measurers) scoreWidths.set(label, measurer.getBoundingClientRect().width)
+    // Retain only the current distribution's labels, not every value ever seen.
+    scoreWidths = new Map(unique.map(label => [label, scoreWidths.get(label) || 0]))
+    return scoreWidths
+  } finally {
+    for (const { measurer } of measurers) measurer.remove()
   }
-  measurer.remove()
-  return widths
 }
 
 function updateScoreModeCount() {
@@ -255,6 +273,9 @@ const scheduleScoreModeCount = useResponsiveGeometry(sectionElement, updateScore
   resizeAncestorSelector: '.dock-module',
   styleAncestorSelector: '.dock-module',
 })
+function resetScoreWidths() { scoreWidths.clear(); scheduleScoreModeCount() }
+document.fonts?.addEventListener('loadingdone', resetScoreWidths)
+onBeforeUnmount(() => document.fonts?.removeEventListener('loadingdone', resetScoreWidths))
 
 watch([scoreModeMeasurementKey, numberLocale], () => {
   void nextTick(scheduleScoreModeCount)

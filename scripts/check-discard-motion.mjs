@@ -79,6 +79,17 @@ export async function checkDiscardMotion(page) {
         await frame()
         item.replacementActive = Boolean(document.querySelector(`[data-pending-discard-seat="${actor}"]`)
           ?.getAnimations().some(animation => animation.playState === 'running'))
+        if (!riichi) {
+          const repeated = structuredClone(child)
+          repeated.currentNodeId = `${childId}-same-face`
+          repeated.table.rivers[actor].push('1m')
+          window.studioAPI.jumpToNode = async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: repeated })
+          await vm.jumpToNode(repeated.currentNodeId)
+          await frame()
+          await frame()
+          item.repeatedFaceActive = Boolean(document.querySelector(`[data-pending-discard-seat="${actor}"]`)
+            ?.getAnimations().some(animation => animation.playState === 'running'))
+        }
         await new Promise(resolve => setTimeout(resolve, 220))
         item.remainingOverlays = document.querySelectorAll('.discard-flight-back, .discard-flight-regular-pose, .discard-return-ghost').length
         item.remainingFaceEffects = [...document.querySelectorAll('.grid-discard .tileImg')]
@@ -101,6 +112,7 @@ export async function checkDiscardMotion(page) {
     assert.equal(item.movement, item.fade, `face and movement share the same playback phase: ${JSON.stringify(item)}`)
     assert.ok(Math.abs(item.movementTime - item.fadeTime) < 1, 'face and movement use one timeline')
     assert.equal(item.replacementActive, true, 'a cancelled predecessor cannot clear the replacement animation')
+    if (!item.riichi) assert.equal(item.repeatedFaceActive, true, 'another discard of the same face is a distinct moving tile')
     assert.equal(item.remainingOverlays, 0, 'all transient flight layers are retired')
     assert.equal(item.remainingFaceEffects, 0, 'pose swaps cannot leave an opacity effect on a reused river tile')
   }

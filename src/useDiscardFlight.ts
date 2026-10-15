@@ -54,9 +54,11 @@ function pendingDiscardFromTable(table: GameView['table']): PendingDiscardView |
   return table?.pendingRiichiDiscard || table?.pendingDiscard || null
 }
 
-function pendingDiscardSignature(pending: PendingDiscardView | null): string {
+function pendingDiscardSignature(table: GameView['table']): string {
+  const pending = pendingDiscardFromTable(table)
   if (!pending) return ''
-  return [pending.actor, pending.pai, pending.tsumogiri ? 1 : 0, pending.riichi ? 1 : 0].join('|')
+  return [table?.bakaze, table?.kyoku, table?.honba, table?.rivers[pending.actor]?.length,
+    pending.actor, pending.pai, pending.tsumogiri ? 1 : 0, pending.riichi ? 1 : 0].join('|')
 }
 
 function cancelPendingDiscardFlight() {

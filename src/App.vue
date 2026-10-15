@@ -1570,9 +1570,9 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
     || nextView.viewToken?.sessionId !== gameView.viewToken?.sessionId
   const nextAnalysis = resolveNextDecisionAnalysis(nextView, isNewGame)
   const previousPendingDiscard = pendingDiscardFromTable(gameView.table)
-  const previousPendingSignature = pendingDiscardSignature(previousPendingDiscard)
+  const previousPendingSignature = pendingDiscardSignature(gameView.table)
   const nextPendingDiscard = pendingDiscardFromTable(nextView.table)
-  const nextPendingSignature = pendingDiscardSignature(nextPendingDiscard)
+  const nextPendingSignature = pendingDiscardSignature(nextView.table)
   const pendingDiscardChanged = previousPendingSignature !== nextPendingSignature
   if (pendingDiscardChanged) {
     cancelPendingDiscardFlight()
