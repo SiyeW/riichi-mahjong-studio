@@ -248,3 +248,54 @@ test('a slow save remains owned after canceling exit and its late completion can
   await new Promise(resolve => setImmediate(resolve))
   assert.equal(closes, 1)
 })
+
+test('canceling exit during edit flush prevents the late acknowledgement from starting a close barrier', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const states = []
+  let finishFlush
+  let prepares = 0
+  let confirms = 0
+  let cancellations = 0
+  let closes = 0
+  class Window extends EventEmitter {
+    constructor() {
+      super()
+      this.webContents = new EventEmitter()
+      this.webContents.setZoomFactor = () => {}
+      this.webContents.send = (channel, value) => { if (channel === 'record:close-state') states.push(value) }
+    }
+    isDestroyed() { return false }
+    loadURL() { return Promise.resolve() }
+    close() { closes += 1 }
+  }
+  const window = createMainWindow({
+    BrowserWindow: Window, dialog: { showMessageBox: async () => ({ response: 1 }) },
+    ipcMain: {}, appOptions: {}, projectRoot: process.cwd(), isDev: true, rendererUrl: 'unused',
+    gameFileStore: {}, t: key => key,
+    loadSettingsImpl: () => ({ window: { width: 1200, height: 800 } }),
+    requestRendererFlushImpl: () => new Promise(resolve => { finishFlush = resolve }),
+    prepareRecordClose: async () => { prepares += 1 },
+    confirmRecordClose: async () => { confirms += 1 },
+    cancelRecordClose: async () => { cancellations += 1 },
+  })
+  window.emit('close', { preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  t.mock.timers.tick(30_000)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(states.at(-1), { active: false, stage: '' })
+  assert.equal(cancellations, 1)
+  const finishCancelledFlush = finishFlush
+  window.emit('close', { preventDefault() {} })
+  finishCancelledFlush()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(prepares, 0, 'a cancelled flush must not newly freeze the resumed record')
+  assert.equal(confirms, 0)
+  assert.equal(closes, 0)
+  assert.deepEqual(states.at(-1), { active: true, stage: 'flushing' }, 'old completion must not dismiss the new attempt')
+
+  finishFlush()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(prepares, 1)
+  assert.equal(confirms, 1)
+  assert.equal(closes, 1)
+})

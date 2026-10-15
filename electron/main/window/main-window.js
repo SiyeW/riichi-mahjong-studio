@@ -185,7 +185,9 @@ function createMainWindow({
             unavailableMessage: t('native.rendererUnavailable'),
             onSlow: () => stageChanged('waiting'),
           }),
-          () => true,
+          // Flushing edits is still allowed to finish after cancellation, but
+          // its acknowledgement no longer authorizes a new close barrier.
+          () => attempt === closeAttempt && exitRequested && !closeAllowed && !window.isDestroyed(),
           () => prepareRecordClose(stageChanged),
           stageChanged,
         )
