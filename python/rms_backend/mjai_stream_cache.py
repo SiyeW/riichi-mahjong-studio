@@ -59,17 +59,16 @@ class MjaiStreamCache:
             return cached
 
         parent_id = node.get("parentId")
-        if parent_id:
+        parent_entry = self._entries.get(self._cache_key(game, parent_id, seat, reveal_all)) if parent_id else None
+        # Each snapshot already owns its complete history. A missing parent
+        # should build this one stream, not recursively fill an entire round
+        # and evict the other input mode from this bounded cache again.
+        if parent_entry is not None:
             parent_node = game["nodes"][parent_id]
             parent_snapshot = parent_node["snapshot"]
             self._sync_snapshot(parent_snapshot)
-            if self._same_round(parent_snapshot, snapshot):
-                parent_entry = self.get_bundle(
-                    game,
-                    parent_id,
-                    seat,
-                    reveal_all=reveal_all,
-                )
+            if (self._same_round(parent_snapshot, snapshot)
+                    and parent_entry['meta'] == self._snapshot_meta(parent_snapshot)):
                 parent_actions = parent_snapshot.get("actionHistory", []) or []
                 child_actions = snapshot.get("actionHistory", []) or []
                 parent_len = len(parent_actions)

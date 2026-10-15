@@ -275,6 +275,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         self.assertTrue(service.get_node_legal_actions(game, node["id"]))
         with (
+            mock.patch.object(service.OPPONENT_PREDICTIONS, "accepts_requests", return_value=True),
             mock.patch.object(service.OPPONENT_PREDICTIONS, "has_request", return_value=False),
             mock.patch.object(service.OPPONENT_PREDICTIONS, "request_predict") as request_predict,
             mock.patch.object(service.AUTO_ANALYSIS, "owns_item", return_value=False),
@@ -283,6 +284,16 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         self.assertTrue(requested)
         request_predict.assert_called_once()
+
+    def test_unavailable_opponent_engine_does_not_build_history_on_browsing(self):
+        service.STATE.update(game=service.create_empty_game(223344), gameLoaded=True,
+                             mode='research', opponentAnalysisEnabled=True)
+        with (
+            mock.patch.object(service.OPPONENT_PREDICTIONS, 'accepts_requests', return_value=False),
+            mock.patch.object(service.MJAI_STREAMS, 'get_bundle') as stream,
+        ):
+            self.assertFalse(service.OPPONENT_ANALYSIS.request_current())
+            stream.assert_not_called()
 
     def test_response_samples_model_activity_after_view_scheduling(self):
         order = []

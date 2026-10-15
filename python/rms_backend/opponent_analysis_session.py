@@ -222,6 +222,8 @@ class OpponentAnalysisSession:
                 return False
             if self.dependencies.auto_analysis_owns("opponent", context["nodeId"]):
                 return False
+            if not self.predictions.accepts_requests():
+                return False
             input_mode = context["inputMode"]
             if input_mode not in self.predictions.supported_input_modes():
                 return False
@@ -240,8 +242,6 @@ class OpponentAnalysisSession:
             access = self.dependencies.record_access
             ticket = None
             if access is not None and access.enabled(game):
-                if not self.predictions.accepts_requests():
-                    return False
                 ticket = access.reserve(game, 'opponent', foreground=True)
                 if ticket is None:
                     access.defer(game, 'opponent', self.request_current)
