@@ -107,6 +107,10 @@ function createGameFileStore(baseDir) {
     return path.join(baseDir, 'records', RECOVERY_DIRECTORY_NAME, RECOVERY_SESSION_FILE_NAME)
   }
 
+  function legacyMigrationPath() {
+    return path.join(baseDir, 'records', RECOVERY_DIRECTORY_NAME, 'legacy-migration.json')
+  }
+
   return {
     getCurrentPath() {
       return currentPath
@@ -170,6 +174,7 @@ function createGameFileStore(baseDir) {
       }
     },
     resolveRecoveryPathForRestore() {
+      if (fs.existsSync(legacyMigrationPath())) return null
       const targetPath = recoveryPath()
       if (fs.existsSync(targetPath)) return targetPath
 
@@ -186,6 +191,14 @@ function createGameFileStore(baseDir) {
         }
       }
       return targetPath
+    },
+    completeLegacyRecoveryMigration() {
+      const marker = legacyMigrationPath()
+      if (fs.existsSync(marker)) return
+      fs.mkdirSync(path.dirname(marker), { recursive: true })
+      // Keep the source bytes: an active workspace may still read them lazily.
+      // Only retire the old automatic fallback after a new owner is established.
+      writeFileAtomically(marker, `${JSON.stringify({ version: 1 })}\n`)
     },
     isRecoveryPath(filePath) {
       return isManagedRecoveryPath(filePath)

@@ -171,3 +171,73 @@ test('unclean recovery warns without waiting for a modal acknowledgement or pret
   assert.equal(warned, true)
   assert.equal(store.isDirty(), true)
 })
+
+test('legacy exit recovery is consumed once and cannot return after the recovered record is closed', async context => {
+  const { workflow, store, gateway, directory } = fixture(context, { gateway: {
+    restoreRecordRecovery: async () => null,
+    importGameRecordFile: async () => ({ state: { gameLoaded: true, mode: 'play' }, view: { currentNodeId: 'legacy' } }),
+  } })
+  fs.mkdirSync(path.dirname(store.getRecoveryPath()), { recursive: true })
+  fs.writeFileSync(store.getRecoveryPath(), 'legacy source remains available to its workspace')
+  assert.equal((await workflow.restoreStartupRecovery()).view.currentNodeId, 'legacy')
+  const freshStore = createGameFileStore(directory)
+  const next = createRecordWorkflow({ app: {}, appOptions: { portableDir: directory, env: {} },
+    dialog: {}, gameFileStore: freshStore, backendGateway: gateway, getMainWindow: () => null, t: key => key })
+  assert.equal(await next.restoreStartupRecovery(), null)
+  assert.equal(fs.readFileSync(store.getRecoveryPath(), 'utf8'), 'legacy source remains available to its workspace')
+})
+
+test('failed legacy import remains retryable and a newer workspace supersedes the old fallback', async context => {
+  const { workflow, store, gateway, directory } = fixture(context, { gateway: {
+    restoreRecordRecovery: async () => null,
+    importGameRecordFile: async () => { throw new Error('failed import') },
+  }, dialog: { showMessageBox: async () => ({ response: 0 }) } })
+  fs.mkdirSync(path.dirname(store.getRecoveryPath()), { recursive: true })
+  fs.writeFileSync(store.getRecoveryPath(), 'legacy')
+  assert.equal(await workflow.restoreStartupRecovery(), null)
+  assert.equal(createGameFileStore(directory).resolveRecoveryPathForRestore(), store.getRecoveryPath())
+  gateway.restoreRecordRecovery = async () => ({ state: { gameLoaded: true }, view: { currentNodeId: 'newer' } })
+  gateway.getRecordRuntime = () => ({ contentRevision: 1, savedContentRevision: 0 })
+  const next = createRecordWorkflow({ app: {}, appOptions: { portableDir: directory, env: {} },
+    dialog: {}, gameFileStore: createGameFileStore(directory), backendGateway: gateway, getMainWindow: () => null, t: key => key })
+  assert.equal((await next.restoreStartupRecovery()).view.currentNodeId, 'newer')
+  assert.equal(createGameFileStore(directory).resolveRecoveryPathForRestore(), null)
+})
+
+test('concurrent startups cannot migrate the same legacy recovery twice', async context => {
+  let finish, entered
+  const ready = new Promise(resolve => { entered = resolve })
+  let imports = 0
+  const { workflow, store, gateway, directory } = fixture(context, { gateway: {
+    restoreRecordRecovery: async () => null,
+    importGameRecordFile: () => {
+      imports += 1
+      entered()
+      return new Promise(resolve => { finish = resolve })
+    },
+  } })
+  fs.mkdirSync(path.dirname(store.getRecoveryPath()), { recursive: true })
+  fs.writeFileSync(store.getRecoveryPath(), 'legacy')
+  const restoring = workflow.restoreStartupRecovery()
+  try {
+    await ready
+    const second = createRecordWorkflow({ app: {}, appOptions: { portableDir: directory, env: {} },
+      dialog: {}, gameFileStore: createGameFileStore(directory), backendGateway: gateway, getMainWindow: () => null, t: key => key })
+    assert.equal(await second.restoreStartupRecovery(), null)
+    assert.equal(imports, 1)
+  } finally {
+    finish({ state: { gameLoaded: true }, view: { currentNodeId: 'legacy' } })
+    await restoring
+  }
+})
+
+test('failed migration bookkeeping does not hide the successfully restored record', async context => {
+  let warning
+  const { workflow, store } = fixture(context, { gateway: {
+    restoreRecordRecovery: async () => ({ state: { gameLoaded: true }, view: { currentNodeId: 'newer' } }),
+    getRecordRuntime: () => ({ contentRevision: 1, savedContentRevision: 0 }),
+  }, dialog: { showMessageBox: async (_window, message) => { warning = message; return { response: 0 } } } })
+  store.completeLegacyRecoveryMigration = () => { throw new Error('marker is unwritable') }
+  assert.equal((await workflow.restoreStartupRecovery()).view.currentNodeId, 'newer')
+  assert.match(warning.detail, /marker is unwritable/)
+})

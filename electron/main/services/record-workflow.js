@@ -199,6 +199,7 @@ function createRecordWorkflow({
     try {
       const response = await backendGateway.restoreRecordRecovery()
       if (response) {
+        completeLegacyRecoveryMigration()
         const runtime = backendGateway.getRecordRuntime()
         gameFileStore.openRecoveryRecord(runtime?.savedPath || '', t('record.unsavedName'))
         beginRecordTracking({ dirty: runtime?.contentRevision !== runtime?.savedContentRevision,
@@ -214,9 +215,20 @@ function createRecordWorkflow({
       }
       // Narrow one-time reader for existing released recovery files; new exits
       // never create another portable recovery snapshot.
-      const recoveryPath = gameFileStore.resolveRecoveryPathForRestore()
-      if (fs.existsSync(recoveryPath)) return await importGameRecordFile(recoveryPath)
-      return null
+      const directory = path.resolve(gameFileStore.getDefaultDirectory())
+      const lease = await acquireRecordLease('legacy-recovery', process.platform === 'win32'
+        ? directory.toLowerCase() : directory).catch(error => {
+        if (error.code === 'EADDRINUSE') return null
+        throw error
+      })
+      if (!lease) return null
+      try {
+        const recoveryPath = gameFileStore.resolveRecoveryPathForRestore()
+        if (!recoveryPath || !fs.existsSync(recoveryPath)) return null
+        const restored = await importGameRecordFile(recoveryPath)
+        completeLegacyRecoveryMigration()
+        return restored
+      } finally { await lease.release() }
     } catch (error) {
       console.error('[record] failed to restore exit recovery record:', error)
       const mainWindow = getMainWindow()
@@ -229,6 +241,21 @@ function createRecordWorkflow({
         })
       }
       return null
+    }
+  }
+
+  function completeLegacyRecoveryMigration() {
+    try {
+      gameFileStore.completeLegacyRecoveryMigration()
+    } catch (error) {
+      // The record is already active. A bookkeeping failure must not hide its
+      // successful restoration or make the renderer keep showing an empty table.
+      console.error('[record] failed to retire legacy recovery fallback:', error)
+      const mainWindow = getMainWindow()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        void dialog.showMessageBox(mainWindow, { type: 'warning', title: t('native.recoveryIncomplete.title'),
+          message: t('native.recoveryIncomplete.message'), detail: String(error.message || error) })
+      }
     }
   }
 
