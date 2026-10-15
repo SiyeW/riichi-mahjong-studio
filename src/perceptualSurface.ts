@@ -30,6 +30,8 @@ export type PerceptualSurfaceBinding = Readonly<{
   debugLabel?: string
 }>
 
+export const PERCEPTUAL_SURFACE_CHANGE_EVENT = 'perceptual-surface-change'
+
 export const DEFAULT_PERCEPTUAL_SURFACE_TUNING: PerceptualSurfaceTuning = Object.freeze({
   lightnessCompensation: 0,
   chromaticCompensation: 0,
@@ -224,7 +226,7 @@ function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceS
     delete element.dataset.perceptualSurfaceLayers
   }
   if (changed) {
-    element.dispatchEvent(new CustomEvent('perceptual-surface-change', {
+    element.dispatchEvent(new CustomEvent(PERCEPTUAL_SURFACE_CHANGE_EVENT, {
       detail: {
         label: state.binding.debugLabel || '',
         surface,

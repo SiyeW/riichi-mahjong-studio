@@ -1497,9 +1497,9 @@ try {
   assert.ok(Math.abs(roomyOpponent.unusedBottomHeight) < 1, 'opponent predictions consume the full remaining panel height')
   assert.equal(roomyOpponent.chartsStayInsideRows, true, 'expanded distributions stay inside their fixed prediction rows')
   const baselineGuideCounts = await page.evaluate(async () => {
-    const count = () => document.querySelectorAll(
-      '.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line',
-    ).length
+    const count = () => [...document.querySelectorAll(
+      '.analysis-dora-distribution canvas, .analysis-score-distribution canvas',
+    )].filter(canvas => canvas.rmsDistributionGuideBounds).length
     const samples = [count()]
     await new Promise(resolve => requestAnimationFrame(resolve))
     samples.push(count())
@@ -1512,7 +1512,8 @@ try {
     `default-range dora and score guides remain absent throughout frame motion: ${JSON.stringify(baselineGuideCounts)}`,
   )
   assert.equal(
-    await page.locator('.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line').count(),
+    await page.locator('.analysis-dora-distribution canvas, .analysis-score-distribution canvas')
+      .evaluateAll(canvases => canvases.filter(canvas => canvas.rmsDistributionGuideBounds).length),
     0,
     '30% and 60% guide lines stay hidden while the default ranges are sufficient',
   )
@@ -1557,11 +1558,19 @@ try {
     window.analysisCheck.publish(result)
   })
   const adaptiveGuideMotion = await page.evaluate(async () => {
+    let styleMutations = 0
+    const charts = [...document.querySelectorAll('.analysis-dora-distribution, .analysis-score-distribution')]
+    const observer = new MutationObserver(records => { styleMutations += records.filter(record => record.attributeName === 'style').length })
+    charts.forEach(chart => observer.observe(chart, { attributes: true }))
     const sample = () => {
-      const track = document.querySelector('.analysis-score-distribution .analysis-distribution-track')
+      const chart = document.querySelector('.analysis-score-distribution')
+      const canvas = chart?.querySelector('canvas')
+      const guide = canvas?.rmsDistributionGuideBounds
+      const track = chart?.querySelector('.analysis-distribution-track')
       const bounds = track?.getBoundingClientRect()
-      return bounds && bounds.height > 0
-        ? Number.parseFloat(getComputedStyle(track, '::before').top) / bounds.height
+      const canvasRect = canvas?.getBoundingClientRect()
+      return guide && bounds && canvasRect && bounds.height > 0
+        ? ((guide.top / devicePixelRatio) - (bounds.top - canvasRect.top)) / bounds.height
         : -1
     }
     await new Promise(resolve => requestAnimationFrame(resolve))
@@ -1569,7 +1578,9 @@ try {
     await new Promise(resolve => setTimeout(resolve, 35))
     const middle = sample()
     await new Promise(resolve => setTimeout(resolve, 120))
-    return { start, middle, end: sample() }
+    const end = sample()
+    observer.disconnect()
+    return { start, middle, end, styleMutations }
   })
   assert.ok(
     adaptiveGuideMotion.start >= 0
@@ -1577,20 +1588,57 @@ try {
       && adaptiveGuideMotion.middle < adaptiveGuideMotion.end,
     `the score reference line enters from the outer scale edge instead of jumping: ${JSON.stringify(adaptiveGuideMotion)}`,
   )
+  assert.equal(adaptiveGuideMotion.styleMutations, 0, 'guide motion does not invalidate inherited chart styles or color calibration')
   await page.waitForFunction(() => {
-    const doraTrack = document.querySelector('.analysis-dora-distribution .analysis-distribution-track')
-    const scoreTrack = document.querySelector('.analysis-score-distribution .analysis-distribution-track')
-    return doraTrack && scoreTrack
-      && Number.parseFloat(getComputedStyle(doraTrack, '::before').top) > 2
-      && Number.parseFloat(getComputedStyle(scoreTrack, '::before').top) > 2
+    const dora = document.querySelector('.analysis-dora-distribution canvas')?.rmsDistributionGuideBounds
+    const score = document.querySelector('.analysis-score-distribution canvas')?.rmsDistributionGuideBounds
+    return dora && score && dora.top > 2 && score.top > 2
   })
   const adaptiveGuideRatios = await page.locator('.analysis-dora-distribution, .analysis-score-distribution').evaluateAll(charts => charts.slice(0, 2).map(chart => {
     const track = chart.querySelector('.analysis-distribution-track')
     const bounds = track?.getBoundingClientRect()
-    return bounds ? Number.parseFloat(getComputedStyle(track, '::before').top) / bounds.height : -1
+    const canvas = chart.querySelector('canvas'), guide = canvas?.rmsDistributionGuideBounds
+    const canvasRect = canvas?.getBoundingClientRect()
+    return bounds && canvasRect && guide ? ((guide.top / devicePixelRatio) - (bounds.top - canvasRect.top)) / bounds.height : -1
   }))
   assert.ok(Math.abs(adaptiveGuideRatios[0] - (1 - (0.6 / 0.65))) < 0.02, 'the 60% dora guide moves inside an expanded range')
   assert.ok(Math.abs(adaptiveGuideRatios[1] - (1 - (0.3 / 0.62))) < 0.02, 'the 30% score guide moves inside an expanded range')
+  const continuousGuides = await page.locator('.analysis-dora-distribution canvas, .analysis-score-distribution canvas').evaluateAll(canvases => canvases.map(canvas => {
+    const guide = canvas.rmsDistributionGuideBounds
+    const tracks = [...canvas.parentElement.querySelectorAll('.analysis-distribution-track')]
+    const root = canvas.getBoundingClientRect()
+    const first = tracks[0].getBoundingClientRect(), last = tracks.at(-1).getBoundingClientRect()
+    return guide && guide.left <= Math.round((first.left - root.left) * devicePixelRatio) + 1
+      && guide.right >= Math.round((last.right - root.left) * devicePixelRatio) - 1
+      && guide.top >= 0 && guide.bottom <= canvas.height
+  }))
+  assert.ok(continuousGuides.length === 6 && continuousGuides.every(Boolean), 'each reference guide spans the whole fixed chart without overflowing')
+  const surfaceRouting = await page.evaluate(async () => (await import('/scripts/fixtures/chart-paint.js')).checkSurfacePaintRouting())
+  assert.deepEqual(surfaceRouting, { own: 1, ancestor: 1, descendant: 1, foreign: 0,
+    coalesced: 1, detached: 0, replacement: 1, unmounted: 0, added: 2, removed: 2 },
+  'calibrated paint changes are scoped, coalesced and released with their component')
+  const retainedPaint = await page.evaluate(async () => (await import('/scripts/fixtures/chart-paint.js')).checkDistributionPalettePaint())
+  assert.equal(retainedPaint.before.matches, true)
+  assert.equal(retainedPaint.after.matches, true, 'unchanged data is repainted after its calibrated color changes')
+  assert.notDeepEqual(retainedPaint.before.pixel, retainedPaint.after.pixel, 'paint really changes instead of only changing a CSS variable')
+  const oldPalette = await page.evaluate(async () => {
+    const { sampleDistributionColor } = await import('/scripts/fixtures/chart-paint.js')
+    return { scheme: window.analysisCheck.vm.settings.display.colorScheme,
+      sample: sampleDistributionColor('.analysis-dora-distribution', '--analysis-dora-color') }
+  })
+  assert.equal(oldPalette.sample.matches, true, 'canvas initially paints its calibrated color')
+  try {
+    await page.evaluate(() => { window.analysisCheck.vm.settings.display.colorScheme = 'naga' })
+    try {
+      await page.waitForFunction(async old => {
+        const { sampleDistributionColor } = await import('/scripts/fixtures/chart-paint.js')
+        const next = sampleDistributionColor('.analysis-dora-distribution', '--analysis-dora-color')
+        return next.matches && next.expected.join(',') !== old.join(',')
+      }, oldPalette.sample.expected)
+    } catch (cause) { throw new Error('Canvas palette stayed stale after calibration completed', { cause }) }
+  } finally {
+    await page.evaluate(scheme => { window.analysisCheck.vm.settings.display.colorScheme = scheme }, oldPalette.scheme)
+  }
   const adaptiveModeStrengths = await page.locator('.analysis-score-modes').first().locator('span').evaluateAll(elements => (
     elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))
   ))

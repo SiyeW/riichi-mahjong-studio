@@ -5,9 +5,7 @@
     class="analysis-distribution-chart"
     :class="{
       'has-labels': showLabels,
-      'has-reference-line': referenceLineStyle !== null,
     }"
-    :style="referenceLineStyle || undefined"
   >
     <canvas ref="canvasElement" class="analysis-distribution-canvas" aria-hidden="true" />
     <template v-if="showLabels">
@@ -43,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import type { PerceptualSurfaceBinding } from '../perceptualSurface'
 import { vPerceptualSurface } from '../perceptualSurface'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
@@ -72,6 +70,7 @@ const emit = defineEmits<{
 type DistributionCanvasElement = HTMLCanvasElement & {
   rmsDistributionRenderSignature?: string
   rmsDistributionGapPixels?: number[]
+  rmsDistributionGuideBounds?: { left: number; right: number; top: number; bottom: number } | null
 }
 const rootElement = ref<HTMLElement | null>(null)
 const canvasElement = ref<DistributionCanvasElement | null>(null)
@@ -85,6 +84,7 @@ let renderGeometry: {
   height: number
   color: string
   gapColor: string
+  guideTrack: { left: number; right: number; top: number; bottom: number; lineHeight: number } | null
   tracks: Array<{ left: number; right: number; top: number; bottom: number }>
 } | null = null
 
@@ -94,13 +94,7 @@ function structureKey(): string {
   )).join('\u001f')}`
 }
 
-const displayedReferenceRatio = ref<number | null>(null)
-
-const referenceLineStyle = computed<Record<string, string> | null>(() => {
-  if (displayedReferenceRatio.value === null) return null
-  const ratio = displayedReferenceRatio.value
-  return { '--analysis-distribution-reference-top': `${((1 - ratio) * 100).toFixed(3)}%` }
-})
+let displayedReferenceRatio: number | null = null
 
 function enterItem(event: Event, index: number) {
   hoveredIndex.value = index
@@ -144,7 +138,14 @@ function measureGeometry() {
       bottom: Math.min(height, Math.round((trackRect.bottom - rootRect.top) * ratio)),
     }
   })
-  renderGeometry = { width, height, color, gapColor, tracks }
+  const guideTrack = tracks.length ? {
+    left: Math.min(...tracks.map(track => track.left)),
+    right: Math.max(...tracks.map(track => track.right)),
+    top: Math.min(...tracks.map(track => track.top)),
+    bottom: Math.max(...tracks.map(track => track.bottom)),
+    lineHeight: Math.max(1, Math.round(ratio)),
+  } : null
+  renderGeometry = { width, height, color, gapColor, tracks, guideTrack }
   measuredStructureKey = structureKey()
   measuredColorVariable = props.colorVariable
 }
@@ -177,6 +178,18 @@ function render() {
     .map(value => Math.round(value * 10000))
     .join(',')
   canvas.rmsDistributionGapPixels = gapPixels
+  canvas.rmsDistributionGuideBounds = null
+  if (displayedReferenceRatio !== null && renderGeometry.guideTrack) {
+    const { left, right, top, bottom } = renderGeometry.guideTrack
+    const lineHeight = Math.min(renderGeometry.guideTrack.lineHeight, bottom - top)
+    if (right > left && bottom > top) {
+      const lineTop = Math.max(top, Math.min(bottom - lineHeight,
+        Math.round(bottom - ((bottom - top) * displayedReferenceRatio))))
+      context.fillStyle = 'rgba(198, 214, 211, 0.42)'
+      context.fillRect(left, lineTop, right - left, lineHeight)
+      canvas.rmsDistributionGuideBounds = { left, right, top: lineTop, bottom: lineTop + lineHeight }
+    }
+  }
 }
 
 function stopAnimation() {
@@ -193,8 +206,11 @@ function animate() {
   // A guide that is not meaningful for the target range must not linger or
   // flash during the bar transition. Only an entering or still-valid guide
   // participates in the scale animation.
-  if (targetReferenceRatio === null) displayedReferenceRatio.value = null
-  const sourceReferenceRatio = displayedReferenceRatio.value ?? 1
+  if (targetReferenceRatio === null && displayedReferenceRatio !== null) {
+    displayedReferenceRatio = null
+    render()
+  }
+  const sourceReferenceRatio = displayedReferenceRatio ?? 1
   const settledReferenceRatio = targetReferenceRatio ?? 1
   const referenceUnchanged = targetReferenceRatio === null
     || Math.abs(settledReferenceRatio - sourceReferenceRatio) <= 1e-6
@@ -203,13 +219,14 @@ function animate() {
     && target.every((value, index) => Math.abs(value - displayedScales[index]) <= 1e-6)
   if (!displayedScales.length || props.reduceMotion || unchanged) {
     displayedScales = target
-    displayedReferenceRatio.value = targetReferenceRatio
+    displayedReferenceRatio = targetReferenceRatio
     render()
     return
   }
   const source = [...displayedScales]
-  if (displayedReferenceRatio.value === null && targetReferenceRatio !== null) {
-    displayedReferenceRatio.value = 1
+  if (displayedReferenceRatio === null && targetReferenceRatio !== null) {
+    displayedReferenceRatio = 1
+    render()
   }
   let startedAt: number | null = null
   const duration = getUiMotionDurationMs()
@@ -223,13 +240,13 @@ function animate() {
       return start + ((value - start) * eased)
     })
     if (targetReferenceRatio !== null) {
-      displayedReferenceRatio.value = sourceReferenceRatio
+      displayedReferenceRatio = sourceReferenceRatio
         + ((settledReferenceRatio - sourceReferenceRatio) * eased)
     }
     render()
     if (progress < 1) animationFrame = requestAnimationFrame(step)
     else {
-      displayedReferenceRatio.value = targetReferenceRatio
+      displayedReferenceRatio = targetReferenceRatio
       animationFrame = 0
     }
   }
