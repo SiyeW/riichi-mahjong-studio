@@ -1,4 +1,5 @@
 import { nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { fittedTableZoom } from './tableGeometry'
 
 export function useTableViewport(options: {
   uiScale: Readonly<Ref<number>>
@@ -38,9 +39,7 @@ export function useTableViewport(options: {
     let nextZoom = currentZoom
 
     if (availW > 0 && availH > 0) {
-      const zoomByWidth = ((3 * availW) + 16) / 1978
-      const zoomByHeight = (availH + 7.04) / 720.5099
-      nextZoom = Math.max(0.1, Math.min(zoomByWidth, zoomByHeight))
+      nextZoom = fittedTableZoom(availW, availH)
     }
 
     if (availW > 0 && availH > 0) {

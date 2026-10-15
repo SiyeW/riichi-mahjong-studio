@@ -1522,7 +1522,8 @@ const {
   tileArtworkLoadingLabel,
   tileImageSrc,
   prepareTileArtwork,
-} = useTileArtwork(t)
+  holdTileArtworkUpdates,
+} = useTileArtwork(t, uiScale)
 
 
 function applyStatus(nextStatus: StudioStatus) {
@@ -1560,6 +1561,7 @@ function treeContainsNode(tree: GameView['tree'], nodeId: string | null | undefi
 }
 
 function applyGameView(nextView: GameView, transitionDirection: GameViewTransitionDirection = 'forward') {
+  holdTileArtworkUpdates()
   invalidateOpponentRead()
   const previousSoundView: SoundTransitionView = {
     table: gameView.table,

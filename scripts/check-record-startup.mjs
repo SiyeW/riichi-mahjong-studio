@@ -31,7 +31,8 @@ async function launch() {
   await page.locator('.shell:not(.tile-artwork-pending)').waitFor()
   await page.locator('.record-operation-overlay').waitFor({ state: 'hidden' })
   assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), Boolean(process.env.RMS_RECORD_MOTION_PROFILE))
-  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()), false)
+  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()),
+    process.env.RMS_RECORD_MOTION_FOCUSED === '1' && process.env.RMS_RECORD_MOTION_VISIBLE === '1')
   return page
 }
 async function closeWindow() {
@@ -78,6 +79,13 @@ try {
       vm.applyGameView((await window.studioAPI.jumpToNode(previous)).view)
     }, pair)
     await page.waitForTimeout(350)
+    if (process.env.RMS_RECORD_MOTION_WAIT_ARTWORK === '1') {
+      await page.waitForFunction(() => [...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
+        .every(image => image.src.startsWith('blob:')), null, { timeout: 30_000 })
+    }
+    const artwork = await page.evaluate(() => ({ pixelRatio: window.devicePixelRatio,
+      images: [...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
+        .reduce((counts, image) => { counts[image.src.startsWith('blob:') ? 'cached' : 'vector']++; return counts }, { cached: 0, vector: 0 }) }))
     const surface = await application.evaluate(({ BrowserWindow, screen }) => {
       const window = BrowserWindow.getAllWindows()[0]
       return { visible: window.isVisible(), focused: window.isFocused(), opacity: window.getOpacity(),
@@ -86,6 +94,7 @@ try {
     const visibility = await page.evaluate(() => document.visibilityState)
     if (process.env.RMS_RECORD_MOTION_VISIBLE === '1') {
       assert.equal(surface.opacity, 1)
+      if (process.env.RMS_RECORD_MOTION_FOCUSED === '1') assert.equal(surface.focused, true)
       assert.equal(visibility, 'visible', 'an occluded surface is not a visible rendering baseline')
     }
     const client = await page.context().newCDPSession(page)
@@ -103,6 +112,8 @@ try {
     const before = await client.send('Performance.getMetrics')
     const motion = await page.evaluate(async (pair) => {
       const frameTimes = [], timelineTimes = [], visits = [], longTasks = [], zooms = new Set(), flights = []
+      const probeStartedAt = performance.now()
+      console.timeStamp(`RMS-MOTION-START:${probeStartedAt}`)
       const vm = document.querySelector('#app').__vue_app__._instance.setupState
       const initial = { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode }
       visits.push(initial.node)
@@ -161,7 +172,7 @@ try {
           const times = [flight.startTime, ...callbacks, flight.startTime + flight.duration]
           return { ...flight, callbackCount: callbacks.length,
             maximumCallbackGapMs: Math.max(...times.slice(1).map((time, index) => time - times[index])) }
-        }), callbackArrivals: frameTimes, callbackTimelineStamps: timelineTimes }
+        }), probeStartedAt, callbackArrivals: frameTimes, callbackTimelineStamps: timelineTimes }
     }, pair || null)
     const after = await client.send('Performance.getMetrics')
     const { profile } = recordCpu ? await client.send('Profiler.stop') : { profile: { nodes: [], samples: [], timeDeltas: [] } }
@@ -185,7 +196,7 @@ try {
     const hotFunctions = profile.nodes.map(node => ({ ...node.callFrame, milliseconds: (totals.get(node.id) || 0) / 1000 }))
       .sort((a, b) => b.milliseconds - a.milliseconds).slice(0, 35)
     const navigation = await application.evaluate(() => global.recordDesktopTest.navigation)
-    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, hotFunctions, profile, navigation, traceEvents,
+    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents,
       surface: { ...surface, documentVisibility: visibility },
       evidence: { nativeControlUsed: false, overlayState: process.env.RMS_RECORD_MOTION_OVERLAY_STATE || 'unverified',
         frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
