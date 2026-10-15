@@ -71,7 +71,10 @@ export async function checkReplayWorkflow(page) {
   }
   await names.first().click()
   const input = page.locator('.player-name-input')
+  const shortInputWidth = await input.evaluate(element => element.offsetWidth)
   await input.fill('Edited model g')
+  assert.ok(await input.evaluate(element => element.offsetWidth) > shortInputWidth,
+    'the editor grows with its actual text')
   await input.press('Enter')
   await page.waitForFunction(() => window.analysisCheck.vm.gameView.playerNames[0] === 'Edited model g')
   assert.deepEqual(await page.evaluate(() => window.analysisCheck.nameWrites), [[0, 'Edited model g']])
@@ -80,6 +83,27 @@ export async function checkReplayWorkflow(page) {
   await input.press('Escape')
   assert.equal(await names.first().textContent(), 'Edited model g')
   assert.equal(await page.evaluate(() => window.analysisCheck.nameWrites.length), 1)
+  await page.evaluate(() => { window.analysisCheck.vm.gameView.playerNames[0] = '' })
+  await page.mouse.move(0, 0)
+  assert.equal(await names.first().textContent(), '', 'empty names have no visible placeholder')
+  const idleBorder = await names.first().evaluate(element => getComputedStyle(element).borderColor)
+  await names.first().hover()
+  await page.waitForFunction(idle => getComputedStyle(document.querySelector('.player-name-button')).borderColor !== idle, idleBorder)
+  assert.equal(await page.locator('.ui-hover-tooltip.is-inline-reveal').count(), 0)
+  await names.first().click()
+  const emptyInputWidth = await input.evaluate(element => element.offsetWidth)
+  await input.fill('A')
+  const oneLetterWidth = await input.evaluate(element => element.offsetWidth)
+  await input.fill('中英文 model g '.repeat(16))
+  const longInput = await input.evaluate(element => ({ width: element.offsetWidth,
+    limit: element.closest('.table-player-name').clientWidth }))
+  assert.ok(longInput.width > oneLetterWidth && oneLetterWidth >= emptyInputWidth)
+  assert.ok(longInput.width <= longInput.limit + 1, 'long edit text stops at the available river edge')
+  await input.fill('Short')
+  assert.ok(await input.evaluate(element => element.offsetWidth) < longInput.width,
+    'deleting text shrinks the editor again')
+  await input.press('Escape')
+  await page.evaluate(() => { window.analysisCheck.vm.gameView.playerNames[0] = 'Edited model g' })
   await page.evaluate(() => { window.analysisCheck.vm.status.controlledSeat = 1 })
   assert.equal(await page.locator('[data-player-seat="0"] .player-name-text').textContent(), 'Edited model g',
     'player names belong to actual seats, not screen positions')

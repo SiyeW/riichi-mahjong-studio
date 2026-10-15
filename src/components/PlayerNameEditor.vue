@@ -6,7 +6,7 @@
       @keydown.enter.prevent="commit" @keydown.esc.prevent="cancel" @keydown.stop />
     <button v-else class="player-name-button" :aria-label="t('table.editPlayerName')"
       v-ui-tooltip="error || { text: name, revealTarget: '.player-name-text' }" @click.stop="edit">
-      <span class="player-name-text" :class="{ 'is-empty': !name }">{{ name || t('table.playerName') }}</span>
+      <span class="player-name-text">{{ name }}</span>
     </button>
   </span>
 </template>
@@ -54,10 +54,11 @@ function cancel() {
   min-width: 0;
 }
 .player-name-button, .player-name-input {
-  display: block;
+  display: inline-block;
   box-sizing: border-box;
-  width: 100%;
-  min-width: 0;
+  width: auto;
+  min-width: 3em;
+  max-width: 100%;
   height: calc(1.35em + 2px);
   padding: 0 .25em;
   border: 1px solid transparent;
@@ -67,15 +68,23 @@ function cancel() {
   font: inherit;
   line-height: 1.35;
   text-align: inherit;
+  vertical-align: top;
 }
-.player-name-button { cursor: text; }
+.player-name-button {
+  cursor: text;
+  transition: border-color var(--ui-motion-duration) var(--ui-motion-easing);
+}
+.player-name-input { field-sizing: content; }
+.player-name-button:hover {
+  border-color: var(--text-dim);
+  background: var(--bg-river);
+}
 .player-name-text {
   display: block;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.player-name-text.is-empty { color: var(--text-muted); }
 .player-name-input, .player-name-button:focus-visible {
   border-color: var(--text-dim);
   outline: none;

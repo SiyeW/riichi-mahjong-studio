@@ -53,10 +53,13 @@ const orderedViews = computed(() => positionOrder.flatMap(position => (
   height: var(--name-height);
   transform-origin: 0 0;
   text-align: left;
-  pointer-events: auto;
+  pointer-events: none;
   /* The dark square is a pseudo-element, so declare its actual surface here
      for the shared in-place reveal's background sampling. */
   background: var(--bg-river);
+}
+.table-player-name :deep(button), .table-player-name :deep(input) {
+  pointer-events: auto;
 }
 .table-player-name.has-third-river-row {
   --name-width: calc(var(--grid-river-col) - 2 * var(--name-inset));
