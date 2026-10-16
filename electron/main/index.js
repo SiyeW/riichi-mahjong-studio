@@ -27,6 +27,9 @@ const {
 const { createTranslator } = require('./i18n')
 const { createMainWindow } = require('./window/main-window')
 const { registerStartupEngineRestore } = require('./services/startup-engine-restore')
+const { configurePageRasterization } = require('./rendering-policy')
+
+configurePageRasterization(app)
 
 const projectRoot = path.resolve(__dirname, '..', '..')
 const isDev = !app.isPackaged

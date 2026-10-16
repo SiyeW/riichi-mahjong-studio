@@ -13,7 +13,7 @@ import { readRenderingTrace } from '../src/testing/renderingTrace.ts'
 const root = path.resolve(import.meta.dirname, '..')
 const source = path.resolve(process.argv[2] || path.join(root, 'examples/example-record.mjstudio'))
 const rasterization = process.env.RMS_RECORD_MOTION_RASTERIZATION || 'default'
-assert.ok(['default', 'cpu'].includes(rasterization), 'motion rasterization must be default or cpu')
+assert.ok(['default', 'cpu', 'gpu'].includes(rasterization), 'motion rasterization must be default, cpu or gpu')
 assert.ok(rasterization === 'default' || process.env.RMS_RECORD_MOTION_PROFILE,
   'a rasterization intervention requires an explicit motion profile')
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'rms-record-startup-'))
@@ -29,7 +29,9 @@ const server = externalRendererUrl ? null
 let application
 const errors = []
 async function launch() {
-  application = await electron.launch({ args: [...(rasterization === 'cpu' ? ['--disable-gpu-rasterization'] : []),
+  const rasterFlags = rasterization === 'cpu' ? ['--disable-gpu-rasterization']
+    : rasterization === 'gpu' ? ['--enable-gpu-rasterization'] : []
+  application = await electron.launch({ args: [...rasterFlags,
     path.join(root, 'scripts/electron-record-test-main.cjs')],
     env: { ...process.env, VITE_DEV_SERVER_URL: externalRendererUrl || server.resolvedUrls.local[0], RMS_RECORD_DESKTOP_TEST_DIR: directory } })
   const page = await application.firstWindow()
@@ -254,6 +256,8 @@ try {
     const rendererFeatures = await application.evaluate(({ app }) => app.getGPUFeatureStatus())
     if (rasterization === 'cpu') assert.equal(rendererFeatures.rasterization, 'disabled_software',
       'the rasterization intervention must reach the actual renderer')
+    if (rasterization === 'gpu') assert.ok(rendererFeatures.rasterization.startsWith('enabled'),
+      'the GPU-rasterization control must reach the actual renderer')
     // Optional adapter attribution is outside the sampled animation/CPU window.
     const gpu = process.env.RMS_RECORD_MOTION_GPU_INFO === '1'
       ? await application.evaluate(async ({ app }) => ({ features: app.getGPUFeatureStatus(),
