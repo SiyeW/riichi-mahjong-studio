@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { createServer } from 'vite'
@@ -49,12 +50,15 @@ function loadRealisticAnalysisFixtures() {
 }
 
 const realisticFixtures = loadRealisticAnalysisFixtures()
-const server = externalRendererUrl
-  ? null
-  : await createServer({ root, mode: 'ui-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
+const directory = externalRendererUrl ? null : fs.mkdtempSync(path.join(os.tmpdir(), 'rms-analysis-ui-'))
+let server
 let browser
 let electronApp
 try {
+  if (!externalRendererUrl) {
+    server = await createServer({ root, mode: 'ui-test', cacheDir: path.join(directory, 'vite-cache'),
+      server: { host: '127.0.0.1', port: 0, strictPort: false } })
+  }
   await server?.listen()
   const rendererUrl = externalRendererUrl || server.resolvedUrls.local[0]
   let page
@@ -3317,7 +3321,14 @@ try {
   }
   throw error
 } finally {
-  await browser?.close()
-  await electronApp?.close()
-  await server?.close()
+  try {
+    await browser?.close()
+    await electronApp?.close()
+  } finally {
+    try {
+      await server?.close()
+    } finally {
+      if (directory) fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    }
+  }
 }

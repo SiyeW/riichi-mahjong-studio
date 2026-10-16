@@ -7,7 +7,7 @@ import { chromium, _electron as electron } from 'playwright'
 
 const root = path.resolve(import.meta.dirname, '..')
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'rms-artwork-check-'))
-const server = await createServer({ root, server: { host: '127.0.0.1', port: 0, strictPort: false } })
+let server
 let browser
 let electronApp
 const errors = []
@@ -89,6 +89,8 @@ async function damage(page, mutate) {
   }, mutate)
 }
 try {
+  server = await createServer({ root, cacheDir: path.join(directory, 'vite-cache'),
+    server: { host: '127.0.0.1', port: 0, strictPort: false } })
   await server.listen()
   let page = await launch()
   await ready(page, 'cold generation', 40)
@@ -153,8 +155,14 @@ try {
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ result: 'Tile artwork lifecycle, persistence, fallback and pixel coverage passed', rounds }))
 } finally {
-  await close()
-  await server.close()
-  // This is an explicitly created temp browser directory, never user data.
-  await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  try {
+    await close()
+  } finally {
+    try {
+      await server?.close()
+    } finally {
+      // This is an explicitly created temp browser directory, never user data.
+      await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    }
+  }
 }

@@ -18,14 +18,8 @@ assert.ok(rasterization === 'default' || process.env.RMS_RECORD_MOTION_PROFILE,
   'a rasterization intervention requires an explicit motion profile')
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'rms-record-startup-'))
 const recovery = path.join(directory, 'records', '.recovery')
-await fs.mkdir(recovery, { recursive: true })
-await fs.copyFile(source, path.join(recovery, '未保存的对局.mjstudio'))
-await fs.writeFile(path.join(directory, 'config.json'), JSON.stringify({ display: { language: 'zh-CN' },
-  records: { saveRecoveryOnExit: true },
-  engines: { schemaVersion: 2, profiles: [], loadedProfileIds: [], outputAssignments: {} } }))
 const externalRendererUrl = process.env.RMS_RECORD_TEST_URL || null
-const server = externalRendererUrl ? null
-  : await createServer({ root, mode: 'desktop-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
+let server
 let application
 const errors = []
 async function launch() {
@@ -55,6 +49,15 @@ async function closeWindow() {
   application = null
 }
 try {
+  await fs.mkdir(recovery, { recursive: true })
+  await fs.copyFile(source, path.join(recovery, '未保存的对局.mjstudio'))
+  await fs.writeFile(path.join(directory, 'config.json'), JSON.stringify({ display: { language: 'zh-CN' },
+    records: { saveRecoveryOnExit: true },
+    engines: { schemaVersion: 2, profiles: [], loadedProfileIds: [], outputAssignments: {} } }))
+  if (!externalRendererUrl) {
+    server = await createServer({ root, mode: 'desktop-test', cacheDir: path.join(directory, 'vite-cache'),
+      server: { host: '127.0.0.1', port: 0, strictPort: false } })
+  }
   await server?.listen()
   let page = await launch()
   await page.locator('textarea.node-comment').waitFor()
@@ -164,7 +167,6 @@ try {
       performance.mark(`RMS-MOTION-START:${probeStartedAt}`, { startTime: probeStartedAt })
       const vm = document.querySelector('#app').__vue_app__._instance.setupState
       const initial = { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode }
-      const experimentAdmissionsBefore = window.__rmsFlightExperiment?.admissions || 0
       visits.push(initial.node)
       const table = document.querySelector('.grid-main')
       const wheel = event => inputs.push({ at: performance.now(), deltaY: event.deltaY, trusted: event.isTrusted,
@@ -223,8 +225,6 @@ try {
       return { initial, final: { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode },
         backendNode: (await window.studioAPI.getGameView()).view.currentNodeId,
         zooms: [...zooms], visits: visits.length, inputs, commits,
-        experiment: window.__rmsFlightExperiment ? { ...window.__rmsFlightExperiment,
-          admissionsDuringSample: window.__rmsFlightExperiment.admissions - experimentAdmissionsBefore } : undefined,
         frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
         p95: intervals[Math.floor(intervals.length * .95)], max: intervals.at(-1), longTasks,
         flightWindows: flights.map(flight => {
@@ -309,7 +309,13 @@ try {
   console.log(JSON.stringify({ result: 'Legacy startup, mode-aware wheel navigation, discard and empty restart passed',
     restoredMode: initial.state.mode, restoredNode: initial.view.currentNodeId }))
 } finally {
-  await application?.close()
-  await server?.close()
-  await fs.rm(directory, { recursive: true, force: true })
+  try {
+    await application?.close()
+  } finally {
+    try {
+      await server?.close()
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    }
+  }
 }

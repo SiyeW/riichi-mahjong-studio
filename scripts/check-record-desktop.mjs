@@ -12,18 +12,14 @@ const { decodeGameRecord } = require('../electron/main/state/game-record-codec')
 const root = path.resolve(import.meta.dirname, '..')
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'rms-record-desktop-'))
 const record = path.join(directory, 'records', 'example-record.mjstudio')
-await fs.mkdir(path.dirname(record))
-await fs.copyFile(path.join(root, 'examples', 'example-record.mjstudio'), record)
-await fs.writeFile(path.join(directory, 'config.json'), JSON.stringify({ display: { language: 'zh-CN' },
-  records: { saveRecoveryOnExit: true, analysisCacheMiB: 4 },
-  engines: { schemaVersion: 2, profiles: [], loadedProfileIds: [], outputAssignments: {} } }))
-const server = await createServer({ root, mode: 'desktop-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
+let server
 let application
 const errors = []
 const timings = []
 async function launch() {
   const app = await electron.launch({ args: [path.join(root, 'scripts/electron-record-test-main.cjs')],
     env: { ...process.env, VITE_DEV_SERVER_URL: server.resolvedUrls.local[0], RMS_RECORD_DESKTOP_TEST_DIR: directory } })
+  application = app
   const page = await app.firstWindow()
   page.setDefaultTimeout(20_000)
   page.on('pageerror', error => errors.push(error.message))
@@ -39,6 +35,13 @@ async function timed(name, task) {
   console.log(JSON.stringify({ stage: name, ms }))
 }
 try {
+  await fs.mkdir(path.dirname(record))
+  await fs.copyFile(path.join(root, 'examples', 'example-record.mjstudio'), record)
+  await fs.writeFile(path.join(directory, 'config.json'), JSON.stringify({ display: { language: 'zh-CN' },
+    records: { saveRecoveryOnExit: true, analysisCacheMiB: 4 },
+    engines: { schemaVersion: 2, profiles: [], loadedProfileIds: [], outputAssignments: {} } }))
+  server = await createServer({ root, mode: 'desktop-test', cacheDir: path.join(directory, 'vite-cache'),
+    server: { host: '127.0.0.1', port: 0, strictPort: false } })
   await server.listen()
   let launched = await launch()
   application = launched.app
@@ -104,7 +107,13 @@ try {
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ result: 'Full hidden Electron/Vue/IPC/backend open/save/close/recovery passed', timings }))
 } finally {
-  if (application) await application.close()
-  await server.close()
-  await fs.rm(directory, { recursive: true, force: true })
+  try {
+    await application?.close()
+  } finally {
+    try {
+      await server?.close()
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    }
+  }
 }
