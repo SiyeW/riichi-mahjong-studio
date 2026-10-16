@@ -12,6 +12,10 @@ import { readRenderingTrace } from '../src/testing/renderingTrace.ts'
 // startup after explicit discard. An optional source is copied, never edited.
 const root = path.resolve(import.meta.dirname, '..')
 const source = path.resolve(process.argv[2] || path.join(root, 'examples/example-record.mjstudio'))
+const rasterization = process.env.RMS_RECORD_MOTION_RASTERIZATION || 'default'
+assert.ok(['default', 'cpu'].includes(rasterization), 'motion rasterization must be default or cpu')
+assert.ok(rasterization === 'default' || process.env.RMS_RECORD_MOTION_PROFILE,
+  'a rasterization intervention requires an explicit motion profile')
 const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'rms-record-startup-'))
 const recovery = path.join(directory, 'records', '.recovery')
 await fs.mkdir(recovery, { recursive: true })
@@ -25,7 +29,8 @@ const server = externalRendererUrl ? null
 let application
 const errors = []
 async function launch() {
-  application = await electron.launch({ args: [path.join(root, 'scripts/electron-record-test-main.cjs')],
+  application = await electron.launch({ args: [...(rasterization === 'cpu' ? ['--disable-gpu-rasterization'] : []),
+    path.join(root, 'scripts/electron-record-test-main.cjs')],
     env: { ...process.env, VITE_DEV_SERVER_URL: externalRendererUrl || server.resolvedUrls.local[0], RMS_RECORD_DESKTOP_TEST_DIR: directory } })
   const page = await application.firstWindow()
   page.setDefaultTimeout(30_000)
@@ -243,6 +248,9 @@ try {
       } finally { clearTimeout(timer) }
     }
     await client.detach()
+    const rendererFeatures = await application.evaluate(({ app }) => app.getGPUFeatureStatus())
+    if (rasterization === 'cpu') assert.equal(rendererFeatures.rasterization, 'disabled_software',
+      'the rasterization intervention must reach the actual renderer')
     // Optional adapter attribution is outside the sampled animation/CPU window.
     const gpu = process.env.RMS_RECORD_MOTION_GPU_INFO === '1'
       ? await application.evaluate(async ({ app }) => ({ features: app.getGPUFeatureStatus(),
@@ -257,13 +265,14 @@ try {
     const hotFunctions = profile.nodes.map(node => ({ ...node.callFrame, milliseconds: (totals.get(node.id) || 0) / 1000 }))
       .sort((a, b) => b.milliseconds - a.milliseconds).slice(0, 35)
     const navigation = await application.evaluate(() => global.recordDesktopTest.navigation)
-    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents, gpu,
+    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents, gpu, rendererFeatures,
       source: { bytes: (await fs.stat(source)).size, sha256: createHash('sha256').update(await fs.readFile(source)).digest('hex') },
       surface, surfaceAfter,
       evidence: { desktopControlToolsUsed: false, overlayState: process.env.RMS_RECORD_MOTION_OVERLAY_STATE || 'unverified',
         nativeWindowSurface: surface.mode === 'native',
         stableForeground,
         inputMode: process.env.RMS_RECORD_MOTION_INPUT === 'trusted' ? 'trusted-browser-wheel' : 'dom-wheel',
+        rasterizationRequested: rasterization,
         lockedSession: surface.power.idleState === 'locked' || surfaceAfter.power.idleState === 'locked'
           || surfaceAfter.locks !== surface.locks,
         frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
