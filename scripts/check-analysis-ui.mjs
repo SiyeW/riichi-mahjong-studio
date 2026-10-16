@@ -334,13 +334,30 @@ try {
     await page.screenshot({ path: path.resolve(process.env.RMS_UI_SCREENSHOT), fullPage: true })
   }
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
-  await page.waitForFunction(() => document.querySelectorAll('.footer-memory-status .resource-track').length === 3)
+  await page.waitForFunction(() => document.querySelectorAll('.footer-memory-status .resource-track').length === 1)
+  const resourceItems = page.locator('.footer-memory-status .resource-item')
+  assert.equal(await resourceItems.count(), 3, 'cache, application memory and system available values remain visible')
+  assert.equal(await resourceItems.nth(1).locator('.resource-track').count(), 0, 'application memory has no unhelpful total-RAM bar')
+  assert.equal(await resourceItems.nth(2).locator('.resource-track').count(), 0, 'system available memory stays a readable value')
   const cacheMeter = await page.locator('.resource-track').first().evaluate(track => ({
     width: track.getBoundingClientRect().width, height: track.getBoundingClientRect().height,
     fill: getComputedStyle(track.firstElementChild).transform,
   }))
   assert.ok(cacheMeter.width > cacheMeter.height && cacheMeter.height > 0)
   assert.equal(cacheMeter.fill, 'matrix(0.5, 0, 0, 1, 0, 0)')
+  const originalRuntimeMetrics = await page.evaluate(() => {
+    const state = document.querySelector('#app').__vue_app__._instance.setupState
+    const original = state.runtimeMetrics
+    state.runtimeMetrics = { ...original, applicationBytes: 1.05 * 1024 ** 3,
+      systemAvailableBytes: 634 * 1024 ** 2, systemTotalBytes: 16 * 1024 ** 3 }
+    return original
+  })
+  assert.ok((await resourceItems.nth(1).innerText()).includes('1.05 GB'))
+  assert.ok((await resourceItems.nth(2).innerText()).includes('634 MB'))
+  await page.evaluate(() => { document.querySelector('#app').__vue_app__._instance.setupState.runtimeMetrics = null })
+  assert.equal(await page.locator('.footer-memory-status .resource-track').count(), 0, 'unavailable metrics do not invent a cache meter')
+  assert.ok((await page.locator('.footer-memory-status').innerText()).includes('—'))
+  await page.evaluate(metrics => { document.querySelector('#app').__vue_app__._instance.setupState.runtimeMetrics = metrics }, originalRuntimeMetrics)
   for (const [width, scale] of [[1120, 1], [1120, 1.75], [1800, 1]]) {
     await page.setViewportSize({ width, height: 1000 })
     await page.evaluate(scale => { window.analysisCheck.vm.settings.display.uiScale = scale }, scale)

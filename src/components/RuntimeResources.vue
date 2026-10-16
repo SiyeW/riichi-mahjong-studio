@@ -7,15 +7,13 @@
     </span>
     <span class="resource-item">
       <span>{{ t('status.applicationMemory', { value: formatSize(metrics?.applicationBytes) }) }}</span>
-      <span class="resource-track" aria-hidden="true"><span :style="fill(metrics?.applicationBytes, metrics?.systemTotalBytes)" /></span>
     </span>
     <span class="resource-item">
       <span>{{ t('status.systemAvailable', { value: formatSize(metrics?.systemAvailableBytes) }) }}</span>
-      <span class="resource-track" aria-hidden="true"><span :style="fill(metrics?.systemAvailableBytes, metrics?.systemTotalBytes)" /></span>
     </span>
     <div id="runtime-memory-detail" class="ui-hover-tooltip footer-memory-tooltip" role="tooltip">
       <div v-for="row in rows" :key="row.label" class="ui-hover-tooltip-row"><span>{{ row.label }}</span><span>{{ row.value }}</span></div>
-      <span>{{ t('status.resourceScale') }}</span>
+      <span v-if="cache">{{ t('status.resourceScale') }}</span>
     </div>
   </div>
 </template>

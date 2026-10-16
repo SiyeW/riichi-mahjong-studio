@@ -279,7 +279,7 @@
   "status.cacheProtected": "使用中のキャッシュ",
   "status.cachePending": "処理中の結果 / 書き込み待ちデータ",
   "status.recoveryError": "復元データの書き込みエラー",
-  "status.resourceScale": "キャッシュの目盛りは設定容量、メモリの目盛りはシステム総メモリを基準にしています。",
+  "status.resourceScale": "キャッシュの設定容量を100%として表示します。",
   "autoAnalysis.noRecord": "牌譜が読み込まれていません",
   "autoAnalysis.scanning": "スキャン中",
   "autoAnalysis.failedCount": "{completed} / {total}・{failed} 件失敗",

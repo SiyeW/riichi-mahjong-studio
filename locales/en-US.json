@@ -279,7 +279,7 @@
   "status.cacheProtected": "Cache currently in use",
   "status.cachePending": "Results in progress / data awaiting write",
   "status.recoveryError": "Recovery write error",
-  "status.resourceScale": "Cache bars use the cache budget as their scale; memory bars use total system memory.",
+  "status.resourceScale": "The cache bar shows usage relative to its budget.",
   "autoAnalysis.noRecord": "No record loaded",
   "autoAnalysis.scanning": "Scanning",
   "autoAnalysis.failedCount": "{completed} / {total} · {failed} failed",

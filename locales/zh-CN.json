@@ -279,7 +279,7 @@
   "status.cacheProtected": "正在使用的缓存",
   "status.cachePending": "处理中的结果 / 待写入数据",
   "status.recoveryError": "恢复数据写入异常",
-  "status.resourceScale": "缓存条以缓存预算为满刻度；内存条以系统总内存为满刻度。",
+  "status.resourceScale": "缓存条以缓存预算为满刻度。",
   "autoAnalysis.noRecord": "未载入牌谱",
   "autoAnalysis.scanning": "正在扫描",
   "autoAnalysis.failedCount": "{completed} / {total} · {failed} 项失败",
