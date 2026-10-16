@@ -6,12 +6,13 @@ export interface MotionGeometry {
 }
 export type MotionRequest =
   | { type: 'init'; canvas: OffscreenCanvas }
-  | { type: 'prepare'; id: number; geometry: MotionGeometry; planes: ImageBitmap[];
+  | { type: 'prepare'; id: number; geometry: MotionGeometry; pixels: Uint8ClampedArray; planeCount: 1 | 2;
       mode: 'single' | 'overlay' | 'crossfade'; stops: OpacityStop[][]; duration: number; easing: string }
   | { type: 'start'; id: number; absoluteTime: number }
   | { type: 'cancel'; id: number }
 
-export interface SubmittedInterval { time: number; previous: number; progress: number; span: number }
+// Absolute clock endpoints in ms; span is in physical canvas pixels.
+export interface SubmittedInterval { fromTime: number; time: number; previous: number; progress: number; span: number }
 export type MotionReply =
   | { type: 'warm' }
   | { type: 'ready'; id: number; preparationMs: number }

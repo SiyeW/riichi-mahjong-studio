@@ -119,12 +119,13 @@ export function createDiscardCoverageRenderer() {
     resizeObserver.observe(source)
     snapshotBusy = true
     void captureMotionSnapshot(source, effects, dx, dy).then(snapshot => {
-      if (!waiting || active?.id !== id) { snapshot.planes.forEach(bitmap => bitmap.close()); return }
+      if (!waiting || active?.id !== id) return
       surface.dataset.snapshotMs = String(performance.now() - began)
+      surface.dataset.snapshotStages = JSON.stringify(snapshot.timings)
       Object.assign(surface.style, { left: `${snapshot.left}px`, top: `${snapshot.top}px`,
         width: `${snapshot.geometry.width / snapshot.dpr}px`, height: `${snapshot.geometry.height / snapshot.dpr}px`, opacity: snapshot.opacity })
-      post({ type: 'prepare', id, geometry: snapshot.geometry, planes: snapshot.planes, mode: snapshot.mode,
-        stops: snapshot.stops, duration, easing }, snapshot.planes)
+      post({ type: 'prepare', id, geometry: snapshot.geometry, pixels: snapshot.pixels, planeCount: snapshot.planeCount, mode: snapshot.mode,
+        stops: snapshot.stops, duration, easing }, [snapshot.pixels.buffer as ArrayBuffer])
     }, fail).finally(() => { snapshotBusy = false })
     return { get waiting() { return waiting }, cancel: retire, finished }
   }

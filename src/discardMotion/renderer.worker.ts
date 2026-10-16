@@ -9,24 +9,54 @@ const scope = self as unknown as {
   cancelAnimationFrame(id: number): void
 }
 let canvas: OffscreenCanvas, gl: WebGL2RenderingContext, program: WebGLProgram
+const uniformNames = ['planeA', 'planeB', 'product', 'sprite', 'viewport', 'center', 'axis', 'span', 'weights'] as const
+let uniforms: Record<typeof uniformNames[number], WebGLUniformLocation | null>, maxTextureSize = 0, usable = false
 let textures: WebGLTexture[] = [], fence: WebGLSync | null = null, frame = 0
-let job: Extract<MotionRequest, { type: 'prepare' }> | null = null
-let previous = 0, started = 0, phase: 'motion' | 'sharp' | 'finish' = 'motion'
+let retirementTimer: ReturnType<typeof setTimeout> | null = null, retiringSince = 0
+let job: Omit<Extract<MotionRequest, { type: 'prepare' }>, 'pixels'> | null = null
+let previous = 0, previousTime = 0, started = 0, phase: 'motion' | 'sharp' | 'finish' = 'motion'
 let intervals: SubmittedInterval[] = []
 let ease = (value: number) => value
 
 function release() {
   if (frame) scope.cancelAnimationFrame(frame)
   frame = 0
+  job = null
+  // Deleting a sync object does not cancel the submitted GPU work. Retain its
+  // fence/textures until completion, and reject another preparation while it is
+  // draining so rapid supersession cannot build a hidden GPU queue.
+  if (usable && fence) {
+    try {
+      if (!fenceReady()) {
+        if (!retiringSince) retiringSince = performance.now()
+        if (performance.now() - retiringSince <= 500) {
+          if (retirementTimer === null) {
+            const retiringFence = fence
+            const timer = setTimeout(() => {
+              if (retirementTimer !== timer) return
+              retirementTimer = null
+              if (fence !== retiringFence || job) return
+              release()
+              if (!usable) scope.postMessage({ type: 'failed', id: 0, reason: 'GPU retirement failed' })
+            }, 4)
+            retirementTimer = timer
+          }
+          return
+        }
+        usable = false
+      }
+    } catch { usable = false }
+  }
+  if (retirementTimer !== null) clearTimeout(retirementTimer)
+  retirementTimer = null; retiringSince = 0
   if (fence) gl.deleteSync(fence)
   fence = null
   textures.forEach(texture => gl.deleteTexture(texture)); textures = []
-  job = null
 }
 
 function failed(reason: unknown, id = job?.id ?? 0) {
   release()
-  scope.postMessage({ type: 'failed', id, reason: String(reason) })
+  scope.postMessage({ type: 'failed', id: usable ? id : 0, reason: String(reason) })
 }
 
 function compile(kind: number, source: string) {
@@ -52,21 +82,18 @@ function initialize(surface: OffscreenCanvas) {
   gl.deleteShader(vertex); gl.deleteShader(fragment)
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program) || 'Motion link failed')
   gl.useProgram(program)
-  canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); failed('Motion context lost') })
+  uniforms = Object.fromEntries(uniformNames.map(name => [name, gl.getUniformLocation(program, name)])) as typeof uniforms
+  maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE)
+  usable = true
+  canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); usable = false; failed('Motion context lost', 0) })
   // Link completion is not first-draw readiness, especially in software WebGL.
   // Reuse the real preparation path with a reserved tiny warm job, off-flight.
-  const staging = new OffscreenCanvas(2, 2), context2d = staging.getContext('2d', { willReadFrequently: true })
-  if (!context2d) throw Error('Motion warm surface unavailable')
-  context2d.fillStyle = '#fff'; context2d.fillRect(0, 0, 2, 2)
-  const a = staging.transferToImageBitmap()
-  context2d.fillRect(0, 0, 2, 2)
-  const b = staging.transferToImageBitmap()
   void prepare({ type: 'prepare', id: 0, geometry: { width: 1, height: 1, spriteWidth: 2, spriteHeight: 2,
-    startX: .5, startY: .5, dx: 1, dy: 0, axisX: 1, axisY: 0 }, planes: [a,b], mode: 'crossfade',
+    startX: .5, startY: .5, dx: 1, dy: 0, axisX: 1, axisY: 0 }, pixels: new Uint8ClampedArray(32).fill(255), planeCount: 2, mode: 'crossfade',
     stops: [[{offset:0,value:1}], [{offset:0,value:1}]], duration: 1, easing: 'linear' })
 }
 
-function texture(data: Float32Array, unit: number, name: string) {
+function texture(data: Float32Array, unit: number, name: 'planeA' | 'planeB' | 'product') {
   const created = gl.createTexture()
   if (!created || !job) throw Error('Motion texture allocation failed')
   textures.push(created)
@@ -76,7 +103,7 @@ function texture(data: Float32Array, unit: number, name: string) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, job.geometry.spriteWidth + 1, job.geometry.spriteHeight, 0, gl.RGBA, gl.FLOAT, data)
-  gl.uniform1i(gl.getUniformLocation(program, name), unit)
+  gl.uniform1i(uniforms[name], unit)
 }
 
 function draw(progress: number, last: number, time: number) {
@@ -90,14 +117,14 @@ function draw(progress: number, last: number, time: number) {
     const a = opacityAt(job.stops[0]!, p), b = opacityAt(job.stops[1]!, p)
     weights = [a, b, a * b]
   }
-  gl.uniform2f(gl.getUniformLocation(program, 'center'), g.startX + g.dx * progress, g.startY + g.dy * progress)
-  gl.uniform1f(gl.getUniformLocation(program, 'span'), span)
-  gl.uniform3f(gl.getUniformLocation(program, 'weights'), ...weights)
+  gl.uniform2f(uniforms.center, g.startX + g.dx * progress, g.startY + g.dy * progress)
+  gl.uniform1f(uniforms.span, span)
+  gl.uniform3f(uniforms.weights, ...weights)
   gl.drawArrays(gl.TRIANGLES, 0, 3)
   fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
-  if (!fence || gl.getError() !== gl.NO_ERROR) throw Error('Motion draw failed')
+  if (!fence) { usable = false; throw Error('Motion fence allocation failed') }
   gl.flush()
-  intervals.push({ time, previous: last, progress, span })
+  intervals.push({ fromTime: previousTime, time, previous: last, progress, span })
 }
 
 function fenceReady() {
@@ -114,7 +141,7 @@ function tick() {
   if (!job) return
   try {
     // Freeze one time endpoint. Work done below never extends its own sweep.
-    const time = performance.timeOrigin + performance.now()
+    const time = Math.max(started, previousTime, performance.timeOrigin + performance.now())
     if (time - started > job.duration + 500) throw Error('Motion submission timed out')
     if (fenceReady()) {
       if (phase === 'finish') {
@@ -124,7 +151,7 @@ function tick() {
       const progress = phase === 'sharp' ? 1 : ease(Math.max(0, Math.min(1, (time - started) / job.duration)))
       if (progress < previous || progress < 0 || progress > 1) throw Error('Unsupported nonmonotone flight')
       draw(progress, phase === 'sharp' ? 1 : previous, time)
-      previous = progress
+      previous = progress; previousTime = time
       if (phase === 'sharp') phase = 'finish'
       else if (progress === 1) phase = 'sharp'
     }
@@ -134,33 +161,35 @@ function tick() {
 
 async function prepare(request: Extract<MotionRequest, { type: 'prepare' }>) {
   release()
+  if (!usable || fence) {
+    scope.postMessage({ type: 'failed', id: usable ? request.id : 0, reason: 'Previous GPU draw still retiring' })
+    return
+  }
   const before = performance.now()
-  job = request
+  const { pixels, ...prepared } = request
+  job = prepared
   try {
-    const g = request.geometry, max = gl.getParameter(gl.MAX_TEXTURE_SIZE)
-    if (![g.width, g.height, g.spriteWidth, g.spriteHeight].every(n => Number.isInteger(n) && n > 0 && n < max)
+    const g = request.geometry
+    if (![g.width, g.height, g.spriteWidth, g.spriteHeight].every(n => Number.isInteger(n) && n > 0 && n < maxTextureSize)
       || g.width * g.height > 4_000_000 || g.spriteWidth * g.spriteHeight > 1_000_000) throw Error('Motion surface exceeds bounded size')
-    ease = parseCssEasing(request.easing) ?? (() => { throw Error('Unsupported motion easing') })
+    const parsed = parseCssEasing(request.easing)
+    if (!parsed) throw Error('Unsupported motion easing')
+    ease = parsed
     canvas.width = g.width; canvas.height = g.height
     gl.viewport(0, 0, canvas.width, canvas.height); gl.useProgram(program)
-    gl.uniform2f(gl.getUniformLocation(program, 'sprite'), g.spriteWidth, g.spriteHeight)
-    gl.uniform2f(gl.getUniformLocation(program, 'viewport'), g.width, g.height)
-    gl.uniform2f(gl.getUniformLocation(program, 'axis'), g.axisX, g.axisY)
-    const scratch = new OffscreenCanvas(g.spriteWidth, g.spriteHeight)
-    const context = scratch.getContext('2d', { willReadFrequently: true })
-    if (!context) throw Error('Motion snapshot readback unavailable')
-    const planes = request.planes.map(bitmap => {
-      context.clearRect(0, 0, scratch.width, scratch.height); context.drawImage(bitmap, 0, 0)
-      return context.getImageData(0, 0, scratch.width, scratch.height).data
-    })
-    const a = planes[0], b = planes[1] ?? a
-    if (!a) throw Error('Empty motion snapshot')
+    gl.uniform2f(uniforms.sprite, g.spriteWidth, g.spriteHeight)
+    gl.uniform2f(uniforms.viewport, g.width, g.height)
+    gl.uniform2f(uniforms.axis, g.axisX, g.axisY)
+    const planeBytes = g.spriteWidth * g.spriteHeight * 4
+    if (request.planeCount !== (request.mode === 'single' ? 1 : 2)
+      || pixels.length !== planeBytes * request.planeCount) throw Error('Invalid motion pixel atlas')
+    const a = pixels.subarray(0, planeBytes), b = request.planeCount === 2 ? pixels.subarray(planeBytes) : a
     texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight), 0, 'planeA')
     if (request.mode !== 'single') texture(rowIntegrals(b, g.spriteWidth, g.spriteHeight), 1, 'planeB')
-    else gl.uniform1i(gl.getUniformLocation(program, 'planeB'), 0)
+    else gl.uniform1i(uniforms.planeB, 0)
     if (request.mode === 'crossfade') texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight, b), 2, 'product')
-    else gl.uniform1i(gl.getUniformLocation(program, 'product'), 0)
-    previous = 0; started = performance.timeOrigin + performance.now(); phase = 'motion'; intervals = []
+    else gl.uniform1i(uniforms.product, 0)
+    previous = 0; started = performance.timeOrigin + performance.now(); previousTime = started; phase = 'motion'; intervals = []
     draw(0, 0, started)
     const id = request.id
     const ready = () => {
@@ -168,6 +197,10 @@ async function prepare(request: Extract<MotionRequest, { type: 'prepare' }>) {
       try {
         if (performance.now() - before > 500) throw Error('Motion preparation timed out')
         if (!fenceReady()) { setTimeout(ready, 0); return }
+        // Check capability/upload/draw errors once, after preparation's fence.
+        // getError is a synchronous command-buffer round trip in Chromium; it
+        // must not serialize each submitted animation frame with the GPU.
+        if (gl.getError() !== gl.NO_ERROR) throw Error('Motion preparation draw failed')
         intervals = []
         if (id === 0) { release(); scope.postMessage({ type: 'warm' }) }
         else scope.postMessage({ type: 'ready', id, preparationMs: performance.now() - before })
@@ -175,7 +208,6 @@ async function prepare(request: Extract<MotionRequest, { type: 'prepare' }>) {
     }
     ready()
   } catch (error) { failed(error, request.id) }
-  finally { request.planes.forEach(bitmap => bitmap.close()) }
 }
 
 scope.onmessage = event => {
@@ -183,9 +215,12 @@ scope.onmessage = event => {
   try {
     if (message.type === 'init') initialize(message.canvas)
     else if (message.type === 'prepare') void prepare(message)
-    else if (message.type === 'cancel') { if (job?.id === message.id) release() }
+    else if (message.type === 'cancel') {
+      if (job?.id === message.id) release()
+      if (!usable) scope.postMessage({ type: 'failed', id: 0, reason: 'GPU cancellation failed' })
+    }
     else if (message.type === 'start' && job?.id === message.id) {
-      started = message.absoluteTime; previous = 0; phase = 'motion'
+      started = message.absoluteTime; previousTime = started; previous = 0; phase = 'motion'
       frame = scope.requestAnimationFrame(tick)
     }
   } catch (error) { failed(error, 'id' in message ? message.id : 0) }

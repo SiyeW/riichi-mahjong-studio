@@ -13,6 +13,12 @@ import { readRenderingTrace } from '../src/testing/renderingTrace.ts'
 const root = path.resolve(import.meta.dirname, '..')
 const source = path.resolve(process.argv[2] || path.join(root, 'examples/example-record.mjstudio'))
 const rasterization = process.env.RMS_RECORD_MOTION_RASTERIZATION || 'default'
+const motionSteps = Number(process.env.RMS_RECORD_MOTION_STEPS || 20)
+const motionStepDelay = Number(process.env.RMS_RECORD_MOTION_STEP_DELAY || 80)
+const motionDirection = process.env.RMS_RECORD_MOTION_DIRECTION || 'round-trip'
+assert.ok(Number.isInteger(motionSteps) && motionSteps >= 1 && motionSteps <= 200)
+assert.ok(Number.isFinite(motionStepDelay) && motionStepDelay >= 1 && motionStepDelay <= 2000)
+assert.ok(['forward', 'backward', 'round-trip'].includes(motionDirection))
 assert.ok(['default', 'cpu', 'gpu'].includes(rasterization), 'motion rasterization must be default, cpu or gpu')
 assert.ok(rasterization === 'default' || process.env.RMS_RECORD_MOTION_PROFILE,
   'a rasterization intervention requires an explicit motion profile')
@@ -83,6 +89,7 @@ try {
     if (pair && (pair.length !== 2 || pair.some(node => !node.trim()))) {
       throw new Error('RMS_RECORD_MOTION_PAIR must contain previous,next node IDs.')
     }
+    assert.ok(!(pair && process.env.RMS_RECORD_MOTION_START_NODE), 'choose a fixed pair or a starting node, not both')
     if (process.env.RMS_RECORD_MOTION_SEAT !== undefined) {
       const seat = Number(process.env.RMS_RECORD_MOTION_SEAT)
       assert.ok(Number.isInteger(seat) && seat >= 0 && seat < 4, 'motion seat must be 0-3')
@@ -95,6 +102,10 @@ try {
       const vm = document.querySelector('#app').__vue_app__._instance.setupState
       vm.applyGameView((await window.studioAPI.jumpToNode(previous)).view)
     }, pair)
+    else if (process.env.RMS_RECORD_MOTION_START_NODE) await page.evaluate(async node => {
+      const vm = document.querySelector('#app').__vue_app__._instance.setupState
+      vm.applyGameView((await window.studioAPI.jumpToNode(node)).view)
+    }, process.env.RMS_RECORD_MOTION_START_NODE)
     await page.waitForTimeout(350)
     if (process.env.RMS_RECORD_MOTION_COVERAGE === '1') {
       await page.evaluate(() => { document.querySelector('#app').__vue_app__._instance.setupState.coverageTrialEnabled = true })
@@ -153,13 +164,13 @@ try {
       await client.send('Profiler.enable')
       await client.send('Profiler.start')
     }
-    let traceEvents = []
+    let traceEvents = [], traceError = null
     if (process.env.RMS_RECORD_MOTION_TRACE) {
       const categories = 'devtools.timeline,blink,cc,benchmark,gpu,viz,disabled-by-default-devtools.timeline.frame'
       await client.send('Tracing.start', { categories: process.env.RMS_RECORD_MOTION_TRACE_CATEGORIES || categories, transferMode: 'ReturnAsStream' })
     }
     const before = await client.send('Performance.getMetrics')
-    const motion = await page.evaluate(async (pair) => {
+    const motion = await page.evaluate(async ({ pair, steps, stepDelay, direction }) => {
       const frameTimes = [], timelineTimes = [], visits = [], longTasks = [], zooms = new Set(), flights = [], inputs = [], commits = [], coverage = []
       const animations = new Map()
       let lastCoverage = ''
@@ -192,7 +203,8 @@ try {
         const completed = surface?.dataset.intervals
         if (completed && completed !== lastCoverage) {
           lastCoverage = completed
-          coverage.push({ admissionMs: Number(surface.dataset.admissionMs), workerPreparationMs: Number(surface.dataset.workerPreparationMs),
+          coverage.push({ admissionMs: Number(surface.dataset.admissionMs), snapshotMs: Number(surface.dataset.snapshotMs),
+            snapshotStages: JSON.parse(surface.dataset.snapshotStages || '{}'), workerPreparationMs: Number(surface.dataset.workerPreparationMs),
             intervals: JSON.parse(completed) })
         }
         if (visits.at(-1) !== vm.gameView.currentNodeId) {
@@ -207,9 +219,12 @@ try {
         if (this.hasAttribute('data-pending-discard-seat') || this.classList.contains('discard-return-ghost')) {
           const flight = { node: vm.gameView.currentNodeId, createdAt: performance.now(),
             duration: Number(animation.effect?.getTiming().duration) || 0,
-            easing: animation.effect?.getTiming().easing, startTime: null }
+            easing: animation.effect?.getTiming().easing, startTime: null, cancelRequestedAt: null, finishedAt: null }
           flights.push(flight)
           animations.set(flight, animation)
+          const cancel = animation.cancel.bind(animation)
+          animation.cancel = () => { flight.cancelRequestedAt ??= performance.now(); return cancel() }
+          animation.addEventListener('finish', () => { flight.finishedAt = performance.now() }, { once: true })
           void animation.ready.then(() => {
             if (flight.startTime === null && typeof animation.startTime === 'number') flight.startTime = animation.startTime
           }).catch(() => {})
@@ -225,9 +240,9 @@ try {
             const expected = pair[direction > 0 ? 1 : 0]
             if (vm.gameView.currentNodeId !== expected) throw new Error(`Expected ${expected}, got ${vm.gameView.currentNodeId}`)
           }
-        } else for (const direction of [-1, 1]) for (let i = 0; i < 20; i++) {
-          await dispatchWheel(direction * 100)
-          await new Promise(resolve => setTimeout(resolve, 80))
+        } else for (const stepDirection of direction === 'forward' ? [1] : direction === 'backward' ? [-1] : [-1, 1]) for (let i = 0; i < steps; i++) {
+          await dispatchWheel(stepDirection * 100)
+          await new Promise(resolve => setTimeout(resolve, stepDelay))
         }
         await new Promise(resolve => setTimeout(resolve, 350))
       } finally {
@@ -241,16 +256,17 @@ try {
       return { initial, final: { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode },
         backendNode: (await window.studioAPI.getGameView()).view.currentNodeId,
         zooms: [...zooms], visits: visits.length, inputs, commits,
-        coverage, frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
+        coverage, motionPending: vm.tableMotionActive, frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
         p95: intervals[Math.floor(intervals.length * .95)], max: intervals.at(-1), longTasks,
         flightWindows: flights.map(flight => {
           if (!Number.isFinite(flight.startTime)) return { ...flight, callbackCount: null, maximumCallbackGapMs: null }
-          const callbacks = frameTimes.filter(time => time >= flight.startTime && time < flight.startTime + flight.duration)
-          const times = [flight.startTime, ...callbacks, flight.startTime + flight.duration]
-          return { ...flight, callbackCount: callbacks.length,
+          const end = Math.max(flight.startTime, Math.min(flight.startTime + flight.duration, flight.cancelRequestedAt ?? Infinity))
+          const callbacks = frameTimes.filter(time => time >= flight.startTime && time < end)
+          const times = [flight.startTime, ...callbacks, end]
+          return { ...flight, observedDuration: end - flight.startTime, callbackCount: callbacks.length,
             maximumCallbackGapMs: Math.max(...times.slice(1).map((time, index) => time - times[index])) }
         }), probeStartedAt, callbackArrivals: frameTimes, callbackTimelineStamps: timelineTimes }
-    }, pair || null)
+    }, { pair: pair || null, steps: motionSteps, stepDelay: motionStepDelay, direction: motionDirection })
     const surfaceAfter = await readSurface()
     const stableForeground = stableForegroundSample(surface, surfaceAfter)
     const after = await client.send('Performance.getMetrics')
@@ -266,7 +282,8 @@ try {
         assert.ok(result?.stream, 'a completed trace must provide its raw JSON stream')
         traceEvents = await readRenderingTrace(client, result.stream)
         assert.ok(traceEvents.length, 'a completed trace must contain events')
-      } finally { clearTimeout(timer) }
+      } catch (error) { traceError = String(error) }
+      finally { clearTimeout(timer) }
     }
     await client.detach()
     const rendererFeatures = await application.evaluate(({ app }) => app.getGPUFeatureStatus())
@@ -288,7 +305,7 @@ try {
     const hotFunctions = profile.nodes.map(node => ({ ...node.callFrame, milliseconds: (totals.get(node.id) || 0) / 1000 }))
       .sort((a, b) => b.milliseconds - a.milliseconds).slice(0, 35)
     const navigation = await application.evaluate(() => global.recordDesktopTest.navigation)
-    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents, gpu, rendererFeatures,
+    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents, traceError, gpu, rendererFeatures,
       source: { bytes: (await fs.stat(source)).size, sha256: createHash('sha256').update(await fs.readFile(source)).digest('hex') },
       surface, surfaceAfter,
       evidence: { desktopControlToolsUsed: false, overlayState: process.env.RMS_RECORD_MOTION_OVERLAY_STATE || 'unverified',
@@ -297,11 +314,13 @@ try {
         inputMode: process.env.RMS_RECORD_MOTION_INPUT === 'trusted' ? 'trusted-browser-wheel' : 'dom-wheel',
         rasterizationRequested: rasterization,
         coverageTrial: process.env.RMS_RECORD_MOTION_COVERAGE === '1',
+        traversal: { steps: motionSteps, stepDelayMs: motionStepDelay, direction: motionDirection, startNode: process.env.RMS_RECORD_MOTION_START_NODE || null },
         lockedSession: surface.power.idleState === 'locked' || surfaceAfter.power.idleState === 'locked'
           || surfaceAfter.locks !== surface.locks,
         frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
     const { callbackArrivals, callbackTimelineStamps, ...motionSummary } = motion
     console.log(JSON.stringify({ motion: motionSummary, work, navigation }))
+    assert.equal(traceError, null, 'optional trace failed; the primary metrics were preserved in the profile')
     if (process.env.RMS_RECORD_MOTION_INPUT === 'trusted') {
       assert.ok(motion.inputs.length && motion.inputs.every(input => input.trusted), 'native-input trials must receive trusted wheel events')
     }
@@ -309,6 +328,8 @@ try {
       assert.equal(stableForeground, true, 'The foreground surface changed during sampling; results are diagnostic only.')
     }
     assert.ok(motion.visits >= (pair ? 9 : 10), 'the motion probe must observe actual renderer frame commits')
+    assert.equal(motion.backendNode, motion.final.node, 'the browser must settle on the actual requested backend cursor')
+    assert.equal(motion.motionPending, false, 'navigation must not strand a motion owner after settling')
     if (pair) assert.ok(motion.flightWindows.length >= 4, 'the selected pair must exercise actual discard motion')
   }
 

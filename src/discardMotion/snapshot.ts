@@ -8,7 +8,8 @@ const properties = ['display', 'position', 'left', 'right', 'top', 'bottom', 'wi
 
 export interface MotionSnapshot {
   geometry: MotionGeometry; left: number; top: number; dpr: number; opacity: string
-  planes: ImageBitmap[]; mode: 'single' | 'overlay' | 'crossfade'; stops: OpacityStop[][]
+  pixels: Uint8ClampedArray; planeCount: 1 | 2; mode: 'single' | 'overlay' | 'crossfade'; stops: OpacityStop[][]
+  timings: { cssMs: number; assetsMs: number; decodeMs: number; rasterMs: number }
 }
 
 function shadowAllowance(style: CSSStyleDeclaration) {
@@ -32,6 +33,7 @@ function borderSize(style: CSSStyleDeclaration, dimension: 'width' | 'height') {
 }
 
 export async function captureMotionSnapshot(source: HTMLElement, effects: readonly Animation[], dx: number, dy: number): Promise<MotionSnapshot> {
+  const began = performance.now()
   const distance = Math.hypot(dx, dy), dpr = devicePixelRatio
   if (!source.isConnected || distance < 1 || !Number.isFinite(distance) || !(dpr > 0)) throw Error('Invalid motion geometry')
   const originals = [source, ...source.querySelectorAll<HTMLElement>('*')]
@@ -59,11 +61,12 @@ export async function captureMotionSnapshot(source: HTMLElement, effects: readon
   // Derive layout origin before cloning. getBoundingClientRect already includes
   // the paused start transform; copying that transform must not apply it twice.
   const rootStyle = styles[0]!, rootRect = source.getBoundingClientRect()
+  const rootOpacity = rootStyle.opacity
   const matrix = new DOMMatrixReadOnly(rootStyle.transform === 'none' ? undefined : rootStyle.transform)
   if (!matrix.is2D) throw Error('Unsupported 3D motion source')
   const [originX, originY] = rootStyle.transformOrigin.split(' ').map(parseFloat)
-  const w = borderSize(rootStyle, 'width'), h = borderSize(rootStyle, 'height')
-  const corners = [[0,0],[w,0],[0,h],[w,h]].map(([x,y]) => ({
+  const boxWidth = borderSize(rootStyle, 'width'), boxHeight = borderSize(rootStyle, 'height')
+  const corners = [[0,0],[boxWidth,0],[0,boxHeight],[boxWidth,boxHeight]].map(([x,y]) => ({
     x: matrix.a * (x! - originX!) + matrix.c * (y! - originY!) + matrix.e + originX!,
     y: matrix.b * (x! - originX!) + matrix.d * (y! - originY!) + matrix.f + originY!,
   }))
@@ -89,49 +92,57 @@ export async function captureMotionSnapshot(source: HTMLElement, effects: readon
   const mode = opacityEffects.length === 2 ? 'crossfade' : opacityEffects.length === 1 ? 'overlay' : 'single'
   // Freeze all geometry/CSS before the asynchronous asset loads. Only bundled
   // sources are embedded; file:// never goes through fetch or an encoded PNG.
+  const assetsStarted = performance.now()
   await Promise.all(images.map(async image => {
     const target = nodes[originals.indexOf(image)] as HTMLImageElement
     target.src = await embeddedTileArtwork(image.src)
   }))
+  const assetsFinished = performance.now()
+  const timings = { cssMs: assetsStarted - began, assetsMs: assetsFinished - assetsStarted, decodeMs: 0, rasterMs: 0 }
   const container = document.createElement('div')
   container.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml')
   container.style.cssText = `position:relative;width:${cropWidth}px;height:${cropHeight}px;overflow:visible`
   container.append(clone)
-  const planes: ImageBitmap[] = []
-  const serialize = async () => {
-    const angle = -Math.atan2(axisY, axisX) * 180 / Math.PI
-    const markup = `<svg xmlns="http://www.w3.org/2000/svg" width="${spriteWidth}" height="${spriteHeight}" viewBox="0 0 ${spriteWidth/dpr} ${spriteHeight/dpr}"><g transform="translate(${spriteWidth/dpr/2} ${spriteHeight/dpr/2}) rotate(${angle}) translate(${-cropWidth/2} ${-cropHeight/2})"><foreignObject width="${cropWidth}" height="${cropHeight}">${new XMLSerializer().serializeToString(container)}</foreignObject></g></svg>`
-    const image = new Image(); image.decoding = 'async'
-    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
-    await image.decode()
-    // Chromium marks ImageBitmap(SVG foreignObject) origin-unclean even when
-    // drawing the decoded data URL is clean. Transfer a clean rendered surface,
-    // without PNG encoding, bytes, disk I/O or an additional image decode.
-    const surface = new OffscreenCanvas(spriteWidth, spriteHeight)
-    // Prefix preparation reads pixels on the worker. Keep this tiny staging
-    // surface CPU-backed; GPU raster -> CPU readback can stall the shared window
-    // compositor even though the JavaScript lives on another thread.
-    const context = surface.getContext('2d', { willReadFrequently: true })
-    if (!context) throw Error('Motion snapshot canvas unavailable')
-    context.drawImage(image, 0, 0)
-    planes.push(surface.transferToImageBitmap())
-  }
-  try {
-    if (mode === 'crossfade') {
-      // Native order: settled image A, regular-pose overlay B. Source-over is
-      // a*A + b*B - a*b*A*Balpha; the worker prepares that product once.
-      const a = opacityEffects.find(effect => originals[effect.index] instanceof HTMLImageElement)!
-      const b = opacityEffects.find(effect => effect !== a)!
-      if (!a || !b) throw Error('Unsupported crossfade targets')
-      nodes[a.index]!.style.opacity = '1'; nodes[b.index]!.style.opacity = '0'; await serialize()
-      nodes[a.index]!.style.opacity = '0'; nodes[b.index]!.style.opacity = '1'; await serialize()
-      opacityEffects.splice(0, 2, a, b)
-    } else if (mode === 'overlay') {
-      nodes[opacityEffects[0]!.index]!.style.opacity = '0'; await serialize()
-      nodes[opacityEffects[0]!.index]!.style.opacity = '1'; await serialize()
-    } else await serialize()
-    return { planes, mode, stops: opacityEffects.map(effect => effect.stops), left, top, dpr, opacity: rootStyle.opacity,
-      geometry: { width, height, spriteWidth, spriteHeight, axisX, axisY,
-        startX: (cropLeft + cropWidth/2 - left) * dpr, startY: (cropTop + cropHeight/2 - top) * dpr, dx: dx*dpr, dy: dy*dpr } }
-  } catch (error) { planes.forEach(bitmap => bitmap.close()); throw error }
+  const planes: string[] = []
+  const serialize = () => { planes.push(new XMLSerializer().serializeToString(container)) }
+  if (mode === 'crossfade') {
+    // Native order: settled image A, regular-pose overlay B. Source-over is
+    // a*A + b*B - a*b*A*Balpha; the worker prepares that product once.
+    const a = opacityEffects.find(effect => originals[effect.index] instanceof HTMLImageElement)!
+    const b = opacityEffects.find(effect => effect !== a)!
+    if (!a || !b) throw Error('Unsupported crossfade targets')
+    nodes[a.index]!.style.opacity = '1'; nodes[b.index]!.style.opacity = '0'; serialize()
+    nodes[a.index]!.style.opacity = '0'; nodes[b.index]!.style.opacity = '1'; serialize()
+    opacityEffects.splice(0, 2, a, b)
+  } else if (mode === 'overlay') {
+    nodes[opacityEffects[0]!.index]!.style.opacity = '0'; serialize()
+    nodes[opacityEffects[0]!.index]!.style.opacity = '1'; serialize()
+  } else serialize()
+  // Both poses share one decoded atlas and one CPU raster/read. The integral
+  // worker needs pixels anyway: transfer that buffer, not an intermediate bitmap
+  // which it would have to draw and read again. No encoded output or disk cache.
+  const angle = -Math.atan2(axisY, axisX) * 180 / Math.PI
+  const w = spriteWidth/dpr, h = spriteHeight/dpr
+  const atlas = planes.map((html, i) => `<svg y="${i*h}" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" overflow="hidden">`
+    + `<g transform="translate(${w/2} ${h/2}) rotate(${angle}) translate(${-cropWidth/2} ${-cropHeight/2})">`
+    + `<foreignObject width="${cropWidth}" height="${cropHeight}">${html}</foreignObject></g></svg>`).join('')
+  const markup = `<svg xmlns="http://www.w3.org/2000/svg" width="${spriteWidth}" height="${spriteHeight*planes.length}" viewBox="0 0 ${w} ${h*planes.length}">${atlas}</svg>`
+  const image = new Image(); image.decoding = 'async'
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
+  const decodeStarted = performance.now()
+  await image.decode()
+  const decoded = performance.now()
+  timings.decodeMs = decoded - decodeStarted
+  const surface = new OffscreenCanvas(spriteWidth, spriteHeight*planes.length)
+  // The next operation is a pixel read, so this small staging surface must stay
+  // CPU-backed rather than force a shared-compositor GPU raster/readback roundtrip.
+  const context = surface.getContext('2d', { willReadFrequently: true })
+  if (!context) throw Error('Motion snapshot canvas unavailable')
+  context.drawImage(image, 0, 0)
+  const pixels = context.getImageData(0, 0, surface.width, surface.height).data
+  timings.rasterMs = performance.now() - decoded
+  return { pixels, planeCount: mode === 'single' ? 1 : 2, mode, stops: opacityEffects.map(effect => effect.stops),
+    left, top, dpr, opacity: rootOpacity, timings,
+    geometry: { width, height, spriteWidth, spriteHeight, axisX, axisY,
+      startX: (cropLeft + cropWidth/2 - left) * dpr, startY: (cropTop + cropHeight/2 - top) * dpr, dx: dx*dpr, dy: dy*dpr } }
 }

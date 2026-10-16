@@ -6,6 +6,7 @@ import { createServer } from 'vite'
 import { chromium, _electron as electron } from 'playwright'
 import { spawnSync } from 'node:child_process'
 import { checkMotionIntegralMath } from './check-motion-integral-math.mjs'
+import { checkMotionWorkerFailures } from './check-motion-worker-failures.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-coverage-check-'))
@@ -13,10 +14,12 @@ const evidence = path.join(root, '.mjai-runtime', 'discard-coverage')
 fs.mkdirSync(evidence, { recursive: true })
 let server, browser, desktop
 const results = []
+const externalRendererUrl = process.env.RMS_COVERAGE_TEST_URL || null
+let rendererUrl
 
 async function check(page, label, dense) {
   await page.setViewportSize({ width: 1000, height: 850 })
-  await page.goto(`${server.resolvedUrls.local[0]}scripts/visual-tests/discard-motion/index.html`)
+  await page.goto(`${rendererUrl}scripts/visual-tests/discard-motion/index.html`)
   await page.waitForFunction(() => document.body.dataset.ready === 'true')
   await page.evaluate(async () => {
     ;(await import('/scripts/visual-tests/discard-motion/preview.ts')).dispose()
@@ -52,14 +55,12 @@ async function check(page, label, dense) {
       const program=gl.createProgram(); const {integralVertex,integralFragment,rowIntegrals}=window.integralApi
       gl.attachShader(program,compile(gl.VERTEX_SHADER,integralVertex));gl.attachShader(program,compile(gl.FRAGMENT_SHADER,integralFragment));gl.linkProgram(program)
       if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));gl.useProgram(program)
-      const scratch=new OffscreenCanvas(g.spriteWidth,g.spriteHeight),ctx=scratch.getContext('2d',{willReadFrequently:true})
-      ctx.drawImage(snapshot.planes[0],0,0)
-      const pixels=ctx.getImageData(0,0,scratch.width,scratch.height).data
-      const prefix=rowIntegrals(pixels,scratch.width,scratch.height)
+      const pixels=snapshot.pixels.subarray(0,g.spriteWidth*g.spriteHeight*4)
+      const prefix=rowIntegrals(pixels,g.spriteWidth,g.spriteHeight)
       for(const [unit,name] of ['planeA','planeB','product'].entries()) {
         const texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,texture)
         gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST)
-        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,scratch.width+1,scratch.height,0,gl.RGBA,gl.FLOAT,prefix)
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,g.spriteWidth+1,g.spriteHeight,0,gl.RGBA,gl.FLOAT,prefix)
         gl.uniform1i(gl.getUniformLocation(program,name),unit)
       }
       gl.viewport(0,0,g.width,g.height)
@@ -118,7 +119,7 @@ async function check(page, label, dense) {
       assert.equal(sample.glError,0)
     }
     if(seat===3&&!riichi&&!reverse) await page.screenshot({path:path.join(evidence,`${label}.png`)})
-    await page.evaluate(()=>{window.motionSnapshot.planes.forEach(p=>p.close());window.motionGl.getExtension('WEBGL_lose_context')?.loseContext()})
+    await page.evaluate(()=>{window.motionGl.getExtension('WEBGL_lose_context')?.loseContext()})
     results.push({label,seat,riichi,reverse,preparation,error,sweep})
   }
   results.push(await checkMotionIntegralMath(page,label))
@@ -140,7 +141,9 @@ async function check(page, label, dense) {
     if(!duringStall)throw Error('Worker did not advance during a main-thread stall')
     if(source.style.opacity)throw Error('Normal completion leaked source opacity')
     if(intervals.length<2||intervals.at(-1).span!==0||intervals.at(-1).progress!==1)throw Error('Landing did not draw sweep then sharp endpoint')
-    for(let i=1;i<intervals.length;i++)if(intervals[i].previous!==intervals[i-1].progress)throw Error('Skipped updates lost their previous submitted endpoint')
+    for(let i=1;i<intervals.length;i++)if(intervals[i].previous!==intervals[i-1].progress
+      ||intervals[i].fromTime!==intervals[i-1].time)throw Error('Skipped updates lost their previous submitted endpoint')
+    if(intervals.some(p=>p.fromTime>p.time))throw Error('Cross-thread interval reversed its clock endpoints')
     first.movement.cancel()
     const cancelled=make();cancelled.handle.cancel();cancelled.movement.cancel();await cancelled.handle.finished
     await new Promise(r=>setTimeout(r,100))
@@ -152,24 +155,29 @@ async function check(page, label, dense) {
     return {admissionMs,duringStall,intervals}
   })
   results.push({label,lifecycle})
+  results.push(await checkMotionWorkerFailures(page,label))
 }
 
 try {
-  server=await createServer({root,mode:'ui-test',cacheDir:path.join(temporary,'vite-cache'),optimizeDeps:{entries:['scripts/visual-tests/discard-motion/preview.ts']},server:{host:'127.0.0.1',port:0,strictPort:false}})
-  await server.listen()
+  if (!externalRendererUrl) {
+    server=await createServer({root,mode:'ui-test',cacheDir:path.join(temporary,'vite-cache'),optimizeDeps:{entries:['scripts/visual-tests/discard-motion/preview.ts']},server:{host:'127.0.0.1',port:0,strictPort:false}})
+    await server.listen()
+  }
+  rendererUrl=externalRendererUrl || server.resolvedUrls.local[0]
   for(const [software,ratio] of [[false,1],[true,1],[false,1.25],[false,2]]) {
     browser=await chromium.launch({headless:true,args:software?['--disable-gpu']:[]})
     const page=await browser.newPage({deviceScaleFactor:ratio})
     await check(page,`${software?'software':'default'}-${ratio}`,ratio===1)
     await browser.close();browser=null
   }
-  desktop=await electron.launch({args:[path.join(root,'scripts/electron-ui-test-main.cjs')],env:{...process.env,RMS_UI_TEST_URL:server.resolvedUrls.local[0]}})
+  desktop=await electron.launch({args:[path.join(root,'scripts/electron-ui-test-main.cjs')],env:{...process.env,RMS_UI_TEST_URL:rendererUrl}})
   await check(await desktop.firstWindow(),'electron',false)
   fs.writeFileSync(path.join(evidence,'results.json'),JSON.stringify(results,null,2))
   console.log(`Integral coverage passed: ${results.filter(r=>r.seat!==undefined).length} canonical poses, bounded sweeps and worker cancellation/landing/stall checks.`)
 } finally {
   try {await desktop?.close()}finally {try {await browser?.close()}finally {try {await server?.close()}finally {fs.rmSync(temporary,{recursive:true,force:true,maxRetries:5,retryDelay:200})}}}
 }
-const navigation=spawnSync(process.execPath,[path.join(root,'scripts/check-analysis-ui.mjs')],{cwd:root,stdio:'inherit',env:{...process.env,RMS_UI_DISCARD_ONLY:'1',RMS_UI_COVERAGE_TRIAL:'1'}})
+const navigation=spawnSync(process.execPath,[path.join(root,'scripts/check-analysis-ui.mjs')],{cwd:root,stdio:'inherit',env:{...process.env,
+  ...(externalRendererUrl?{RMS_UI_TEST_URL:externalRendererUrl}:{}),RMS_UI_DISCARD_ONLY:'1',RMS_UI_COVERAGE_TRIAL:'1'}})
 if(navigation.error)throw navigation.error
 process.exitCode=navigation.status??1
