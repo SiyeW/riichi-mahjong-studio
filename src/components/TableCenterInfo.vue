@@ -62,7 +62,7 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
 
 <style scoped>
 .grid-info {
-  --gi-turn-color: var(--indicator-neutral);
+  --gi-turn-color: var(--text-soft);
   --gi-side-width: calc(40px * var(--center-ui-scale));
   --gi-score-width: calc(76px * var(--center-ui-scale));
   --gi-strip-width: calc((2 * var(--gi-side-width)) + var(--gi-score-width));
@@ -90,7 +90,7 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
 }
 
 .grid-info.is-live-play {
-  --gi-turn-color: var(--indicator-live);
+  --gi-turn-color: var(--text-main);
 }
 
 .info-round {
@@ -224,7 +224,8 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   font-size: var(--table-text-center-label);
   font-weight: 700;
   color: inherit;
-  transform: translateY(calc(-0.5px * var(--center-ui-scale)));
+  text-align: left;
+  transform: translateY(calc(-0.5px * var(--center-ui-scale))) translateX(calc(-4.5px * var(--center-ui-scale)));
 }
 
 .gi-score {
@@ -243,7 +244,6 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   font-size: var(--table-text-bet);
   color: inherit;
   visibility: hidden;
-  transform: translateX(calc(-2px * var(--center-ui-scale)));
 }
 
 .gi-riichi-bet.on {
@@ -271,13 +271,6 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   flex-shrink: 0;
 }
 
-.gi-p0-outer .gi-seat,
-.gi-p1-outer .gi-seat,
-.gi-p2-outer .gi-seat,
-.gi-p3-outer .gi-seat {
-  text-align: right;
-}
-
 .gi-p0-outer .gi-riichi-bet,
 .gi-p1-outer .gi-riichi-bet,
 .gi-p2-outer .gi-riichi-bet,
@@ -288,7 +281,7 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
 .is-actor::after {
   content: '';
   position: absolute;
-  right: calc(0.24rem * var(--center-ui-scale));
+  right: calc(-1rem * var(--center-ui-scale));
   bottom: calc(-1 * var(--indicator-thickness) * var(--center-ui-scale));
   left: calc(0.24rem * var(--center-ui-scale));
   height: calc(var(--indicator-thickness) * var(--center-ui-scale));

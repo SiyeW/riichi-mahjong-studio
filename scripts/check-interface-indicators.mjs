@@ -10,25 +10,30 @@ export async function checkTableTurnIndicators(page) {
   if (screenshotDirectory) fs.mkdirSync(screenshotDirectory, { recursive: true })
   const read = () => page.locator('.grid-info').evaluate(center => {
     const style = getComputedStyle(center)
-    const liveProbe = document.createElement('span')
-    liveProbe.style.color = 'var(--indicator-live)'
-    center.append(liveProbe)
-    const live = getComputedStyle(liveProbe).color
-    liveProbe.remove()
+    const colorProbe = document.createElement('span')
+    colorProbe.style.color = 'var(--text-main)'
+    center.append(colorProbe)
+    const main = getComputedStyle(colorProbe).color
+    colorProbe.style.color = 'var(--text-soft)'
+    const soft = getComputedStyle(colorProbe).color
+    colorProbe.remove()
     const centerRect = center.getBoundingClientRect()
     return {
       scale: Number(style.getPropertyValue('--center-ui-scale')),
-      neutral: getComputedStyle(document.querySelector('.resource-track > span')).backgroundColor,
-      live,
+      main, soft, rem: parseFloat(getComputedStyle(document.documentElement).fontSize),
       items: [...center.querySelectorAll('.gi-player-anchor > span')].map(item => {
         const base = getComputedStyle(item)
         const mark = getComputedStyle(item, '::after')
+        const seat = getComputedStyle(item.querySelector('.gi-seat'))
+        const seatTransform = new DOMMatrixReadOnly(seat.transform)
         const rect = item.getBoundingClientRect()
         return { actor: item.classList.contains('is-actor'), color: mark.backgroundColor,
           content: mark.content, height: parseFloat(mark.height), bottom: parseFloat(mark.bottom),
           left: parseFloat(mark.left), right: parseFloat(mark.right), pointer: mark.pointerEvents,
           border: parseFloat(base.borderTopWidth), background: base.backgroundColor,
           width: rect.width, stripHeight: rect.height, transform: base.transform,
+          seatAlign: seat.textAlign, seatX: seatTransform.m41, seatY: seatTransform.m42,
+          betTransform: getComputedStyle(item.querySelector('.gi-riichi-bet')).transform,
           text: [...item.children].map(child => {
             const textRect = child.getBoundingClientRect()
             return [textRect.x - centerRect.x, textRect.y - centerRect.y, textRect.width, textRect.height]
@@ -55,9 +60,14 @@ export async function checkTableTurnIndicators(page) {
           assert.equal(active.length, 1, 'exactly one eligible player has a turn mark')
           assert.ok(result.items.every(item => item.border === 0 && item.background === 'rgba(0, 0, 0, 0)'), 'turn state no longer paints a frame or background')
           assert.ok(Math.abs(active[0].height - 3 * result.scale) < 0.05, 'table line shares the scaled indicator thickness')
-          assert.ok(active[0].bottom < 0 && active[0].left > 0 && active[0].right > 0, 'line sits below the score strip with balanced insets')
+          assert.ok(Math.abs(active[0].bottom + 3 * result.scale) < 0.05 && active[0].left > 0
+            && Math.abs(active[0].right + result.rem * result.scale) < 0.05, 'line preserves the tuned bottom offset and right overhang')
           assert.equal(active[0].pointer, 'none', 'the decorative line cannot intercept input')
-          assert.equal(active[0].color, mode === 'research' ? result.neutral : result.live, 'mode chooses the shared neutral/live color')
+          assert.equal(active[0].color, mode === 'research' ? result.soft : result.main, 'research uses soft text color; play uses main text color')
+          assert.ok(result.items.every(item => item.seatAlign === 'left'
+            && Math.abs(item.seatX + 4.5 * result.scale) < 0.05
+            && Math.abs(item.seatY + 0.5 * result.scale) < 0.05
+            && item.betTransform === 'none'), 'all four seats preserve the tuned wind and riichi-bet alignment')
           assert.ok(result.items.filter(item => !item.actor).every(item => item.content === 'none'))
           const geometry = result.items.map(({ width, stripHeight, text, transform }) => ({ width, stripHeight, text, transform }))
           if (baseline) assert.deepEqual(geometry, baseline, 'changing actor does not move scores, winds or riichi bets')

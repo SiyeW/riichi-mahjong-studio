@@ -74,7 +74,6 @@ body {
   --accent-green: #1a931a;
   --accent-yellow: #f2ae3d;
   --indicator-neutral: var(--text-main);
-  --indicator-live: var(--accent-yellow);
   --indicator-thickness: 3px;
   --accent-red: rgba(204, 70, 70, 0.95);
   --hint-red: hsl(0, 70%, 50%);
