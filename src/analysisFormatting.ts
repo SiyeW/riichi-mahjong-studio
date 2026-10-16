@@ -1,17 +1,22 @@
-import type { Ref } from 'vue'
+import { computed, type Ref } from 'vue'
 import { clampProbability } from './analysisProbabilityScale.ts'
 import type { DistributionValue } from './numericPrediction.ts'
 
 export type AnalysisTranslator = (key: string, params?: Record<string, string | number>) => string
 
 export function createAnalysisFormatting(t: AnalysisTranslator, numberLocale: Readonly<Ref<string>>) {
+  const pointFormatters = computed(() => {
+    const options: Intl.NumberFormatOptions = { useGrouping: false, maximumFractionDigits: 1 }
+    return {
+      standard: new Intl.NumberFormat(numberLocale.value, { ...options, notation: 'standard' }),
+      compact: new Intl.NumberFormat(numberLocale.value, { ...options, notation: 'compact' }),
+    }
+  })
+
   function formatCompactPoints(value: number | null): string {
     if (value === null || !Number.isFinite(value)) return '—'
-    return new Intl.NumberFormat(numberLocale.value, {
-      notation: Math.abs(value) >= 10000 ? 'compact' : 'standard',
-      useGrouping: false,
-      maximumFractionDigits: 1,
-    }).format(Math.round(value))
+    const notation = Math.abs(value) >= 10000 ? 'compact' : 'standard'
+    return pointFormatters.value[notation].format(Math.round(value))
   }
 
   function formatPoints(value: number | null): string {
