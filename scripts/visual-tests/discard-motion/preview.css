@@ -1,0 +1,18 @@
+body { overflow: auto; }
+.preview { height: auto; min-height: 100%; padding: 1rem; gap: 1rem; }
+h1 { font-size: var(--ui-text-title); } h2 { font-size: var(--ui-text-heading); margin-bottom: 0.5rem; }
+p { line-height: 1.5; } header p, .notice, #state { color: var(--text-muted); }
+#controls { display: flex; flex-wrap: wrap; gap: 0.7rem 1rem; align-items: end; }
+#controls label { display: flex; gap: 0.35rem; align-items: center; }
+select, input[type=number], button { padding: 0.35rem 0.5rem; border: 1px solid var(--border-default); color: var(--text-main); background: var(--surface-control-quiet); }
+input[type=number] { width: 5rem; } button { cursor: pointer; } button:hover { background: var(--surface-control-hover); }
+input { accent-color: var(--accent-green); }
+button:disabled { opacity: 0.45; cursor: default; } :focus-visible { outline: 1px solid var(--focus-outline); outline-offset: 2px; }
+.comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.stage { position: relative; height: min(58vh, 650px); min-height: 280px; overflow: hidden; background: var(--bg-river); border: 1px solid var(--border-default); }
+.sprite { position: absolute; left: 0; top: 0; width: var(--tile-img-w); height: var(--tile-img-h); pointer-events: none; }
+.direction, .artwork { position: absolute; inset: 0; transform-origin: center; }
+.artwork .tileImg { position: absolute; inset: 0; transition: none; }
+.scrub { display: flex; gap: 0.75rem; align-items: center; }.scrub input { flex: 1; }.scrub output { width: 5rem; text-align: right; font-variant-numeric: tabular-nums; }
+.filter-definitions { position: absolute; width: 0; height: 0; pointer-events: none; }
+@media (max-width: 750px) { .comparison { grid-template-columns: 1fr; } }

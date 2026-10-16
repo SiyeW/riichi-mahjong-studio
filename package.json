@@ -24,6 +24,8 @@
     "test:node": "node scripts/test-node.mjs",
     "test:python": "node scripts/test-python.mjs",
     "test:ui": "node scripts/check-tile-artwork.mjs && node scripts/check-analysis-ui.mjs",
+    "preview:motion": "node scripts/preview-discard-motion.mjs",
+    "test:motion": "node --test scripts/visual-tests/discard-motion/model.test.ts && tsc --noEmit -p scripts/visual-tests/discard-motion/tsconfig.json && node scripts/check-motion-blur.mjs",
     "check:dependencies": "node scripts/check-dependency-cycles.mjs",
     "check": "npm run check:dependencies && npm test && npm run build && npm run test:ui",
     "preview": "vite preview"

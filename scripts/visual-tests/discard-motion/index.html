@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>RMS 飞牌运动模糊试样</title></head>
+<body>
+  <main class="shell preview">
+    <header><h1>飞牌运动模糊试样</h1><p>110ms · 先快后慢。左侧原图，右侧覆盖上一位置到当前位置的轨迹；不影响 Studio。</p></header>
+    <form id="controls">
+      <label>模拟更新<select name="every"><option value="1">165 次／秒</option><option value="2">82.5 次／秒</option><option value="3">55 次／秒</option></select></label>
+      <label>方位<select name="seat"><option value="0">自家</option><option value="1">下家</option><option value="2">对家</option><option value="3" selected>上家</option></select></label>
+      <label>方向<select name="reverse"><option value="0">打出</option><option value="1">退回</option></select></label>
+      <label>牌张缩放<input name="scale" type="number" min="0.7" max="2.5" step="0.1" value="1.5"></label>
+      <label>飞行距离<input name="distance" type="number" min="100" max="600" step="50" value="400"></label>
+      <label>曝光<select name="autoExposure"><option value="1">自动：完整更新间隔</option><option value="0">手动对照</option></select></label>
+      <label>曝光（ms）<input name="exposure" type="number" min="0" max="110" step="0.5" value="6.06" disabled></label>
+      <label><input name="blur" type="checkbox" checked>启用模糊</label>
+      <label><input name="reveal" type="checkbox">牌背翻面</label>
+      <label><input name="diagonal" type="checkbox">斜向飞行</label>
+      <label><input name="loop" type="checkbox">循环</label>
+      <label><input name="reduced" type="checkbox">减少动态效果</label>
+      <button type="button" id="play" disabled>播放</button><button type="button" id="stop">停止</button>
+    </form>
+    <p class="notice">自动曝光覆盖本试样相邻提交的位置区间，不代表测得屏幕实际呈现时刻。沿轨迹均匀合成当前牌画，不是完整时间曝光积分；手动缩短曝光可能重新留下缺口。起止帧、减少动态效果或不支持滤镜时保持清晰。</p>
+    <div class="comparison">
+      <section><h2>原始清晰图像</h2><div class="stage" data-pane="plain"></div></section>
+      <section><h2>轨迹覆盖近似</h2><div class="stage" data-pane="blur"></div></section>
+    </div>
+    <label class="scrub">查看动画时刻<input id="time" type="range" min="0" max="110" step="0.1" value="0"><output id="time-value">0ms</output></label>
+    <p id="state" role="status">正在准备牌画…</p>
+    <svg class="filter-definitions" aria-hidden="true"><defs><filter id="motion-blur" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"/></defs></svg>
+  </main>
+  <script type="module" src="./preview.ts"></script>
+</body></html>
