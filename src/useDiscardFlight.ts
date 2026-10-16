@@ -1,4 +1,4 @@
-import { nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 import { createDiscardCoverageRenderer, type DiscardCoverage } from './discardMotion/coverage'
 import type { GameView } from './contracts/game'
@@ -30,6 +30,10 @@ export function useDiscardFlight(options: {
 }) {
   const { status, reduceMotionEnabled, tileImageSrc, scheduleAutoAdvance } = options
   const coverageTrialEnabled = ref(false)
+  // Admission includes queued nextTick/rAF and bounded snapshot preparation;
+  // reverse ownership ends only after the destination has been revealed.
+  const forwardMotionActive = ref(false), returnMotionActive = ref(false)
+  const tableMotionActive = computed(() => forwardMotionActive.value || returnMotionActive.value)
   const coverageRenderer = createDiscardCoverageRenderer()
   let forwardCoverage: DiscardCoverage | null = null
   let returnCoverage: DiscardCoverage | null = null
@@ -98,6 +102,7 @@ function cancelPendingDiscardFlight() {
   pendingDiscardFlightTarget?.style.removeProperty('will-change')
   pendingDiscardFlightTarget?.style.removeProperty('visibility')
   pendingDiscardFlightTarget = null
+  forwardMotionActive.value = false
 }
 
 function clearPendingDiscardReturnFlight() {
@@ -109,6 +114,7 @@ function clearPendingDiscardReturnFlight() {
   pendingDiscardReturnDestination?.style.removeProperty('visibility')
   pendingDiscardReturnGhost = null
   pendingDiscardReturnDestination = null
+  returnMotionActive.value = false
 }
 
 function cancelPendingDiscardReturnFlight() {
@@ -349,6 +355,7 @@ function resolvePendingDiscardReturnDestination(flight: PendingDiscardReturnFlig
 
 function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) {
   const generation = ++pendingDiscardReturnGeneration
+  returnMotionActive.value = true
   pendingDiscardReturnGhost = flight.ghost
   pendingDiscardReturnDestination = flight.destination
   void nextTick(() => {
@@ -407,12 +414,17 @@ function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) 
 function schedulePendingDiscardFlight(seat: number) {
   if (reduceMotionEnabled.value) return
   const generation = ++pendingDiscardFlightGeneration
+  forwardMotionActive.value = true
   void nextTick(() => {
     if (generation !== pendingDiscardFlightGeneration) return
     const gap = document.querySelector<HTMLElement>(`[data-hand-gap-seat="${seat}"]`)
     const target = document.querySelector<HTMLElement>(`[data-pending-discard-seat="${seat}"]`)
     const targetTile = target?.querySelector<HTMLElement>('.tileImg')
-    if (!gap || !target || !targetTile || typeof target.animate !== 'function') return
+    if (!gap || !target || !targetTile || typeof target.animate !== 'function') {
+      forwardMotionActive.value = false
+      scheduleAutoAdvance()
+      return
+    }
 
     const povClass = [...(target.closest<HTMLElement>('[class*="pov-p"]')?.classList || [])]
       .find((className) => /^pov-p[0-3]$/.test(className))
@@ -443,6 +455,7 @@ function schedulePendingDiscardFlight(seat: number) {
       pendingDiscardFlightFrame = 0
       if (!gap.isConnected || !target.isConnected || !targetTile.isConnected) {
         cancelPendingDiscardFlight()
+        scheduleAutoAdvance()
         return
       }
 
@@ -495,6 +508,7 @@ function schedulePendingDiscardFlight(seat: number) {
           target.style.removeProperty('will-change')
           pendingDiscardFlightTarget = null
         }
+        forwardMotionActive.value = false
         scheduleAutoAdvance()
       }
       movement.onfinish = () => { if (!coverage?.waiting) finish() }
@@ -509,6 +523,7 @@ watch(reduceMotionEnabled, (reduced) => {
   if (!reduced) return
   cancelPendingDiscardFlight()
   cancelPendingDiscardReturnFlight()
+  scheduleAutoAdvance()
 })
 
 
@@ -520,12 +535,7 @@ watch(reduceMotionEnabled, (reduced) => {
   }
 
   function hasPendingDiscardFlight() {
-    return pendingDiscardFlightAnimation !== null
-  }
-
-  function hasPendingTableMotion() {
-    return pendingDiscardFlightAnimation !== null || pendingDiscardReturnAnimation !== null
-      || pendingDiscardFlightFrame !== 0 || pendingDiscardReturnFrame !== 0
+    return forwardMotionActive.value
   }
 
   onBeforeUnmount(() => {
@@ -541,7 +551,7 @@ watch(reduceMotionEnabled, (reduced) => {
     cancelPendingDiscardFlight,
     cancelPendingDiscardReturnFlight,
     hasPendingDiscardFlight,
-    hasPendingTableMotion,
+    tableMotionActive,
     holdAutoAdvanceForTableMotion,
     pendingDiscardFromTable,
     pendingDiscardSignature,

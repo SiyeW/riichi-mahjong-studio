@@ -1645,7 +1645,8 @@ try {
   assert.equal(presentationOwnership.queuedAfterReplacement, 1, 'superseded next-tick windows cannot register unowned frame callbacks')
   assert.equal(presentationOwnership.ordinaryPresented, 'queued-current', 'an ordinary frame does not wait for nonexistent table motion')
   assert.equal(presentationOwnership.flightHeld, true, 'actual table flight retains its priority window')
-  assert.ok(presentationOwnership.heldDelay >= 100 && presentationOwnership.heldDelay <= 111, 'the table priority window uses the shared 110ms duration')
+  assert.equal(presentationOwnership.guessedDeadlineTimers, 0, 'motion priority does not expire on a guessed deadline')
+  assert.equal(presentationOwnership.presentedOnRetirement, true, 'actual owner retirement releases the current analysis')
   assert.equal(presentationOwnership.framesAfterUnmount, 0)
   assert.equal(presentationOwnership.framesAfterLateCall, 0, 'retired presentation owners reject late schedules')
   const savedPredictionMotion = await page.evaluate(async () => {

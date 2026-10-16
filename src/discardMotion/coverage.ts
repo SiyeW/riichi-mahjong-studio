@@ -1,5 +1,6 @@
 import { captureMotionSnapshot } from './snapshot'
 import type { MotionReply, MotionRequest } from './messages'
+import { prepareEmbeddedTileArtwork } from '../tiles/artworkCatalog'
 
 export interface DiscardCoverage { readonly waiting: boolean; cancel(): void; finished: Promise<void> }
 interface FlightOptions { source: HTMLElement; effects: Animation[]; movement: Animation; duration: number; easing: string; dx: number; dy: number }
@@ -26,9 +27,18 @@ export function createDiscardCoverageRenderer() {
       canvas.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;visibility:hidden;pointer-events:none;z-index:1000'
       document.body.append(canvas)
       worker = new Worker(new URL('./renderer.worker.ts', import.meta.url), { type: 'module' })
+      const owner = worker, embeddedArtwork = prepareEmbeddedTileArtwork()
+      // Observe rejection immediately; a failed asset never leaves an unhandled
+      // Promise while the independent worker is warming its context.
+      void embeddedArtwork.catch(() => { if (worker === owner) stop() })
       worker.onmessage = (event: MessageEvent<MotionReply>) => {
         const message = event.data
-        if (message.type === 'warm') { warm = true; canvas!.dataset.ready = 'true'; return }
+        if (message.type === 'warm') {
+          void embeddedArtwork.then(() => {
+            if (worker === owner && canvas) { warm = true; canvas.dataset.ready = 'true' }
+          }, () => {})
+          return
+        }
         if (message.type === 'failed' && message.id === 0) { stop(); return }
         if (!active || message.id !== active.id) return
         if (message.type === 'ready') active.ready(message.preparationMs)
@@ -45,7 +55,8 @@ export function createDiscardCoverageRenderer() {
   }
 
   function prepare(options: FlightOptions): DiscardCoverage | null {
-    if (!warm || !worker || !canvas || active || snapshotBusy || document.hidden || !options.source.isConnected) return null
+    if (!warm || !worker || !canvas || active || snapshotBusy || document.hidden || !options.source.isConnected
+      || !(options.duration > 0)) return null
     const { source, effects, movement, duration, easing, dx, dy } = options
     const id = ++sequence, surface = canvas, began = performance.now(), dpr = devicePixelRatio
     const oldOpacity = source.style.getPropertyValue('opacity'), oldPriority = source.style.getPropertyPriority('opacity')
@@ -109,8 +120,9 @@ export function createDiscardCoverageRenderer() {
     snapshotBusy = true
     void captureMotionSnapshot(source, effects, dx, dy).then(snapshot => {
       if (!waiting || active?.id !== id) { snapshot.planes.forEach(bitmap => bitmap.close()); return }
+      surface.dataset.snapshotMs = String(performance.now() - began)
       Object.assign(surface.style, { left: `${snapshot.left}px`, top: `${snapshot.top}px`,
-        width: `${snapshot.geometry.width / snapshot.dpr}px`, height: `${snapshot.geometry.height / snapshot.dpr}px` })
+        width: `${snapshot.geometry.width / snapshot.dpr}px`, height: `${snapshot.geometry.height / snapshot.dpr}px`, opacity: snapshot.opacity })
       post({ type: 'prepare', id, geometry: snapshot.geometry, planes: snapshot.planes, mode: snapshot.mode,
         stops: snapshot.stops, duration, easing }, snapshot.planes)
     }, fail).finally(() => { snapshotBusy = false })

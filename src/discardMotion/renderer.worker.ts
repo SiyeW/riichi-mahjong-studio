@@ -53,7 +53,17 @@ function initialize(surface: OffscreenCanvas) {
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program) || 'Motion link failed')
   gl.useProgram(program)
   canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); failed('Motion context lost') })
-  scope.postMessage({ type: 'warm' })
+  // Link completion is not first-draw readiness, especially in software WebGL.
+  // Reuse the real preparation path with a reserved tiny warm job, off-flight.
+  const staging = new OffscreenCanvas(2, 2), context2d = staging.getContext('2d', { willReadFrequently: true })
+  if (!context2d) throw Error('Motion warm surface unavailable')
+  context2d.fillStyle = '#fff'; context2d.fillRect(0, 0, 2, 2)
+  const a = staging.transferToImageBitmap()
+  context2d.fillRect(0, 0, 2, 2)
+  const b = staging.transferToImageBitmap()
+  void prepare({ type: 'prepare', id: 0, geometry: { width: 1, height: 1, spriteWidth: 2, spriteHeight: 2,
+    startX: .5, startY: .5, dx: 1, dy: 0, axisX: 1, axisY: 0 }, planes: [a,b], mode: 'crossfade',
+    stops: [[{offset:0,value:1}], [{offset:0,value:1}]], duration: 1, easing: 'linear' })
 }
 
 function texture(data: Float32Array, unit: number, name: string) {
@@ -112,6 +122,7 @@ function tick() {
         release(); scope.postMessage({ type: 'done', id, intervals: submitted }); return
       }
       const progress = phase === 'sharp' ? 1 : ease(Math.max(0, Math.min(1, (time - started) / job.duration)))
+      if (progress < previous || progress < 0 || progress > 1) throw Error('Unsupported nonmonotone flight')
       draw(progress, phase === 'sharp' ? 1 : previous, time)
       previous = progress
       if (phase === 'sharp') phase = 'finish'
@@ -158,7 +169,8 @@ async function prepare(request: Extract<MotionRequest, { type: 'prepare' }>) {
         if (performance.now() - before > 500) throw Error('Motion preparation timed out')
         if (!fenceReady()) { setTimeout(ready, 0); return }
         intervals = []
-        scope.postMessage({ type: 'ready', id, preparationMs: performance.now() - before })
+        if (id === 0) { release(); scope.postMessage({ type: 'warm' }) }
+        else scope.postMessage({ type: 'ready', id, preparationMs: performance.now() - before })
       } catch (error) { failed(error) }
     }
     ready()

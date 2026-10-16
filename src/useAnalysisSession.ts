@@ -6,7 +6,6 @@ import type { StudioSettings } from './contracts/settings'
 import type { AnalysisPresentationContext, GameView, TableState } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 import { normalizeTrainingMode } from './trainingSettings.ts'
-import { getUiMotionDurationMs } from './uiMotion.ts'
 import { useDelayedLoadingIndicator } from './useDelayedLoadingIndicator.ts'
 import { decisionAnalysisFeedback } from './decisionAnalysisFeedback.ts'
 
@@ -18,6 +17,7 @@ interface UseAnalysisSessionOptions {
   status: StudioStatus
   gameView: GameView
   showAnalysisDock: Readonly<Ref<boolean>>
+  tableMotionActive: Readonly<Ref<boolean>>
   t: Translate
   applyStatus: (status: StudioStatus) => void
   applyGameView: (view: GameView) => void
@@ -28,7 +28,6 @@ interface UseAnalysisSessionOptions {
 export type AnalysisStageOptions = Readonly<{
   resetDisplay?: boolean
   withoutMotion?: boolean
-  tableMotion?: boolean
 }>
 
 export const SHANTEN_SHORT_LABELS = ['0', '1', '2', '3', '4', '5', '6', 'X']
@@ -310,6 +309,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   function armScheduledAnalysisPresentation() {
     if (!pendingAnalysisPresentation || analysisPresentationNotBefore === null) return
     if (analysisPresentationTimer !== null) window.clearTimeout(analysisPresentationTimer)
+    analysisPresentationTimer = null
+    if (!pendingAnalysisPresentation.withoutMotion && options.tableMotionActive.value) return
     const delay = pendingAnalysisPresentation.withoutMotion
       ? 0
       : Math.max(0, analysisPresentationNotBefore - performance.now())
@@ -318,7 +319,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     else analysisPresentationTimer = window.setTimeout(() => presentScheduledAnalysis(generation), delay)
   }
 
-  function beginAnalysisPresentationWindow(tableMotion: boolean) {
+  function beginAnalysisPresentationWindow() {
     const generation = analysisPresentationGeneration
     analysisPresentationNotBefore = null
     void nextTick(() => {
@@ -329,7 +330,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
         analysisPresentationCommitFrame = window.requestAnimationFrame((committedFrameTime) => {
           if (generation !== analysisPresentationGeneration || disposed) return
           analysisPresentationCommitFrame = 0
-          analysisPresentationNotBefore = committedFrameTime + (tableMotion ? getUiMotionDurationMs() : 0)
+          analysisPresentationNotBefore = committedFrameTime
           armScheduledAnalysisPresentation()
         })
       })
@@ -365,7 +366,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     cancelScheduledAnalysisPresentation()
     if (stageOptions.resetDisplay) clearOpponentAnalysisWithoutMotion()
     if (stageOptions.withoutMotion || stageOptions.resetDisplay) analysisPresentationNotBefore = 0
-    else beginAnalysisPresentationWindow(Boolean(stageOptions.tableMotion))
+    else beginAnalysisPresentationWindow()
     gameView.opponentAnalysis = result || null
     if (result?.status === 'terminal') {
       scheduleAnalysisPresentation(result, { withoutMotion: true, clearWhenEmpty: true })
@@ -388,6 +389,10 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   function invalidateOpponentRead() {
     analysisReadGeneration += 1
   }
+
+  // Observe the motion owner, not an estimated delay from table commit. This
+  // also covers asynchronous preparation, slow submissions and reverse landing.
+  watch(options.tableMotionActive, active => { if (!active) armScheduledAnalysisPresentation() })
 
   async function fetchAnalysisOnce() {
     if (disposed || clearingAnalysisCaches.value || !opponentAnalysisNeeded.value || !gameView.table || !window.studioAPI?.getAnalysis) return

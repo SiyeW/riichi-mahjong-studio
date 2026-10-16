@@ -12,9 +12,10 @@ export async function checkAnalysisPresentationOwnership(seed) {
   window.clearTimeout = id => timers.delete(id)
   const host = document.createElement('div'); document.body.append(host)
   const gameView = reactive(seed.gameView), status = reactive(seed.status), settings = reactive(seed.settings)
+  const tableMotionActive = ref(false)
   let session, mounted = false
   const app = createApp({ setup() {
-    session = useAnalysisSession({ gameView, status, settings, showAnalysisDock: ref(true), t: key => key,
+    session = useAnalysisSession({ gameView, status, settings, showAnalysisDock: ref(true), tableMotionActive, t: key => key,
       applyStatus: () => {}, applyGameView: () => {}, scheduleTableZoomRecalc: () => {}, clearDecisionPresentation: () => {} })
     return () => h('div')
   } })
@@ -35,17 +36,23 @@ export async function checkAnalysisPresentationOwnership(seed) {
     const queuedAfterReplacement = frames.size
     runFrame(); runFrame()
     const ordinaryPresented = session.displayedOpponentAnalysis.value?.context?.nodeId
-    stage('flight', { tableMotion: true })
+    tableMotionActive.value = true
+    stage('flight')
     await tick(); runFrame(); runFrame()
     const flightHeld = session.displayedOpponentAnalysis.value?.context?.nodeId !== 'flight'
-    const heldDelay = Math.max(0, ...[...timers.values()].map(timer => timer.delay).filter(delay => delay < 200))
+    const guessedDeadlineTimers = [...timers.values()].filter(timer => timer.delay < 200).length
+    // No guessed 110ms timeout: even if preparation/landing takes longer, the
+    // result is retained until the actual owner retires.
+    tableMotionActive.value = false
+    await tick()
+    const presentedOnRetirement = session.displayedOpponentAnalysis.value?.context?.nodeId === 'flight'
     stage('retired-before-next-tick')
     app.unmount(); mounted = false
     await tick()
     const framesAfterUnmount = frames.size
     stage('late-after-unmount')
     await tick()
-    return { queuedAfterReplacement, ordinaryPresented, flightHeld, heldDelay,
+    return { queuedAfterReplacement, ordinaryPresented, flightHeld, guessedDeadlineTimers, presentedOnRetirement,
       framesAfterUnmount, framesAfterLateCall: frames.size }
   } finally {
     if (mounted) app.unmount()

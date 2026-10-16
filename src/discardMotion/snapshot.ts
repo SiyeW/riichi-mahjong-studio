@@ -7,7 +7,7 @@ const properties = ['display', 'position', 'left', 'right', 'top', 'bottom', 'wi
   'background', 'border', 'border-radius', 'box-shadow', 'filter', 'object-fit', 'object-position', 'overflow'] as const
 
 export interface MotionSnapshot {
-  geometry: MotionGeometry; left: number; top: number; dpr: number
+  geometry: MotionGeometry; left: number; top: number; dpr: number; opacity: string
   planes: ImageBitmap[]; mode: 'single' | 'overlay' | 'crossfade'; stops: OpacityStop[][]
 }
 
@@ -108,7 +108,10 @@ export async function captureMotionSnapshot(source: HTMLElement, effects: readon
     // drawing the decoded data URL is clean. Transfer a clean rendered surface,
     // without PNG encoding, bytes, disk I/O or an additional image decode.
     const surface = new OffscreenCanvas(spriteWidth, spriteHeight)
-    const context = surface.getContext('2d')
+    // Prefix preparation reads pixels on the worker. Keep this tiny staging
+    // surface CPU-backed; GPU raster -> CPU readback can stall the shared window
+    // compositor even though the JavaScript lives on another thread.
+    const context = surface.getContext('2d', { willReadFrequently: true })
     if (!context) throw Error('Motion snapshot canvas unavailable')
     context.drawImage(image, 0, 0)
     planes.push(surface.transferToImageBitmap())
@@ -127,7 +130,7 @@ export async function captureMotionSnapshot(source: HTMLElement, effects: readon
       nodes[opacityEffects[0]!.index]!.style.opacity = '0'; await serialize()
       nodes[opacityEffects[0]!.index]!.style.opacity = '1'; await serialize()
     } else await serialize()
-    return { planes, mode, stops: opacityEffects.map(effect => effect.stops), left, top, dpr,
+    return { planes, mode, stops: opacityEffects.map(effect => effect.stops), left, top, dpr, opacity: rootStyle.opacity,
       geometry: { width, height, spriteWidth, spriteHeight, axisX, axisY,
         startX: (cropLeft + cropWidth/2 - left) * dpr, startY: (cropTop + cropHeight/2 - top) * dpr, dx: dx*dpr, dy: dy*dpr } }
   } catch (error) { planes.forEach(bitmap => bitmap.close()); throw error }

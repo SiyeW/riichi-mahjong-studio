@@ -56,6 +56,7 @@ try {
     engines: { schemaVersion: 2, profiles: [], loadedProfileIds: [], outputAssignments: {} } }))
   if (!externalRendererUrl) {
     server = await createServer({ root, mode: 'desktop-test', cacheDir: path.join(directory, 'vite-cache'),
+      optimizeDeps: { entries: ['src/main.ts'] },
       server: { host: '127.0.0.1', port: 0, strictPort: false } })
   }
   await server?.listen()
@@ -183,9 +184,11 @@ try {
         timelineTimes.push(timeline)
         zooms.add(vm.tableZoom)
         for (const [flight, animation] of animations) {
-          if (typeof animation.startTime === 'number') flight.startTime = animation.startTime
+          if (flight.startTime === null && typeof animation.startTime === 'number') flight.startTime = animation.startTime
         }
         const surface = document.querySelector('.discard-motion-surface')
+        const latest = flights.at(-1)
+        if (surface?.dataset.active && latest?.startTime === null) latest.startTime = Number(surface.dataset.startTime)
         const completed = surface?.dataset.intervals
         if (completed && completed !== lastCoverage) {
           lastCoverage = completed
@@ -207,7 +210,9 @@ try {
             easing: animation.effect?.getTiming().easing, startTime: null }
           flights.push(flight)
           animations.set(flight, animation)
-          void animation.ready.then(() => { flight.startTime = animation.startTime }).catch(() => {})
+          void animation.ready.then(() => {
+            if (flight.startTime === null && typeof animation.startTime === 'number') flight.startTime = animation.startTime
+          }).catch(() => {})
         }
         return animation
       }

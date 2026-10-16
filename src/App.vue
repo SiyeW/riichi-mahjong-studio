@@ -954,6 +954,33 @@ const gameView = reactive<GameView>({
 })
 
 const {
+  tileArtworkReady,
+  tileArtworkLoadingLabel,
+  tileImageSrc,
+  prepareTileArtwork,
+} = useTileArtwork(t)
+
+const {
+  coverageTrialEnabled,
+  autoAdvanceMotionDelayMs,
+  cancelPendingDiscardFlight,
+  cancelPendingDiscardReturnFlight,
+  hasPendingDiscardFlight,
+  tableMotionActive,
+  holdAutoAdvanceForTableMotion,
+  pendingDiscardFromTable,
+  pendingDiscardSignature,
+  preparePendingDiscardReturnFlight,
+  schedulePendingDiscardFlight,
+  schedulePendingDiscardReturnFlight,
+} = useDiscardFlight({
+  status,
+  reduceMotionEnabled,
+  tileImageSrc,
+  scheduleAutoAdvance: () => scheduleAutoAdvance(),
+})
+
+const {
   SHANTEN_LABELS,
   acceptsDecisionEventEpoch,
   acceptsOpponentEventEpoch,
@@ -994,6 +1021,7 @@ const {
   status,
   gameView,
   showAnalysisDock,
+  tableMotionActive,
   t,
   applyStatus,
   applyGameView,
@@ -1525,37 +1553,10 @@ async function jumpToRoundRoot(roundRootId: string) {
 }
 
 
-const {
-  tileArtworkReady,
-  tileArtworkLoadingLabel,
-  tileImageSrc,
-  prepareTileArtwork,
-} = useTileArtwork(t)
-
-
 function applyStatus(nextStatus: StudioStatus) {
   Object.assign(status, nextStatus)
 }
 
-const {
-  coverageTrialEnabled,
-  autoAdvanceMotionDelayMs,
-  cancelPendingDiscardFlight,
-  cancelPendingDiscardReturnFlight,
-  hasPendingDiscardFlight,
-  hasPendingTableMotion,
-  holdAutoAdvanceForTableMotion,
-  pendingDiscardFromTable,
-  pendingDiscardSignature,
-  preparePendingDiscardReturnFlight,
-  schedulePendingDiscardFlight,
-  schedulePendingDiscardReturnFlight,
-} = useDiscardFlight({
-  status,
-  reduceMotionEnabled,
-  tileImageSrc,
-  scheduleAutoAdvance,
-})
 function treeNodeCount(tree: GameView['tree']): number {
   const nodes = tree?.nodes
   if (Array.isArray(nodes)) return nodes.length
@@ -1619,8 +1620,6 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   stageOpponentAnalysisForView(nextView.opponentAnalysis, {
     resetDisplay: isNewGame,
     withoutMotion: reduceMotionEnabled.value,
-    tableMotion: hasPendingTableMotion()
-      || Boolean(returnFlight || (!isNewGame && nextPendingDiscard && pendingDiscardChanged)),
   })
   const nextTree = nextView.tree
   const currentTree = gameView.tree

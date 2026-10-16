@@ -5,6 +5,7 @@ import path from 'node:path'
 import { createServer } from 'vite'
 import { chromium, _electron as electron } from 'playwright'
 import { spawnSync } from 'node:child_process'
+import { checkMotionIntegralMath } from './check-motion-integral-math.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-coverage-check-'))
@@ -120,6 +121,7 @@ async function check(page, label, dense) {
     await page.evaluate(()=>{window.motionSnapshot.planes.forEach(p=>p.close());window.motionGl.getExtension('WEBGL_lose_context')?.loseContext()})
     results.push({label,seat,riichi,reverse,preparation,error,sweep})
   }
+  results.push(await checkMotionIntegralMath(page,label))
   const lifecycle = await page.evaluate(async () => {
     window.motionOutput.remove(); window.motionSource.style.removeProperty('opacity')
     const renderer=window.coverageApi.createDiscardCoverageRenderer();renderer.start()
