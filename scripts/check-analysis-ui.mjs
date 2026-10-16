@@ -59,6 +59,7 @@ let electronApp
 try {
   if (!externalRendererUrl) {
     server = await createServer({ root, mode: 'ui-test', cacheDir: path.join(directory, 'vite-cache'),
+      optimizeDeps: { entries: ['src/main.ts'] },
       server: { host: '127.0.0.1', port: 0, strictPort: false } })
   }
   await server?.listen()
@@ -339,6 +340,15 @@ try {
   await checkRuntimeResources(page)
   await checkTableTurnIndicators(page)
   await page.getByRole('button', { name: '设置', exact: true }).click()
+  const coverageCheckbox = page.getByRole('checkbox', { name: /飞牌运动模糊/ })
+  assert.equal(await coverageCheckbox.isChecked(), false, 'the session trial defaults off')
+  await coverageCheckbox.locator('..').click()
+  assert.equal(await page.evaluate(() => document.querySelector('#app').__vue_app__._instance.setupState.coverageTrialEnabled), true)
+  const reducedCheckbox = page.getByRole('checkbox', { name: '减少动态效果', exact: true })
+  await reducedCheckbox.locator('..').click()
+  assert.equal(await coverageCheckbox.isDisabled(), true, 'the trial honors reduced motion')
+  await reducedCheckbox.locator('..').click()
+  await coverageCheckbox.locator('..').click()
   const cachePolicySelect = page.locator('.settings-modal select').filter({ has: page.locator('option[value="custom"]') })
   await cachePolicySelect.selectOption('custom')
   const cacheBudget = page.locator('.settings-modal input[type="number"][min="1"]')

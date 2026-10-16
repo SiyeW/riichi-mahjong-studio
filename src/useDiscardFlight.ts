@@ -1,5 +1,7 @@
-import { computed, nextTick, onBeforeUnmount, watch, type Ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
+import { createExposureSampler, prepareDiscardCoverage, type DiscardCoverage } from './discardCoverage'
+import { flightTranslationFrames } from './discardCoverageModel'
 import type { GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 
@@ -28,6 +30,22 @@ export function useDiscardFlight(options: {
   scheduleAutoAdvance: () => void
 }) {
   const { status, reduceMotionEnabled, tileImageSrc, scheduleAutoAdvance } = options
+  const coverageTrialEnabled = ref(false)
+  const exposureSampler = createExposureSampler(() => hasPendingTableMotion())
+  let forwardCoverage: DiscardCoverage | null = null
+  let returnCoverage: DiscardCoverage | null = null
+  const updateSampler = () => {
+    if (import.meta.env.DEV && coverageTrialEnabled.value && !reduceMotionEnabled.value && !document.hidden) exposureSampler.start()
+    else exposureSampler.stop()
+    if (!coverageTrialEnabled.value || document.hidden) {
+      forwardCoverage?.cancel(); forwardCoverage = null
+      returnCoverage?.cancel(); returnCoverage = null
+    }
+  }
+  document.addEventListener('visibilitychange', updateSampler)
+  watch([coverageTrialEnabled, reduceMotionEnabled], updateSampler)
+  const trialExposure = () => import.meta.env.DEV && coverageTrialEnabled.value
+    && !reduceMotionEnabled.value ? exposureSampler.exposure() : 0
 
 let pendingDiscardFlightFrame = 0
 let pendingDiscardFlightAnimation: Animation | null = null
@@ -65,6 +83,8 @@ function pendingDiscardSignature(table: GameView['table']): string {
 
 function cancelPendingDiscardFlight() {
   pendingDiscardFlightGeneration += 1
+  forwardCoverage?.cancel()
+  forwardCoverage = null
   if (pendingDiscardFlightFrame) {
     cancelAnimationFrame(pendingDiscardFlightFrame)
     pendingDiscardFlightFrame = 0
@@ -84,6 +104,8 @@ function cancelPendingDiscardFlight() {
 }
 
 function clearPendingDiscardReturnFlight() {
+  returnCoverage?.cancel()
+  returnCoverage = null
   pendingDiscardReturnEffects.forEach(animation => animation.cancel())
   pendingDiscardReturnEffects = []
   pendingDiscardReturnGhost?.remove()
@@ -355,13 +377,20 @@ function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) 
       if (flight.regularPose && flight.settledImage) {
         pendingDiscardReturnEffects = animateDiscardPoseSwap(flight.regularPose, flight.settledImage, 'restore', duration)
       }
+      returnCoverage = flight.settledImage ? prepareDiscardCoverage({
+        source: flight.ghost, image: flight.settledImage, effects: pendingDiscardReturnEffects,
+        duration, exposure: trialExposure(), fromX: 0, fromY: 0, toX: flight.deltaX, toY: flight.deltaY,
+      }) : null
+      const total = returnCoverage?.duration ?? duration
       pendingDiscardReturnAnimation = flight.ghost.animate(
-        [
-          { transform: 'translate(0px, 0px)' },
-          { transform: `translate(${flight.deltaX}px, ${flight.deltaY}px)` },
-        ],
-        { duration, easing, fill: 'forwards' },
+        flightTranslationFrames('translate(0px, 0px)', `translate(${flight.deltaX}px, ${flight.deltaY}px)`, duration, total, easing),
+        { duration: total, easing: total > duration ? 'linear' : easing, fill: 'forwards' },
       )
+      const start = returnCoverage?.startTime
+      if (returnCoverage && typeof start === 'number') {
+        pendingDiscardReturnAnimation.startTime = start
+        pendingDiscardReturnEffects.forEach(animation => { animation.startTime = start })
+      }
       pendingDiscardReturnAnimation.onfinish = () => {
         if (generation !== pendingDiscardReturnGeneration) return
         pendingDiscardReturnAnimation = null
@@ -434,21 +463,30 @@ function schedulePendingDiscardFlight(seat: number) {
         pendingDiscardFlightEffects = animateDiscardPoseSwap(regularPose, targetTile, 'settle', duration)
       }
 
+      forwardCoverage = prepareDiscardCoverage({
+        source: target, image: targetTile, effects: pendingDiscardFlightEffects,
+        duration, exposure: trialExposure(), fromX: deltaX, fromY: deltaY, toX: 0, toY: 0,
+      })
+      const total = forwardCoverage?.duration ?? duration
       pendingDiscardFlightAnimation = target.animate(
-        [
-          { transform: `translate3d(${deltaX}px, ${deltaY}px, 0) ${settledTransform}` },
-          { transform: settledTransform },
-        ],
-        { duration, easing },
+        flightTranslationFrames(`translate3d(${deltaX}px, ${deltaY}px, 0) ${settledTransform}`, settledTransform, duration, total, easing),
+        { duration: total, easing: total > duration ? 'linear' : easing },
       )
+      const start = forwardCoverage?.startTime
+      if (forwardCoverage && typeof start === 'number') {
+        pendingDiscardFlightAnimation.startTime = start
+        pendingDiscardFlightEffects.forEach(animation => { animation.startTime = start })
+      }
       // Face, pose and translation start together on this frame. Pausing only
       // translation lets the face change before the tile even leaves the hand.
       target.style.removeProperty('visibility')
-      holdAutoAdvanceForTableMotion(duration)
+      holdAutoAdvanceForTableMotion(total)
       scheduleAutoAdvance()
       pendingDiscardFlightAnimation.onfinish = () => {
         if (generation !== pendingDiscardFlightGeneration) return
         pendingDiscardFlightAnimation = null
+        forwardCoverage?.cancel()
+        forwardCoverage = null
         pendingDiscardFlightEffects.forEach(animation => animation.cancel())
         pendingDiscardFlightEffects = []
         backOverlay?.remove()
@@ -493,11 +531,14 @@ watch(reduceMotionEnabled, (reduced) => {
   }
 
   onBeforeUnmount(() => {
+    exposureSampler.stop()
+    document.removeEventListener('visibilitychange', updateSampler)
     cancelPendingDiscardFlight()
     cancelPendingDiscardReturnFlight()
   })
 
   return {
+    coverageTrialEnabled,
     autoAdvanceMotionDelayMs,
     cancelPendingDiscardFlight,
     cancelPendingDiscardReturnFlight,

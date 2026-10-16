@@ -560,6 +560,7 @@
     <SettingsDialog
       v-if="showSettingsPanel"
       v-model:mistake-threshold="mistakeThresholdDisplay"
+      v-model:coverage-trial-enabled="coverageTrialEnabled"
       :draft="settingsDraft"
       :sound-packs="settings.runtime?.soundPackCatalog.packs || []"
       :ui-scale-options="uiScaleOptions"
@@ -1533,6 +1534,7 @@ function applyStatus(nextStatus: StudioStatus) {
 }
 
 const {
+  coverageTrialEnabled,
   autoAdvanceMotionDelayMs,
   cancelPendingDiscardFlight,
   cancelPendingDiscardReturnFlight,

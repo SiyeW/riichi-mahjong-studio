@@ -57,6 +57,14 @@
           <span class="settings-checkbox-control" aria-hidden="true"></span>
           <span class="settings-checkbox-label">{{ t('settings.showTsumogiri') }}</span>
         </label>
+        <label v-if="developmentBuild" class="settings-checkbox settings-checkbox-with-description">
+          <input v-model="coverageTrialEnabled" type="checkbox" :disabled="props.draft.display.reduceMotion" />
+          <span class="settings-checkbox-control" aria-hidden="true"></span>
+          <span class="settings-checkbox-copy">
+            <span class="settings-checkbox-label">{{ t('settings.flightCoverage') }}</span>
+            <span class="settings-checkbox-description">{{ t('settings.flightCoverage.description') }}</span>
+          </span>
+        </label>
       </div>
       <div class="settings-subsection">
         <h3>{{ t('settings.sound') }}</h3>
@@ -145,6 +153,8 @@ const exceedsAvailableMemory = computed(() => Boolean(props.availableMemoryBytes
   && (props.draft.records.analysisCacheMiB ?? recordCachePolicy.defaultMiB) * 1024 ** 2 > props.availableMemoryBytes!)
 
 const mistakeThreshold = defineModel<number>('mistakeThreshold', { required: true })
+const coverageTrialEnabled = defineModel<boolean>('coverageTrialEnabled', { default: false })
+const developmentBuild = import.meta.env.DEV
 const emit = defineEmits<{
   close: []
   save: []

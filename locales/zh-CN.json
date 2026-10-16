@@ -64,6 +64,8 @@
   "settings.tablePosition.left": "靠左",
   "settings.tablePosition.right": "靠右",
   "settings.reduceMotion": "减少动态效果",
+  "settings.flightCoverage": "飞牌运动模糊（试用）",
+  "settings.flightCoverage.description": "仅本次运行。按绘制回调间隔估计曝光；减少动态效果时停用。",
   "settings.showTsumogiri": "对局时显示手摸切",
   "settings.sound": "音效",
   "settings.soundPack": "音效包",

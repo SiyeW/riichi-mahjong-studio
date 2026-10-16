@@ -64,6 +64,8 @@
   "settings.tablePosition.left": "Left",
   "settings.tablePosition.right": "Right",
   "settings.reduceMotion": "Reduce motion",
+  "settings.flightCoverage": "Tile motion blur (trial)",
+  "settings.flightCoverage.description": "For this session only. Exposure is estimated from rendering callbacks; disabled with reduced motion.",
   "settings.showTsumogiri": "Show draw-and-discard tiles during play",
   "settings.sound": "Sound",
   "settings.soundPack": "Sound pack",

@@ -64,6 +64,8 @@
   "settings.tablePosition.left": "左",
   "settings.tablePosition.right": "右",
   "settings.reduceMotion": "アニメーションを減らす",
+  "settings.flightCoverage": "打牌のモーションブラー（試用）",
+  "settings.flightCoverage.description": "今回の起動中のみ有効。描画コールバックの間隔から露光時間を推定します。アニメーションを減らす設定では無効です。",
   "settings.showTsumogiri": "対局中に手出し・ツモ切りを表示",
   "settings.sound": "サウンド",
   "settings.soundPack": "効果音パック",
