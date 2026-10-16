@@ -19,7 +19,7 @@ export async function checkFlightOcclusion(page) {
   const cases = []
   try {
     for (const actor of [0, 1, 2, 3]) for (const riichi of [false, true]) for (const reverse of [false, true]) {
-      await page.evaluate(async ({ actor, riichi, reverse }) => {
+      const reversePose = await page.evaluate(async ({ actor, riichi, reverse }) => {
         const { vm } = window.analysisCheck
         const parent = structuredClone(window.rmsOcclusionOriginal.view)
         parent.playerNames = ['', '', '', '']
@@ -47,11 +47,31 @@ export async function checkFlightOcclusion(page) {
         await vm.jumpToNode(child.currentNodeId)
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
         if (reverse) {
+          window.rmsOcclusionAnimations.forEach(animation => {
+            animation.currentTime = Number(animation.effect.getTiming().duration) - .001
+          })
+          const source = document.querySelector(`[data-pending-discard-seat="${actor}"] .tileImg`)
+          const sourceRect = source.getBoundingClientRect()
+          const expected = { x: sourceRect.x, y: sourceRect.y, width: sourceRect.width, height: sourceRect.height,
+            transform: getComputedStyle(source).transform }
           window.rmsOcclusionAnimations = []
           await vm.jumpToNode(parent.currentNodeId)
           await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+          const clone = document.querySelector('.discard-return-ghost > .tileDiv > .tileImg')
+          const cloneRect = clone.getBoundingClientRect()
+          return { expected, actual: { x: cloneRect.x, y: cloneRect.y, width: cloneRect.width, height: cloneRect.height,
+            transform: getComputedStyle(clone).transform } }
         }
+        return null
       }, { actor, riichi, reverse })
+      if (reversePose) {
+        for (const coordinate of ['x', 'y', 'width', 'height']) {
+          assert.ok(Math.abs(reversePose.actual[coordinate] - reversePose.expected[coordinate]) < .1,
+            `Reverse flight must begin at the settled image pose: ${JSON.stringify({ actor, riichi, coordinate, ...reversePose })}`)
+        }
+        assert.equal(reversePose.actual.transform, reversePose.expected.transform,
+          `Reverse clone preserves the actual settled rotation for actor ${actor}, riichi ${riichi}`)
+      }
       for (const annotation of ['empty', 'named', 'hover', 'editing']) {
         await page.mouse.move(0, 0)
         await page.evaluate(({ actor, annotation }) => {

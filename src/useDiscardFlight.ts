@@ -3,6 +3,8 @@ import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 import type { GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 
+const IMAGE_POSE_PROPERTIES = ['position', 'left', 'top', 'right', 'bottom', 'float', 'transform', 'transform-origin'] as const
+
 export type PendingDiscardView = NonNullable<NonNullable<GameView['table']>['pendingDiscard']>
 export interface PendingDiscardReturnFlight {
   ghost: HTMLElement
@@ -178,6 +180,9 @@ function createDiscardFlightRegularPose(
   poseTile.style.removeProperty('height')
   const poseImage = poseTile.querySelector<HTMLImageElement>('.tileImg')
   if (!poseImage) return null
+  // A return clone carries the river image's settled pose inline. Its regular
+  // hand pose must instead use the ordinary orientation rules below.
+  IMAGE_POSE_PROPERTIES.forEach(property => poseImage.style.removeProperty(property))
   poseImage.classList.remove('river-riichi', 'last-discard')
   if (!inheritDiscardTone) poseImage.classList.remove('river-tsumogiri')
   if (useBackImage) {
@@ -257,6 +262,11 @@ function preparePendingDiscardReturnFlight(seat: number): PendingDiscardReturnFl
     const sourceImageStyle = getComputedStyle(sourceImage)
     clonedImage.style.width = sourceImageStyle.width
     clonedImage.style.height = sourceImageStyle.height
+    // River-specific selectors no longer match after the clone moves to body.
+    // Preserve the actual settled pose, including a sideways riichi discard.
+    IMAGE_POSE_PROPERTIES.forEach(property => {
+      clonedImage.style.setProperty(property, sourceImageStyle.getPropertyValue(property))
+    })
   }
   ghost.appendChild(clonedTile)
   document.body.appendChild(ghost)
