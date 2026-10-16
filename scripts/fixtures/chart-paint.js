@@ -4,6 +4,8 @@ import { DEFAULT_PERCEPTUAL_SURFACE_TUNING, PERCEPTUAL_SURFACE_CHANGE_EVENT } fr
 import { parseCssColor } from '/src/perceptualColor.ts'
 import DistributionBarChart from '/src/components/DistributionBarChart.vue'
 import ShantenPieChart from '/src/components/ShantenPieChart.vue'
+import GameAnalysisSection from '/src/components/GameAnalysisSection.vue'
+import { useAnalysisHoverTooltip } from '/src/useAnalysisHoverTooltip.ts'
 
 const settle = async () => {
   for (let frame = 0; frame < 3; frame++) await new Promise(resolve => requestAnimationFrame(resolve))
@@ -135,6 +137,38 @@ export async function checkShantenPaintUpdates() {
     result.writesAfterUnmount = changedPaths.length - afterUnmount
     return result
   } finally { observer?.disconnect(); if (mounted) app.unmount(); host.remove() }
+}
+
+export async function checkUnchangedGamePaint(seed) {
+  const host = document.createElement('div')
+  host.className = 'shell'
+  host.style.cssText = 'position:fixed;left:-1000px;top:0;width:600px;height:500px;--floating-panel-scale:1'
+  document.body.append(host)
+  const analysis = ref(seed.analysis)
+  const app = createApp({ setup() {
+    useAnalysisHoverTooltip(ref(host))
+    return () => h(GameAnalysisSection, { ...seed, analysis: analysis.value, reduceMotion: false })
+  } })
+  let context, originalClear
+  try {
+    app.mount(host)
+    await settle(); await new Promise(resolve => setTimeout(resolve, 180))
+    const canvas = host.querySelector('canvas')
+    context = canvas.getContext('2d'); originalClear = context.clearRect
+    let draws = 0
+    context.clearRect = function (...args) { draws++; return originalClear.apply(this, args) }
+    const before = canvas.rmsGameAnalysisRenderSignature
+    analysis.value = { ...analysis.value, context: { ...analysis.value?.context, nodeId: 'same-values-new-wrapper' } }
+    await new Promise(resolve => setTimeout(resolve, 180))
+    const unchanged = before === canvas.rmsGameAnalysisRenderSignature, unchangedDraws = draws
+    analysis.value = { status: 'unavailable', outputs: {} }
+    await new Promise(resolve => setTimeout(resolve, 180))
+    const root = canvas.getBoundingClientRect(), track = host.querySelector('.analysis-outcome-bar').getBoundingClientRect()
+    const x = Math.min(canvas.width - 1, Math.max(0, Math.round(((track.left + track.right) / 2 - root.left) * devicePixelRatio)))
+    const y = Math.min(canvas.height - 1, Math.max(0, Math.round(((track.top + track.bottom) / 2 - root.top) * devicePixelRatio)))
+    const emptyOutcomeAlpha = context.getImageData(x, y, 1, 1).data[3]
+    return { draws: unchangedDraws, unchanged, emptyOutcomeAlpha, width: canvas.width, height: canvas.height }
+  } finally { if (context && originalClear) context.clearRect = originalClear; app.unmount(); host.remove() }
 }
 
 export function sampleDistributionColor(selector, variable) {

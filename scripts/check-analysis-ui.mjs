@@ -1645,6 +1645,19 @@ try {
   })
   assert.equal(savedPredictionMotion.unloaded, true)
   assert.ok(savedPredictionMotion.states >= 3, `saved analysis still animates without a loaded provider: ${JSON.stringify(savedPredictionMotion)}`)
+  const unchangedGamePaint = await page.evaluate(async () => {
+    let owner = document.querySelector('.analysis-dora-distribution').__vueParentComponent
+    while (owner && owner.type.__name !== 'OpponentAnalysisSection') owner = owner.parent
+    if (!owner) throw new Error('Missing analysis data fixture owner')
+    const { analysis, analysisOpponents, controlledSeat, dealer, perceptualSurface } = owner.props
+    const { checkUnchangedGamePaint } = await import('/scripts/fixtures/chart-paint.js')
+    return checkUnchangedGamePaint({ analysis, analysisOpponents, controlledSeat, dealer, perceptualSurface })
+  })
+  assert.equal(unchangedGamePaint.unchanged, true)
+  assert.equal(unchangedGamePaint.emptyOutcomeAlpha, 0, 'unavailable game probabilities do not paint a fabricated certain outcome')
+  assert.ok(unchangedGamePaint.draws >= 1 && unchangedGamePaint.draws <= 2,
+    `unchanged game data repaints once instead of running another animation: ${JSON.stringify(unchangedGamePaint)}`)
+  console.log(`Analysis presentation: ${JSON.stringify({ presentationOwnership, savedPredictionMotion, unchangedGamePaint })}`)
   const oldPalette = await page.evaluate(async () => {
     const { sampleDistributionColor } = await import('/scripts/fixtures/chart-paint.js')
     return { scheme: window.analysisCheck.vm.settings.display.colorScheme,

@@ -214,6 +214,17 @@ function copyCanvasData(data: GameCanvasData): GameCanvasData {
   }
 }
 
+function canvasDataMatches(left: GameCanvasData, right: GameCanvasData): boolean {
+  const numbersMatch = (a: readonly number[], b: readonly number[]) => a.length === b.length
+    && a.every((value, index) => Math.abs(value - b[index]) <= 1e-6)
+  return numbersMatch(left.outcome, right.outcome) && numbersMatch(left.deltas, right.deltas)
+    && left.offense.length === right.offense.length
+    && left.offense.every((value, index) => Math.abs(value.win - right.offense[index].win) <= 1e-6
+      && Math.abs(value.dealIn - right.offense[index].dealIn) <= 1e-6)
+    && left.placements.length === right.placements.length
+    && left.placements.every((values, index) => numbersMatch(values, right.placements[index]))
+}
+
 function interpolateCanvasData(source: GameCanvasData, target: GameCanvasData, progress: number): GameCanvasData {
   const between = (from: number | undefined, to: number) => (from ?? to) + ((to - (from ?? to)) * progress)
   return {
@@ -286,11 +297,9 @@ function fillSegments(context: CanvasRenderingContext2D, rect: Rect, values: rea
   const width = rect.right - rect.left
   let cumulative = 0
   values.forEach((value, index) => {
-    const left = rect.left + Math.round(cumulative * width)
+    const left = rect.left + Math.round(Math.min(1, cumulative) * width)
     cumulative += Math.max(0, value)
-    const right = index === values.length - 1
-      ? rect.right
-      : rect.left + Math.round(cumulative * width)
+    const right = rect.left + Math.round(Math.min(1, cumulative) * width)
     if (right <= left || !colors[index]) return
     context.fillStyle = colors[index]
     context.fillRect(left, rect.top, right - left, rect.bottom - rect.top)
@@ -345,7 +354,7 @@ function stopCanvasAnimation() {
 function animateCanvas() {
   stopCanvasAnimation()
   const target = targetCanvasData()
-  if (!displayedCanvasData || props.reduceMotion) {
+  if (!displayedCanvasData || props.reduceMotion || canvasDataMatches(displayedCanvasData, target)) {
     displayedCanvasData = copyCanvasData(target)
     renderCanvas()
     return
