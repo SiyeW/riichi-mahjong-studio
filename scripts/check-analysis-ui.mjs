@@ -20,11 +20,27 @@ const performanceOnly = Boolean(process.env.RMS_UI_PERFORMANCE_ONLY)
 const externalRendererUrl = process.env.RMS_UI_TEST_URL || null
 
 async function checkCountGeometryBatches(page) {
-  const phases = await page.evaluate(async () => (await import('/scripts/fixtures/count-geometry.js')).checkCountGeometryPhases())
-  assert.equal(phases.cssBatch, true)
-  assert.equal(phases.bitmapBatch, true)
-  assert.ok(phases.reads > 0 && phases.bitmapWrites > 0)
-  return phases
+  const layout = await page.evaluate(() => {
+    const vm = window.analysisCheck.vm, previous = JSON.parse(JSON.stringify(vm.workspaceLayout))
+    vm.settings.display.workspaceLayout = { ...previous, analysisVisible: true,
+      analysisPanels: { opponents: false, game: false, risk: false, counts: true },
+      layout: { type: 'split', direction: 'horizontal', weights: [2, 1], children: [
+        { type: 'item', id: 'table' }, { type: 'item', id: 'analysis-counts' },
+      ] } }
+    return previous
+  })
+  try {
+    await page.locator('.analysis-count-grid canvas').first().waitFor()
+    await page.waitForTimeout(160)
+    const phases = await page.evaluate(async () => (await import('/scripts/fixtures/count-geometry.js')).checkCountGeometryPhases())
+    assert.equal(phases.cssBatch, true)
+    assert.equal(phases.bitmapBatch, true)
+    assert.ok(phases.reads > 0 && phases.bitmapWrites > 0)
+    return phases
+  } finally {
+    await page.evaluate(layout => { window.analysisCheck.vm.settings.display.workspaceLayout = layout }, layout)
+    await page.waitForTimeout(160)
+  }
 }
 
 function loadRealisticAnalysisFixtures() {

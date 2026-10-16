@@ -38,7 +38,14 @@ export function useDiscardFlight(options: {
   let forwardCoverage: DiscardCoverage | null = null
   let returnCoverage: DiscardCoverage | null = null
   const updateCoverage = () => {
-    if (import.meta.env.DEV && coverageTrialEnabled.value && !reduceMotionEnabled.value && !document.hidden) coverageRenderer.start()
+    if (document.hidden || reduceMotionEnabled.value) {
+      // Invisible/throttled animation callbacks must never hold gameplay.
+      cancelPendingDiscardFlight()
+      cancelPendingDiscardReturnFlight()
+      coverageRenderer.stop()
+      scheduleAutoAdvance()
+    }
+    else if (import.meta.env.DEV && coverageTrialEnabled.value) coverageRenderer.start()
     else {
       forwardCoverage?.cancel(); forwardCoverage = null
       returnCoverage?.cancel(); returnCoverage = null
@@ -47,6 +54,12 @@ export function useDiscardFlight(options: {
   }
   document.addEventListener('visibilitychange', updateCoverage)
   watch([coverageTrialEnabled, reduceMotionEnabled], updateCoverage)
+  const geometryChanged = () => {
+    cancelPendingDiscardFlight()
+    cancelPendingDiscardReturnFlight()
+    scheduleAutoAdvance()
+  }
+  window.addEventListener('resize', geometryChanged)
 
 let pendingDiscardFlightFrame = 0
 let pendingDiscardFlightAnimation: Animation | null = null
@@ -55,12 +68,14 @@ let pendingDiscardFlightGeneration = 0
 let pendingDiscardFlightBackOverlay: HTMLElement | null = null
 let pendingDiscardFlightRegularPose: HTMLElement | null = null
 let pendingDiscardFlightTarget: HTMLElement | null = null
+let pendingDiscardFlightSize: ResizeObserver | null = null
 let pendingDiscardReturnFrame = 0
 let pendingDiscardReturnAnimation: Animation | null = null
 let pendingDiscardReturnEffects: Animation[] = []
 let pendingDiscardReturnGeneration = 0
 let pendingDiscardReturnGhost: HTMLElement | null = null
 let pendingDiscardReturnDestination: HTMLElement | null = null
+let pendingDiscardReturnSize: ResizeObserver | null = null
 let autoAdvanceMotionNotBefore = 0
 
 function holdAutoAdvanceForTableMotion(duration = getUiMotionDurationMs()) {
@@ -84,6 +99,7 @@ function pendingDiscardSignature(table: GameView['table']): string {
 
 function cancelPendingDiscardFlight() {
   pendingDiscardFlightGeneration += 1
+  pendingDiscardFlightSize?.disconnect(); pendingDiscardFlightSize = null
   forwardCoverage?.cancel()
   forwardCoverage = null
   if (pendingDiscardFlightFrame) {
@@ -106,6 +122,7 @@ function cancelPendingDiscardFlight() {
 }
 
 function clearPendingDiscardReturnFlight() {
+  pendingDiscardReturnSize?.disconnect(); pendingDiscardReturnSize = null
   returnCoverage?.cancel()
   returnCoverage = null
   pendingDiscardReturnEffects.forEach(animation => animation.cancel())
@@ -131,6 +148,17 @@ function cancelPendingDiscardReturnFlight() {
 
 function shouldAnimateDiscardFaceChange(seat: number): boolean {
   return seat !== status.controlledSeat && !status.visibleHands
+}
+
+function observeMotionSize(element: HTMLElement, invalidate: () => void) {
+  const original = element.getBoundingClientRect(), ratio = devicePixelRatio
+  const observer = new ResizeObserver(() => {
+    const rect = element.getBoundingClientRect()
+    if (!element.isConnected || devicePixelRatio !== ratio
+      || Math.abs(rect.width - original.width) > .1 || Math.abs(rect.height - original.height) > .1) invalidate()
+  })
+  observer.observe(element)
+  return observer
 }
 
 function createDiscardFlightBackOverlay(
@@ -257,7 +285,7 @@ function animateDiscardPoseSwap(
 }
 
 function preparePendingDiscardReturnFlight(seat: number): PendingDiscardReturnFlight | null {
-  if (reduceMotionEnabled.value) return null
+  if (reduceMotionEnabled.value || document.hidden) return null
   const destination = document.querySelector<HTMLElement>(`[data-hand-gap-seat="${seat}"]`)
   const source = document.querySelector<HTMLElement>(`[data-pending-discard-seat="${seat}"]`)
   if (!destination || !source) return null
@@ -354,6 +382,10 @@ function resolvePendingDiscardReturnDestination(flight: PendingDiscardReturnFlig
 }
 
 function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) {
+  if (reduceMotionEnabled.value || document.hidden) {
+    flight.ghost.remove(); flight.destination?.style.removeProperty('visibility')
+    return
+  }
   const generation = ++pendingDiscardReturnGeneration
   returnMotionActive.value = true
   pendingDiscardReturnGhost = flight.ghost
@@ -373,6 +405,10 @@ function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) 
         clearPendingDiscardReturnFlight()
         return
       }
+      pendingDiscardReturnSize = observeMotionSize(flight.destination!, () => {
+        if (generation !== pendingDiscardReturnGeneration || !returnMotionActive.value) return
+        cancelPendingDiscardReturnFlight()
+      })
       const duration = getUiMotionDurationMs()
       const easing = getUiMotionEasing()
       if (flight.backOverlay) {
@@ -412,11 +448,14 @@ function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) 
 }
 
 function schedulePendingDiscardFlight(seat: number) {
-  if (reduceMotionEnabled.value) return
+  if (reduceMotionEnabled.value || document.hidden) return
   const generation = ++pendingDiscardFlightGeneration
   forwardMotionActive.value = true
   void nextTick(() => {
     if (generation !== pendingDiscardFlightGeneration) return
+    if (reduceMotionEnabled.value || document.hidden) {
+      cancelPendingDiscardFlight(); scheduleAutoAdvance(); return
+    }
     const gap = document.querySelector<HTMLElement>(`[data-hand-gap-seat="${seat}"]`)
     const target = document.querySelector<HTMLElement>(`[data-pending-discard-seat="${seat}"]`)
     const targetTile = target?.querySelector<HTMLElement>('.tileImg')
@@ -467,6 +506,10 @@ function schedulePendingDiscardFlight(seat: number) {
       const easing = getUiMotionEasing()
       const finalTransform = getComputedStyle(target).transform
       const settledTransform = finalTransform === 'none' ? 'translate(0px, 0px)' : finalTransform
+      pendingDiscardFlightSize = observeMotionSize(target, () => {
+        if (generation !== pendingDiscardFlightGeneration || !forwardMotionActive.value) return
+        cancelPendingDiscardFlight(); scheduleAutoAdvance()
+      })
       if (backOverlay) {
         pendingDiscardFlightEffects = [animateDiscardBackOverlay(backOverlay, 'hide', duration)]
       }
@@ -491,6 +534,7 @@ function schedulePendingDiscardFlight(seat: number) {
       const finish = () => {
         if (finished || generation !== pendingDiscardFlightGeneration) return
         finished = true
+        pendingDiscardFlightSize?.disconnect(); pendingDiscardFlightSize = null
         pendingDiscardFlightAnimation = null
         forwardCoverage?.cancel()
         forwardCoverage = null
@@ -519,15 +563,6 @@ function schedulePendingDiscardFlight(seat: number) {
   })
 }
 
-watch(reduceMotionEnabled, (reduced) => {
-  if (!reduced) return
-  cancelPendingDiscardFlight()
-  cancelPendingDiscardReturnFlight()
-  scheduleAutoAdvance()
-})
-
-
-
   function autoAdvanceMotionDelayMs() {
     return reduceMotionEnabled.value
       ? 0
@@ -541,6 +576,7 @@ watch(reduceMotionEnabled, (reduced) => {
   onBeforeUnmount(() => {
     coverageRenderer.stop()
     document.removeEventListener('visibilitychange', updateCoverage)
+    window.removeEventListener('resize', geometryChanged)
     cancelPendingDiscardFlight()
     cancelPendingDiscardReturnFlight()
   })

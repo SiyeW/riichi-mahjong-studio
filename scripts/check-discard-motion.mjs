@@ -44,6 +44,14 @@ export async function checkDiscardMotion(page) {
     const visibleHands = vm.status.visibleHands
     vm.status.visibleHands = false
     const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
+    const waitWarm = async () => {
+      if (!coverageTrial) return
+      const limit = performance.now() + 4000
+      while (!document.querySelector('.discard-motion-surface[data-ready="true"]')) {
+        if (performance.now() > limit) throw Error('Coverage warmup did not finish')
+        await new Promise(resolve => setTimeout(resolve, 1))
+      }
+    }
     const readyCoverage = async () => {
       if (!coverageTrial) return
       const limit = performance.now() + 400
@@ -53,6 +61,7 @@ export async function checkDiscardMotion(page) {
       }
     }
     const cases = []
+    let lifecycleFixture
     try {
       for (const riichi of [false, true]) for (let offset = 1; offset <= 3; offset++) {
         const actor = (vm.status.controlledSeat + offset) % 4
@@ -79,6 +88,7 @@ export async function checkDiscardMotion(page) {
         child.table.hands[actor].pop()
         child.table.pendingDiscard = { actor, pai: '5p', tsumogiri: true, targetActor: actor, riichi }
         child.table.actionHistory.push({ type: 'dahai', actor, pai: '5p', tsumogiri: true })
+        lifecycleFixture = { parent, child, actor }
         window.studioAPI.jumpToNode = async id => ({ state: JSON.parse(JSON.stringify(vm.status)), view: id === childId ? child : parent })
         await vm.jumpToNode(child.currentNodeId)
         await frame()
@@ -141,6 +151,54 @@ export async function checkDiscardMotion(page) {
           .flatMap(image => image.getAnimations()).filter(animation => animation.effect.getKeyframes().some(key => key.opacity !== undefined)).length
         cases.push(item)
       }
+      const state = document.querySelector('#app').__vue_app__._instance.setupState
+      const { parent, child, actor } = lifecycleFixture
+      const originalHidden = Object.getOwnPropertyDescriptor(document, 'hidden')
+      const zoom = state.tableZoom, reduced = vm.settings.display.reduceMotion
+      let hidden = false
+      const start = async () => {
+        window.studioAPI.jumpToNode = async id => ({ state: JSON.parse(JSON.stringify(vm.status)), view: id === child.currentNodeId ? child : parent })
+        await waitWarm()
+        await vm.jumpToNode(parent.currentNodeId); await frame()
+        await vm.jumpToNode(child.currentNodeId); await frame(); await frame(); await readyCoverage()
+        if (!state.tableMotionActive) throw Error('Lifecycle fixture did not admit a motion owner')
+      }
+      const retired = label => {
+        if (state.tableMotionActive || state.hasPendingDiscardFlight()
+          || document.querySelector('.discard-return-ghost,.discard-flight-back,.discard-flight-regular-pose,.discard-flight-coverage')
+          || [...document.querySelectorAll('[data-hand-seat]')].some(node => node.style.visibility === 'hidden')) {
+          throw Error(`${label} left a motion owner, ghost, overlay or hidden destination`)
+        }
+      }
+      try {
+        Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+        await start()
+        hidden = true; document.dispatchEvent(new Event('visibilitychange')); await Promise.resolve()
+        retired('Hidden document')
+        await vm.jumpToNode(parent.currentNodeId); await frame()
+        await vm.jumpToNode(child.currentNodeId); await frame(); await frame()
+        retired('Hidden admission')
+        hidden = false; document.dispatchEvent(new Event('visibilitychange'))
+        await start(); window.dispatchEvent(new Event('resize')); retired('Window resize')
+        await start(); state.tableZoom = zoom * .9
+        await frame(); await frame(); retired('Forward geometry change')
+        state.tableZoom = zoom; await frame(); await frame()
+        await start(); await new Promise(resolve => setTimeout(resolve, 240))
+        await vm.jumpToNode(parent.currentNodeId); await frame(); await frame(); await readyCoverage()
+        if (!document.querySelector('.discard-return-ghost')) throw Error('Reverse geometry fixture did not own its ghost')
+        state.tableZoom = zoom * .9
+        await frame(); await frame(); retired('Reverse destination resize')
+        state.tableZoom = zoom; await frame(); await frame()
+        await start(); vm.settings.display.reduceMotion = true
+        await frame(); retired('Reduced motion')
+      } finally {
+        if (originalHidden) Object.defineProperty(document, 'hidden', originalHidden)
+        else delete document.hidden
+        state.tableZoom = zoom; vm.settings.display.reduceMotion = reduced
+        document.dispatchEvent(new Event('visibilitychange'))
+        state.cancelPendingDiscardFlight(); state.cancelPendingDiscardReturnFlight()
+      }
+      cases[0].lifecycleRetirement = true
     } finally {
       window.studioAPI.jumpToNode = originalJump
       vm.status.visibleHands = visibleHands
@@ -152,6 +210,7 @@ export async function checkDiscardMotion(page) {
     return cases
   }, coverageTrial)
   console.log(`Discard motion phases: ${JSON.stringify(cases)}`)
+  assert.equal(cases[0].lifecycleRetirement, true, 'hidden, reduced and resized motion retires cleanly without blocking autoplay')
   for (const item of cases) {
     assert.ok(item.movement && item.fade, `both motion layers are active: ${JSON.stringify(item)}`)
     assert.ok(item.displacement !== null && item.displacement < .1, `face/back alignment: ${JSON.stringify(item)}`)

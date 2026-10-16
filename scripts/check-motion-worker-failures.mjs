@@ -40,6 +40,18 @@ export async function checkMotionWorkerFailures(page, label) {
       restored();rejected.movement.cancel();malformed.stop()
 
       window.Worker=class extends OriginalWorker {
+        terminate() {
+          super.terminate()
+          setTimeout(()=>this.dispatchEvent(new MessageEvent('message',{data:{type:'failed',id:0,reason:'Retired worker fatal reply'}})),10)
+        }
+      }
+      const restarted=renderer();restarted.start();await until(()=>restarted.ready)
+      restarted.stop();restarted.start();await until(()=>restarted.ready)
+      await new Promise(resolve=>setTimeout(resolve,30))
+      if(!restarted.ready||!document.querySelector('.discard-motion-surface')) throw Error('A retired worker stopped its replacement')
+      restarted.stop();restored()
+
+      window.Worker=class extends OriginalWorker {
         constructor(url,options) {
           const script=`
             let loaded=false,early=[],held=false,heldOnce=false;
@@ -102,7 +114,7 @@ export async function checkMotionWorkerFailures(page, label) {
       if(!fatal?.reason.includes('retirement')||fatal.probeStats.createdTextures!==fatal.probeStats.deletedTextures
         ||fatal.probeStats.createdFences!==fatal.probeStats.deletedFences) throw Error('A permanently stalled fence did not retire its context/resources')
       restored()
-      return {unsupported:true,malformed:true,retiringRejected:true,retirementTimedOut:true,balanced}
+      return {unsupported:true,malformed:true,lateWorkerIgnored:true,retiringRejected:true,retirementTimedOut:true,balanced}
     } finally {
       animations.forEach(animation=>animation.cancel());renderers.forEach(r=>r.stop())
       window.Worker=OriginalWorker;urls.forEach(url=>URL.revokeObjectURL(url))

@@ -32,6 +32,7 @@ export function createDiscardCoverageRenderer() {
       // Promise while the independent worker is warming its context.
       void embeddedArtwork.catch(() => { if (worker === owner) stop() })
       worker.onmessage = (event: MessageEvent<MotionReply>) => {
+        if (worker !== owner) return
         const message = event.data
         if (message.type === 'warm') {
           void embeddedArtwork.then(() => {
@@ -48,7 +49,7 @@ export function createDiscardCoverageRenderer() {
           active.retire(); active = null
         }
       }
-      worker.onerror = () => stop()
+      worker.onerror = () => { if (worker === owner) stop() }
       const surface = canvas.transferControlToOffscreen()
       post({ type: 'init', canvas: surface }, [surface])
     } catch { stop() }
@@ -64,7 +65,10 @@ export function createDiscardCoverageRenderer() {
     animations.forEach(animation => { animation.pause(); animation.currentTime = 0 })
     let waiting = true, playing = false, resolve!: () => void
     const finished = new Promise<void>(done => { resolve = done })
-    const fail = (reason: unknown) => { surface.dataset.failure = String(reason); retire() }
+    const fail = (reason: unknown) => {
+      if (!waiting || active?.id !== id) return
+      surface.dataset.failure = String(reason); retire()
+    }
     delete surface.dataset.failure
     let watchdog = window.setTimeout(() => fail('Preparation timeout'), 120)
     const resizeObserver = new ResizeObserver(() => {
