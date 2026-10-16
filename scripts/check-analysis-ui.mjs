@@ -1657,6 +1657,9 @@ try {
   assert.equal(unchangedGamePaint.emptyOutcomeAlpha, 0, 'unavailable game probabilities do not paint a fabricated certain outcome')
   assert.ok(unchangedGamePaint.draws >= 1 && unchangedGamePaint.draws <= 2,
     `unchanged game data repaints once instead of running another animation: ${JSON.stringify(unchangedGamePaint)}`)
+  const snapshotRetirement = await page.evaluate(async () => (await import('/scripts/fixtures/chart-paint.js')).checkPaintSnapshotRetirement())
+  assert.deepEqual(snapshotRetirement, { transientPreserved: true, removedReleased: true, retiredOwnerReleased: true },
+    'diagnostics preserve reused refs but release removed nodes and retired owners')
   console.log(`Analysis presentation: ${JSON.stringify({ presentationOwnership, savedPredictionMotion, unchangedGamePaint })}`)
   const oldPalette = await page.evaluate(async () => {
     const { sampleDistributionColor } = await import('/scripts/fixtures/chart-paint.js')

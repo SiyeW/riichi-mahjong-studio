@@ -33,6 +33,7 @@
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
+import { useCanvasPaintSnapshots } from '../canvasPaintSnapshot'
 
 export interface TableRecommendationSlot {
   value: number
@@ -72,12 +73,14 @@ interface CanvasGeometry {
 }
 
 const rootElement = ref<HTMLElement | null>(null)
-type RecommendationCanvasElement = HTMLCanvasElement & { rmsRecommendationRenderSignature?: string }
+type RecommendationCanvasElement = HTMLCanvasElement & { readonly rmsRecommendationRenderSignature?: string }
 const canvasElement = ref<RecommendationCanvasElement | null>(null)
 let geometry: CanvasGeometry | null = null
 let displayedValues: number[] = []
 let animationFrame = 0
 let measuredStructure = ''
+const { publish: publishSnapshot } = useCanvasPaintSnapshots<readonly number[]>('rmsRecommendationRenderSignature',
+  values => values.map(value => Math.round(value * 10000)).join(','))
 
 function structureKey() {
   return props.slots.map(slot => `${Number(slot.isDrawn)}${Number(slot.isGap)}`).join(',')
@@ -157,9 +160,7 @@ function render() {
       context.fill()
     }
   })
-  canvas.rmsRecommendationRenderSignature = displayedValues
-    .map(value => Math.round(value * 10000))
-    .join(',')
+  publishSnapshot(canvas, displayedValues)
 }
 
 function stopAnimation() {
@@ -168,6 +169,7 @@ function stopAnimation() {
 }
 
 function animate() {
+  if (!canvasElement.value) return
   stopAnimation()
   const target = targetValues()
   const alreadyAtTarget = displayedValues.length === target.length

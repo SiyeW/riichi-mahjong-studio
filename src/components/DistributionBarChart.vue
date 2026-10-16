@@ -46,6 +46,7 @@ import type { PerceptualSurfaceBinding } from '../perceptualSurface'
 import { vPerceptualSurface } from '../perceptualSurface'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
+import { useCanvasPaintSnapshots } from '../canvasPaintSnapshot'
 
 export type DistributionBarEntry = Readonly<{
   key: string | number
@@ -68,7 +69,7 @@ const emit = defineEmits<{
 }>()
 
 type DistributionCanvasElement = HTMLCanvasElement & {
-  rmsDistributionRenderSignature?: string
+  readonly rmsDistributionRenderSignature?: string
   rmsDistributionGapPixels?: number[]
   rmsDistributionGuideBounds?: { left: number; right: number; top: number; bottom: number } | null
 }
@@ -95,6 +96,8 @@ function structureKey(): string {
 }
 
 let displayedReferenceRatio: number | null = null
+const { publish: publishSnapshot } = useCanvasPaintSnapshots<readonly number[]>('rmsDistributionRenderSignature',
+  values => values.map(value => Math.round(value * 10000)).join(','))
 
 function enterItem(event: Event, index: number) {
   hoveredIndex.value = index
@@ -174,9 +177,7 @@ function render() {
     context.fillRect(left, top, 1, bottom - top)
     gapPixels.push(left)
   })
-  canvas.rmsDistributionRenderSignature = displayedScales
-    .map(value => Math.round(value * 10000))
-    .join(',')
+  publishSnapshot(canvas, displayedScales)
   canvas.rmsDistributionGapPixels = gapPixels
   canvas.rmsDistributionGuideBounds = null
   if (displayedReferenceRatio !== null && renderGeometry.guideTrack) {
@@ -198,6 +199,7 @@ function stopAnimation() {
 }
 
 function animate() {
+  if (!canvasElement.value) return
   stopAnimation()
   const target = targetScales()
   const targetReferenceRatio = Number.isFinite(props.referenceRatio)

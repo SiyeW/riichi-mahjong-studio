@@ -57,6 +57,7 @@ import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptual
 import { useAnalysisHoverTooltipController } from '../useAnalysisHoverTooltip'
 import { useAnalysisPanelFormatting } from '../useAnalysisPanelFormatting'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
+import { useCanvasPaintSnapshots } from '../canvasPaintSnapshot'
 import { useRiskAnalysisData } from '../useRiskAnalysisData'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 
@@ -71,7 +72,7 @@ const { formatProbability } = useAnalysisPanelFormatting()
 const tileRows = ANALYSIS_TILE_ROWS
 const riskGridElement = ref<HTMLElement | null>(null)
 type RiskCanvasElement = HTMLCanvasElement & {
-  rmsRiskRenderSignature?: string
+  readonly rmsRiskRenderSignature?: string
   rmsRiskGuideBounds?: { left: number; right: number; top: number; bottom: number } | null
   rmsRiskGeometry?: {
     width: number
@@ -87,6 +88,8 @@ const riskCanvasElements = new Map<string, { canvas: RiskCanvasElement; row: rea
 let displayedRiskScales: number[][][] = []
 const displayedRiskScale = ref(RISK_ADAPTIVE_MIN)
 let riskAnimationFrame = 0
+const { publish: publishSnapshot, retire: retireSnapshot } = useCanvasPaintSnapshots<readonly (readonly number[])[]>('rmsRiskRenderSignature',
+  values => values.flat().map(value => Math.round(value * 10000)).join(','))
 const riskTrackSurface = analysisSurface(
   () => props.perceptualSurface,
   'analysis-risk-track',
@@ -150,10 +153,6 @@ function renderRiskCanvas(rowIndex: number, canvas: RiskCanvasElement, row: read
   if (!context) return
   context.clearRect(0, 0, width, height)
   const rowScales = displayedRiskScales[rowIndex] || []
-  ;(canvas as RiskCanvasElement).rmsRiskRenderSignature = rowScales
-    .flat()
-    .map(value => Math.round(value * 10000))
-    .join(',')
   const laneCount = Math.max(1, opponentSources.value.length)
   for (let tileIndex = 0; tileIndex < row.length; tileIndex += 1) {
     const groupLeft = (tileIndex * tileWidth) + ((tileWidth - barsWidth) / 2)
@@ -186,6 +185,7 @@ function renderRiskCanvas(rowIndex: number, canvas: RiskCanvasElement, row: read
   } else {
     canvas.rmsRiskGuideBounds = null
   }
+  publishSnapshot(canvas, rowScales)
 }
 
 function renderRiskCanvases() {
@@ -201,6 +201,7 @@ function stopRiskAnimation() {
 }
 
 function animateRiskCanvases() {
+  if (!riskGridElement.value) return
   stopRiskAnimation()
   const target = riskScaleTargets()
   const targetScale = riskScale.value
@@ -239,6 +240,8 @@ function animateRiskCanvases() {
 
 function setRiskCanvasElement(key: string, element: unknown) {
   if (riskCanvasElements.get(key)?.canvas === element) return
+  const previous = riskCanvasElements.get(key)?.canvas
+  if (previous) retireSnapshot(previous)
   if (!(element instanceof HTMLCanvasElement)) riskCanvasElements.delete(key)
   else riskCanvasElements.set(key, { canvas: element as RiskCanvasElement, row: tileRows.find(row => row[0] === key) || [] })
   scheduleRiskGeometry()

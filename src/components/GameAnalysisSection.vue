@@ -134,6 +134,7 @@ import type { DistributionEntry } from '../numericPrediction'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
+import { useCanvasPaintSnapshots } from '../canvasPaintSnapshot'
 
 const props = defineProps<AnalysisPanelDataProps & {
   perceptualSurface: PerceptualSurfaceBinding
@@ -158,12 +159,14 @@ type GameCanvasGeometry = {
   deltaColors: Array<{ positive: string; negative: string }>
   placementColors: string[][]
 }
-type GameCanvasElement = HTMLCanvasElement & { rmsGameAnalysisRenderSignature?: string }
+type GameCanvasElement = HTMLCanvasElement & { readonly rmsGameAnalysisRenderSignature?: string }
 const sectionElement = ref<HTMLElement | null>(null)
 const canvasElement = ref<GameCanvasElement | null>(null)
 let displayedCanvasData: GameCanvasData | null = null
 let canvasGeometry: GameCanvasGeometry | null = null
 let canvasAnimationFrame = 0
+const { publish: publishSnapshot } = useCanvasPaintSnapshots<GameCanvasData>('rmsGameAnalysisRenderSignature',
+  data => JSON.stringify(data, (_key, value) => typeof value === 'number' ? Math.round(value * 10000) : value))
 const { t, numberLocale } = useI18n()
 const tooltip = useAnalysisHoverTooltipController()
 const {
@@ -341,9 +344,7 @@ function renderCanvas() {
     const colors = geometry.placementColors[index]
     if (values && colors) fillSegments(context, rect, values, colors)
   })
-  canvas.rmsGameAnalysisRenderSignature = JSON.stringify(data, (_key, value) => (
-    typeof value === 'number' ? Math.round(value * 10000) : value
-  ))
+  publishSnapshot(canvas, data)
 }
 
 function stopCanvasAnimation() {
@@ -352,6 +353,7 @@ function stopCanvasAnimation() {
 }
 
 function animateCanvas() {
+  if (!canvasElement.value) return
   stopCanvasAnimation()
   const target = targetCanvasData()
   if (!displayedCanvasData || props.reduceMotion || canvasDataMatches(displayedCanvasData, target)) {

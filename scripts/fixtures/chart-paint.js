@@ -6,6 +6,7 @@ import DistributionBarChart from '/src/components/DistributionBarChart.vue'
 import ShantenPieChart from '/src/components/ShantenPieChart.vue'
 import GameAnalysisSection from '/src/components/GameAnalysisSection.vue'
 import { useAnalysisHoverTooltip } from '/src/useAnalysisHoverTooltip.ts'
+import { useCanvasPaintSnapshots } from '/src/canvasPaintSnapshot.ts'
 
 const settle = async () => {
   for (let frame = 0; frame < 3; frame++) await new Promise(resolve => requestAnimationFrame(resolve))
@@ -169,6 +170,36 @@ export async function checkUnchangedGamePaint(seed) {
     const emptyOutcomeAlpha = context.getImageData(x, y, 1, 1).data[3]
     return { draws: unchangedDraws, unchanged, emptyOutcomeAlpha, width: canvas.width, height: canvas.height }
   } finally { if (context && originalClear) context.clearRect = originalClear; app.unmount(); host.remove() }
+}
+
+export async function checkPaintSnapshotRetirement() {
+  const host = document.createElement('div'); document.body.append(host)
+  const visible = ref(true)
+  let current, setCanvas, publish
+  const app = createApp({ setup() {
+    const snapshots = useCanvasPaintSnapshots('testPaintSignature', values => values.join(','))
+    publish = snapshots.publish
+    setCanvas = element => {
+      if (current && current !== element) snapshots.retire(current)
+      current = element
+      if (element) publish(element, [1])
+    }
+    return () => visible.value ? h('canvas', { ref: setCanvas }) : h('div')
+  } })
+  let mounted = false
+  try {
+    app.mount(host); mounted = true; await nextTick()
+    const first = current
+    setCanvas(null); setCanvas(first); await Promise.resolve()
+    const transientPreserved = first.testPaintSignature === '1'
+    visible.value = false; await nextTick(); await Promise.resolve()
+    const removedReleased = !Object.hasOwn(first, 'testPaintSignature')
+    visible.value = true; await nextTick()
+    const replacement = current
+    app.unmount(); mounted = false
+    publish(replacement, [2])
+    return { transientPreserved, removedReleased, retiredOwnerReleased: !Object.hasOwn(replacement, 'testPaintSignature') }
+  } finally { if (mounted) app.unmount(); host.remove() }
 }
 
 export function sampleDistributionColor(selector, variable) {

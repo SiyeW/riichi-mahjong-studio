@@ -115,6 +115,7 @@ import { buildRandomTileCountBaseline, randomBaselinePrediction } from '../rando
 import { useCountAnalysisData } from '../useCountAnalysisData'
 import { useI18n } from '../i18n'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
+import { useCanvasPaintSnapshots } from '../canvasPaintSnapshot'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 import CountPredictionTooltip from './CountPredictionTooltip.vue'
 
@@ -147,11 +148,13 @@ type CountCanvasGeometry = {
   tracks?: CountTrackGeometry[]
 }
 type CountCanvasElement = HTMLCanvasElement & {
-  rmsCountRenderSignature?: string
+  readonly rmsCountRenderSignature?: string
   rmsCountGeometry?: CountCanvasGeometry
 }
 const countCanvasElements = new Map<string, { canvas: CountCanvasElement; row: readonly string[] }>()
 const sourceCanvasElements = new Map<string, { canvas: CountCanvasElement; source: TileSource }>()
+const { publish: publishSnapshot, retire: retireSnapshot } = useCanvasPaintSnapshots<readonly (readonly number[])[]>('rmsCountRenderSignature',
+  values => values.flat().map(value => Math.round(value * 10000)).join(','))
 let displayedCountDistributions = new Map<string, number[]>()
 let countAnimationFrame = 0
 const countHoverTarget = ref<{
@@ -391,6 +394,7 @@ function renderCountCanvas(row: readonly string[], canvas: CountCanvasElement) {
   const wallGap = geometry.wallGap || 0
   const sourceWidth = Math.max(sources.length, tileWidth - wallGap)
   const palettes = geometry.palettes
+  const paintedProbabilities: number[][] = []
   for (let tileIndex = 0; tileIndex < row.length; tileIndex += 1) {
     const tile = row[tileIndex]
     const blockLeft = tileIndex * (tileWidth + tileGap)
@@ -400,6 +404,7 @@ function renderCountCanvas(row: readonly string[], canvas: CountCanvasElement) {
       const left = blockLeft + sourceLeft + (sourceIndex === sources.length - 1 ? wallGap : 0)
       const laneWidth = Math.max(1, sourceRight - sourceLeft)
       const probabilities = displayedProbabilities(tile, sources[sourceIndex])
+      paintedProbabilities.push(probabilities)
       const total = probabilities.reduce((sum, probability) => sum + probability, 0)
       let cumulative = 0
       for (let segmentIndex = 0; segmentIndex < probabilities.length; segmentIndex += 1) {
@@ -414,9 +419,7 @@ function renderCountCanvas(row: readonly string[], canvas: CountCanvasElement) {
       }
     }
   }
-  canvas.rmsCountRenderSignature = row.flatMap(tile => sources.flatMap(source => (
-    displayedProbabilities(tile, source).map(value => Math.round(value * 10000))
-  ))).join(',')
+  publishSnapshot(canvas, paintedProbabilities)
 }
 
 function renderSourceCanvas(canvas: CountCanvasElement, source: TileSource) {
@@ -424,6 +427,7 @@ function renderSourceCanvas(canvas: CountCanvasElement, source: TileSource) {
   if (!prepared) return
   const { context, geometry } = prepared
   const palette = geometry.palettes[0]
+  const paintedProbabilities = countSourceTiles.value.map(entry => displayedProbabilities(entry.tile, source))
   geometry.tracks?.forEach((track, tileIndex) => {
     const entry = countSourceTiles.value[tileIndex]
     if (!entry) return
@@ -431,7 +435,7 @@ function renderSourceCanvas(canvas: CountCanvasElement, source: TileSource) {
     if (right <= left || bottom <= top) return
     context.fillStyle = 'rgba(255, 255, 255, 0.04)'
     context.fillRect(left, top, right - left, bottom - top)
-    const probabilities = displayedProbabilities(entry.tile, source)
+    const probabilities = paintedProbabilities[tileIndex]
     const total = probabilities.reduce((sum, probability) => sum + probability, 0)
     let cumulative = 0
     probabilities.forEach((probability, segmentIndex) => {
@@ -445,9 +449,7 @@ function renderSourceCanvas(canvas: CountCanvasElement, source: TileSource) {
       context.fillRect(left, segmentTop, right - left, segmentBottom - segmentTop)
     })
   })
-  canvas.rmsCountRenderSignature = countSourceTiles.value.flatMap(entry => (
-    displayedProbabilities(entry.tile, source).map(value => Math.round(value * 10000))
-  )).join(',')
+  publishSnapshot(canvas, paintedProbabilities)
 }
 function renderCountCanvases() {
   for (const { canvas, row } of countCanvasElements.values()) renderCountCanvas(row, canvas)
@@ -459,6 +461,8 @@ const scheduleCountBarGeometry = useResponsiveGeometry(countGridElement, () => {
 }, { resizeAncestorSelector: '.analysis-tiles-view', styleAncestorSelector: '.dock-module' })
 function setCountCanvasElement(key: string, row: readonly string[], element: unknown) {
   if (countCanvasElements.get(key)?.canvas === element) return
+  const previous = countCanvasElements.get(key)?.canvas
+  if (previous) retireSnapshot(previous)
   if (!(element instanceof HTMLCanvasElement)) countCanvasElements.delete(key)
   else countCanvasElements.set(key, { canvas: element as CountCanvasElement, row })
   scheduleCountBarGeometry()
@@ -470,6 +474,7 @@ function setSourceCanvasElement(key: string, source: TileSource, element: unknow
     existing.source = source
     return
   }
+  if (existing) retireSnapshot(existing.canvas)
   if (!(element instanceof HTMLCanvasElement)) sourceCanvasElements.delete(key)
   else sourceCanvasElements.set(key, { canvas: element as CountCanvasElement, source })
   scheduleCountBarGeometry()
@@ -481,6 +486,7 @@ function stopCountAnimation() {
 }
 
 function animateCountCanvases() {
+  if (!countGridElement.value) return
   stopCountAnimation()
   const target = targetCountDistributions()
   const unchanged = target.size === displayedCountDistributions.size
