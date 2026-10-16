@@ -70,6 +70,12 @@ body {
   --text-soft: rgba(226, 239, 235, 0.8);
   --text-muted: rgba(213, 232, 228, 0.62);
   --text-dim: var(--text-muted);
+  /* Flat indicators share a family; sliders retain their interactive accent. */
+  --accent-green: #1a931a;
+  --accent-yellow: #f2ae3d;
+  --indicator-neutral: var(--text-main);
+  --indicator-live: var(--accent-yellow);
+  --indicator-thickness: 3px;
   --accent-red: rgba(204, 70, 70, 0.95);
   --hint-red: hsl(0, 70%, 50%);
   --color-tsumogiri: hsl(30, 100%, 92%);
@@ -83,7 +89,7 @@ body {
 
 .shell {
   --zoom: 1;
-  --decision-recommendation-color: #1a931a;
+  --decision-recommendation-color: var(--accent-green);
   --ron-kamicha-color: #2c8fc5;
   --ron-toimen-color: #d39a3a;
   --ron-shimocha-color: #4caf50;
@@ -140,7 +146,7 @@ body {
   --ui-radius-control: calc(0.1875rem * var(--ui-scale));
   --focus-outline: rgba(226, 236, 234, 0.75);
   --status-ready: #4caf50;
-  --status-loading: #f2ae3d;
+  --status-loading: var(--accent-yellow);
   --status-error: #e45b55;
   --interaction-highlight: #59da91;
   /* 与牌桌几何绑定的字号。 */

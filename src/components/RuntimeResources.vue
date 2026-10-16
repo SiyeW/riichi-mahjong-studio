@@ -75,8 +75,8 @@ function scrollDetails(event: KeyboardEvent) {
 .footer-memory-status:focus-visible { color: var(--text-main); }
 .resource-item { display: inline-flex; align-items: center; min-width: 0; gap: calc(0.35rem * var(--chrome-scale)); }
 .resource-item > span:first-child { overflow: hidden; text-overflow: ellipsis; }
-.resource-track { width: 100%; height: calc(0.3rem * var(--chrome-scale)); background: var(--border-subtle); overflow: hidden; }
-.resource-track > span { display: block; width: 100%; height: 100%; background: var(--text-soft); transform-origin: left center; }
+.resource-track { width: 100%; height: calc(var(--indicator-thickness) * var(--chrome-scale)); background: var(--border-subtle); overflow: hidden; }
+.resource-track > span { display: block; width: 100%; height: 100%; background: var(--indicator-neutral); transform-origin: left center; }
 .resource-track.unavailable { visibility: hidden; }
 .resource-error { color: var(--status-loading); }
 .footer-memory-tooltip {

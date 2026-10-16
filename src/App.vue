@@ -346,6 +346,7 @@
             <TableCenterInfo
               v-if="gameView.table"
               :table="gameView.table"
+              :mode="status.mode"
               :views="tableSeatViews"
               :round-label="roundLabel"
               :dora-slots="centerDoraSlots"

@@ -227,8 +227,8 @@ function statusLabel(status: EngineLoadStatus): string {
   right: calc(0.24rem * var(--floating-panel-scale));
   bottom: 0;
   left: calc(0.24rem * var(--floating-panel-scale));
-  height: calc(3px * var(--floating-panel-scale));
-  background: var(--text-main);
+  height: calc(var(--indicator-thickness) * var(--floating-panel-scale));
+  background: var(--indicator-neutral);
   content: '';
 }
 
@@ -268,7 +268,7 @@ function statusLabel(status: EngineLoadStatus): string {
   top: calc(0.28rem * var(--floating-panel-scale));
   bottom: calc(0.28rem * var(--floating-panel-scale));
   left: calc(0.18rem * var(--floating-panel-scale));
-  width: calc(0.22rem * var(--floating-panel-scale));
+  width: calc(var(--indicator-thickness) * var(--floating-panel-scale));
   background: transparent;
   content: '';
 }
@@ -301,7 +301,7 @@ function statusLabel(status: EngineLoadStatus): string {
 }
 
 .engine-profile-item.selected::before {
-  background: var(--text-main);
+  background: var(--indicator-neutral);
 }
 
 .engine-output-filter.selected,

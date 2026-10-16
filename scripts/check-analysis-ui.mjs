@@ -10,6 +10,7 @@ import { checkReplayWorkflow } from './check-replay-workflow.mjs'
 import { checkRendererRecovery } from './check-renderer-recovery.mjs'
 import { checkDiscardMotion } from './check-discard-motion.mjs'
 import { checkRuntimeResources } from './check-runtime-resources.mjs'
+import { checkIndicatorFamily, checkTableTurnIndicators } from './check-interface-indicators.mjs'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
 const root = path.resolve(import.meta.dirname, '..')
@@ -336,6 +337,7 @@ try {
   }
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
   await checkRuntimeResources(page)
+  await checkTableTurnIndicators(page)
   await page.getByRole('button', { name: '设置', exact: true }).click()
   const cachePolicySelect = page.locator('.settings-modal select').filter({ has: page.locator('option[value="custom"]') })
   await cachePolicySelect.selectOption('custom')
@@ -645,6 +647,7 @@ try {
   )
   await page.evaluate(() => window.analysisCheck.releaseFirstDescribe())
   await page.locator('.engine-profile-item').first().click()
+  await checkIndicatorFamily(page)
   const engineStateStyles = await page.evaluate(() => {
     const selectors = ['.engine-profile-item', '.engine-output-filter[data-status]']
     return selectors.map((selector) => {
