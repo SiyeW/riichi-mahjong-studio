@@ -1,7 +1,7 @@
 // Full production entrypoint and isolated files/dialogs. Normal interactive
 // surfaces require explicit opt-in; ordinary correctness tests stay invisible.
 const path = require('node:path')
-const { app, dialog, screen, powerSaveBlocker } = require('electron')
+const { app, dialog, screen, powerMonitor, powerSaveBlocker } = require('electron')
 const directory = process.env.RMS_RECORD_DESKTOP_TEST_DIR
 if (!directory) throw new Error('An isolated desktop test directory is required.')
 const root = path.resolve(__dirname, '..')
@@ -53,6 +53,17 @@ app.on('will-quit', () => {
   if (motionPowerBlocker !== null) powerSaveBlocker.stop(motionPowerBlocker)
 })
 app.on('browser-window-created', (_event, window) => {
+  const events = { invalidations: 0, locks: 0 }
+  window.rmsRecordSurfaceEvents = events
+  const invalidate = () => { events.invalidations++ }
+  const lock = () => { events.locks++; invalidate() }
+  const observers = [
+    [window, 'blur', invalidate], [window, 'hide', invalidate], [window, 'minimize', invalidate],
+    [powerMonitor, 'lock-screen', lock], [powerMonitor, 'suspend', invalidate],
+    [screen, 'display-metrics-changed', invalidate],
+  ]
+  observers.forEach(([owner, event, listener]) => owner.on(event, listener))
+  window.once('closed', () => observers.forEach(([owner, event, listener]) => owner.removeListener(event, listener)))
   const visibleMotion = Boolean(process.env.RMS_RECORD_MOTION_PROFILE)
     && process.env.RMS_RECORD_MOTION_VISIBLE === '1'
   const focusedMotion = visibleMotion && process.env.RMS_RECORD_MOTION_FOCUSED === '1'

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { createHash } from 'node:crypto'
 import { createServer } from 'vite'
 import { _electron as electron } from 'playwright'
+import { stableForegroundSample } from '../src/testing/motionProbeSurface.ts'
 
 // Exercise the old exit file through real startup, including the next empty
 // startup after explicit discard. An optional source is copied, never edited.
@@ -100,23 +101,29 @@ try {
       assert.ok(artwork.formats.every(type => type === 'image/png'), 'every rendered face uses an ordinary cached bitmap')
       assert.ok(artwork.minimumBitmapCoverage >= 1, 'cached pixels cover actual content demand')
     }
-    const surface = await application.evaluate(({ BrowserWindow, screen, powerMonitor }) => {
-      const window = BrowserWindow.getAllWindows()[0]
-      return { visible: window.isVisible(), focused: window.isFocused(), opacity: window.getOpacity(),
-        mode: global.recordDesktopTest.surfaceMode,
-        power: { idleState: powerMonitor.getSystemIdleState(5), idleSeconds: powerMonitor.getSystemIdleTime(),
-          onBattery: powerMonitor.isOnBatteryPower(), preventDisplaySleep: global.recordDesktopTest.preventDisplaySleep },
-        bounds: window.getBounds(), display: screen.getDisplayMatching(window.getBounds()) }
-    })
-    const visibility = await page.evaluate(() => document.visibilityState)
+    async function readSurface() {
+      const surface = await application.evaluate(({ BrowserWindow, screen, powerMonitor }) => {
+        const window = BrowserWindow.getAllWindows()[0]
+        return { visible: window.isVisible(), focused: window.isFocused(), opacity: window.getOpacity(),
+          mode: global.recordDesktopTest.surfaceMode,
+          invalidations: window.rmsRecordSurfaceEvents.invalidations,
+          locks: window.rmsRecordSurfaceEvents.locks,
+          power: { idleState: powerMonitor.getSystemIdleState(5), idleSeconds: powerMonitor.getSystemIdleTime(),
+            onBattery: powerMonitor.isOnBatteryPower(), preventDisplaySleep: global.recordDesktopTest.preventDisplaySleep },
+          bounds: window.getBounds(), display: screen.getDisplayMatching(window.getBounds()) }
+      })
+      return { ...surface, ...await page.evaluate(() => ({ documentVisibility: document.visibilityState, pixelRatio: window.devicePixelRatio })) }
+    }
+    const surface = await readSurface()
     if (process.env.RMS_RECORD_MOTION_VISIBLE === '1') {
       assert.equal(surface.opacity, 1)
       if (process.env.RMS_RECORD_MOTION_FOCUSED === '1') assert.equal(surface.focused, true)
       if (process.env.RMS_RECORD_MOTION_ALLOW_LOCKED !== '1') {
         assert.notEqual(surface.power.idleState, 'locked',
           'A locked desktop is not foreground rendering acceptance; explicit diagnostic override is required.')
+        assert.notEqual(surface.power.idleState, 'unknown', 'OS foreground state is unavailable.')
       }
-      assert.equal(visibility, 'visible', 'an occluded surface is not a visible rendering baseline')
+      assert.equal(surface.documentVisibility, 'visible', 'an occluded surface is not a visible rendering baseline')
     }
     const client = await page.context().newCDPSession(page)
     await client.send('Performance.enable')
@@ -196,6 +203,8 @@ try {
             maximumCallbackGapMs: Math.max(...times.slice(1).map((time, index) => time - times[index])) }
         }), probeStartedAt, callbackArrivals: frameTimes, callbackTimelineStamps: timelineTimes }
     }, pair || null)
+    const surfaceAfter = await readSurface()
+    const stableForeground = stableForegroundSample(surface, surfaceAfter)
     const after = await client.send('Performance.getMetrics')
     const { profile } = recordCpu ? await client.send('Profiler.stop') : { profile: { nodes: [], samples: [], timeDeltas: [] } }
     if (process.env.RMS_RECORD_MOTION_TRACE) {
@@ -220,13 +229,18 @@ try {
     const navigation = await application.evaluate(() => global.recordDesktopTest.navigation)
     await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents,
       source: { bytes: (await fs.stat(source)).size, sha256: createHash('sha256').update(await fs.readFile(source)).digest('hex') },
-      surface: { ...surface, documentVisibility: visibility },
+      surface, surfaceAfter,
       evidence: { desktopControlToolsUsed: false, overlayState: process.env.RMS_RECORD_MOTION_OVERLAY_STATE || 'unverified',
         nativeWindowSurface: surface.mode === 'native',
-        lockedSession: surface.power.idleState === 'locked',
+        stableForeground,
+        lockedSession: surface.power.idleState === 'locked' || surfaceAfter.power.idleState === 'locked'
+          || surfaceAfter.locks !== surface.locks,
         frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
     const { callbackArrivals, callbackTimelineStamps, ...motionSummary } = motion
     console.log(JSON.stringify({ motion: motionSummary, work, navigation }))
+    if (surface.mode === 'native' && process.env.RMS_RECORD_MOTION_ALLOW_LOCKED !== '1') {
+      assert.equal(stableForeground, true, 'The foreground surface changed during sampling; results are diagnostic only.')
+    }
     assert.ok(motion.visits >= (pair ? 9 : 10), 'the motion probe must observe actual renderer frame commits')
     if (pair) assert.ok(motion.flightWindows.length >= 4, 'the selected pair must exercise actual discard motion')
   }
