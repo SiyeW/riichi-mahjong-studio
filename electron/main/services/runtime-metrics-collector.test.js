@@ -4,7 +4,7 @@ const { createRuntimeMetricsCollector } = require('./runtime-metrics-collector')
 
 function createApp() {
   return {
-    getAppMetrics: () => [{ memory: { privateBytes: 1 } }],
+    getAppMetrics: () => [{ memory: { workingSetSize: 1 } }],
     getSystemMemoryInfo: () => ({ total: 4096, free: 2048 }),
   }
 }
@@ -15,8 +15,8 @@ test('runtime metrics collector combines Electron, system, and backend samples',
     backendGateway: {
       getRuntimeMetrics: async () => ({
         metrics: {
-          backendPrivateBytes: 2048,
-          enginePrivateBytes: 4096,
+          memoryBasis: 'resident', backendResidentBytes: 2048,
+          engineResidentBytes: 4096, codecResidentBytes: 0,
           engineProcessCount: 2,
         },
       }),
@@ -28,7 +28,7 @@ test('runtime metrics collector combines Electron, system, and backend samples',
   assert.equal(Number.isFinite(result.sampledAt), true)
   delete result.sampledAt
   assert.deepEqual(result, {
-    applicationBytes: 7168,
+    memoryBasis: 'resident', applicationBytes: 7168,
     electronBytes: 1024,
     backendBytes: 2048,
     engineBytes: 4096,

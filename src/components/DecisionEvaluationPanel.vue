@@ -4,10 +4,10 @@
       <h3>{{ t('evaluation.title') }}</h3>
       <span>{{ collapsed ? t('console.expand') : t('console.collapse') }}</span>
     </button>
-    <template v-if="!collapsed">
+    <div v-if="!collapsed" class="evaluation-body">
       <p v-if="!effectiveRecommendationsEnabled" class="empty-copy">{{ t('evaluation.hidden') }}</p>
       <p v-else-if="!showRecommendations" class="empty-copy">—</p>
-      <p v-else-if="gameView.analysis?.error" class="empty-copy">{{ gameView.analysis.error }}</p>
+      <p v-else-if="loadError" class="empty-copy">{{ loadError }}</p>
       <div v-else-if="mergedAnalysisEntries.length" class="analysis-table-scroll">
         <table class="analysis-table">
           <thead>
@@ -51,7 +51,7 @@
           </tbody>
         </table>
       </div>
-      <div v-else-if="gameView.analysis?.reactionEntries?.length" class="analysis-table-scroll">
+      <div v-else-if="displayedAnalysis?.reactionEntries?.length" class="analysis-table-scroll">
         <table class="analysis-table">
           <thead>
             <tr>
@@ -68,7 +68,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="entry in gameView.analysis?.reactionEntries || []" :key="entry.candidateId || entry.variant" class="analysis-row" :class="{ best: analysisEntryIsBest(entry) }">
+            <tr v-for="entry in displayedAnalysis?.reactionEntries || []" :key="entry.candidateId || entry.variant" class="analysis-row" :class="{ best: analysisEntryIsBest(entry) }">
               <td class="analysis-action-cell">
                 <span class="analysis-label-cell">
                   <span>{{ resolveReactionAnalysisLabel(entry) }}</span>
@@ -90,19 +90,27 @@
           </tbody>
         </table>
       </div>
+      <p v-else-if="loadingVisible" class="empty-copy" role="status">{{ t('common.loading') }}</p>
       <p v-else class="empty-copy">—</p>
-    </template>
+      <AnalysisLoadingOverlay v-if="loadingVisible && hasDisplayedAnalysis" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { useI18n } from '../i18n'
 import { useDecisionEntryPresentation } from '../useDecisionPresentation'
 import type { GameView } from '../contracts/game'
+import { decisionAnalysisHasRows } from '../decisionAnalysisFeedback'
+import { useDelayedLoadingIndicator } from '../useDelayedLoadingIndicator'
+import AnalysisLoadingOverlay from './AnalysisLoadingOverlay.vue'
 
 const props = defineProps<{
   gameView: GameView
+  controlledSeat: number
+  loading: boolean
+  loadError: string
   effectiveRecommendationsEnabled: boolean
   showRecommendations: boolean
   localizedEngineText: (value: string | Record<string, string> | undefined, fallback: string) => string
@@ -113,6 +121,24 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const collapsed = ref(false)
+const currentAnalysis = computed(() => props.gameView.analysis?.seat === props.controlledSeat ? props.gameView.analysis : null)
+const displayedAnalysis = shallowRef<GameView['analysis']>(decisionAnalysisHasRows(currentAnalysis.value) ? currentAnalysis.value : null)
+const eligible = computed(() => props.effectiveRecommendationsEnabled && props.showRecommendations)
+const pending = computed(() => eligible.value && props.loading && !props.loadError)
+const hasDisplayedAnalysis = computed(() => decisionAnalysisHasRows(displayedAnalysis.value))
+const feedback = useDelayedLoadingIndicator(pending, hasDisplayedAnalysis)
+const loadingVisible = feedback.visible
+const scope = computed(() => JSON.stringify([props.gameView.gameId, props.gameView.viewToken?.sessionId, props.controlledSeat]))
+watch([scope, eligible, currentAnalysis, pending], ([nextScope], previous) => {
+  if ((previous && nextScope !== previous[0]) || !eligible.value) {
+    displayedAnalysis.value = null
+    feedback.reset()
+  }
+  if (eligible.value && (!pending.value || decisionAnalysisHasRows(currentAnalysis.value))) {
+    displayedAnalysis.value = currentAnalysis.value
+  }
+  feedback.refresh()
+}, { immediate: true })
 const {
   analysisActionDisplayTiles,
   analysisEntryIsBest,
@@ -123,13 +149,14 @@ const {
   resolveReactionAnalysisLabel,
   resolveSpecialAnalysisLabel,
 } = useDecisionEntryPresentation({
-  gameView: props.gameView,
+  gameView: { get analysis() { return displayedAnalysis.value } },
   t,
   reactionTypeLabel: props.reactionTypeLabel,
 })
 </script>
 
 <style scoped>
+.evaluation-body { position: relative; min-height: calc(2rem * var(--chrome-scale)); }
 .analysis-table-scroll {
   max-width: 100%;
   overflow-x: auto;

@@ -7,6 +7,8 @@ import type { AnalysisPresentationContext, GameView, TableState } from './contra
 import type { StudioStatus } from './contracts/runtime'
 import { normalizeTrainingMode } from './trainingSettings.ts'
 import { getUiMotionDurationMs } from './uiMotion.ts'
+import { useDelayedLoadingIndicator } from './useDelayedLoadingIndicator.ts'
+import { decisionAnalysisFeedback } from './decisionAnalysisFeedback.ts'
 
 type Translate = (key: string, params?: TranslationParams) => string
 type DecisionAnalysis = NonNullable<GameView['analysis']>
@@ -72,7 +74,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   const displayedAnalysisTable = shallowRef<TableState | null>(null)
   const displayedAnalysisControlledSeat = ref(status.controlledSeat)
   const opponentAnalysisPending = ref(false)
-  const opponentAnalysisLoadingVisible = ref(false)
   const clearingAnalysisCaches = ref(false)
   const analysisCacheClearMessage = ref('')
   let analysisTransitionResetGeneration = 0
@@ -82,7 +83,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   let minimumOpponentCacheEpoch: number | null = null
   let analysisReadGeneration = 0
   let analysisVisibilityGeneration = 0
-  let analysisLoadingTimer: number | null = null
   let analysisPresentationTimer: number | null = null
   let analysisPresentationStartFrame = 0
   let analysisPresentationCommitFrame = 0
@@ -123,6 +123,10 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   const opponentAnalysisNeeded = computed(() => (
     showTrainingRecommendations.value || showAnalysisDock.value
   ))
+  const decisionFeedback = computed(() => decisionAnalysisFeedback(gameView.analysis,
+    !clearingAnalysisCaches.value && showTrainingRecommendations.value && Boolean(gameView.table && gameView.legalActions.length),
+    status.modelActivity.decision[status.controlledSeat] || 'idle', status.modelRuntime.decision,
+    status.modelActivity.errors?.decision[status.controlledSeat]))
   const hasOpponentAnalysisResult = computed(() => analysisResultHasRows(gameView.opponentAnalysis))
   const hasDisplayedOpponentAnalysis = computed(() => (
     analysisResultHasRows(displayedOpponentAnalysis.value)
@@ -155,6 +159,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     return !hasOpponentAnalysisResult.value
       && (activity === 'running' || gameView.opponentAnalysis?.status === 'loading')
   })
+  const opponentLoading = useDelayedLoadingIndicator(opponentAnalysisIsLoading, hasDisplayedOpponentAnalysis)
+  const opponentAnalysisLoadingVisible = opponentLoading.visible
   const analysisOpponents = computed(() => {
     const controlledSeat = displayedAnalysisControlledSeat.value
     const opponents = [
@@ -217,11 +223,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     finishOpponentAnalysisPending()
   }
 
-  function cancelAnalysisLoadingTimer() {
-    if (analysisLoadingTimer !== null) window.clearTimeout(analysisLoadingTimer)
-    analysisLoadingTimer = null
-  }
-
   function cancelScheduledAnalysisPresentation() {
     analysisPresentationGeneration += 1
     if (analysisPresentationTimer !== null) window.clearTimeout(analysisPresentationTimer)
@@ -235,30 +236,12 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
 
   function finishOpponentAnalysisPending() {
     opponentAnalysisPending.value = false
-    opponentAnalysisLoadingVisible.value = false
-    cancelAnalysisLoadingTimer()
+    opponentLoading.reset()
   }
 
   function beginOpponentAnalysisPending() {
     opponentAnalysisPending.value = true
-    restartAnalysisLoadingFeedback()
-  }
-
-  function restartAnalysisLoadingFeedback() {
-    cancelAnalysisLoadingTimer()
-    if (!opponentAnalysisIsLoading.value) {
-      opponentAnalysisLoadingVisible.value = false
-      return
-    }
-    if (!hasDisplayedOpponentAnalysis.value) {
-      opponentAnalysisLoadingVisible.value = true
-      return
-    }
-    opponentAnalysisLoadingVisible.value = false
-    analysisLoadingTimer = window.setTimeout(() => {
-      analysisLoadingTimer = null
-      if (opponentAnalysisIsLoading.value) opponentAnalysisLoadingVisible.value = true
-    }, 500)
+    opponentLoading.refresh()
   }
 
   function applyAnalysisResult(
@@ -461,7 +444,9 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     analysis: DecisionAnalysis,
   ) {
     const key = decisionPositionKey(gameId, nodeId, status.controlledSeat)
-    if (key) decisionAnalysisEventCache.set(key, analysis)
+    if (key && analysis.context?.dataState !== 'reading' && analysis.context?.dataState !== 'running') {
+      decisionAnalysisEventCache.set(key, analysis)
+    }
   }
 
   function resolveNextDecisionAnalysis(nextView: GameView, isNewGame: boolean): GameView['analysis'] {
@@ -562,8 +547,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   )
 
   watch(opponentAnalysisIsLoading, (loading) => {
-    if (loading) restartAnalysisLoadingFeedback()
-    else finishOpponentAnalysisPending()
+    if (!loading) finishOpponentAnalysisPending()
   }, { immediate: true })
 
   onBeforeUnmount(() => {
@@ -572,7 +556,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     analysisVisibilityGeneration += 1
     analysisTransitionResetGeneration += 1
     cancelAnalysisTransitionReset()
-    cancelAnalysisLoadingTimer()
     cancelScheduledAnalysisPresentation()
   })
 
@@ -589,6 +572,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     clearOpponentAnalysisWithoutMotion,
     clearingAnalysisCaches,
     decisionRecommendationsEnabled,
+    decisionFeedback,
     displayedOpponentAnalysis,
     displayedAnalysisTable,
     displayedAnalysisControlledSeat,

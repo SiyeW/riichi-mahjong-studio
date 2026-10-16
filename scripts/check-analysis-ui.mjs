@@ -10,6 +10,7 @@ import { checkReplayWorkflow } from './check-replay-workflow.mjs'
 import { checkRendererRecovery } from './check-renderer-recovery.mjs'
 import { checkDiscardMotion } from './check-discard-motion.mjs'
 import { checkRuntimeResources } from './check-runtime-resources.mjs'
+import { checkAnalysisLoading } from './check-analysis-loading.mjs'
 import { checkIndicatorFamily, checkTableTurnIndicators } from './check-interface-indicators.mjs'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
@@ -241,6 +242,7 @@ try {
         getRuntimeMetrics: async () => {
           check.runtimeMetricReads++
           return {
+            memoryBasis: 'resident',
             electronBytes: 512 * 1024 * 1024,
             backendBytes: 256 * 1024 * 1024,
             engineBytes: 0,
@@ -360,6 +362,10 @@ try {
   await page.locator('.settings-modal').waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.analysisCheck.settingsSaves.at(-1).records.analysisCacheMiB), 64)
   uiChecks: {
+  if (process.env.RMS_UI_LOADING_ONLY) {
+    await checkAnalysisLoading(page)
+    break uiChecks
+  }
   if (process.env.RMS_UI_DISCARD_ONLY) {
     await checkDiscardMotion(page)
     break uiChecks
@@ -3240,67 +3246,7 @@ try {
   }
 
   if (!performanceOnly) {
-  // A slow result retains the previous analysis. Loading feedback appears only
-  // after the delay and disappears when the complete next result is presented.
-  await page.evaluate(async () => {
-    const check = window.analysisCheck
-    const { vm } = check
-    check.originalJumpForSlowAnalysis = window.studioAPI.jumpToNode
-    check.originalReadForSlowAnalysis = window.studioAPI.getAnalysis
-    check.slowNodeId = `${vm.gameView.currentNodeId}-slow`
-    check.slowResult = check.resultForNode(check.slowNodeId, 3)
-    window.studioAPI.getAnalysis = () => new Promise(resolve => { check.resolveSlowRead = resolve })
-    window.studioAPI.jumpToNode = async () => {
-      const view = JSON.parse(JSON.stringify(vm.gameView))
-      view.currentNodeId = check.slowNodeId
-      view.opponentAnalysis = null
-      return { state: JSON.parse(JSON.stringify(vm.status)), view }
-    }
-    check.oldSlowPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
-    check.oldSlowRiskCanvas = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
-    await vm.jumpToNode(check.slowNodeId)
-  })
-  await page.waitForFunction(() => typeof window.analysisCheck.resolveSlowRead === 'function')
-  await page.waitForTimeout(350)
-  assert.equal(await page.locator('.analysis-loading-overlay').count(), 0, 'short waits do not flash a loading layer')
-  assert.equal(
-    await page.locator('.analysis-panel-live .shanten-chart path').first().getAttribute('d'),
-    await page.evaluate(() => window.analysisCheck.oldSlowPiePath),
-    'slow analysis keeps the previous result visible',
-  )
-  await page.waitForTimeout(200)
-  assert.equal(
-    await page.locator('.analysis-loading-overlay').count(),
-    realisticPerformance ? 4 : 2,
-    'each visible analysis panel shows delayed loading feedback',
-  )
-  if (process.env.RMS_ANALYSIS_LOADING_SCREENSHOT) {
-    await page.screenshot({ path: process.env.RMS_ANALYSIS_LOADING_SCREENSHOT })
-  }
-  await page.evaluate(() => {
-    const check = window.analysisCheck
-    check.resolveSlowRead(check.slowResult)
-  })
-  await page.waitForFunction(() => document.querySelectorAll('.analysis-loading-overlay').length === 0)
-  await page.waitForFunction(() => (
-    document.getAnimations().some(animation => (
-      animation.effect?.target instanceof Element
-      && Boolean(animation.effect.target.closest('.analysis-panel-live'))
-    ))
-    || (document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '')
-      !== window.analysisCheck.oldSlowRiskCanvas
-  ))
-  await page.waitForTimeout(140)
-  assert.equal(await page.evaluate(() => document.getAnimations().filter(animation => (
-    animation.playState !== 'finished'
-    && animation.effect?.target instanceof Element
-    && Boolean(animation.effect.target.closest('.analysis-panel-live'))
-  )).length), 0, 'slow-result handoff also finishes its value animations')
-  await page.evaluate(() => {
-    const check = window.analysisCheck
-    window.studioAPI.jumpToNode = check.originalJumpForSlowAnalysis
-    window.studioAPI.getAnalysis = check.originalReadForSlowAnalysis
-  })
+  await checkAnalysisLoading(page)
 
   await checkWorkspaceDock(page)
   }

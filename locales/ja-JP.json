@@ -277,6 +277,8 @@
   "status.electron": "Electron",
   "status.applicationBreakdown": "アプリのメモリ内訳",
   "status.systemMemory": "システムメモリ",
+  "status.applicationResident": "アプリの常駐メモリ",
+  "status.residentMemoryNote": "アプリと内訳は各プロセスの常駐メモリの合計です。共有ページを重複して数える場合があり、システム使用量には加算しません。",
   "status.systemUsed": "使用中",
   "status.systemFree": "利用可能",
   "status.resourceTotal": "合計 {value}",

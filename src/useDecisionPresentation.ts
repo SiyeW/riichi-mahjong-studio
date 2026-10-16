@@ -28,7 +28,7 @@ export function formatDelta(delta: number): string {
 }
 
 export function useDecisionEntryPresentation(options: {
-  gameView: GameView
+  gameView: Pick<GameView, 'analysis'>
   t: Translate
   reactionTypeLabel: (type: string) => string
 }) {

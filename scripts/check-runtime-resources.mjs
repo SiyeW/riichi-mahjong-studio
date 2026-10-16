@@ -28,14 +28,17 @@ export async function checkRuntimeResources(page) {
     assert.equal(await detail.isVisible(), false, 'details start hidden')
     await status.hover()
     await detail.waitFor({ state: 'visible' })
+    assert.deepEqual(await detail.locator('[data-resource-group]').evaluateAll(elements => elements.map(element => element.dataset.resourceGroup)),
+      ['system', 'application', 'cache'], 'details follow system, application, then cache')
     assert.equal(await fraction('application', 'electron'), 0.64, 'program breakdown is relative to program total, not system RAM')
     assert.equal(await fraction('system', 'used'), 0.5)
+    assert.ok(Math.abs(await fraction('system', 'application') - 800 / 16384) < .000001, 'application residency is visible against the system reference')
     assert.equal(await fraction('cache', 'resident'), 0.5)
     const tracks = await detail.locator('.resource-track').evaluateAll(elements => elements.map(element => {
       const rect = element.getBoundingClientRect()
       return { width: rect.width, height: rect.height }
     }))
-    assert.ok(tracks.length === 9 && tracks.every(track => track.height > 0
+    assert.ok(tracks.length === 10 && tracks.every(track => track.height > 0
       && Math.abs(track.width - tracks[0].width) < 0.1 && track.height === tracks[0].height), 'all detail bars share the same geometry')
     const trigger = await status.boundingBox()
     const card = await detail.boundingBox()

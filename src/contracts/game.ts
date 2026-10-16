@@ -212,6 +212,7 @@ export interface TableState {
 }
 
 export interface DecisionAnalysis {
+  context?: AnalysisPresentationContext
   model: string
   seat: number
   mode?: string
@@ -308,7 +309,7 @@ export interface AnalysisViewToken {
 export interface AnalysisPresentationContext extends Record<string, unknown> {
   sourceNodeId?: string | null
   sourceTable?: TableState | null
-  dataState?: 'reading' | 'ready' | 'failed' | 'missing'
+  dataState?: 'reading' | 'running' | 'ready' | 'failed' | 'missing'
 }
 
 export interface GameView {

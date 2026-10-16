@@ -58,8 +58,9 @@ export interface RecordCacheMetrics {
 }
 
 export interface RuntimeMetrics {
+  memoryBasis: 'resident'
   applicationBytes: number | null
-  electronBytes: number
+  electronBytes: number | null
   backendBytes: number | null
   engineBytes: number | null
   codecBytes?: number | null
@@ -67,8 +68,8 @@ export interface RuntimeMetrics {
   backendAvailable: boolean
   electronProcessCount: number
   engineProcessCount: number | null
-  systemAvailableBytes: number
-  systemTotalBytes: number
+  systemAvailableBytes: number | null
+  systemTotalBytes: number | null
   sampledAt: number
 }
 

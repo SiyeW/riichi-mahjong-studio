@@ -37,23 +37,26 @@ function group(id: ResourceGroup['id'], titleKey: string, referenceKey: string,
   }
 }
 
-// Each group has its own explicit reference. Process private memory is not a
-// partition of physical RAM; protected/pending cache memory is not additive.
+// Working sets can count shared pages more than once. System rows are independent
+// comparisons, not a partition; protected/pending cache memory is not additive.
 export function runtimeResourceGroups(metrics: RuntimeMetrics | null): ResourceGroup[] {
   if (!metrics) return []
   const total = validBytes(metrics.systemTotalBytes)
   const available = validBytes(metrics.systemAvailableBytes)
   const validSystem = total != null && total > 0 && available != null && available <= total
+  const resident = metrics.memoryBasis === 'resident'
+  const application = resident ? metrics.applicationBytes : null
   const groups = [
-    group('application', 'status.applicationBreakdown', 'status.resourceTotal', metrics.applicationBytes, [
-      ['electron', 'status.electron', metrics.electronBytes],
-      ['backend', 'status.pythonBackend', metrics.backendBytes],
-      ['engines', 'status.engines', metrics.engineBytes],
-      ['codec', 'status.recordCodec', metrics.codecBytes],
-    ]),
     group('system', 'status.systemMemory', 'status.resourceTotal', total, [
       ['used', 'status.systemUsed', validSystem ? total - available : null],
+      ['application', 'status.applicationResident', application],
       ['available', 'status.systemFree', validSystem ? available : null],
+    ]),
+    group('application', 'status.applicationBreakdown', 'status.resourceTotal', application, [
+      ['electron', 'status.electron', resident ? metrics.electronBytes : null],
+      ['backend', 'status.pythonBackend', resident ? metrics.backendBytes : null],
+      ['engines', 'status.engines', resident ? metrics.engineBytes : null],
+      ['codec', 'status.recordCodec', resident ? metrics.codecBytes : null],
     ]),
   ]
   const cache = metrics.recordCache

@@ -502,7 +502,7 @@ class DecisionAnalysisSession:
         if analysis_key in current_node.get("analysisCache", {}):
             cached = current_node["analysisCache"][analysis_key]
             if isinstance(cached, AnalysisReference):
-                return self.dependencies.read_presenter.read(cached, kind='decision')
+                return self._read_cached_display(cached)
             if getattr(cached, 'pending_io', False):
                 self.update_child_comparisons(self.state['game'], current_node, cached,
                                               int(self.state['controlledSeat']), only_missing=True)
@@ -522,18 +522,28 @@ class DecisionAnalysisSession:
         ):
             return None
         self.submit_background(current_node, snapshot)
-        return self._stale_analysis(
+        retained = self._stale_analysis(
             self.state.get("game"),
             current_node,
             analysis_key,
             "analysisCache",
         )
+        if retained and retained.get('error'):
+            return retained
+        return self._pending_display('running', retained)
+
+    def _pending_display(self, data_state, retained=None):
+        return {"model": "", "seat": int(self.state["controlledSeat"]), "discardEntries": [],
+                **(retained or {}), "context": {**((retained or {}).get('context') or {}), "dataState": data_state}}
+
+    def _read_cached_display(self, reference, metadata=None):
+        ready = self.dependencies.read_presenter.read(reference, kind='decision', metadata=metadata)
+        return ready if ready is not None else self._pending_display('reading', metadata)
 
     def _stale_analysis(self, game, node, key, field):
         cached = find_stale_cache_entry(game, node, key, field, resolve=False)
         if isinstance(cached, AnalysisReference):
-            return self.dependencies.read_presenter.read(cached, kind='decision',
-                metadata=cache_presentation_metadata(game, cached.cache_key, key))
+            return self._read_cached_display(cached, cache_presentation_metadata(game, cached.cache_key, key))
         return find_stale_cache_entry(game, node, key, field) if cached is not None else None
 
     def resolve_current(

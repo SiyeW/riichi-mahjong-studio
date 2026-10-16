@@ -499,6 +499,9 @@
 
         <DecisionEvaluationPanel
           :game-view="gameView"
+          :controlled-seat="status.controlledSeat"
+          :loading="decisionFeedback.pending"
+          :load-error="decisionFeedback.error"
           :effective-recommendations-enabled="effectiveDecisionRecommendationsEnabled"
           :show-recommendations="showTrainingRecommendations"
           :localized-engine-text="localizedEngineText"
@@ -564,7 +567,7 @@
       :draft="settingsDraft"
       :sound-packs="settings.runtime?.soundPackCatalog.packs || []"
       :ui-scale-options="uiScaleOptions"
-      :available-memory-bytes="runtimeMetrics?.systemAvailableBytes"
+      :available-memory-bytes="runtimeMetrics?.systemAvailableBytes ?? undefined"
       @close="closeSettingsPanel"
       @save="saveSettingsPanel"
     />
@@ -962,6 +965,7 @@ const {
   clearOpponentAnalysisWithoutMotion,
   clearingAnalysisCaches,
   decisionRecommendationsEnabled,
+  decisionFeedback,
   displayedOpponentAnalysis,
   displayedAnalysisTable,
   displayedAnalysisControlledSeat,

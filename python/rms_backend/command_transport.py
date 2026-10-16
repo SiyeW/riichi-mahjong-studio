@@ -16,7 +16,7 @@ class CommandTransport:
         state_lock: RLock,
         view_builder: Any,
         engine_management: Any,
-        collect_runtime_metrics: Callable[[], dict[str, int]],
+        collect_runtime_metrics: Callable[[], dict[str, Any]],
         dispatch_stateful: Callable[[Any, str, dict[str, Any]], dict[str, Any]],
         emit: Callable[[dict[str, Any]], None],
         now_iso: Callable[[], str],

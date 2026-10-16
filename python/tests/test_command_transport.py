@@ -19,7 +19,7 @@ class CommandTransportTests(unittest.TestCase):
             reload=mock.Mock(return_value={"reloaded": True}),
             unload=mock.Mock(return_value={"loaded": False}),
         )
-        self.collect_metrics = mock.Mock(return_value={"backendPrivateBytes": 1})
+        self.collect_metrics = mock.Mock(return_value={"memoryBasis": "resident", "backendResidentBytes": 1})
         self.dispatch_stateful = mock.Mock(return_value={"command": "stateful"})
         self.emit = mock.Mock()
         self.transport = CommandTransport(
