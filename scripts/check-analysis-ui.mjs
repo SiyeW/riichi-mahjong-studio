@@ -19,6 +19,14 @@ const realisticPerformance = Boolean(process.env.RMS_UI_REALISTIC_PERFORMANCE)
 const performanceOnly = Boolean(process.env.RMS_UI_PERFORMANCE_ONLY)
 const externalRendererUrl = process.env.RMS_UI_TEST_URL || null
 
+async function checkCountGeometryBatches(page) {
+  const phases = await page.evaluate(async () => (await import('/scripts/fixtures/count-geometry.js')).checkCountGeometryPhases())
+  assert.equal(phases.cssBatch, true)
+  assert.equal(phases.bitmapBatch, true)
+  assert.ok(phases.reads > 0 && phases.bitmapWrites > 0)
+  return phases
+}
+
 function loadRealisticAnalysisFixtures() {
   if (!realisticPerformance) return { analyses: [], crowdedTable: null }
   const encoded = fs.readFileSync(path.join(root, 'examples', 'example-record.mjstudio'))
@@ -362,6 +370,10 @@ try {
   await page.locator('.settings-modal').waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.analysisCheck.settingsSaves.at(-1).records.analysisCacheMiB), 64)
   uiChecks: {
+  if (process.env.RMS_UI_COUNT_GEOMETRY_ONLY) {
+    console.log(`Count geometry batches: ${JSON.stringify(await checkCountGeometryBatches(page))}`)
+    break uiChecks
+  }
   if (process.env.RMS_UI_LOADING_ONLY) {
     await checkAnalysisLoading(page)
     break uiChecks
@@ -1672,6 +1684,7 @@ try {
   assert.deepEqual(snapshotRetirement, { transientPreserved: true, removedReleased: true, retiredOwnerReleased: true },
     'diagnostics preserve reused refs but release removed nodes and retired owners')
   console.log(`Analysis presentation: ${JSON.stringify({ presentationOwnership, savedPredictionMotion, unchangedGamePaint })}`)
+  console.log(`Count geometry batches: ${JSON.stringify(await checkCountGeometryBatches(page))}`)
   const oldPalette = await page.evaluate(async () => {
     const { sampleDistributionColor } = await import('/scripts/fixtures/chart-paint.js')
     return { scheme: window.analysisCheck.vm.settings.display.colorScheme,
