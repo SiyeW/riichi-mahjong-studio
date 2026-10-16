@@ -224,7 +224,7 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   font-size: var(--table-text-center-label);
   font-weight: 700;
   color: inherit;
-  text-align: left;
+  text-align: center;
   transform: translateY(calc(-0.5px * var(--center-ui-scale))) translateX(calc(-4.5px * var(--center-ui-scale)));
 }
 
@@ -283,7 +283,7 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   position: absolute;
   right: calc(-1rem * var(--center-ui-scale));
   bottom: calc(-1 * var(--indicator-thickness) * var(--center-ui-scale));
-  left: calc(0.24rem * var(--center-ui-scale));
+  left: calc(-1rem * var(--center-ui-scale));
   height: calc(var(--indicator-thickness) * var(--center-ui-scale));
   background: var(--gi-turn-color);
   pointer-events: none;

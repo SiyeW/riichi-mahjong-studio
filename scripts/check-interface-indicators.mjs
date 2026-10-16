@@ -60,11 +60,12 @@ export async function checkTableTurnIndicators(page) {
           assert.equal(active.length, 1, 'exactly one eligible player has a turn mark')
           assert.ok(result.items.every(item => item.border === 0 && item.background === 'rgba(0, 0, 0, 0)'), 'turn state no longer paints a frame or background')
           assert.ok(Math.abs(active[0].height - 3 * result.scale) < 0.05, 'table line shares the scaled indicator thickness')
-          assert.ok(Math.abs(active[0].bottom + 3 * result.scale) < 0.05 && active[0].left > 0
-            && Math.abs(active[0].right + result.rem * result.scale) < 0.05, 'line preserves the tuned bottom offset and right overhang')
+          assert.ok(Math.abs(active[0].bottom + 3 * result.scale) < 0.05
+            && Math.abs(active[0].left + result.rem * result.scale) < 0.05
+            && Math.abs(active[0].right + result.rem * result.scale) < 0.05, 'line preserves the tuned bottom offset and symmetric overhangs')
           assert.equal(active[0].pointer, 'none', 'the decorative line cannot intercept input')
           assert.equal(active[0].color, mode === 'research' ? result.soft : result.main, 'research uses soft text color; play uses main text color')
-          assert.ok(result.items.every(item => item.seatAlign === 'left'
+          assert.ok(result.items.every(item => item.seatAlign === 'center'
             && Math.abs(item.seatX + 4.5 * result.scale) < 0.05
             && Math.abs(item.seatY + 0.5 * result.scale) < 0.05
             && item.betTransform === 'none'), 'all four seats preserve the tuned wind and riichi-bet alignment')
