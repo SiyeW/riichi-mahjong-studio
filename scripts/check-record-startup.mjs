@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { createServer } from 'vite'
 import { _electron as electron } from 'playwright'
 import { stableForegroundSample } from '../src/testing/motionProbeSurface.ts'
+import { readRenderingTrace } from '../src/testing/renderingTrace.ts'
 
 // Exercise the old exit file through real startup, including the next empty
 // startup after explicit discard. An optional source is copied, never edited.
@@ -18,12 +19,14 @@ await fs.copyFile(source, path.join(recovery, '未保存的对局.mjstudio'))
 await fs.writeFile(path.join(directory, 'config.json'), JSON.stringify({ display: { language: 'zh-CN' },
   records: { saveRecoveryOnExit: true },
   engines: { schemaVersion: 2, profiles: [], loadedProfileIds: [], outputAssignments: {} } }))
-const server = await createServer({ root, mode: 'desktop-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
+const externalRendererUrl = process.env.RMS_RECORD_TEST_URL || null
+const server = externalRendererUrl ? null
+  : await createServer({ root, mode: 'desktop-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
 let application
 const errors = []
 async function launch() {
   application = await electron.launch({ args: [path.join(root, 'scripts/electron-record-test-main.cjs')],
-    env: { ...process.env, VITE_DEV_SERVER_URL: server.resolvedUrls.local[0], RMS_RECORD_DESKTOP_TEST_DIR: directory } })
+    env: { ...process.env, VITE_DEV_SERVER_URL: externalRendererUrl || server.resolvedUrls.local[0], RMS_RECORD_DESKTOP_TEST_DIR: directory } })
   const page = await application.firstWindow()
   page.setDefaultTimeout(30_000)
   page.on('pageerror', error => errors.push(error.message))
@@ -45,7 +48,7 @@ async function closeWindow() {
   application = null
 }
 try {
-  await server.listen()
+  await server?.listen()
   let page = await launch()
   await page.locator('textarea.node-comment').waitFor()
   const initial = await page.evaluate(() => window.studioAPI.getGameView())
@@ -126,34 +129,51 @@ try {
       assert.equal(surface.documentVisibility, 'visible', 'an occluded surface is not a visible rendering baseline')
     }
     const client = await page.context().newCDPSession(page)
+    if (process.env.RMS_RECORD_MOTION_INPUT === 'trusted') {
+      const bounds = await page.locator('.grid-main').boundingBox()
+      assert.ok(bounds, 'trusted wheel needs a visible table hit target')
+      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 4)
+      await page.exposeFunction('__rmsMotionWheel', deltaY => page.mouse.wheel(0, deltaY))
+    }
     await client.send('Performance.enable')
     const recordCpu = !process.env.RMS_RECORD_MOTION_SAMPLE_ONLY
     if (recordCpu) {
       await client.send('Profiler.enable')
       await client.send('Profiler.start')
     }
-    const traceEvents = []
+    let traceEvents = []
     if (process.env.RMS_RECORD_MOTION_TRACE) {
-      client.on('Tracing.dataCollected', ({ value }) => traceEvents.push(...value))
       const categories = 'devtools.timeline,blink,cc,benchmark,gpu,viz,disabled-by-default-devtools.timeline.frame'
-      await client.send('Tracing.start', { categories: process.env.RMS_RECORD_MOTION_TRACE_CATEGORIES || categories, transferMode: 'ReportEvents' })
+      await client.send('Tracing.start', { categories: process.env.RMS_RECORD_MOTION_TRACE_CATEGORIES || categories, transferMode: 'ReturnAsStream' })
     }
     const before = await client.send('Performance.getMetrics')
     const motion = await page.evaluate(async (pair) => {
-      const frameTimes = [], timelineTimes = [], visits = [], longTasks = [], zooms = new Set(), flights = []
+      const frameTimes = [], timelineTimes = [], visits = [], longTasks = [], zooms = new Set(), flights = [], inputs = [], commits = []
       const probeStartedAt = performance.now()
       console.timeStamp(`RMS-MOTION-START:${probeStartedAt}`)
+      performance.mark(`RMS-MOTION-START:${probeStartedAt}`, { startTime: probeStartedAt })
       const vm = document.querySelector('#app').__vue_app__._instance.setupState
       const initial = { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode }
+      const experimentAdmissionsBefore = window.__rmsFlightExperiment?.admissions || 0
       visits.push(initial.node)
+      const table = document.querySelector('.grid-main')
+      const wheel = event => inputs.push({ at: performance.now(), deltaY: event.deltaY, trusted: event.isTrusted,
+        beforeNode: vm.gameView.currentNodeId })
+      table.addEventListener('wheel', wheel, { capture: true })
+      const dispatchWheel = deltaY => window.__rmsMotionWheel ? window.__rmsMotionWheel(deltaY)
+        : table.dispatchEvent(new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true }))
       const observer = new PerformanceObserver(list => longTasks.push(...list.getEntries().map(({ startTime, duration }) => ({ startTime, duration }))))
       observer.observe({ type: 'longtask' })
       let active = true, frame = 0
       const sample = timeline => {
-        frameTimes.push(performance.now())
+        const arrival = performance.now()
+        frameTimes.push(arrival)
         timelineTimes.push(timeline)
         zooms.add(vm.tableZoom)
-        if (visits.at(-1) !== vm.gameView.currentNodeId) visits.push(vm.gameView.currentNodeId)
+        if (visits.at(-1) !== vm.gameView.currentNodeId) {
+          visits.push(vm.gameView.currentNodeId)
+          commits.push({ node: vm.gameView.currentNodeId, observedAt: arrival })
+        }
         if (active) frame = requestAnimationFrame(sample)
       }
       const animate = Element.prototype.animate
@@ -172,15 +192,13 @@ try {
       try {
         if (pair) {
           for (let round = 0; round < 4; round++) for (const direction of [1, -1]) {
-            document.querySelector('.grid-main').dispatchEvent(new WheelEvent('wheel', {
-              deltaY: direction * 100, bubbles: true, cancelable: true,
-            }))
+            await dispatchWheel(direction * 100)
             await new Promise(resolve => setTimeout(resolve, 700))
             const expected = pair[direction > 0 ? 1 : 0]
             if (vm.gameView.currentNodeId !== expected) throw new Error(`Expected ${expected}, got ${vm.gameView.currentNodeId}`)
           }
         } else for (const direction of [-1, 1]) for (let i = 0; i < 20; i++) {
-          document.querySelector('.grid-main').dispatchEvent(new WheelEvent('wheel', { deltaY: direction * 100, bubbles: true, cancelable: true }))
+          await dispatchWheel(direction * 100)
           await new Promise(resolve => setTimeout(resolve, 80))
         }
         await new Promise(resolve => setTimeout(resolve, 350))
@@ -188,12 +206,16 @@ try {
         active = false
         cancelAnimationFrame(frame)
         observer.disconnect()
+        table.removeEventListener('wheel', wheel, true)
         Element.prototype.animate = animate
       }
       const intervals = frameTimes.slice(1).map((time, index) => time - frameTimes[index]).sort((a, b) => a - b)
       return { initial, final: { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode },
         backendNode: (await window.studioAPI.getGameView()).view.currentNodeId,
-        zooms: [...zooms], visits: visits.length, frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
+        zooms: [...zooms], visits: visits.length, inputs, commits,
+        experiment: window.__rmsFlightExperiment ? { ...window.__rmsFlightExperiment,
+          admissionsDuringSample: window.__rmsFlightExperiment.admissions - experimentAdmissionsBefore } : undefined,
+        frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
         p95: intervals[Math.floor(intervals.length * .95)], max: intervals.at(-1), longTasks,
         flightWindows: flights.map(flight => {
           if (!Number.isFinite(flight.startTime)) return { ...flight, callbackCount: null, maximumCallbackGapMs: null }
@@ -212,13 +234,21 @@ try {
       let timer
       try {
         await client.send('Tracing.end')
-        await Promise.race([complete, new Promise((_, reject) => {
+        const result = await Promise.race([complete, new Promise((_, reject) => {
           timer = setTimeout(() => reject(new Error('Rendering trace did not complete.')), 15000)
         })])
+        assert.ok(result?.stream, 'a completed trace must provide its raw JSON stream')
+        traceEvents = await readRenderingTrace(client, result.stream)
         assert.ok(traceEvents.length, 'a completed trace must contain events')
       } finally { clearTimeout(timer) }
     }
     await client.detach()
+    // Optional adapter attribution is outside the sampled animation/CPU window.
+    const gpu = process.env.RMS_RECORD_MOTION_GPU_INFO === '1'
+      ? await application.evaluate(async ({ app }) => ({ features: app.getGPUFeatureStatus(),
+        versions: { electron: process.versions.electron, chrome: process.versions.chrome }, info: await app.getGPUInfo('complete') }))
+        .catch(error => ({ error: String(error) }))
+      : undefined
     const first = Object.fromEntries(before.metrics.map(({ name, value }) => [name, value]))
     const work = Object.fromEntries(after.metrics.filter(({ name }) => /Duration|Count/.test(name))
       .map(({ name, value }) => [name, value - (first[name] || 0)]))
@@ -227,17 +257,21 @@ try {
     const hotFunctions = profile.nodes.map(node => ({ ...node.callFrame, milliseconds: (totals.get(node.id) || 0) / 1000 }))
       .sort((a, b) => b.milliseconds - a.milliseconds).slice(0, 35)
     const navigation = await application.evaluate(() => global.recordDesktopTest.navigation)
-    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents,
+    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents, gpu,
       source: { bytes: (await fs.stat(source)).size, sha256: createHash('sha256').update(await fs.readFile(source)).digest('hex') },
       surface, surfaceAfter,
       evidence: { desktopControlToolsUsed: false, overlayState: process.env.RMS_RECORD_MOTION_OVERLAY_STATE || 'unverified',
         nativeWindowSurface: surface.mode === 'native',
         stableForeground,
+        inputMode: process.env.RMS_RECORD_MOTION_INPUT === 'trusted' ? 'trusted-browser-wheel' : 'dom-wheel',
         lockedSession: surface.power.idleState === 'locked' || surfaceAfter.power.idleState === 'locked'
           || surfaceAfter.locks !== surface.locks,
         frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
     const { callbackArrivals, callbackTimelineStamps, ...motionSummary } = motion
     console.log(JSON.stringify({ motion: motionSummary, work, navigation }))
+    if (process.env.RMS_RECORD_MOTION_INPUT === 'trusted') {
+      assert.ok(motion.inputs.length && motion.inputs.every(input => input.trusted), 'native-input trials must receive trusted wheel events')
+    }
     if (surface.mode === 'native' && process.env.RMS_RECORD_MOTION_ALLOW_LOCKED !== '1') {
       assert.equal(stableForeground, true, 'The foreground surface changed during sampling; results are diagnostic only.')
     }
@@ -260,6 +294,6 @@ try {
     restoredMode: initial.state.mode, restoredNode: initial.view.currentNodeId }))
 } finally {
   await application?.close()
-  await server.close()
+  await server?.close()
   await fs.rm(directory, { recursive: true, force: true })
 }
