@@ -38,7 +38,7 @@ const orderedViews = computed(() => positionOrder.flatMap(position => (
   /* Share the dark square's bounds; names must not affect the table grid. */
   position: absolute;
   inset: var(--grid-top-row) var(--grid-side-col) var(--grid-bottom-row);
-  z-index: 2;
+  /* Use the table's base layer; river tiles must pass above annotations. */
   pointer-events: none;
   font-size: var(--table-text-bet);
   --name-inset: calc(6px * var(--zoom));
@@ -54,9 +54,7 @@ const orderedViews = computed(() => positionOrder.flatMap(position => (
   transform-origin: 0 0;
   text-align: left;
   pointer-events: none;
-  /* The dark square is a pseudo-element, so declare its actual surface here
-     for the shared in-place reveal's background sampling. */
-  background: var(--bg-river);
+  /* Layout anchors do not paint; the editor owns its hover/focus surface. */
 }
 .table-player-name :deep(button), .table-player-name :deep(input) {
   pointer-events: auto;

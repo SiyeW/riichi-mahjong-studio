@@ -27,6 +27,13 @@ export async function checkReplayWorkflow(page) {
   })
   const names = page.locator('.player-name-button')
   assert.equal(await names.count(), 4, 'all four stable seats have a name editor')
+  const riverHits = await page.locator('.grid-discard .tileDiv:not(.tileDivPending)').evaluateAll(tiles => (
+    tiles.map(tile => {
+      const image = tile.querySelector('.tileImg'), rect = image.getBoundingClientRect()
+      return tile.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2))
+    })
+  ))
+  assert.ok(riverHits.length >= 24 && riverHits.every(Boolean), 'settled river tiles keep their history hit targets')
   assert.ok(await names.evaluateAll(buttons => buttons.every(button =>
     getComputedStyle(button).fontSize === getComputedStyle(document.querySelector('.gi-riichi-bet')).fontSize)),
   'player names use the same font size as the riichi deduction')
@@ -56,7 +63,7 @@ export async function checkReplayWorkflow(page) {
         originalGlyph: firstGlyph(target), revealedGlyph: firstGlyph(tooltip),
         overflow: tooltip.scrollWidth - tooltip.clientWidth,
         background: getComputedStyle(tooltip).backgroundColor,
-        tableBackground: getComputedStyle(button.closest('.table-player-name')).backgroundColor }
+        tableBackground: getComputedStyle(document.querySelector('.grid-main'), '::before').backgroundColor }
     })
     assert.ok(Math.abs(geometry.originalGlyph.x - geometry.revealedGlyph.x) < 1
       && Math.abs(geometry.originalGlyph.y - geometry.revealedGlyph.y) < 1,

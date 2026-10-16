@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
+import { checkFlightOcclusion } from './check-flight-occlusion.mjs'
 
 export async function checkDiscardMotion(page) {
   await checkWheelProgress(page)
+  await checkFlightOcclusion(page)
   await page.evaluate(async () => {
     const motion = await import('/src/uiMotion.ts')
     const old = document.body.style.getPropertyValue('--ui-motion-duration')
