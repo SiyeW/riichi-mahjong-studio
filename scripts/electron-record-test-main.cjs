@@ -1,7 +1,7 @@
 // Full production entrypoint and isolated files/dialogs. Normal interactive
 // surfaces require explicit opt-in; ordinary correctness tests stay invisible.
 const path = require('node:path')
-const { app, dialog, screen } = require('electron')
+const { app, dialog, screen, powerSaveBlocker } = require('electron')
 const directory = process.env.RMS_RECORD_DESKTOP_TEST_DIR
 if (!directory) throw new Error('An isolated desktop test directory is required.')
 const root = path.resolve(__dirname, '..')
@@ -48,11 +48,20 @@ dialog.showMessageBox = async (_window, options) => {
 }
 app.commandLine.appendSwitch('disable-background-timer-throttling')
 app.commandLine.appendSwitch('disable-renderer-backgrounding')
+let motionPowerBlocker = null
+app.on('will-quit', () => {
+  if (motionPowerBlocker !== null) powerSaveBlocker.stop(motionPowerBlocker)
+})
 app.on('browser-window-created', (_event, window) => {
   const visibleMotion = Boolean(process.env.RMS_RECORD_MOTION_PROFILE)
     && process.env.RMS_RECORD_MOTION_VISIBLE === '1'
   const focusedMotion = visibleMotion && process.env.RMS_RECORD_MOTION_FOCUSED === '1'
   const nativeSurface = focusedMotion && process.env.RMS_RECORD_MOTION_NATIVE_SURFACE === '1'
+  if (nativeSurface && motionPowerBlocker === null) {
+    motionPowerBlocker = powerSaveBlocker.start('prevent-display-sleep')
+  }
+  global.recordDesktopTest.preventDisplaySleep = motionPowerBlocker !== null
+    && powerSaveBlocker.isStarted(motionPowerBlocker)
   global.recordDesktopTest.surfaceMode = nativeSurface ? 'native'
     : visibleMotion ? 'layered-diagnostic' : 'invisible-correctness'
   // Ordinary record tests stay invisible; focused performance testing needs a

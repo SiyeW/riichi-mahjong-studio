@@ -100,16 +100,22 @@ try {
       assert.ok(artwork.formats.every(type => type === 'image/png'), 'every rendered face uses an ordinary cached bitmap')
       assert.ok(artwork.minimumBitmapCoverage >= 1, 'cached pixels cover actual content demand')
     }
-    const surface = await application.evaluate(({ BrowserWindow, screen }) => {
+    const surface = await application.evaluate(({ BrowserWindow, screen, powerMonitor }) => {
       const window = BrowserWindow.getAllWindows()[0]
       return { visible: window.isVisible(), focused: window.isFocused(), opacity: window.getOpacity(),
         mode: global.recordDesktopTest.surfaceMode,
+        power: { idleState: powerMonitor.getSystemIdleState(5), idleSeconds: powerMonitor.getSystemIdleTime(),
+          onBattery: powerMonitor.isOnBatteryPower(), preventDisplaySleep: global.recordDesktopTest.preventDisplaySleep },
         bounds: window.getBounds(), display: screen.getDisplayMatching(window.getBounds()) }
     })
     const visibility = await page.evaluate(() => document.visibilityState)
     if (process.env.RMS_RECORD_MOTION_VISIBLE === '1') {
       assert.equal(surface.opacity, 1)
       if (process.env.RMS_RECORD_MOTION_FOCUSED === '1') assert.equal(surface.focused, true)
+      if (process.env.RMS_RECORD_MOTION_ALLOW_LOCKED !== '1') {
+        assert.notEqual(surface.power.idleState, 'locked',
+          'A locked desktop is not foreground rendering acceptance; explicit diagnostic override is required.')
+      }
       assert.equal(visibility, 'visible', 'an occluded surface is not a visible rendering baseline')
     }
     const client = await page.context().newCDPSession(page)
@@ -215,8 +221,9 @@ try {
     await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents,
       source: { bytes: (await fs.stat(source)).size, sha256: createHash('sha256').update(await fs.readFile(source)).digest('hex') },
       surface: { ...surface, documentVisibility: visibility },
-      evidence: { nativeControlUsed: false, overlayState: process.env.RMS_RECORD_MOTION_OVERLAY_STATE || 'unverified',
+      evidence: { desktopControlToolsUsed: false, overlayState: process.env.RMS_RECORD_MOTION_OVERLAY_STATE || 'unverified',
         nativeWindowSurface: surface.mode === 'native',
+        lockedSession: surface.power.idleState === 'locked',
         frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
     const { callbackArrivals, callbackTimelineStamps, ...motionSummary } = motion
     console.log(JSON.stringify({ motion: motionSummary, work, navigation }))
