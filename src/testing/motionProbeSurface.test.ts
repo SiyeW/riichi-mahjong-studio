@@ -7,6 +7,7 @@ const surface = (): MotionProbeSurface => ({
   pixelRatio: 1, invalidations: 3, power: { idleState: 'active' },
   display: { id: 1, displayFrequency: 165, scaleFactor: 1 },
   bounds: { x: 0, y: 0, width: 2560, height: 1392 },
+  maximized: true, contentBounds: { x: 0, y: 23, width: 2560, height: 1369 },
 })
 
 test('an unlocked stable native surface is eligible even without recent user input', () => {
@@ -43,6 +44,10 @@ test('display, geometry and density changes invalidate the sample', () => {
     { display: { ...surface().display, scaleFactor: 1.5 } },
     { bounds: { ...surface().bounds, x: 1 } }, { bounds: { ...surface().bounds, width: 2000 } },
     { bounds: { ...surface().bounds, height: 0 } },
+    { maximized: false },
+    { contentBounds: { ...surface().contentBounds, x: 1 } },
+    { contentBounds: { ...surface().contentBounds, width: 2000 } },
+    { contentBounds: { ...surface().contentBounds, height: 0 } },
   ]
   for (const patch of changes) assert.equal(stableForegroundSample(surface(), { ...surface(), ...patch }), false)
 })

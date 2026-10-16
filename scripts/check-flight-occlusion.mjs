@@ -47,30 +47,44 @@ export async function checkFlightOcclusion(page) {
         await vm.jumpToNode(child.currentNodeId)
         await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
         if (reverse) {
+          const pose = image => {
+            const rect = image.getBoundingClientRect()
+            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+              transform: getComputedStyle(image).transform }
+          }
           window.rmsOcclusionAnimations.forEach(animation => {
             animation.currentTime = Number(animation.effect.getTiming().duration) - .001
           })
           const source = document.querySelector(`[data-pending-discard-seat="${actor}"] .tileImg`)
-          const sourceRect = source.getBoundingClientRect()
-          const expected = { x: sourceRect.x, y: sourceRect.y, width: sourceRect.width, height: sourceRect.height,
-            transform: getComputedStyle(source).transform }
+          const expected = pose(source)
           window.rmsOcclusionAnimations = []
           await vm.jumpToNode(parent.currentNodeId)
           await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))
           const clone = document.querySelector('.discard-return-ghost > .tileDiv > .tileImg')
-          const cloneRect = clone.getBoundingClientRect()
-          return { expected, actual: { x: cloneRect.x, y: cloneRect.y, width: cloneRect.width, height: cloneRect.height,
-            transform: getComputedStyle(clone).transform } }
+          const start = { expected, actual: pose(clone) }
+          const destination = [...document.querySelectorAll(`[data-hand-seat="${actor}"]`)]
+            .find(element => element.style.visibility === 'hidden')?.querySelector('.tileImg')
+          if (!destination) throw new Error('Return flight must own its actual hidden hand destination')
+          window.rmsOcclusionAnimations.forEach(animation => {
+            animation.currentTime = Number(animation.effect.getTiming().duration) - .001
+          })
+          const visibleEnd = document.querySelector('.discard-return-ghost .discard-flight-regular-pose .tileImg')
+            || document.querySelector('.discard-return-ghost .discard-flight-back') || clone
+          const end = { expected: pose(destination), actual: pose(visibleEnd) }
+          window.rmsOcclusionAnimations.forEach(animation => { animation.currentTime = 0 })
+          return { start, end }
         }
         return null
       }, { actor, riichi, reverse })
       if (reversePose) {
-        for (const coordinate of ['x', 'y', 'width', 'height']) {
-          assert.ok(Math.abs(reversePose.actual[coordinate] - reversePose.expected[coordinate]) < .1,
-            `Reverse flight must begin at the settled image pose: ${JSON.stringify({ actor, riichi, coordinate, ...reversePose })}`)
+        for (const [endpoint, pose] of Object.entries(reversePose)) {
+          for (const coordinate of ['x', 'y', 'width', 'height']) {
+            assert.ok(Math.abs(pose.actual[coordinate] - pose.expected[coordinate]) < .1,
+              `Reverse flight ${endpoint} matches its actual tile pose: ${JSON.stringify({ actor, riichi, coordinate, ...pose })}`)
+          }
+          assert.equal(pose.actual.transform, pose.expected.transform,
+            `Reverse ${endpoint} preserves actual tile rotation for actor ${actor}, riichi ${riichi}`)
         }
-        assert.equal(reversePose.actual.transform, reversePose.expected.transform,
-          `Reverse clone preserves the actual settled rotation for actor ${actor}, riichi ${riichi}`)
       }
       for (const annotation of ['empty', 'named', 'hover', 'editing']) {
         await page.mouse.move(0, 0)

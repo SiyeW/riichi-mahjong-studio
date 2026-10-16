@@ -113,6 +113,7 @@ try {
       const surface = await application.evaluate(({ BrowserWindow, screen, powerMonitor }) => {
         const window = BrowserWindow.getAllWindows()[0]
         return { visible: window.isVisible(), focused: window.isFocused(), opacity: window.getOpacity(),
+          maximized: window.isMaximized(), contentBounds: window.getContentBounds(),
           mode: global.recordDesktopTest.surfaceMode,
           invalidations: window.rmsRecordSurfaceEvents.invalidations,
           locks: window.rmsRecordSurfaceEvents.locks,
@@ -123,6 +124,8 @@ try {
       return { ...surface, ...await page.evaluate(() => ({ documentVisibility: document.visibilityState, pixelRatio: window.devicePixelRatio })) }
     }
     const surface = await readSurface()
+    if (surface.mode === 'native') assert.equal(surface.maximized, true,
+      'native motion samples must follow production window maximization')
     if (process.env.RMS_RECORD_MOTION_VISIBLE === '1') {
       assert.equal(surface.opacity, 1)
       if (process.env.RMS_RECORD_MOTION_FOCUSED === '1') assert.equal(surface.focused, true)

@@ -59,6 +59,7 @@ app.on('browser-window-created', (_event, window) => {
   const lock = () => { events.locks++; invalidate() }
   const observers = [
     [window, 'blur', invalidate], [window, 'hide', invalidate], [window, 'minimize', invalidate],
+    [window, 'resize', invalidate], [window, 'move', invalidate],
     [powerMonitor, 'lock-screen', lock], [powerMonitor, 'suspend', invalidate],
     [screen, 'display-metrics-changed', invalidate],
   ]
@@ -82,9 +83,9 @@ app.on('browser-window-created', (_event, window) => {
     window.setSkipTaskbar(true)
     window.setOpacity(visibleMotion ? 1 : 0)
   }
-  if (visibleMotion) {
+  if (visibleMotion && !nativeSurface) {
     window.setBounds(screen.getPrimaryDisplay().workArea)
-    if (!nativeSurface) window.setIgnoreMouseEvents(true)
+    window.setIgnoreMouseEvents(true)
   }
   window.webContents.setBackgroundThrottling(false)
   // Motion profiling needs a renderable surface; keep it non-focusable.
@@ -96,6 +97,8 @@ app.on('browser-window-created', (_event, window) => {
     else window.showInactive()
     if (focusedMotion) window.focus()
   } : () => {}
-  window.maximize = () => {}
+  // Native foreground samples follow production's maximize/show path. Only
+  // invisible correctness and layered diagnostics need fixed test bounds.
+  if (!nativeSurface) window.maximize = () => {}
 })
 require(path.join(root, 'electron', 'main', 'index.js'))
