@@ -1,15 +1,11 @@
 import { computed, onBeforeUnmount, ref } from 'vue'
 import { preloadArtworkSources, tileArtworkAssetName } from './tiles/artworkSources'
+import { tileArtworkByName, tileArtworkSources } from './tiles/artworkCatalog'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
 
 export function useTileArtwork(t: Translate) {
-  const assets = import.meta.glob('./assets/tiles/Regular_shortnames/*.svg', {
-    eager: true,
-    import: 'default',
-  }) as Record<string, string>
-  const assetsByName = Object.fromEntries(Object.entries(assets).map(([name, source]) => [name.slice(name.lastIndexOf('/') + 1, -4), source]))
-  const sources = [...new Set(Object.values(assets).filter(Boolean))]
+  const sources = tileArtworkSources
   const tileArtworkReady = ref(false)
   const loadedCount = ref(0)
   const tileArtworkLoadingLabel = computed(() => t('common.loadingProgress', {
@@ -21,7 +17,7 @@ export function useTileArtwork(t: Translate) {
   let disposed = false
 
   function tileImageSrc(tile: string): string {
-    return assetsByName[tileArtworkAssetName(tile)] || assetsByName.back!
+    return tileArtworkByName[tileArtworkAssetName(tile)] || tileArtworkByName.back!
   }
 
   function prepareTileArtwork(): Promise<void> {

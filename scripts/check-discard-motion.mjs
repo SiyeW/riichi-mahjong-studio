@@ -16,7 +16,7 @@ export async function checkDiscardMotion(page) {
       state.cancelPendingDiscardFlight(); state.cancelPendingDiscardReturnFlight()
       state.coverageTrialEnabled = true
     })
-    await page.waitForTimeout(150)
+    await page.locator('.discard-motion-surface[data-ready="true"]').waitFor({ state: 'attached' })
   }
   await page.evaluate(async () => {
     const motion = await import('/src/uiMotion.ts')
@@ -44,6 +44,14 @@ export async function checkDiscardMotion(page) {
     const visibleHands = vm.status.visibleHands
     vm.status.visibleHands = false
     const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
+    const readyCoverage = async () => {
+      if (!coverageTrial) return
+      const limit = performance.now() + 400
+      while (!document.querySelector('.discard-flight-coverage')) {
+        if (performance.now() > limit) throw Error('Opt-in flight did not finish preparation: ' + JSON.stringify(document.querySelector('.discard-motion-surface')?.dataset))
+        await new Promise(resolve => setTimeout(resolve, 1))
+      }
+    }
     const cases = []
     try {
       for (const riichi of [false, true]) for (let offset = 1; offset <= 3; offset++) {
@@ -75,6 +83,7 @@ export async function checkDiscardMotion(page) {
         await vm.jumpToNode(child.currentNodeId)
         await frame()
         await frame()
+        await readyCoverage()
         const tile = document.querySelector(`[data-pending-discard-seat="${actor}"]`)
         const back = tile?.querySelector(riichi ? '.discard-flight-regular-pose' : '.discard-flight-back')
         const face = tile?.querySelector('.tileImg:not(.discard-flight-back)')
@@ -90,11 +99,9 @@ export async function checkDiscardMotion(page) {
           const root = document.querySelector('.discard-flight-coverage')
           if (!root) throw Error('Opt-in navigation did not create its flight coverage')
           const native = [movement, fade].filter(Boolean)
-          const samples = root.querySelectorAll('.discard-flight-coverage-sample')
-          const effects = [...root.querySelectorAll('*')].flatMap(node => node.getAnimations())
-          item.coverageSamples = samples.length
-          item.timelineSpread = Math.max(...[...effects, ...native].map(a => a.startTime))
-            - Math.min(...[...effects, ...native].map(a => a.startTime))
+          item.coverageSurfaces = document.querySelectorAll('.discard-flight-coverage').length
+          const starts = [Number(root.dataset.startTime), ...native.map(a => a.startTime)]
+          item.timelineSpread = Math.max(...starts) - Math.min(...starts)
           if (root.querySelector('[data-pending-discard-seat], [data-hand-seat], .tileImg, .history-jump-target')) {
             throw Error('Visual coverage clones leaked interactive selectors')
           }
@@ -105,13 +112,15 @@ export async function checkDiscardMotion(page) {
         await frame()
         if (coverageTrial) {
           await frame()
+          await readyCoverage()
           if (!document.querySelector('.discard-flight-coverage')) throw Error('Reverse flight lost coverage')
         }
         await vm.jumpToNode(childId)
         await frame()
         await frame()
         item.replacementActive = Boolean(document.querySelector(`[data-pending-discard-seat="${actor}"]`)
-          ?.getAnimations().some(animation => animation.playState === 'running'))
+          ?.getAnimations().some(animation => animation.playState === 'running'
+            || (coverageTrial && animation.playState === 'paused' && animation.currentTime === 0)))
         if (!riichi) {
           const repeated = structuredClone(child)
           repeated.currentNodeId = `${childId}-same-face`
@@ -121,7 +130,8 @@ export async function checkDiscardMotion(page) {
           await frame()
           await frame()
           item.repeatedFaceActive = Boolean(document.querySelector(`[data-pending-discard-seat="${actor}"]`)
-            ?.getAnimations().some(animation => animation.playState === 'running'))
+            ?.getAnimations().some(animation => animation.playState === 'running'
+              || (coverageTrial && animation.playState === 'paused' && animation.currentTime === 0)))
         }
         await new Promise(resolve => setTimeout(resolve, 220))
         item.remainingOverlays = document.querySelectorAll('.discard-flight-back, .discard-flight-regular-pose, .discard-return-ghost').length
@@ -154,7 +164,7 @@ export async function checkDiscardMotion(page) {
     assert.equal(item.remainingCoverage, 0, 'coverage surfaces retire after finishing/replacement')
     assert.equal(item.remainingOpacity, '', 'coverage restores source opacity')
     if (coverageTrial) {
-      assert.ok(item.coverageSamples >= 8 && item.coverageSamples <= 64)
+      assert.equal(item.coverageSurfaces, 1, 'one bounded local surface replaces the sample tree')
       assert.equal(item.timelineSpread, 0, 'source, face, pose and coverage use one native timeline')
     }
   }

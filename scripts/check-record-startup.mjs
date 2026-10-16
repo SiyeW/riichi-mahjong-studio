@@ -95,6 +95,10 @@ try {
       vm.applyGameView((await window.studioAPI.jumpToNode(previous)).view)
     }, pair)
     await page.waitForTimeout(350)
+    if (process.env.RMS_RECORD_MOTION_COVERAGE === '1') {
+      await page.evaluate(() => { document.querySelector('#app').__vue_app__._instance.setupState.coverageTrialEnabled = true })
+      await page.locator('.discard-motion-surface[data-ready="true"]').waitFor({ state: 'attached' })
+    }
     if (process.env.RMS_RECORD_MOTION_WAIT_ARTWORK === '1') {
       await page.waitForFunction(() => [...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
         .every(image => image.complete && image.naturalWidth > 0), null, { timeout: 30_000 })
@@ -155,7 +159,9 @@ try {
     }
     const before = await client.send('Performance.getMetrics')
     const motion = await page.evaluate(async (pair) => {
-      const frameTimes = [], timelineTimes = [], visits = [], longTasks = [], zooms = new Set(), flights = [], inputs = [], commits = []
+      const frameTimes = [], timelineTimes = [], visits = [], longTasks = [], zooms = new Set(), flights = [], inputs = [], commits = [], coverage = []
+      const animations = new Map()
+      let lastCoverage = ''
       const probeStartedAt = performance.now()
       console.timeStamp(`RMS-MOTION-START:${probeStartedAt}`)
       performance.mark(`RMS-MOTION-START:${probeStartedAt}`, { startTime: probeStartedAt })
@@ -176,6 +182,16 @@ try {
         frameTimes.push(arrival)
         timelineTimes.push(timeline)
         zooms.add(vm.tableZoom)
+        for (const [flight, animation] of animations) {
+          if (typeof animation.startTime === 'number') flight.startTime = animation.startTime
+        }
+        const surface = document.querySelector('.discard-motion-surface')
+        const completed = surface?.dataset.intervals
+        if (completed && completed !== lastCoverage) {
+          lastCoverage = completed
+          coverage.push({ admissionMs: Number(surface.dataset.admissionMs), workerPreparationMs: Number(surface.dataset.workerPreparationMs),
+            intervals: JSON.parse(completed) })
+        }
         if (visits.at(-1) !== vm.gameView.currentNodeId) {
           visits.push(vm.gameView.currentNodeId)
           commits.push({ node: vm.gameView.currentNodeId, observedAt: arrival })
@@ -190,6 +206,7 @@ try {
             duration: Number(animation.effect?.getTiming().duration) || 0,
             easing: animation.effect?.getTiming().easing, startTime: null }
           flights.push(flight)
+          animations.set(flight, animation)
           void animation.ready.then(() => { flight.startTime = animation.startTime }).catch(() => {})
         }
         return animation
@@ -219,7 +236,7 @@ try {
       return { initial, final: { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode },
         backendNode: (await window.studioAPI.getGameView()).view.currentNodeId,
         zooms: [...zooms], visits: visits.length, inputs, commits,
-        frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
+        coverage, frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
         p95: intervals[Math.floor(intervals.length * .95)], max: intervals.at(-1), longTasks,
         flightWindows: flights.map(flight => {
           if (!Number.isFinite(flight.startTime)) return { ...flight, callbackCount: null, maximumCallbackGapMs: null }
@@ -274,6 +291,7 @@ try {
         stableForeground,
         inputMode: process.env.RMS_RECORD_MOTION_INPUT === 'trusted' ? 'trusted-browser-wheel' : 'dom-wheel',
         rasterizationRequested: rasterization,
+        coverageTrial: process.env.RMS_RECORD_MOTION_COVERAGE === '1',
         lockedSession: surface.power.idleState === 'locked' || surfaceAfter.power.idleState === 'locked'
           || surfaceAfter.locks !== surface.locks,
         frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
