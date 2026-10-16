@@ -544,7 +544,7 @@
           </span>
         </span>
       </div>
-      <RuntimeResources :metrics="runtimeMetrics" :rows="runtimeMemoryRows" :format-size="formatMemorySize" />
+      <RuntimeResources :metrics="runtimeMetrics" :format-size="formatMemorySize" />
     </footer>
 
     <RecordImportDialog
@@ -921,10 +921,9 @@ const status = reactive<StudioStatus>({
 })
 const {
   runtimeMetrics,
-  runtimeMemoryRows,
   formatMemorySize,
   startRuntimeMetrics,
-} = useRuntimeMetrics(t)
+} = useRuntimeMetrics()
 const showTsumogiriTone = computed(() => (
   status.mode !== 'play' || settings.display.showTsumogiriInPlay !== false
 ))

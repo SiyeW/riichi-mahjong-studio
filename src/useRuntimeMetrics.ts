@@ -1,9 +1,7 @@
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 import type { RuntimeMetrics } from './contracts/runtime'
 
-type Translate = (key: string, params?: Record<string, string | number>) => string
-
-export function useRuntimeMetrics(t: Translate) {
+export function useRuntimeMetrics() {
   const runtimeMetrics = ref<RuntimeMetrics | null>(null)
   let runtimeMetricsTimer: number | null = null
   let runtimeMetricsRequestInFlight = false
@@ -17,27 +15,6 @@ export function useRuntimeMetrics(t: Translate) {
     const mebibytes = bytes / (1024 ** 2)
     return `${Math.round(mebibytes)} MB`
   }
-
-  const runtimeMemoryRows = computed(() => {
-    const metrics = runtimeMetrics.value
-    if (!metrics) return [{ label: t('status.memoryInfo'), value: t('status.reading') }]
-    const engineCount = metrics.engineProcessCount === null
-      ? ''
-      : t('status.engineProcesses', { count: metrics.engineProcessCount })
-    return [
-      { label: 'Electron', value: formatMemorySize(metrics.electronBytes) },
-      { label: t('status.pythonBackend'), value: formatMemorySize(metrics.backendBytes) },
-      { label: t('status.engines', { count: engineCount }), value: formatMemorySize(metrics.engineBytes) },
-      { label: t('status.recordCodec'), value: formatMemorySize(metrics.codecBytes) },
-      { label: t('status.systemTotal'), value: formatMemorySize(metrics.systemTotalBytes) },
-      ...(metrics.recordCache ? [
-        { label: t('status.analysisCache'), value: `${formatMemorySize(metrics.recordCache.residentBytes)} / ${formatMemorySize(metrics.recordCache.budgetBytes)}` },
-        { label: t('status.cacheProtected'), value: formatMemorySize(metrics.recordCache.protectedBytes) },
-        { label: t('status.cachePending'), value: `${metrics.recordCache.pendingResults} · ${formatMemorySize(metrics.recordCache.encodedPendingBytes)}` },
-        ...(metrics.recordCache.error ? [{ label: t('status.recoveryError'), value: metrics.recordCache.error }] : []),
-      ] : []),
-    ]
-  })
 
   async function refreshRuntimeMetrics() {
     if (!window.studioAPI?.getRuntimeMetrics || runtimeMetricsRequestInFlight) return
@@ -69,7 +46,6 @@ export function useRuntimeMetrics(t: Translate) {
 
   return {
     runtimeMetrics,
-    runtimeMemoryRows,
     formatMemorySize,
     startRuntimeMetrics,
   }
