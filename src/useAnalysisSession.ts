@@ -23,6 +23,12 @@ interface UseAnalysisSessionOptions {
   clearDecisionPresentation: (treeRevision: number) => void
 }
 
+export type AnalysisStageOptions = Readonly<{
+  resetDisplay?: boolean
+  withoutMotion?: boolean
+  tableMotion?: boolean
+}>
+
 export const SHANTEN_SHORT_LABELS = ['0', '1', '2', '3', '4', '5', '6', 'X']
 
 function hasShantenRows(group: Record<string, number[]> | undefined): group is Record<string, number[]> {
@@ -81,6 +87,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   let analysisPresentationStartFrame = 0
   let analysisPresentationCommitFrame = 0
   let analysisPresentationNotBefore: number | null = 0
+  let analysisPresentationGeneration = 0
+  let disposed = false
   let pendingAnalysisPresentation: {
     result: Record<string, unknown>
     withoutMotion: boolean
@@ -162,6 +170,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   const canToggleDecisionRecommendations = computed(() => status.mode === 'research')
 
   function analysisResultMatchesCurrentPosition(result: Record<string, unknown>): boolean {
+    if (disposed) return false
     const context = result.context as Record<string, unknown> | undefined
     if (!context || !acceptsAnalysisEpoch(context.cacheEpoch, minimumOpponentCacheEpoch)) return false
     return context.gameId === gameView.gameId
@@ -214,6 +223,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   function cancelScheduledAnalysisPresentation() {
+    analysisPresentationGeneration += 1
     if (analysisPresentationTimer !== null) window.clearTimeout(analysisPresentationTimer)
     window.cancelAnimationFrame(analysisPresentationStartFrame)
     window.cancelAnimationFrame(analysisPresentationCommitFrame)
@@ -302,7 +312,8 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     return true
   }
 
-  function presentScheduledAnalysis() {
+  function presentScheduledAnalysis(generation = analysisPresentationGeneration) {
+    if (generation !== analysisPresentationGeneration || disposed) return
     analysisPresentationTimer = null
     const pending = pendingAnalysisPresentation
     pendingAnalysisPresentation = null
@@ -319,18 +330,23 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     const delay = pendingAnalysisPresentation.withoutMotion
       ? 0
       : Math.max(0, analysisPresentationNotBefore - performance.now())
-    if (delay <= 0) presentScheduledAnalysis()
-    else analysisPresentationTimer = window.setTimeout(presentScheduledAnalysis, delay)
+    const generation = analysisPresentationGeneration
+    if (delay <= 0) presentScheduledAnalysis(generation)
+    else analysisPresentationTimer = window.setTimeout(() => presentScheduledAnalysis(generation), delay)
   }
 
-  function beginAnalysisPresentationWindow() {
+  function beginAnalysisPresentationWindow(tableMotion: boolean) {
+    const generation = analysisPresentationGeneration
     analysisPresentationNotBefore = null
     void nextTick(() => {
-      analysisPresentationStartFrame = window.requestAnimationFrame((frameTime) => {
+      if (generation !== analysisPresentationGeneration || disposed) return
+      analysisPresentationStartFrame = window.requestAnimationFrame(() => {
+        if (generation !== analysisPresentationGeneration || disposed) return
         analysisPresentationStartFrame = 0
         analysisPresentationCommitFrame = window.requestAnimationFrame((committedFrameTime) => {
+          if (generation !== analysisPresentationGeneration || disposed) return
           analysisPresentationCommitFrame = 0
-          analysisPresentationNotBefore = committedFrameTime + getUiMotionDurationMs()
+          analysisPresentationNotBefore = committedFrameTime + (tableMotion ? getUiMotionDurationMs() : 0)
           armScheduledAnalysisPresentation()
         })
       })
@@ -360,12 +376,13 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
 
   function stageOpponentAnalysisForView(
     result: Record<string, unknown> | null | undefined,
-    stageOptions: { resetDisplay?: boolean; withoutMotion?: boolean } = {},
+    stageOptions: AnalysisStageOptions = {},
   ) {
+    if (disposed) return
     cancelScheduledAnalysisPresentation()
     if (stageOptions.resetDisplay) clearOpponentAnalysisWithoutMotion()
     if (stageOptions.withoutMotion || stageOptions.resetDisplay) analysisPresentationNotBefore = 0
-    else beginAnalysisPresentationWindow()
+    else beginAnalysisPresentationWindow(Boolean(stageOptions.tableMotion))
     gameView.opponentAnalysis = result || null
     if (result?.status === 'terminal') {
       scheduleAnalysisPresentation(result, { withoutMotion: true, clearWhenEmpty: true })
@@ -390,13 +407,13 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   async function fetchAnalysisOnce() {
-    if (clearingAnalysisCaches.value || !opponentAnalysisNeeded.value || !gameView.table || !window.studioAPI?.getAnalysis) return
+    if (disposed || clearingAnalysisCaches.value || !opponentAnalysisNeeded.value || !gameView.table || !window.studioAPI?.getAnalysis) return
     const generation = ++analysisReadGeneration
     try {
       const result = await window.studioAPI.getAnalysis()
       if (generation !== analysisReadGeneration || !opponentAnalysisNeeded.value) return
       if (!scheduleAnalysisPresentation(result, {
-        withoutMotion: opponentAnalysisPermanentlyUnavailable.value,
+        withoutMotion: Boolean(settings.display.reduceMotion),
         clearWhenEmpty: opponentAnalysisPermanentlyUnavailable.value,
       })) return
     } catch (error) {
@@ -407,7 +424,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   async function syncAnalysisVisibilityToBackend(refreshView = false): Promise<boolean> {
-    if (!window.studioAPI?.setAnalysisVisibility) return false
+    if (disposed || !window.studioAPI?.setAnalysisVisibility) return false
     const generation = ++analysisVisibilityGeneration
     try {
       const response = await window.studioAPI.setAnalysisVisibility({
@@ -491,14 +508,14 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }
 
   async function clearLoadedAnalysisCaches() {
-    if (!window.studioAPI?.clearAnalysisCaches || clearingAnalysisCaches.value) return
+    if (disposed || !window.studioAPI?.clearAnalysisCaches || clearingAnalysisCaches.value) return
     const gameId = gameView.gameId
     clearingAnalysisCaches.value = true
     invalidateOpponentRead()
     analysisCacheClearMessage.value = ''
     try {
       const response = await window.studioAPI.clearAnalysisCaches()
-      if (gameId !== gameView.gameId) return
+      if (disposed || gameId !== gameView.gameId) return
       minimumDecisionCacheEpoch = response.cleared.decisionCacheEpoch
       minimumOpponentCacheEpoch = response.cleared.opponentCacheEpoch
       applyStatus(response.state)
@@ -514,6 +531,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
         comparisons,
       })
     } catch (error) {
+      if (disposed) return
       const message = error instanceof Error ? error.message : String(error)
       analysisCacheClearMessage.value = t('console.clearCacheFailed', { message })
     } finally {
@@ -523,6 +541,7 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
 
   watch(showAnalysisDock, async (open) => {
     await nextTick()
+    if (disposed) return
     scheduleTableZoomRecalc()
     if (!open) {
       await syncAnalysisVisibilityToBackend()
@@ -548,6 +567,9 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
   }, { immediate: true })
 
   onBeforeUnmount(() => {
+    disposed = true
+    analysisReadGeneration += 1
+    analysisVisibilityGeneration += 1
     analysisTransitionResetGeneration += 1
     cancelAnalysisTransitionReset()
     cancelAnalysisLoadingTimer()
@@ -578,7 +600,6 @@ export function useAnalysisSession(options: UseAnalysisSessionOptions) {
     opponentAnalysisLoadingVisible,
     opponentAnalysisLoadError,
     opponentAnalysisNeeded,
-    opponentAnalysisPermanentlyUnavailable,
     resetForBackendLifecycle,
     resetForNewGame,
     resolveNextDecisionAnalysis,

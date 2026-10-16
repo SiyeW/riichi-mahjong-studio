@@ -1621,6 +1621,30 @@ try {
   assert.equal(retainedPaint.before.matches, true)
   assert.equal(retainedPaint.after.matches, true, 'unchanged data is repainted after its calibrated color changes')
   assert.notDeepEqual(retainedPaint.before.pixel, retainedPaint.after.pixel, 'paint really changes instead of only changing a CSS variable')
+  const shantenPaint = await page.evaluate(async () => (await import('/scripts/fixtures/chart-paint.js')).checkShantenPaintUpdates())
+  assert.equal(shantenPaint.unchangedWrites, 0, 'unchanged pie geometry does not repeatedly mutate SVG attributes')
+  assert.ok(shantenPaint.firstChangedPath && shantenPaint.firstChangedPath !== shantenPaint.oldPath
+    && shantenPaint.firstChangedPath !== shantenPaint.finalPath, 'a delayed first callback does not consume the pie animation')
+  assert.ok(shantenPaint.zeroPaths.every(slice => slice.path === 'M 0 0 Z' && slice.tabindex === '-1'), 'impossible slices stay empty and unfocusable')
+  assert.equal(shantenPaint.writesAfterUnmount, 0, 'retired charts do not continue painting detached SVG nodes')
+  const presentationOwnership = await page.evaluate(async () => {
+    const { vm } = window.analysisCheck
+    const { checkAnalysisPresentationOwnership } = await import('/scripts/fixtures/analysis-session.js')
+    return checkAnalysisPresentationOwnership(JSON.parse(JSON.stringify({ gameView: vm.gameView, status: vm.status, settings: vm.settings })))
+  })
+  assert.equal(presentationOwnership.queuedAfterReplacement, 1, 'superseded next-tick windows cannot register unowned frame callbacks')
+  assert.equal(presentationOwnership.ordinaryPresented, 'queued-current', 'an ordinary frame does not wait for nonexistent table motion')
+  assert.equal(presentationOwnership.flightHeld, true, 'actual table flight retains its priority window')
+  assert.ok(presentationOwnership.heldDelay >= 100 && presentationOwnership.heldDelay <= 111, 'the table priority window uses the shared 110ms duration')
+  assert.equal(presentationOwnership.framesAfterUnmount, 0)
+  assert.equal(presentationOwnership.framesAfterLateCall, 0, 'retired presentation owners reject late schedules')
+  const savedPredictionMotion = await page.evaluate(async () => {
+    const check = window.analysisCheck
+    const { checkSavedPredictionMotion } = await import('/scripts/fixtures/analysis-session.js')
+    return checkSavedPredictionMotion(check.vm, nodeId => check.resultForNode(nodeId, 4))
+  })
+  assert.equal(savedPredictionMotion.unloaded, true)
+  assert.ok(savedPredictionMotion.states >= 3, `saved analysis still animates without a loaded provider: ${JSON.stringify(savedPredictionMotion)}`)
   const oldPalette = await page.evaluate(async () => {
     const { sampleDistributionColor } = await import('/scripts/fixtures/chart-paint.js')
     return { scheme: window.analysisCheck.vm.settings.display.colorScheme,

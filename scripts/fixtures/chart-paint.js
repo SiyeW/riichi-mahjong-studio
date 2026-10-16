@@ -1,8 +1,9 @@
-import { computed, createApp, h, ref } from 'vue'
+import { computed, createApp, h, nextTick, ref } from 'vue'
 import { useResponsiveGeometry } from '/src/useResponsiveGeometry.ts'
 import { DEFAULT_PERCEPTUAL_SURFACE_TUNING, PERCEPTUAL_SURFACE_CHANGE_EVENT } from '/src/perceptualSurface.ts'
 import { parseCssColor } from '/src/perceptualColor.ts'
 import DistributionBarChart from '/src/components/DistributionBarChart.vue'
+import ShantenPieChart from '/src/components/ShantenPieChart.vue'
 
 const settle = async () => {
   for (let frame = 0; frame < 3; frame++) await new Promise(resolve => requestAnimationFrame(resolve))
@@ -83,6 +84,57 @@ export async function checkDistributionPalettePaint() {
     const after = sampleDistributionColor('#paint-check-distribution', '--analysis-dora-color')
     return { before, after }
   } finally { app.unmount(); host.remove() }
+}
+
+export async function checkShantenPaintUpdates() {
+  const host = document.createElement('div')
+  host.style.cssText = 'position:fixed;left:0;top:0;width:150px;--shanten-pie-size:150px;--ron-tile-w:30px;--floating-text-chart-viewbox:.22px'
+  document.body.append(host)
+  const probabilities = ref([0.6, 0.3, 0.1, 0, 0, 0, 0, 0])
+  const colors = ref(['#4caf50', '#2b8cbe', '#1476b0', '#0868ac', '#08589e', '#084081', '#062b5c', '#4e6263'])
+  const labels = ['0', '1', '2', '3', '4', '5', '6', '7+']
+  const app = createApp({ setup: () => () => h(ShantenPieChart, {
+    label: 'paint check', probabilities: probabilities.value, colors: colors.value,
+    sliceLabels: labels, shortLabels: labels, reduceMotion: false,
+  }) })
+  let observer
+  let mounted = false
+  try {
+    app.mount(host)
+    mounted = true
+    await settle()
+    const svg = host.querySelector('svg'), path = svg.querySelector('path')
+    let writes = 0
+    observer = new MutationObserver(records => { writes += records.filter(record => ['d', 'x', 'y', 'stroke-width', 'tabindex', 'style'].includes(record.attributeName)).length })
+    observer.observe(svg, { subtree: true, attributes: true })
+    colors.value = [...colors.value]
+    await settle()
+    const unchangedWrites = writes
+    const oldPath = path.getAttribute('d'), changedPaths = []
+    observer.disconnect()
+    observer = new MutationObserver(records => {
+      if (records.some(record => record.target === path && record.attributeName === 'd')) changedPaths.push(path.getAttribute('d'))
+    })
+    observer.observe(svg, { subtree: true, attributes: true })
+    probabilities.value = [0.1, 0.7, 0.2, 0, 0, 0, 0, 0]
+    await nextTick(); await nextTick()
+    // Controlled scheduling delay, NOT a performance sample. The first drawing
+    // callback must still show an intermediate rather than consume all 110ms.
+    const start = performance.now()
+    while (performance.now() - start < 150) { /* Simulate a late first callback. */ }
+    await new Promise(resolve => setTimeout(resolve, 180))
+    const finalPath = path.getAttribute('d')
+    const result = { unchangedWrites, oldPath, firstChangedPath: changedPaths[0], finalPath,
+      zeroPaths: [...svg.querySelectorAll('path')].slice(3).map(element => ({ path: element.getAttribute('d'), tabindex: element.getAttribute('tabindex') })) }
+    probabilities.value = [0.7, 0.2, 0.1, 0, 0, 0, 0, 0]
+    await nextTick()
+    app.unmount()
+    mounted = false
+    const afterUnmount = changedPaths.length
+    await new Promise(resolve => setTimeout(resolve, 150))
+    result.writesAfterUnmount = changedPaths.length - afterUnmount
+    return result
+  } finally { observer?.disconnect(); if (mounted) app.unmount(); host.remove() }
 }
 
 export function sampleDistributionColor(selector, variable) {

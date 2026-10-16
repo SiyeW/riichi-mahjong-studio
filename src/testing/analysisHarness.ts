@@ -2,6 +2,7 @@ import type { AnalysisCountLayout } from '../analysisCountSpacing'
 import type { StudioSettings } from '../contracts/settings'
 import type { GameView, TableState } from '../contracts/game'
 import type { PythonEvent, StudioStatus } from '../contracts/runtime'
+import type { AnalysisStageOptions } from '../useAnalysisSession'
 
 // Explicit fixture controls for the isolated renderer. This module is only
 // installed in Vite's ui-test mode, never in the desktop application.
@@ -30,7 +31,7 @@ export interface AnalysisTestApi {
   readonly displayedAnalysisTable: TableState | null
   stageOpponentAnalysisForView: (
     result: Record<string, unknown> | null | undefined,
-    options?: { resetDisplay?: boolean; withoutMotion?: boolean },
+    options?: AnalysisStageOptions,
   ) => void
   readonly showWallView: boolean
   readonly wallTiles: Array<{ index: number; tile: string; status: string }>

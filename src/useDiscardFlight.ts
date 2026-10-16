@@ -477,6 +477,11 @@ watch(reduceMotionEnabled, (reduced) => {
     return pendingDiscardFlightAnimation !== null
   }
 
+  function hasPendingTableMotion() {
+    return pendingDiscardFlightAnimation !== null || pendingDiscardReturnAnimation !== null
+      || pendingDiscardFlightFrame !== 0 || pendingDiscardReturnFrame !== 0
+  }
+
   onBeforeUnmount(() => {
     cancelPendingDiscardFlight()
     cancelPendingDiscardReturnFlight()
@@ -487,6 +492,7 @@ watch(reduceMotionEnabled, (reduced) => {
     cancelPendingDiscardFlight,
     cancelPendingDiscardReturnFlight,
     hasPendingDiscardFlight,
+    hasPendingTableMotion,
     holdAutoAdvanceForTableMotion,
     pendingDiscardFromTable,
     pendingDiscardSignature,

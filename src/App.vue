@@ -969,7 +969,6 @@ const {
   opponentAnalysisLoadingVisible,
   opponentAnalysisLoadError,
   opponentAnalysisNeeded,
-  opponentAnalysisPermanentlyUnavailable,
   resetForBackendLifecycle,
   resetForNewGame,
   resolveNextDecisionAnalysis,
@@ -1535,6 +1534,7 @@ const {
   cancelPendingDiscardFlight,
   cancelPendingDiscardReturnFlight,
   hasPendingDiscardFlight,
+  hasPendingTableMotion,
   holdAutoAdvanceForTableMotion,
   pendingDiscardFromTable,
   pendingDiscardSignature,
@@ -1610,7 +1610,9 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   gameView.pendingReview = nextView.pendingReview
   stageOpponentAnalysisForView(nextView.opponentAnalysis, {
     resetDisplay: isNewGame,
-    withoutMotion: reduceMotionEnabled.value || opponentAnalysisPermanentlyUnavailable.value,
+    withoutMotion: reduceMotionEnabled.value,
+    tableMotion: hasPendingTableMotion()
+      || Boolean(returnFlight || (!isNewGame && nextPendingDiscard && pendingDiscardChanged)),
   })
   const nextTree = nextView.tree
   const currentTree = gameView.tree
