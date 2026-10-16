@@ -97,22 +97,16 @@ try {
     await page.waitForTimeout(350)
     if (process.env.RMS_RECORD_MOTION_WAIT_ARTWORK === '1') {
       await page.waitForFunction(() => [...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
-        .every(image => image.src.startsWith('blob:')), null, { timeout: 30_000 })
+        .every(image => image.complete && image.naturalWidth > 0), null, { timeout: 30_000 })
     }
     const artwork = await page.evaluate(async () => ({ pixelRatio: window.devicePixelRatio,
       formats: await Promise.all([...new Set([...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
         .map(image => image.src))].map(async src => (await (await fetch(src)).blob()).type)),
-      minimumBitmapCoverage: Math.min(...[...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
-        .filter(image => image.src.startsWith('blob:')).map(image => {
-          const style = getComputedStyle(image)
-          const width = parseFloat(style.width) - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
-          return image.naturalWidth / (width * window.devicePixelRatio)
-        })),
-      images: [...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
-        .reduce((counts, image) => { counts[image.src.startsWith('blob:') ? 'cached' : 'vector']++; return counts }, { cached: 0, vector: 0 }) }))
+      images: document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork').length,
+      decodedImages: [...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
+        .filter(image => image.complete && image.naturalWidth > 0).length }))
     if (process.env.RMS_RECORD_MOTION_WAIT_ARTWORK === '1') {
-      assert.ok(artwork.formats.every(type => type === 'image/png'), 'every rendered face uses an ordinary cached bitmap')
-      assert.ok(artwork.minimumBitmapCoverage >= 1, 'cached pixels cover actual content demand')
+      assert.ok(artwork.formats.every(type => type === 'image/svg+xml'), 'every rendered face uses its native resolution-independent source')
     }
     async function readSurface() {
       const surface = await application.evaluate(({ BrowserWindow, screen, powerMonitor }) => {

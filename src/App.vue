@@ -1,8 +1,9 @@
 <template>
   <div
+    ref="shellEl"
     class="shell"
     :class="{ 'tile-artwork-pending': !tileArtworkReady }"
-    :style="[{ '--zoom': tableZoom, '--ui-scale': uiScale }, colorSchemeCssVariables]"
+    :style="[{ '--ui-scale': uiScale }, colorSchemeCssVariables]"
   >
     <svg class="wall-tint-filters" aria-hidden="true">
       <defs>
@@ -863,12 +864,14 @@ function startDragFloatingPanel(e: MouseEvent) {
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
 }
+const shellEl = ref<HTMLElement | null>(null)
 const {
   tableStageEl,
   tableZoom,
   scheduleTableZoomRecalc,
 } = useTableViewport({
   uiScale,
+  zoomStyleTarget: shellEl,
   afterLayoutChange: () => {
     updateTreeViewport()
   },
@@ -1522,8 +1525,7 @@ const {
   tileArtworkLoadingLabel,
   tileImageSrc,
   prepareTileArtwork,
-  holdTileArtworkUpdates,
-} = useTileArtwork(t, uiScale)
+} = useTileArtwork(t)
 
 
 function applyStatus(nextStatus: StudioStatus) {
@@ -1562,7 +1564,6 @@ function treeContainsNode(tree: GameView['tree'], nodeId: string | null | undefi
 }
 
 function applyGameView(nextView: GameView, transitionDirection: GameViewTransitionDirection = 'forward') {
-  holdTileArtworkUpdates()
   invalidateOpponentRead()
   const previousSoundView: SoundTransitionView = {
     table: gameView.table,

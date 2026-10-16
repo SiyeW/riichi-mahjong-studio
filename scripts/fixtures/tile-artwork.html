@@ -10,11 +10,11 @@ const uiScale = ref(1)
 const faces = ['1m', '2m', '5mr', '8p', '1s', '7s', 'E', 'C', '?']
 const app = createApp({
   setup() {
-    const artwork = useTileArtwork(key => key, uiScale)
+    const artwork = useTileArtwork(key => key)
     onMounted(() => { void artwork.prepareTileArtwork() })
     window.artworkTest = { artwork, uiScale, unmount: () => app.unmount(), nextTick }
     return () => h('div', { class: 'shell', style: { '--ui-scale': uiScale.value } }, [
-      h('div', { class: 'tiles', style: { display: 'flex', gap: '2px', '--tile-img-w': '60px', '--tile-img-h': '80px' } },
+      h('div', { class: 'tiles', style: { display: 'flex', gap: '2px', '--tile-img-w': 60 * uiScale.value + 'px', '--tile-img-h': 80 * uiScale.value + 'px' } },
         faces.map(face => h('img', { class: 'tileImg', alt: face, src: artwork.tileImageSrc(face) }))),
       h('span', { id: 'ready' }, String(artwork.tileArtworkReady.value)),
     ])

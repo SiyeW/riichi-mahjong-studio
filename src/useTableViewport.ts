@@ -3,15 +3,23 @@ import { fittedTableZoom } from './tableGeometry'
 
 export function useTableViewport(options: {
   uiScale: Readonly<Ref<number>>
+  zoomStyleTarget: Readonly<Ref<HTMLElement | null>>
   afterLayoutChange: () => void
 }) {
-  const { uiScale, afterLayoutChange } = options
+  const { uiScale, zoomStyleTarget, afterLayoutChange } = options
   const tableStageEl = ref<HTMLElement | null>(null)
   const tableZoom = ref(1)
   let tableZoomRaf = 0
   let tableZoomPassesPending = 0
+  let disposed = false
+
+  // A geometry-only change must not rerender App or rewrite every theme token.
+  watch([tableZoom, zoomStyleTarget], ([zoom, target]) => {
+    target?.style.setProperty('--zoom', String(zoom))
+  }, { flush: 'sync' })
 
   function scheduleTableZoomRecalc(passes = 12) {
+    if (disposed) return
     tableZoomPassesPending = Math.max(tableZoomPassesPending, passes)
     if (tableZoomRaf) return
     tableZoomRaf = window.requestAnimationFrame(() => {
@@ -69,6 +77,7 @@ export function useTableViewport(options: {
 
   watch(uiScale, async () => {
     await nextTick()
+    if (disposed) return
     scheduleTableZoomRecalc()
     afterLayoutChange()
   })
@@ -79,6 +88,7 @@ export function useTableViewport(options: {
   })
 
   onBeforeUnmount(() => {
+    disposed = true
     window.removeEventListener('resize', handleWindowResize)
     if (tableZoomRaf) {
       cancelAnimationFrame(tableZoomRaf)

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { checkFlightOcclusion } from './check-flight-occlusion.mjs'
 
 export async function checkDiscardMotion(page) {
+  await checkTableZoomOwnership(page)
   await checkWheelProgress(page)
   await checkFlightOcclusion(page)
   await page.evaluate(async () => {
@@ -118,6 +119,33 @@ export async function checkDiscardMotion(page) {
     assert.equal(item.remainingOverlays, 0, 'all transient flight layers are retired')
     assert.equal(item.remainingFaceEffects, 0, 'pose swaps cannot leave an opacity effect on a reused river tile')
   }
+}
+
+async function checkTableZoomOwnership(page) {
+  const result = await page.evaluate(async () => {
+    const instance = document.querySelector('#app').__vue_app__._instance
+    const state = instance.setupState
+    const originalHooks = instance.u, originalZoom = state.tableZoom
+    const shell = document.querySelector('.shell')
+    const image = document.querySelector('.grid-main .tileImg')
+    const initialWidth = image.getBoundingClientRect().width
+    let rootUpdates = 0
+    instance.u = [...(originalHooks || []), () => rootUpdates++]
+    try {
+      const requested = originalZoom * .85
+      state.tableZoom = requested
+      await Promise.resolve(); await Promise.resolve()
+      return { requested, applied: Number(shell.style.getPropertyValue('--zoom')),
+        initialWidth, nextWidth: image.getBoundingClientRect().width, rootUpdates }
+    } finally {
+      state.tableZoom = originalZoom
+      await Promise.resolve(); await Promise.resolve()
+      instance.u = originalHooks
+    }
+  })
+  assert.equal(result.applied, result.requested, 'table geometry reaches its CSS owner')
+  assert.ok(result.nextWidth < result.initialWidth - 1, 'real tile dimensions change')
+  assert.equal(result.rootUpdates, 0, 'table-only geometry must not rerender the application root')
 }
 
 async function checkWheelProgress(page) {
