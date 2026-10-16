@@ -1346,7 +1346,6 @@ const southRecommendationBarSlots = computed(() => southDiscardBarSlots.value.ma
 
 const {
   ROUND_BASE_X,
-  activeRoundRootId,
   isCurrentTreeDot,
   closeRoundMapOverlay,
   nodeMapById,
@@ -1438,7 +1437,6 @@ const {
   status,
   isReadOnlyRecord,
   nodeMapById,
-  activeRoundRootId,
   roundRootById,
   confirmationTimeoutMs: CONFIRMATION_TIMEOUT_MS,
   getGameplayResponseGeneration: currentGameplayResponseGeneration,
@@ -1447,7 +1445,10 @@ const {
   applyGameView,
   expectAnalysisVisit: (intent, nodeId) => handlePythonEvent.expectAnalysisVisit(intent, nodeId),
   invalidateAnalysisVisit: () => handlePythonEvent.invalidateAnalysisVisit(),
-  settleAnalysisVisit: () => handlePythonEvent.commitAnalysisVisit(gameView.viewToken),
+  settleAnalysisVisit: () => {
+    handlePythonEvent.invalidateAnalysisVisit()
+    handlePythonEvent.commitAnalysisVisit(gameView.viewToken)
+  },
 })
 
 const playerNames = usePlayerNames(gameView, () => markRecordDirty())

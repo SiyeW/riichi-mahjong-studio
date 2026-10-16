@@ -158,6 +158,57 @@ async function checkWheelProgress(page) {
       if (vm.gameView.currentNodeId !== 'wheel-2') throw new Error('A reply from before wheel reversal moved the table backwards')
       requests.shift()()
       await settle()
+      // Only the active round's nodes are present. Queue steps at an unloaded
+      // round, then use its reply as structural facts even after a reversal.
+      const rounds = [
+        { id: 'round-a', parentRoundId: null, childRoundIds: ['round-b'], mainNextRoundId: 'round-b', depth: 0, roundIndex: 0 },
+        { id: 'round-b', parentRoundId: 'round-a', childRoundIds: [], mainNextRoundId: null, depth: 1, roundIndex: 1 },
+      ]
+      const aNodes = [
+        { id: 'round-a', parentId: null, children: ['a-end'], mainChildId: 'a-end', depth: 0 },
+        { id: 'a-end', parentId: 'round-a', children: ['round-b'], mainChildId: 'round-b', depth: 1 },
+      ]
+      const bNodes = [
+        { id: 'round-b', parentId: 'a-end', children: ['b-one'], mainChildId: 'b-one', depth: 2 },
+        { id: 'b-one', parentId: 'round-b', children: ['b-two'], mainChildId: 'b-two', depth: 3 },
+        { id: 'b-two', parentId: 'b-one', children: [], mainChildId: null, depth: 4 },
+      ]
+      requests.length = 0
+      delayed = false
+      window.studioAPI.jumpToNode = id => {
+        const b = id.startsWith('b-') || id === 'round-b'
+        const response = { state: JSON.parse(JSON.stringify(vm.status)), view: { ...original, currentNodeId: id,
+          tree: { ...base.tree, currentNodeId: id, currentRoundRootId: b ? 'round-b' : 'round-a',
+            rootNodeId: b ? 'round-b' : 'round-a', rounds, nodes: b ? bNodes : aNodes } } }
+        return delayed ? new Promise((resolve, reject) => requests.push(Object.assign(() => resolve(response), { reject }))) : Promise.resolve(response)
+      }
+      await vm.jumpToNode('round-a'); await settle(); delayed = true
+      for (let step = 0; step < 4; step++) wheel(1)
+      for (let reply = 0; reply < 3; reply++) { if (!requests.length) break; requests.shift()(); await settle() }
+      if (vm.gameView.currentNodeId !== 'b-two') throw new Error('Wheel steps were dropped while the next round loaded')
+      delayed = false; await vm.jumpToNode('a-end'); await settle(); delayed = true
+      wheel(1); wheel(1); wheel(-1)
+      requests.shift()(); await settle()
+      if (vm.gameView.currentNodeId !== 'a-end') throw new Error('An old cross-round reply displayed after reversal')
+      requests.shift()(); await settle()
+      if (vm.gameView.currentNodeId !== 'round-b') throw new Error('Deferred cross-round reversal lost its ordered steps')
+      delayed = false; await vm.jumpToNode('a-end'); await settle(); delayed = true
+      wheel(1); wheel(1)
+      requests.shift().reject(new Error('Expected navigation read failure'))
+      await settle()
+      wheel(-1)
+      if (!requests.length) throw new Error('A failed round read left the wheel cursor stranded outside the visible tree')
+      requests.shift()(); await settle()
+      if (vm.gameView.currentNodeId !== 'round-a') throw new Error('Wheel navigation did not recover after a failed round read')
+      delayed = false; await vm.jumpToNode('a-end'); await settle(); delayed = true
+      wheel(-1)
+      const retiredRequest = requests.shift()
+      delayed = false; await vm.jumpToNode('a-end'); await settle(); delayed = true
+      wheel(1); wheel(1)
+      retiredRequest.reject(new Error('Expected retired navigation failure'))
+      await settle()
+      for (let reply = 0; reply < 2; reply++) { if (!requests.length) break; requests.shift()(); await settle() }
+      if (vm.gameView.currentNodeId !== 'b-one') throw new Error('A retired request failure discarded a newer wheel burst')
     } finally {
       window.studioAPI.jumpToNode = async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: original })
       await vm.jumpToNode(original.currentNodeId)

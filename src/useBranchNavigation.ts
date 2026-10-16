@@ -10,7 +10,6 @@ export function useBranchNavigation(options: {
   status: StudioStatus
   isReadOnlyRecord: Readonly<Ref<boolean>>
   nodeMapById: Readonly<Ref<Map<string, GameTreeNode>>>
-  activeRoundRootId: Readonly<Ref<string | null>>
   roundRootById: Readonly<Ref<Map<string, RoundSummary>>>
   confirmationTimeoutMs: number
   getGameplayResponseGeneration: () => number
@@ -26,7 +25,6 @@ export function useBranchNavigation(options: {
     status,
     isReadOnlyRecord,
     nodeMapById,
-    activeRoundRootId,
     roundRootById,
     confirmationTimeoutMs,
     getGameplayResponseGeneration,
@@ -64,14 +62,21 @@ let wheelNavigationRequestInFlight = false
 let wheelNavigationGeneration = 0
 let latestNavigationIntentId = 0
 let wheelNavigationEpoch = 0
+let wheelNavigationBurst = 0
 let wheelNavigationDirection: GameViewTransitionDirection | null = null
+const deferredWheelRuns: Array<{ offset: -1 | 1; count: number }> = []
+const wheelTraversalNodes = new Map<string, GameTreeNode>()
+const MAX_DEFERRED_WHEEL_RUNS = 256
 
 function cancelPendingWheelNavigation() {
+  wheelNavigationBurst += 1
   wheelNavigationEpoch += 1
   wheelNavigationDirection = null
   wheelNavigationQueuedNodeId = null
   wheelNavigationQueuedDirection = null
   wheelNavigationGeneration = 0
+  deferredWheelRuns.length = 0
+  wheelTraversalNodes.clear()
 }
 
 function commentKey(view: GameView, nodeId = view.currentNodeId) {
@@ -158,9 +163,11 @@ watch(deleteNodeConfirmationId, (nodeId) => {
 async function setCurrentNodeAsMainBranch() {
   if (!window.studioAPI || !gameView.currentNodeId || !canSetCurrentNodeAsMainBranch.value || nodeMutationRequestInFlight.value) return
   deleteNodeConfirmationId.value = null
+  cancelPendingWheelNavigation()
   nodeMutationRequestInFlight.value = true
   try {
     const response = await window.studioAPI.setMainBranch(gameView.currentNodeId, recordCommandScope(gameView))
+    cancelPendingWheelNavigation()
     applyStatus(response.state)
     applyGameView(response.view)
   } finally {
@@ -178,6 +185,7 @@ async function deleteCurrentNode() {
 
   nodeMutationRequestInFlight.value = true
   try {
+    cancelPendingWheelNavigation()
     discardNodeCommentDraft(nodeId)
     const response = await window.studioAPI.deleteNode(nodeId, recordCommandScope(gameView))
     cancelPendingWheelNavigation()
@@ -243,6 +251,7 @@ async function dispatchQueuedWheelNavigation() {
   const transitionDirection = wheelNavigationQueuedDirection ?? resolveNodeTransitionDirection(nodeId)
   const generation = wheelNavigationGeneration
   const epoch = wheelNavigationEpoch
+  const burst = wheelNavigationBurst
   const requestContext = currentViewRequestContext()
   wheelNavigationQueuedNodeId = null
   wheelNavigationQueuedDirection = null
@@ -250,22 +259,39 @@ async function dispatchQueuedWheelNavigation() {
 
   try {
     const response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision, generation)
+    const sameScope = sameViewRequestScope(requestContext, currentViewRequestContext())
+    // Structural facts can unblock a reversal without displaying the old table.
+    // They are temporary to this burst and never cross record/seat/mode/edit scope.
+    const tree = response.view.tree
+    if (sameScope && burst === wheelNavigationBurst && wheelNavigationGeneration !== 0 && tree && !tree.compact
+      && (epoch === wheelNavigationEpoch || deferredWheelRuns.length > 0)
+      && (tree.revision ?? 0) >= (gameView.tree?.revision ?? 0)) {
+      wheelTraversalNodes.clear()
+      const nodes = Array.isArray(tree.nodes) ? tree.nodes : Object.values(tree.nodes || {})
+      nodes.forEach(node => wheelTraversalNodes.set(node.id, node))
+    }
     // Keep making visible progress during a same-direction wheel burst, even
     // when another wheel target queued before this reply. Reversal, explicit
     // jumps and record/seat/mode changes still invalidate the old burst.
     if (epoch !== wheelNavigationEpoch
-      || !sameViewRequestScope(requestContext, currentViewRequestContext())) return
+      || !sameScope) return
     applyStatus(response.state)
     applyGameView(response.view, transitionDirection)
   } catch (error) {
-    if (generation === latestNavigationIntentId) settleAnalysisVisit()
+    if (burst === wheelNavigationBurst && sameViewRequestScope(requestContext, currentViewRequestContext())) {
+      deferredWheelRuns.length = 0
+      wheelTraversalNodes.clear()
+      if (generation === latestNavigationIntentId) settleAnalysisVisit()
+    }
     console.error('Failed to navigate record:', error)
   } finally {
+    drainDeferredWheelSteps()
     wheelNavigationRequestInFlight = false
-    if (generation === wheelNavigationGeneration && !wheelNavigationQueuedNodeId) {
+    if (generation === wheelNavigationGeneration && !wheelNavigationQueuedNodeId && !deferredWheelRuns.length) {
       wheelNavigationGeneration = 0
       wheelNavigationDirection = null
       wheelNavigationCursorNodeId = gameView.currentNodeId
+      wheelTraversalNodes.clear()
     }
     if (wheelNavigationQueuedNodeId) {
       void dispatchQueuedWheelNavigation()
@@ -274,22 +300,21 @@ async function dispatchQueuedWheelNavigation() {
 }
 
 
-function navigateTreeByOffset(offset: number) {
+function resolveWheelStep(offset: number): 'moved' | 'boundary' | 'waiting' {
   const cursorNodeId = wheelNavigationCursorNodeId || gameView.currentNodeId
-  if (!cursorNodeId) return
+  if (!cursorNodeId) return 'boundary'
   // Rendering filters links outside the active round, but wheel navigation must
   // retain those links to reach the adjacent round on the same branch.
-  const node = nodeMapById.value.get(cursorNodeId)
-  if (!node) return
+  const lookup = (id: string) => wheelTraversalNodes.get(id) || nodeMapById.value.get(id)
+  const node = lookup(cursorNodeId)
+  if (!node) return 'waiting'
   let targetNodeId: string | null = null
   let transitionDirection: GameViewTransitionDirection
   if (offset < 0) {
-    if (!node.parentId) return
-    if (!nodeMapById.value.has(node.parentId)) {
-      const activeRound = activeRoundRootId.value
-        ? roundRootById.value.get(activeRoundRootId.value)
-        : null
-      if (cursorNodeId !== activeRoundRootId.value || !activeRound?.parentRoundId) return
+    if (!node.parentId) return 'boundary'
+    if (!lookup(node.parentId)) {
+      const round = roundRootById.value.get(cursorNodeId)
+      if (!round?.parentRoundId) return 'boundary'
     }
     branchReturnMap.value = {
       ...branchReturnMap.value,
@@ -299,9 +324,9 @@ function navigateTreeByOffset(offset: number) {
     transitionDirection = 'backward'
   } else {
     const children = (node.children || []).filter(
-      (childId) => nodeMapById.value.has(childId) || roundRootById.value.has(childId),
+      (childId) => Boolean(lookup(childId)) || roundRootById.value.has(childId),
     )
-    if (!children.length) return
+    if (!children.length) return 'boundary'
     const rememberedChild = branchReturnMap.value[node.id]
     targetNodeId = children.includes(rememberedChild) ? rememberedChild : null
     if (!targetNodeId) {
@@ -309,7 +334,7 @@ function navigateTreeByOffset(offset: number) {
         ? node.mainChildId
         : children[0]
     }
-    if (!targetNodeId) return
+    if (!targetNodeId) return 'boundary'
     if (rememberedChild && targetNodeId === rememberedChild) {
       const nextMap = { ...branchReturnMap.value }
       delete nextMap[node.id]
@@ -326,6 +351,35 @@ function navigateTreeByOffset(offset: number) {
   wheelNavigationQueuedNodeId = targetNodeId
   wheelNavigationQueuedDirection = transitionDirection
   void dispatchQueuedWheelNavigation()
+  return 'moved'
+}
+
+function drainDeferredWheelSteps() {
+  while (deferredWheelRuns.length) {
+    const run = deferredWheelRuns[0]
+    const result = resolveWheelStep(run.offset)
+    if (result === 'waiting') return
+    if (result === 'boundary' || --run.count === 0) deferredWheelRuns.shift()
+  }
+}
+
+function navigateTreeByOffset(offset: number) {
+  if (!offset) return
+  const step = offset < 0 ? -1 : 1
+  const direction = step < 0 ? 'backward' : 'forward'
+  if (wheelNavigationDirection && wheelNavigationDirection !== direction) wheelNavigationEpoch++
+  wheelNavigationDirection = direction
+  const previous = deferredWheelRuns.at(-1)
+  if (previous?.offset === step) previous.count++
+  else deferredWheelRuns.push({ offset: step, count: 1 })
+  if (deferredWheelRuns.length > MAX_DEFERRED_WHEEL_RUNS) {
+    cancelPendingWheelNavigation()
+    wheelNavigationCursorNodeId = gameView.currentNodeId
+    settleAnalysisVisit()
+    console.warn('Canceled an overloaded wheel navigation burst')
+    return
+  }
+  drainDeferredWheelSteps()
 }
 
 
