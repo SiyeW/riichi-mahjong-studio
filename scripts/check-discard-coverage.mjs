@@ -122,6 +122,29 @@ async function check(page, label, dense) {
     await page.evaluate(()=>{window.motionGl.getExtension('WEBGL_lose_context')?.loseContext()})
     results.push({label,seat,riichi,reverse,preparation,error,sweep})
   }
+  const atlasReuse = await page.evaluate(async () => {
+    const { createMotionAtlasCache } = await import('/src/discardMotion/atlasCache.ts')
+    const cache = createMotionAtlasCache(), source = window.motionSource
+    const container = source.parentElement.parentElement
+    const left = container.style.left, filter = source.style.filter
+    const capture = (distance = 280) => window.snapshotApi.captureMotionSnapshot(source, [], distance, 0, cache)
+    try {
+      const first = await capture(), expected = first.pixels.slice()
+      structuredClone(first.pixels, { transfer: [first.pixels.buffer] })
+      const repeated = await capture()
+      if (!repeated.timings.cacheHit || repeated.pixels.some((value, i) => value !== expected[i])) throw Error('Atlas transfer corrupted exact pixel reuse')
+      container.style.left = `${parseFloat(left) + 32}px`
+      const moved = await capture(560)
+      if (!moved.timings.cacheHit) throw Error('Flight position/distance incorrectly changed atlas identity')
+      source.style.filter = 'saturate(0.2)'
+      if ((await capture()).timings.cacheHit) throw Error('Changed artwork filter reused stale pixels')
+      source.style.filter = filter
+      cache.clear()
+      if (cache.bytes) throw Error('Retired motion cache retained atlas memory')
+      return { exactReuse: true, positionIndependent: true, styleInvalidated: true, cleared: true }
+    } finally { container.style.left = left; source.style.filter = filter; cache.clear() }
+  })
+  results.push({ label, atlasReuse })
   results.push(await checkMotionIntegralMath(page,label))
   const lifecycle = await page.evaluate(async () => {
     window.motionOutput.remove(); window.motionSource.style.removeProperty('opacity')

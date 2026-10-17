@@ -1,6 +1,7 @@
 import { embeddedTileArtwork } from '../tiles/artworkCatalog'
 import type { OpacityStop } from './integral'
 import type { MotionGeometry } from './messages'
+import type { MotionAtlasCache } from './atlasCache'
 
 const properties = ['display', 'position', 'left', 'right', 'top', 'bottom', 'width', 'height',
   'box-sizing', 'padding', 'margin', 'float', 'transform', 'transform-origin', 'opacity', 'z-index',
@@ -9,7 +10,7 @@ const properties = ['display', 'position', 'left', 'right', 'top', 'bottom', 'wi
 export interface MotionSnapshot {
   geometry: MotionGeometry; left: number; top: number; dpr: number; opacity: string
   pixels: Uint8ClampedArray; planeCount: 1 | 2; mode: 'single' | 'overlay' | 'crossfade'; stops: OpacityStop[][]
-  timings: { cssMs: number; assetsMs: number; decodeMs: number; rasterMs: number }
+  timings: { cssMs: number; assetsMs: number; decodeMs: number; rasterMs: number; cacheHit: boolean }
 }
 
 function shadowAllowance(style: CSSStyleDeclaration) {
@@ -32,8 +33,9 @@ function borderSize(style: CSSStyleDeclaration, dimension: 'width' | 'height') {
     + parseFloat(style.getPropertyValue(`border-${side}-width`)), 0)
 }
 
-export async function captureMotionSnapshot(source: HTMLElement, effects: readonly Animation[], dx: number, dy: number): Promise<MotionSnapshot> {
+export async function captureMotionSnapshot(source: HTMLElement, effects: readonly Animation[], dx: number, dy: number, cache?: MotionAtlasCache): Promise<MotionSnapshot> {
   const began = performance.now()
+  const cacheGeneration = cache?.generation
   const distance = Math.hypot(dx, dy), dpr = devicePixelRatio
   if (!source.isConnected || distance < 1 || !Number.isFinite(distance) || !(dpr > 0)) throw Error('Invalid motion geometry')
   const originals = [source, ...source.querySelectorAll<HTMLElement>('*')]
@@ -67,8 +69,8 @@ export async function captureMotionSnapshot(source: HTMLElement, effects: readon
   const [originX, originY] = rootStyle.transformOrigin.split(' ').map(parseFloat)
   const boxWidth = borderSize(rootStyle, 'width'), boxHeight = borderSize(rootStyle, 'height')
   const corners = [[0,0],[boxWidth,0],[0,boxHeight],[boxWidth,boxHeight]].map(([x,y]) => ({
-    x: matrix.a * (x! - originX!) + matrix.c * (y! - originY!) + matrix.e + originX!,
-    y: matrix.b * (x! - originX!) + matrix.d * (y! - originY!) + matrix.f + originY!,
+    x: matrix.a * (x! - originX!) + matrix.c * (y! - originY!) + originX!,
+    y: matrix.b * (x! - originX!) + matrix.d * (y! - originY!) + originY!,
   }))
   const clone = source.cloneNode(true) as HTMLElement
   const nodes = [clone, ...clone.querySelectorAll<HTMLElement>('*')]
@@ -78,6 +80,9 @@ export async function captureMotionSnapshot(source: HTMLElement, effects: readon
       + 'pointer-events:none;visibility:visible;transition:none;animation:none;'
   })
   Object.assign(clone.style, { position: 'absolute', margin: '0px', right: 'auto', bottom: 'auto', opacity: '1',
+    // Translation belongs to flight geometry, not decorated atlas identity.
+    // The rect already contains that translation; preserve only rotation/scale.
+    transform: `matrix(${matrix.a},${matrix.b},${matrix.c},${matrix.d},0,0)`,
     left: `${rootRect.left - Math.min(...corners.map(p => p.x)) - cropLeft}px`,
     top: `${rootRect.top - Math.min(...corners.map(p => p.y)) - cropTop}px` })
 
@@ -98,7 +103,7 @@ export async function captureMotionSnapshot(source: HTMLElement, effects: readon
     target.src = await embeddedTileArtwork(image.src)
   }))
   const assetsFinished = performance.now()
-  const timings = { cssMs: assetsStarted - began, assetsMs: assetsFinished - assetsStarted, decodeMs: 0, rasterMs: 0 }
+  const timings = { cssMs: assetsStarted - began, assetsMs: assetsFinished - assetsStarted, decodeMs: 0, rasterMs: 0, cacheHit: false }
   const container = document.createElement('div')
   container.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml')
   container.style.cssText = `position:relative;width:${cropWidth}px;height:${cropHeight}px;overflow:visible`
@@ -127,20 +132,26 @@ export async function captureMotionSnapshot(source: HTMLElement, effects: readon
     + `<g transform="translate(${w/2} ${h/2}) rotate(${angle}) translate(${-cropWidth/2} ${-cropHeight/2})">`
     + `<foreignObject width="${cropWidth}" height="${cropHeight}">${html}</foreignObject></g></svg>`).join('')
   const markup = `<svg xmlns="http://www.w3.org/2000/svg" width="${spriteWidth}" height="${spriteHeight*planes.length}" viewBox="0 0 ${w} ${h*planes.length}">${atlas}</svg>`
-  const image = new Image(); image.decoding = 'async'
-  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
-  const decodeStarted = performance.now()
-  await image.decode()
-  const decoded = performance.now()
-  timings.decodeMs = decoded - decodeStarted
-  const surface = new OffscreenCanvas(spriteWidth, spriteHeight*planes.length)
-  // The next operation is a pixel read, so this small staging surface must stay
-  // CPU-backed rather than force a shared-compositor GPU raster/readback roundtrip.
-  const context = surface.getContext('2d', { willReadFrequently: true })
-  if (!context) throw Error('Motion snapshot canvas unavailable')
-  context.drawImage(image, 0, 0)
-  const pixels = context.getImageData(0, 0, surface.width, surface.height).data
-  timings.rasterMs = performance.now() - decoded
+  const rasterize = async () => {
+    const image = new Image(); image.decoding = 'async'
+    image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markup)}`
+    const decodeStarted = performance.now()
+    await image.decode()
+    const decoded = performance.now()
+    timings.decodeMs = decoded - decodeStarted
+    const surface = new OffscreenCanvas(spriteWidth, spriteHeight*planes.length)
+    // The next operation is a pixel read, so this small staging surface must stay
+    // CPU-backed rather than force a shared-compositor GPU raster/readback roundtrip.
+    const context = surface.getContext('2d', { willReadFrequently: true })
+    if (!context) throw Error('Motion snapshot canvas unavailable')
+    context.drawImage(image, 0, 0)
+    const pixels = context.getImageData(0, 0, surface.width, surface.height).data
+    timings.rasterMs = performance.now() - decoded
+    return pixels
+  }
+  const result = cache ? await cache.read(markup, rasterize, cacheGeneration) : { pixels: await rasterize(), hit: false }
+  const pixels = result.pixels
+  timings.cacheHit = result.hit
   return { pixels, planeCount: mode === 'single' ? 1 : 2, mode, stops: opacityEffects.map(effect => effect.stops),
     left, top, dpr, opacity: rootOpacity, timings,
     geometry: { width, height, spriteWidth, spriteHeight, axisX, axisY,

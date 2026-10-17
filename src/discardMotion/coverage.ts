@@ -1,6 +1,7 @@
 import { captureMotionSnapshot } from './snapshot'
 import type { MotionReply, MotionRequest } from './messages'
 import { prepareEmbeddedTileArtwork } from '../tiles/artworkCatalog'
+import { createMotionAtlasCache } from './atlasCache'
 
 export interface DiscardCoverage { readonly waiting: boolean; cancel(): void; finished: Promise<void> }
 interface FlightOptions { source: HTMLElement; effects: Animation[]; movement: Animation; duration: number; easing: string; dx: number; dy: number }
@@ -11,9 +12,11 @@ export function createDiscardCoverageRenderer() {
   let worker: Worker | null = null, canvas: HTMLCanvasElement | null = null, warm = false, sequence = 0
   let active: { id: number; ready(preparationMs: number): void; retire(): void } | null = null
   let snapshotBusy = false
+  const atlasCache = createMotionAtlasCache()
   const post = (message: MotionRequest, transfer: Transferable[] = []) => worker?.postMessage(message, transfer)
 
   function stop() {
+    atlasCache.clear()
     active?.retire(); active = null
     worker?.terminate(); worker = null
     canvas?.remove(); canvas = null; warm = false
@@ -126,7 +129,7 @@ export function createDiscardCoverageRenderer() {
     document.addEventListener('visibilitychange', visible)
     resizeObserver.observe(source)
     snapshotBusy = true
-    void captureMotionSnapshot(source, effects, dx, dy).then(snapshot => {
+    void captureMotionSnapshot(source, effects, dx, dy, atlasCache).then(snapshot => {
       if (!waiting || active?.id !== id) return
       if (performance.now() - began > PREPARATION_BUDGET_MS) { fail('Preparation timeout'); return }
       surface.dataset.snapshotMs = String(performance.now() - began)
