@@ -26,7 +26,6 @@
         <span v-if="group.scaleBytes !== null && group.scaleBytes !== group.referenceBytes" class="resource-note">
           {{ t('status.resourceScale', { value: formatSize(group.scaleBytes) }) }}
         </span>
-        <span v-if="group.id === 'system'" class="resource-note">{{ t('status.residentMemoryNote') }}</span>
         <template v-if="group.id === 'cache' && cache">
           <span class="resource-note">{{ t('status.cachePending', { pending: cache.pendingResults, queued: cache.queuedWrites }) }}</span>
           <div v-if="cache.error" class="resource-warning"><strong>{{ t('status.recoveryError') }}</strong><span>{{ cache.error }}</span></div>

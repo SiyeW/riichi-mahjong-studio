@@ -276,7 +276,6 @@
   "status.applicationBreakdown": "程序内存构成",
   "status.systemMemory": "系统内存",
   "status.applicationResident": "程序占用（驻留）",
-  "status.residentMemoryNote": "程序及其组件按各进程驻留内存之和统计，共享页可能重复计入；不与系统用量相加。",
   "status.systemUsed": "已用",
   "status.systemFree": "可用",
   "status.resourceTotal": "总计 {value}",

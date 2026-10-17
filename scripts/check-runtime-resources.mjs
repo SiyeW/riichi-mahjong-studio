@@ -30,6 +30,7 @@ export async function checkRuntimeResources(page) {
     await detail.waitFor({ state: 'visible' })
     assert.deepEqual(await detail.locator('[data-resource-group]').evaluateAll(elements => elements.map(element => element.dataset.resourceGroup)),
       ['system', 'application', 'cache'], 'details follow system, application, then cache')
+    assert.equal(await detail.locator('[data-resource-group="system"] > .resource-note').count(), 0, 'normal system details do not add an accounting disclaimer')
     assert.equal(await fraction('application', 'electron'), 0.64, 'program breakdown is relative to program total, not system RAM')
     assert.equal(await fraction('system', 'used'), 0.5)
     assert.ok(Math.abs(await fraction('system', 'application') - 800 / 16384) < .000001, 'application residency is visible against the system reference')

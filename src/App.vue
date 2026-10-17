@@ -89,7 +89,7 @@
             class="toolbar-button-hint"
             v-ui-tooltip="isReadOnlyRecord ? READ_ONLY_RECORD_HINT : undefined"
           >
-            <button @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
+            <button :class="{ active: status.mode === 'play' }" @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
           </span>
           <button
             :class="{ active: showWallView }"

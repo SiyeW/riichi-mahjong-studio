@@ -56,6 +56,10 @@ export async function checkTableTurnIndicators(page) {
           // Let viewport ownership settle after mode/UI-scale layout changes.
           await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
           const result = await read()
+          const modeButton = page.locator('.toolbar').getByRole('button', {
+            name: mode === 'play' ? '进入研究模式' : '进入对局模式', exact: true,
+          })
+          assert.equal(await modeButton.evaluate(button => button.classList.contains('active')), mode === 'play', 'the mode button is active only during play')
           const active = result.items.filter(item => item.actor)
           assert.equal(active.length, 1, 'exactly one eligible player has a turn mark')
           assert.ok(result.items.every(item => item.border === 0 && item.background === 'rgba(0, 0, 0, 0)'), 'turn state no longer paints a frame or background')

@@ -276,7 +276,6 @@
   "status.applicationBreakdown": "Application memory",
   "status.systemMemory": "System memory",
   "status.applicationResident": "Application resident memory",
-  "status.residentMemoryNote": "Application figures sum process working sets and may count shared pages more than once. They are not added to system usage.",
   "status.systemUsed": "Used",
   "status.systemFree": "Available",
   "status.resourceTotal": "Total {value}",
