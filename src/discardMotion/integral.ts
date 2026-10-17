@@ -39,7 +39,15 @@ vec4 line(sampler2D s,float x,int y){
 vec4 integral(sampler2D s,float x,float y){float r=y-.5;int a=int(floor(r));return mix(line(s,x,a),line(s,x,a+1),fract(r));}
 vec4 sweep(sampler2D s,vec2 p){
   float n=max(span,1.);float x=p.x+(span-n)*.5;
-  return (integral(s,x+n,p.y)-integral(s,x,p.y))/n;
+  vec4 spatial=(integral(s,x+n,p.y)-integral(s,x,p.y))/n;
+  // Display reconstruction, not shutter exposure. Long updates partition the
+  // center trajectory rather than overlapping expanded sprite footprints.
+  // Both terms preserve each row's premultiplied RGBA mass; near-static
+  // updates retain artwork detail instead of becoming a row-average stripe.
+  float extent=max(sprite.x,span),mid=(sprite.x-span)*.5;
+  float coverage=clamp(min(p.x+.5,mid+extent*.5)-max(p.x-.5,mid-extent*.5),0.,1.);
+  vec4 redistributed=integral(s,sprite.x,p.y)*(coverage/extent);
+  return mix(spatial,redistributed,smoothstep(0.,sprite.x,span));
 }
 void main(){
   vec2 q=vec2(gl_FragCoord.x,viewport.y-gl_FragCoord.y)-center;

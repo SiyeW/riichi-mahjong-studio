@@ -7,6 +7,7 @@ import { chromium, _electron as electron } from 'playwright'
 import { spawnSync } from 'node:child_process'
 import { checkMotionIntegralMath } from './check-motion-integral-math.mjs'
 import { checkMotionWorkerFailures } from './check-motion-worker-failures.mjs'
+import { checkFixedFixation } from './check-fixed-fixation.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-coverage-check-'))
@@ -106,7 +107,9 @@ async function check(page, label, dense) {
       window.drawMotion(0,1);const sharpMass=mass(read())
       return spans.map(span=>{
         window.drawMotion(span,1);const pixels=read();let minimumAlpha=255
-        for(let t=0;t<=100;t++){
+        // Center cells share half-open endpoints. Test interior coverage here;
+        // fixed-fixation controls independently verify antialiased adjacent joins.
+        for(let t=1;t<100;t++){
           const x=Math.floor(g.startX+g.dx-g.axisX*span*t/100),y=Math.floor(g.startY+g.dy-g.axisY*span*t/100)
           const a=pixels[((g.height-1-y)*g.width+x)*4+3];minimumAlpha=Math.min(minimumAlpha,a??0)
         }
@@ -146,6 +149,7 @@ async function check(page, label, dense) {
   })
   results.push({ label, atlasReuse })
   results.push(await checkMotionIntegralMath(page,label))
+  results.push(await checkFixedFixation(page,label))
   const lifecycle = await page.evaluate(async () => {
     window.motionOutput.remove(); window.motionSource.style.removeProperty('opacity')
     const renderer=window.coverageApi.createDiscardCoverageRenderer();renderer.start()

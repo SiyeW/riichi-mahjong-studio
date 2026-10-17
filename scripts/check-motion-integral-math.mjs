@@ -59,6 +59,21 @@ export async function checkMotionIntegralMath(page, label) {
               }
             }
           }
+          // Independent full-row accumulation, not a second prefix sampler.
+          const extent=Math.max(width,span),middle=(width-span)/2
+          const covered=Math.max(0,Math.min(1,Math.min(x+.5,middle+extent/2)-Math.max(x-.5,middle-extent/2)))
+          const ratio=Math.max(0,Math.min(1,span/width)),blend=ratio*ratio*(3-2*ratio),row=[0,0,0,0]
+          for(let iy=y0;iy<=y0+1;iy++)if(iy>=0&&iy<height){
+            const wy=iy===y0?1-fy:fy
+            for(let ix=0;ix<width;ix++){
+              const i=(iy*width+ix)*4,aa=a[i+3]/255,ba=b[i+3]/255
+              for(let c=0;c<4;c++){
+                const av=c===3?aa:a[i+c]/255*aa,bv=c===3?ba:b[i+c]/255*ba
+                row[c]+=wy*(weights[0]*av+weights[1]*bv-weights[2]*av*ba)
+              }
+            }
+          }
+          for(let c=0;c<4;c++)sum[c]=sum[c]*(1-blend)+row[c]*covered/extent*blend
           const index=((output.height-1-py)*output.width+px)*4
           for (let c=0;c<4;c++) { maxError=Math.max(maxError,Math.abs(pixels[index+c]-Math.round(Math.max(0,Math.min(1,sum[c]))*255)));comparisons++ }
         }
