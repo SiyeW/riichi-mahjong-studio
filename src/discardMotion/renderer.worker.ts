@@ -1,5 +1,5 @@
 import { parseCssEasing } from '../motionCurve'
-import { integralFragment, integralVertex, opacityAt, rowIntegrals } from './integral'
+import { integralFragment, integralVertex, opacityAt, rowIntegrals, rowSupport, ROW_INTEGRAL_PADDING } from './integral'
 import type { MotionRequest, MotionReply, SubmittedInterval } from './messages'
 
 const scope = self as unknown as {
@@ -102,7 +102,7 @@ function texture(data: Float32Array, unit: number, name: 'planeA' | 'planeB' | '
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, job.geometry.spriteWidth + 1, job.geometry.spriteHeight, 0, gl.RGBA, gl.FLOAT, data)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, job.geometry.spriteWidth + ROW_INTEGRAL_PADDING, job.geometry.spriteHeight, 0, gl.RGBA, gl.FLOAT, data)
   gl.uniform1i(uniforms[name], unit)
 }
 
@@ -171,6 +171,7 @@ async function prepare(request: Extract<MotionRequest, { type: 'prepare' }>) {
   try {
     const g = request.geometry
     if (![g.width, g.height, g.spriteWidth, g.spriteHeight].every(n => Number.isInteger(n) && n > 0 && n < maxTextureSize)
+      || g.spriteWidth + ROW_INTEGRAL_PADDING > maxTextureSize
       || g.width * g.height > 4_000_000 || g.spriteWidth * g.spriteHeight > 1_000_000) throw Error('Motion surface exceeds bounded size')
     const parsed = parseCssEasing(request.easing)
     if (!parsed) throw Error('Unsupported motion easing')
@@ -184,10 +185,13 @@ async function prepare(request: Extract<MotionRequest, { type: 'prepare' }>) {
     if (request.planeCount !== (request.mode === 'single' ? 1 : 2)
       || pixels.length !== planeBytes * request.planeCount) throw Error('Invalid motion pixel atlas')
     const a = pixels.subarray(0, planeBytes), b = request.planeCount === 2 ? pixels.subarray(planeBytes) : a
-    texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight), 0, 'planeA')
-    if (request.mode !== 'single') texture(rowIntegrals(b, g.spriteWidth, g.spriteHeight), 1, 'planeB')
+    // All compositing terms use one union support, preserving source-over
+    // linearity when face, back and the riichi hand pose have different bounds.
+    const support = rowSupport(a, g.spriteWidth, g.spriteHeight, b)
+    texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight, undefined, support), 0, 'planeA')
+    if (request.mode !== 'single') texture(rowIntegrals(b, g.spriteWidth, g.spriteHeight, undefined, support), 1, 'planeB')
     else gl.uniform1i(uniforms.planeB, 0)
-    if (request.mode === 'crossfade') texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight, b), 2, 'product')
+    if (request.mode === 'crossfade') texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight, b, support), 2, 'product')
     else gl.uniform1i(uniforms.product, 0)
     previous = 0; started = performance.timeOrigin + performance.now(); previousTime = started; phase = 'motion'; intervals = []
     draw(0, 0, started)

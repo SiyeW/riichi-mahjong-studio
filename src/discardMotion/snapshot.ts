@@ -42,7 +42,10 @@ export async function captureMotionSnapshot(source: HTMLElement, effects: readon
   const styles = originals.map(node => getComputedStyle(node))
   const images = originals.filter((node): node is HTMLImageElement => node instanceof HTMLImageElement)
   if (!images.length) throw Error('Motion source has no artwork')
-  const rects = images.map(node => node.getBoundingClientRect())
+  // A display:none image has a zero rect at the viewport origin. It remains
+  // in the clone, but must not enlarge the crop or shift the flight's center.
+  const rects = images.map(node => node.getBoundingClientRect()).filter(rect => rect.width > 0 && rect.height > 0)
+  if (!rects.length) throw Error('Motion source has no visible artwork bounds')
   const allowance = Math.max(...styles.map(shadowAllowance))
   const cropLeft = Math.floor((Math.min(...rects.map(r => r.left)) - allowance) * dpr) / dpr
   const cropTop = Math.floor((Math.min(...rects.map(r => r.top)) - allowance) * dpr) / dpr

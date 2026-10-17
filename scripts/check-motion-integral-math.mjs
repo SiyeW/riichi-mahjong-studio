@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 
-// Independent direct pixel-box integration, not a second prefix implementation.
+// Independent direct reflected-pixel integration, not a prefix implementation.
 // Exercises arbitrary directions and the actual source-over crossfade equation.
 export async function checkMotionIntegralMath(page, label) {
   const result = await page.evaluate(async () => {
-    const { rowIntegrals, integralVertex, integralFragment } = await import('/src/discardMotion/integral.ts')
+    const { rowIntegrals, rowSupport, ROW_INTEGRAL_PADDING, integralVertex, integralFragment } = await import('/src/discardMotion/integral.ts')
     const width = 11, height = 13, output = new OffscreenCanvas(256, 192)
     const gl = output.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, preserveDrawingBuffer: true })
     if (!gl) throw Error('Integral math WebGL2 unavailable')
@@ -12,6 +12,12 @@ export async function checkMotionIntegralMath(page, label) {
     let seed = 13
     const random = () => { seed = (1664525 * seed + 1013904223) >>> 0; return seed >>> 24 }
     for (const pixels of [a,b]) for (let i = 0; i < pixels.length; i++) pixels[i] = random()
+    // Unequal transparent padding and one empty union row must not turn into
+    // a rectangle or give the product plane an independently moving footprint.
+    for (let y=0;y<height;y++) for(let x=0;x<width;x++) {
+      if (y===2 || x<2 || x>width-2) a[(y*width+x)*4+3]=0
+      if (y===2 || x<1 || x>width-3) b[(y*width+x)*4+3]=0
+    }
     const shaders = [], textures = []
     const program = gl.createProgram()
     try {
@@ -23,12 +29,13 @@ export async function checkMotionIntegralMath(page, label) {
       gl.linkProgram(program)
       if (!gl.getProgramParameter(program,gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program))
       gl.useProgram(program)
-      const prefixes = [rowIntegrals(a,width,height),rowIntegrals(b,width,height),rowIntegrals(a,width,height,b)]
+      const support=rowSupport(a,width,height,b)
+      const prefixes = [rowIntegrals(a,width,height,undefined,support),rowIntegrals(b,width,height,undefined,support),rowIntegrals(a,width,height,b,support)]
       for (const [unit,name] of ['planeA','planeB','product'].entries()) {
         const texture = gl.createTexture(); textures.push(texture)
         gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,texture)
         gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST)
-        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,width+1,height,0,gl.RGBA,gl.FLOAT,prefixes[unit])
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,width+ROW_INTEGRAL_PADDING,height,0,gl.RGBA,gl.FLOAT,prefixes[unit])
         gl.uniform1i(gl.getUniformLocation(program,name),unit)
       }
       gl.viewport(0,0,output.width,output.height)
@@ -48,32 +55,39 @@ export async function checkMotionIntegralMath(page, label) {
         let maxError=0, comparisons=0
         for (let py=0;py<output.height;py+=5) for (let px=0;px<output.width;px+=5) {
           const qx=px+.5-cx,qy=py+.5-cy,x=qx*ux+qy*uy+width/2,y=-qx*uy+qy*ux+height/2
-          const n=Math.max(1,span),left=x+(span-n)/2,right=left+n,y0=Math.floor(y-.5),fy=y-.5-y0,sum=[0,0,0,0]
+          const y0=Math.floor(y-.5),fy=y-.5-y0,sum=[0,0,0,0]
           for (let iy=y0;iy<=y0+1;iy++) if (iy>=0&&iy<height) {
             const wy=iy===y0?1-fy:fy
-            for (let ix=Math.max(0,Math.floor(left));ix<Math.min(width,Math.ceil(right));ix++) {
-              const box=Math.max(0,Math.min(right,ix+1)-Math.max(left,ix))*wy/n,i=(iy*width+ix)*4,aa=a[i+3]/255,ba=b[i+3]/255
+            let first=width,last=0
+            for(let ix=0;ix<width;ix++)if(a[(iy*width+ix)*4+3]||b[(iy*width+ix)*4+3]){first=Math.min(first,ix);last=ix+1}
+            const w=last-first
+            if(!w)continue
+            const ratio=Math.max(0,Math.min(1,span/w)),blend=ratio*ratio*(3-2*ratio)
+            const extent=Math.max(w,span),offset=(first+last-width)/2*(1-blend),q=x-(width-span)/2-offset+extent/2
+            const softness=Math.min(span*.5,w*.25)
+            const softIntegral=x=>{
+              if(softness<.0001)return Math.max(x,0)
+              const t=Math.max(0,Math.min(1,x/softness+.5))
+              return Math.max(x-softness/2,0)+softness*(t**3-.5*t**4)
+            }
+            const coverage=Math.max(0,Math.min(1,softIntegral(q+.5)-softIntegral(q-.5)-softIntegral(q-extent+.5)+softIntegral(q-extent-.5)))
+            const n=Math.min(2*w,Math.max(1,2*span)),left=q-n/2,right=q+n/2
+            const overlap=(l,r)=>Math.max(0,Math.min(right,r)-Math.max(left,l))
+            for (let ix=first;ix<last;ix++) {
+              let box=0
+              if(span===0)box=Math.max(0,Math.min(x+.5,ix+1)-Math.max(x-.5,ix))
+              else if(span>=w)box=coverage/extent
+              else for(let period=-1;period<=1;period++){
+                const start=2*w*period,cell=ix-first
+                box+=(overlap(start+cell,start+cell+1)+overlap(start+2*w-cell-1,start+2*w-cell))*coverage/n
+              }
+              const i=(iy*width+ix)*4,aa=a[i+3]/255,ba=b[i+3]/255
               for (let c=0;c<4;c++) {
                 const av=c===3?aa:a[i+c]/255*aa,bv=c===3?ba:b[i+c]/255*ba
-                sum[c]+=box*(weights[0]*av+weights[1]*bv-weights[2]*av*ba)
+                sum[c]+=wy*box*(weights[0]*av+weights[1]*bv-weights[2]*av*ba)
               }
             }
           }
-          // Independent full-row accumulation, not a second prefix sampler.
-          const extent=Math.max(width,span),middle=(width-span)/2
-          const covered=Math.max(0,Math.min(1,Math.min(x+.5,middle+extent/2)-Math.max(x-.5,middle-extent/2)))
-          const ratio=Math.max(0,Math.min(1,span/width)),blend=ratio*ratio*(3-2*ratio),row=[0,0,0,0]
-          for(let iy=y0;iy<=y0+1;iy++)if(iy>=0&&iy<height){
-            const wy=iy===y0?1-fy:fy
-            for(let ix=0;ix<width;ix++){
-              const i=(iy*width+ix)*4,aa=a[i+3]/255,ba=b[i+3]/255
-              for(let c=0;c<4;c++){
-                const av=c===3?aa:a[i+c]/255*aa,bv=c===3?ba:b[i+c]/255*ba
-                row[c]+=wy*(weights[0]*av+weights[1]*bv-weights[2]*av*ba)
-              }
-            }
-          }
-          for(let c=0;c<4;c++)sum[c]=sum[c]*(1-blend)+row[c]*covered/extent*blend
           const index=((output.height-1-py)*output.width+px)*4
           for (let c=0;c<4;c++) { maxError=Math.max(maxError,Math.abs(pixels[index+c]-Math.round(Math.max(0,Math.min(1,sum[c]))*255)));comparisons++ }
         }

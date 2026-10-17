@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process'
 import { checkMotionIntegralMath } from './check-motion-integral-math.mjs'
 import { checkMotionWorkerFailures } from './check-motion-worker-failures.mjs'
 import { checkFixedFixation } from './check-fixed-fixation.mjs'
+import { checkMotionSupport } from './check-motion-support.mjs'
 
 const root = path.resolve(import.meta.dirname, '..')
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-coverage-check-'))
@@ -53,7 +54,7 @@ async function check(page, label, dense) {
       const gl = output.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:false,preserveDrawingBuffer:true})
       if (!gl) throw Error('WebGL2 unavailable')
       const compile = (kind,text) => { const shader=gl.createShader(kind);gl.shaderSource(shader,text);gl.compileShader(shader);if(!gl.getShaderParameter(shader,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(shader));return shader }
-      const program=gl.createProgram(); const {integralVertex,integralFragment,rowIntegrals}=window.integralApi
+      const program=gl.createProgram(); const {integralVertex,integralFragment,rowIntegrals,ROW_INTEGRAL_PADDING}=window.integralApi
       gl.attachShader(program,compile(gl.VERTEX_SHADER,integralVertex));gl.attachShader(program,compile(gl.FRAGMENT_SHADER,integralFragment));gl.linkProgram(program)
       if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));gl.useProgram(program)
       const pixels=snapshot.pixels.subarray(0,g.spriteWidth*g.spriteHeight*4)
@@ -61,7 +62,7 @@ async function check(page, label, dense) {
       for(const [unit,name] of ['planeA','planeB','product'].entries()) {
         const texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,texture)
         gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST)
-        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,g.spriteWidth+1,g.spriteHeight,0,gl.RGBA,gl.FLOAT,prefix)
+        gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA32F,g.spriteWidth+ROW_INTEGRAL_PADDING,g.spriteHeight,0,gl.RGBA,gl.FLOAT,prefix)
         gl.uniform1i(gl.getUniformLocation(program,name),unit)
       }
       gl.viewport(0,0,g.width,g.height)
@@ -150,6 +151,7 @@ async function check(page, label, dense) {
   results.push({ label, atlasReuse })
   results.push(await checkMotionIntegralMath(page,label))
   results.push(await checkFixedFixation(page,label))
+  results.push(await checkMotionSupport(page,label,evidence))
   const lifecycle = await page.evaluate(async () => {
     window.motionOutput.remove(); window.motionSource.style.removeProperty('opacity')
     const renderer=window.coverageApi.createDiscardCoverageRenderer();renderer.start()

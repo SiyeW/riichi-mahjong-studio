@@ -10,7 +10,7 @@ export async function checkMotionWorkerFailures(page, label) {
     let probe, nonce = 0
     const until = async test => {
       const deadline = performance.now()+6000
-      while (!test()) { if (performance.now()>deadline) throw Error('Worker failure/retirement check timed out'); await new Promise(resolve=>setTimeout(resolve,2)) }
+      while (!test()) { if (performance.now()>deadline) throw Error('Worker failure/retirement check timed out: '+JSON.stringify([...document.querySelectorAll('.discard-motion-surface')].map(node=>({...node.dataset})))); await new Promise(resolve=>setTimeout(resolve,2)) }
     }
     const renderer = () => { const r=createDiscardCoverageRenderer();renderers.push(r);return r }
     const flight = r => {

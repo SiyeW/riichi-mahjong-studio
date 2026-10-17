@@ -155,6 +155,7 @@ export async function checkDiscardMotion(page) {
       const { parent, child, actor } = lifecycleFixture
       const originalHidden = Object.getOwnPropertyDescriptor(document, 'hidden')
       const zoom = state.tableZoom, reduced = vm.settings.display.reduceMotion
+      const shell=document.querySelector('.shell')
       let hidden = false
       const start = async () => {
         window.studioAPI.jumpToNode = async id => ({ state: JSON.parse(JSON.stringify(vm.status)), view: id === child.currentNodeId ? child : parent })
@@ -167,7 +168,11 @@ export async function checkDiscardMotion(page) {
         if (state.tableMotionActive || state.hasPendingDiscardFlight()
           || document.querySelector('.discard-return-ghost,.discard-flight-back,.discard-flight-regular-pose,.discard-flight-coverage')
           || [...document.querySelectorAll('[data-hand-seat]')].some(node => node.style.visibility === 'hidden')) {
-          throw Error(`${label} left a motion owner, ghost, overlay or hidden destination`)
+          throw Error(`${label} left a motion owner, ghost, overlay or hidden destination: `+JSON.stringify({
+            active:state.tableMotionActive,pending:state.hasPendingDiscardFlight(),zoom:state.tableZoom,
+            transient:[...document.querySelectorAll('.discard-return-ghost,.discard-flight-back,.discard-flight-regular-pose,.discard-flight-coverage')].map(node=>({class:node.className,data:{...node.dataset}})),
+            hidden:[...document.querySelectorAll('[data-hand-seat]')].filter(node=>node.style.visibility==='hidden').map(node=>({...node.dataset})),
+          }))
         }
       }
       try {
@@ -180,21 +185,31 @@ export async function checkDiscardMotion(page) {
         retired('Hidden admission')
         hidden = false; document.dispatchEvent(new Event('visibilitychange'))
         await start(); window.dispatchEvent(new Event('resize')); retired('Window resize')
-        await start(); state.tableZoom = zoom * .9
-        await frame(); await frame(); retired('Forward geometry change')
-        state.tableZoom = zoom; await frame(); await frame()
+        await start()
+        const source=document.querySelector(`[data-pending-discard-seat="${actor}"]`),before=source.getBoundingClientRect().width
+        // Test the geometry observer through its real CSS owner. The preceding
+        // window-resize fit passes can overwrite a synthetic tableZoom assignment
+        // before layout/ResizeObserver delivery; that did not resize the scene.
+        // Reactive tableZoom -> CSS is tested independently above.
+        shell.style.setProperty('--zoom',String(zoom*.9))
+        await frame(); await frame()
+        if(Math.abs(source.getBoundingClientRect().width-before)<1)throw Error('Forward resize fixture did not retain changed geometry')
+        retired('Forward geometry change')
+        shell.style.setProperty('--zoom',String(zoom)); await frame(); await frame()
         await start(); await new Promise(resolve => setTimeout(resolve, 240))
         await vm.jumpToNode(parent.currentNodeId); await frame(); await frame(); await readyCoverage()
         if (!document.querySelector('.discard-return-ghost')) throw Error('Reverse geometry fixture did not own its ghost')
-        state.tableZoom = zoom * .9
+        const hand=document.querySelector('[data-hand-seat]'),handWidth=hand.getBoundingClientRect().width
+        shell.style.setProperty('--zoom',String(zoom*.9))
         await frame(); await frame(); retired('Reverse destination resize')
-        state.tableZoom = zoom; await frame(); await frame()
+        if(Math.abs(hand.getBoundingClientRect().width-handWidth)<1)throw Error('Reverse resize fixture did not retain changed geometry')
+        shell.style.setProperty('--zoom',String(zoom)); await frame(); await frame()
         await start(); vm.settings.display.reduceMotion = true
         await frame(); retired('Reduced motion')
       } finally {
         if (originalHidden) Object.defineProperty(document, 'hidden', originalHidden)
         else delete document.hidden
-        state.tableZoom = zoom; vm.settings.display.reduceMotion = reduced
+        state.tableZoom = zoom; shell.style.setProperty('--zoom',String(zoom)); vm.settings.display.reduceMotion = reduced
         document.dispatchEvent(new Event('visibilitychange'))
         state.cancelPendingDiscardFlight(); state.cancelPendingDiscardReturnFlight()
       }
