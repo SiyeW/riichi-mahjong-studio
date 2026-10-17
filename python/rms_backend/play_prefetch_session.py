@@ -221,6 +221,7 @@ class PlayPrefetchSession:
                     return
                 context["opponentPending"].discard(draft_node_id)
                 if not isinstance(result, dict) or result.get('status') != 'ready':
+                    context['opponentResults'].pop(draft_node_id, None)
                     if ticket is not None:
                         self.dependencies.record_access.cancel(ticket)
                         context.get('storageTickets', {}).pop(('opponent', draft_node_id), None)
@@ -294,6 +295,8 @@ class PlayPrefetchSession:
                 result,
                 ticket=ticket,
             ),
+            on_discard=lambda: self._complete_opponent(
+                context['generation'], draft_node_id, None, ticket=ticket),
             mjai_events=prediction_bundle["events"],
             mjai_prefix_hashes=prediction_bundle["prefixHashes"],
             mjai_events_hash=prediction_bundle["eventHash"],

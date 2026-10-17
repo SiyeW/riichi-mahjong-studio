@@ -675,6 +675,8 @@ class AutoAnalysisSession:
                     on_complete=lambda result, g=generation, current_item=item: (
                         self._on_opponent_complete(g, current_item, result)
                     ),
+                    on_discard=lambda g=generation, current_item=item: self.complete_item(
+                        g, current_item, error="对手分析任务已取消"),
                     mjai_events=prediction_bundle["events"],
                     mjai_prefix_hashes=prediction_bundle["prefixHashes"],
                     mjai_events_hash=prediction_bundle["eventHash"],

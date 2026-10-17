@@ -254,6 +254,7 @@ class OpponentAnalysisSession:
                     input_mode=input_mode,
                     context=context,
                     on_complete=lambda result: self.cache_result(result, require_current=False, ticket=ticket),
+                    on_discard=(lambda: access.retire(ticket)) if ticket is not None else None,
                     mjai_events=prediction_bundle["events"],
                     mjai_prefix_hashes=prediction_bundle["prefixHashes"],
                     mjai_events_hash=prediction_bundle["eventHash"],

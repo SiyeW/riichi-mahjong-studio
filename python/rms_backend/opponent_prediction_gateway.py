@@ -144,6 +144,7 @@ class OpponentPredictionGateway:
         ):
             return
         self._invalidate_initialization()
+        self._activity.reset(unloaded=True)
         self.cancel_all()
         self._runtime_notifications.detach()
         self._process_client.shutdown()
@@ -162,7 +163,6 @@ class OpponentPredictionGateway:
                 expected_engine_version=self._profile.engine_version,
             )
         self._model_ready = False
-        self._activity.reset(unloaded=True)
 
     def _requested_output_contracts(self) -> list[Dict[str, Any]]:
         return self._profile.requested_output_contracts()
@@ -178,13 +178,14 @@ class OpponentPredictionGateway:
         if configured_device == self._profile.device_preference:
             return
         self._invalidate_initialization()
+        self._activity.reset(unloaded=True)
         self.cancel_all()
         self._profile.device_preference = configured_device
         self._identity.clear_runtime()
         self._model_ready = False
-        self._activity.reset(unloaded=False)
         self._requests.mark_loading()
         self._process_client.restart()
+        self._activity.reset(unloaded=False)
         self._set_activity("idle")
 
     def _is_initializing(self) -> bool:
@@ -241,20 +242,21 @@ class OpponentPredictionGateway:
 
     def prepare_reload(self) -> None:
         self._invalidate_initialization()
+        self._activity.reset(unloaded=True)
         self.cancel_all()
         self._model_ready = False
         self._identity.clear_runtime()
-        self._activity.reset(unloaded=False)
         self._process_client.restart()
+        self._activity.reset(unloaded=False)
         self._set_activity("idle")
 
     def unload(self) -> None:
         self._invalidate_initialization()
+        self._activity.reset(unloaded=True)
         self.cancel_all()
         self._process_client.shutdown()
         self._model_ready = False
         self._identity.clear_runtime()
-        self._activity.reset(unloaded=True)
         self._set_activity("idle")
 
     def _invalidate_initialization(self) -> None:
@@ -350,6 +352,7 @@ class OpponentPredictionGateway:
         target_mjai_prefix_hashes: Optional[list[int]] = None,
         target_mjai_events_hash: Optional[int] = None,
         include_ground_truth: bool = True,
+        on_discard: Optional[Callable[[], None]] = None,
     ) -> None:
         del visible_hands
         self._requests.request_foreground(
@@ -358,6 +361,7 @@ class OpponentPredictionGateway:
             input_mode=input_mode,
             context=context,
             on_complete=on_complete,
+            on_discard=on_discard,
             mjai_events=mjai_events,
             mjai_prefix_hashes=mjai_prefix_hashes,
             mjai_events_hash=mjai_events_hash,
@@ -381,6 +385,7 @@ class OpponentPredictionGateway:
         target_mjai_prefix_hashes: Optional[list[int]] = None,
         target_mjai_events_hash: Optional[int] = None,
         include_ground_truth: bool = True,
+        on_discard: Optional[Callable[[], None]] = None,
     ) -> bool:
         return self._requests.request_background(
             snapshot,
@@ -388,6 +393,7 @@ class OpponentPredictionGateway:
             input_mode=input_mode,
             context=context,
             on_complete=on_complete,
+            on_discard=on_discard,
             mjai_events=mjai_events,
             mjai_prefix_hashes=mjai_prefix_hashes,
             mjai_events_hash=mjai_events_hash,

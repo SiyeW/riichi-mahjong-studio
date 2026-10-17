@@ -56,6 +56,12 @@ class RecordAnalysisAccess:
             current.cancelled = True
             current.admission.reservation.release()
 
+    def retire(self, ticket):
+        """Prediction callbacks run outside the game lock; release only this ticket."""
+        if ticket is not None:
+            with self.state_lock:
+                self.cancel(ticket)
+
     def defer(self, game, kind, callback, *, role='foreground'):
         """One bounded retry timer per role/kind, never an executor backlog.
 

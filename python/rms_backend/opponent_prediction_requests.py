@@ -10,6 +10,7 @@ from collections.abc import Callable
 from typing import Any
 
 from .opponent_prediction_activity import OpponentPredictionActivity
+from .opponent_prediction_completion import PredictionCompletion
 
 PredictionResult = dict[str, Any]
 PredictionRequest = dict[str, Any]
@@ -45,6 +46,7 @@ class OpponentPredictionRequests:
         self._latest_context: dict[str, Any] | None = None
         self._pending_event = threading.Event()
         self._active_context: dict[str, Any] | None = None
+        self._active_request: PredictionRequest | None = None
         self._active_background = False
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
@@ -64,36 +66,52 @@ class OpponentPredictionRequests:
         target_mjai_prefix_hashes: list[int] | None,
         target_mjai_events_hash: int | None,
         include_ground_truth: bool,
+        on_discard: Callable[[], None] | None = None,
     ) -> None:
-        if not self._activity.accepts_requests():
-            return
-        self._validate_input_mode(input_mode)
-        request_context = copy.deepcopy(context or {})
-        request = self._make_request(
-            snapshot,
-            controlled_seat,
-            input_mode=input_mode,
-            context=request_context,
-            on_complete=on_complete,
-            mjai_events=mjai_events,
-            mjai_prefix_hashes=mjai_prefix_hashes,
-            mjai_events_hash=mjai_events_hash,
-            target_mjai_events=target_mjai_events,
-            target_mjai_prefix_hashes=target_mjai_prefix_hashes,
-            target_mjai_events_hash=target_mjai_events_hash,
-            include_ground_truth=include_ground_truth,
-            background=False,
-        )
+        completion = PredictionCompletion(on_complete, on_discard)
+        try:
+            if not self._activity.accepts_requests():
+                completion.discard()
+                return
+            self._validate_input_mode(input_mode)
+            initializing = self._is_initializing()
+            request_context = copy.deepcopy(context or {})
+            request = self._make_request(
+                snapshot,
+                controlled_seat,
+                input_mode=input_mode,
+                context=request_context,
+                completion=completion,
+                mjai_events=mjai_events,
+                mjai_prefix_hashes=mjai_prefix_hashes,
+                mjai_events_hash=mjai_events_hash,
+                target_mjai_events=target_mjai_events,
+                target_mjai_prefix_hashes=target_mjai_prefix_hashes,
+                target_mjai_events_hash=target_mjai_events_hash,
+                include_ground_truth=include_ground_truth,
+                background=False,
+            )
+        except Exception:
+            completion.discard()
+            raise
         with self._lock:
-            self._latest_context = request_context
-            self._pending = request
-            self._latest = {
-                "predictions": {"opponents": {}, "ron_wait": {}},
-                "ground_truth": {"opponents": {}, "ron_wait": {}},
-                "context": copy.deepcopy(request_context),
-                "status": "loading",
-            }
-        initializing = self._is_initializing()
+            accepted = self._running and self._activity.accepts_requests()
+            retired = []
+            if accepted:
+                retired = [self._retire_locked(self._pending), self._retire_locked(
+                    self._active_request if not self._active_background else None)]
+                self._latest_context = request_context
+                self._pending = request
+                self._latest = {
+                    "predictions": {"opponents": {}, "ron_wait": {}},
+                    "ground_truth": {"opponents": {}, "ron_wait": {}},
+                    "context": copy.deepcopy(request_context),
+                    "status": "loading",
+                }
+        self._discard(retired)
+        if not accepted:
+            completion.discard()
+            return
         self._activity.set("loading" if initializing else "running")
         self._pending_event.set()
 
@@ -112,37 +130,49 @@ class OpponentPredictionRequests:
         target_mjai_prefix_hashes: list[int] | None,
         target_mjai_events_hash: int | None,
         include_ground_truth: bool,
+        on_discard: Callable[[], None] | None = None,
     ) -> bool:
-        if not self._activity.accepts_requests():
-            return False
-        self._validate_input_mode(input_mode)
-        request_context = copy.deepcopy(context or {})
-        request = self._make_request(
-            snapshot,
-            controlled_seat,
-            input_mode=input_mode,
-            context=request_context,
-            on_complete=on_complete,
-            mjai_events=mjai_events,
-            mjai_prefix_hashes=mjai_prefix_hashes,
-            mjai_events_hash=mjai_events_hash,
-            target_mjai_events=target_mjai_events,
-            target_mjai_prefix_hashes=target_mjai_prefix_hashes,
-            target_mjai_events_hash=target_mjai_events_hash,
-            include_ground_truth=include_ground_truth,
-            background=True,
-        )
+        completion = PredictionCompletion(on_complete, on_discard)
+        try:
+            if not self._activity.accepts_requests():
+                completion.discard()
+                return False
+            self._validate_input_mode(input_mode)
+            request_context = copy.deepcopy(context or {})
+            request = self._make_request(
+                snapshot,
+                controlled_seat,
+                input_mode=input_mode,
+                context=request_context,
+                completion=completion,
+                mjai_events=mjai_events,
+                mjai_prefix_hashes=mjai_prefix_hashes,
+                mjai_events_hash=mjai_events_hash,
+                target_mjai_events=target_mjai_events,
+                target_mjai_prefix_hashes=target_mjai_prefix_hashes,
+                target_mjai_events_hash=target_mjai_events_hash,
+                include_ground_truth=include_ground_truth,
+                background=True,
+            )
+        except Exception:
+            completion.discard()
+            raise
         with self._lock:
             duplicate = (
                 self._active_background
+                and self._active_request is not None
+                and not self._active_request['retired']
                 and self._active_context == request_context
             ) or any(
                 item.get("context") == request_context
                 for item in self._background_pending
             )
-            if duplicate:
-                return False
-            self._background_pending.append(request)
+            accepted = self._running and self._activity.accepts_requests() and not duplicate
+            if accepted:
+                self._background_pending.append(request)
+        if not accepted:
+            completion.discard()
+            return False
         self._pending_event.set()
         return True
 
@@ -153,7 +183,7 @@ class OpponentPredictionRequests:
         *,
         input_mode: str,
         context: dict[str, Any],
-        on_complete: Callable[[PredictionResult], None] | None,
+        completion: PredictionCompletion,
         mjai_events: list[dict] | None,
         mjai_prefix_hashes: list[int] | None,
         mjai_events_hash: int | None,
@@ -171,7 +201,8 @@ class OpponentPredictionRequests:
             "controlled_seat": int(controlled_seat),
             "input_mode": input_mode,
             "context": context,
-            "on_complete": on_complete,
+            "completion": completion,
+            "retired": False,
             "background": background,
             "mjai_events": mjai_events,
             "mjai_prefix_hashes": mjai_prefix_hashes,
@@ -207,11 +238,32 @@ class OpponentPredictionRequests:
     def has_request(self, context: dict[str, Any]) -> bool:
         with self._lock:
             pending_context = self._pending.get("context") if self._pending else None
-            active_context = None if self._active_background else self._active_context
+            active_context = self._active_context if (
+                not self._active_background and self._active_request is not None
+                and not self._active_request['retired']) else None
             return pending_context == context or active_context == context
+
+    def _retire_locked(self, request):
+        if request is None or request['retired']:
+            return None
+        request['retired'] = True
+        return request['completion']
+
+    @staticmethod
+    def _discard(completions):
+        # Never run a game-lock-taking consumer while holding the queue lock.
+        for completion in completions:
+            if completion is not None:
+                completion.discard()
+
+    def _retire(self, request):
+        with self._lock:
+            completion = self._retire_locked(request)
+        self._discard([completion])
 
     def set_latest_context(self, context: dict[str, Any] | None) -> None:
         with self._lock:
+            retired = []
             self._latest_context = (
                 copy.deepcopy(context) if context is not None else None
             )
@@ -219,30 +271,40 @@ class OpponentPredictionRequests:
                 self._pending is not None
                 and self._pending.get("context") != self._latest_context
             ):
+                retired.append(self._retire_locked(self._pending))
                 self._pending = None
                 if self._background_pending:
                     self._pending_event.set()
                 else:
                     self._pending_event.clear()
+            if (not self._active_background and self._active_context != self._latest_context):
+                retired.append(self._retire_locked(self._active_request))
+        self._discard(retired)
 
     def cancel_pending(self) -> None:
         with self._lock:
+            retired = [self._retire_locked(self._pending), self._retire_locked(
+                self._active_request if not self._active_background else None)]
             self._latest_context = None
             self._pending = None
             has_queued_work = bool(self._background_pending)
             has_active_request = self._active_context is not None
             if not has_queued_work:
                 self._pending_event.clear()
+        self._discard(retired)
         if not has_active_request and self._activity.state() != "error":
             self._activity.set("idle")
 
     def cancel_background(self) -> None:
         with self._lock:
+            retired = [self._retire_locked(request) for request in self._background_pending]
+            retired.append(self._retire_locked(self._active_request if self._active_background else None))
             self._background_pending.clear()
             has_foreground_work = self._pending is not None
             has_active_request = self._active_context is not None
             if not has_foreground_work:
                 self._pending_event.clear()
+        self._discard(retired)
         if (
             not has_active_request
             and not has_foreground_work
@@ -252,17 +314,21 @@ class OpponentPredictionRequests:
 
     def cancel_all(self) -> None:
         with self._lock:
+            retired = [self._retire_locked(request) for request in self._background_pending]
+            retired.extend([self._retire_locked(self._pending), self._retire_locked(self._active_request)])
             self._latest_context = None
             self._pending = None
             self._background_pending.clear()
             self._pending_event.clear()
             has_active_request = self._active_context is not None
+        self._discard(retired)
         if not has_active_request and self._activity.state() != "error":
             self._activity.set("idle")
 
-    def _is_superseded(self, context: dict[str, Any]) -> bool:
+    def _is_superseded(self, request: PredictionRequest) -> bool:
         with self._lock:
-            return self._latest_context != context
+            return (not self._running or request['retired'] or (
+                not request['background'] and self._latest_context != request['context']))
 
     def _run(self) -> None:
         while self._running:
@@ -272,23 +338,25 @@ class OpponentPredictionRequests:
             pending = self._take_next()
             if pending is None:
                 continue
-            initializing = self._is_initializing()
-            self._activity.set("loading" if initializing else "running")
+            result = None
             try:
+                if self._is_superseded(pending):
+                    continue
+                initializing = self._is_initializing()
+                self._activity.set("loading" if initializing else "running")
                 if initializing and not self._prewarm():
                     raise RuntimeError(
                         self._activity_error()
                         or "对手分析引擎初始化失败"
                     )
-                context = pending.get("context") or {}
                 is_background = bool(pending.get("background"))
-                if not is_background and self._is_superseded(context):
+                if self._is_superseded(pending):
                     continue
                 result, elapsed_ms = self._execute(pending, initializing)
-                if not is_background and self._is_superseded(context):
+                if self._is_superseded(pending):
                     continue
                 if not is_background and not self._publish_if_current(
-                    context,
+                    pending,
                     result,
                 ):
                     continue
@@ -297,7 +365,9 @@ class OpponentPredictionRequests:
             except Exception as exc:
                 self._handle_failure(pending, exc)
             finally:
+                self._retire(pending)
                 self._finish_request()
+                pending = result = None
 
     def _take_next(self) -> PredictionRequest | None:
         with self._lock:
@@ -307,6 +377,7 @@ class OpponentPredictionRequests:
             elif self._background_pending:
                 pending = self._background_pending.popleft()
             if pending is not None:
+                self._active_request = pending
                 self._active_context = copy.deepcopy(
                     pending.get("context") or {}
                 )
@@ -316,11 +387,12 @@ class OpponentPredictionRequests:
 
     def _publish_if_current(
         self,
-        context: dict[str, Any],
+        request: PredictionRequest,
         result: PredictionResult,
     ) -> bool:
         with self._lock:
-            if self._latest_context != context:
+            if (not self._running or request['retired']
+                    or self._latest_context != request['context']):
                 return False
             self._latest = result
             return True
@@ -331,7 +403,7 @@ class OpponentPredictionRequests:
         error: Exception,
     ) -> None:
         context = pending.get("context") or {}
-        if not pending.get("background") and self._is_superseded(context):
+        if self._is_superseded(pending):
             return
         print(f"[SHANTEN] Prediction error: {error}", flush=True)
         traceback.print_exc()
@@ -347,22 +419,22 @@ class OpponentPredictionRequests:
             "status": f"prediction_error: {error}",
         }
         if not pending.get("background") and not self._publish_if_current(
-            context,
+            pending,
             error_result,
         ):
             return
         self._notify_completion(pending, error_result)
 
-    @staticmethod
     def _notify_completion(
+        self,
         pending: PredictionRequest,
         result: PredictionResult,
     ) -> None:
-        callback = pending.get("on_complete")
-        if not callable(callback):
-            return
+        with self._lock:
+            if pending['retired']:
+                return
         try:
-            callback(copy.deepcopy(result))
+            pending['completion'].complete(copy.deepcopy(result))
         except Exception as callback_error:  # pylint: disable=broad-except
             print(
                 f"[SHANTEN] Cache callback failed: {callback_error}",
@@ -372,6 +444,7 @@ class OpponentPredictionRequests:
     def _finish_request(self) -> None:
         with self._lock:
             self._active_context = None
+            self._active_request = None
             self._active_background = False
             has_pending = self._pending is not None or bool(
                 self._background_pending
@@ -382,5 +455,7 @@ class OpponentPredictionRequests:
             self._activity.set("idle")
 
     def shutdown(self) -> None:
-        self._running = False
+        with self._lock:
+            self._running = False
+        self.cancel_all()
         self._pending_event.set()

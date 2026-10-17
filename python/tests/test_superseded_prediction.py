@@ -5,6 +5,34 @@ from rms_backend.opponent_prediction_gateway import OpponentPredictionGateway
 
 
 class SupersededPredictionTests(unittest.TestCase):
+    @staticmethod
+    def enqueue(gateway, context, callback):
+        gateway._activity.reset(unloaded=False)
+        gateway._model_ready = True
+        gateway.request_predict({}, 0, context=context, on_complete=callback,
+                                mjai_events=[], include_ground_truth=False)
+
+    def test_unload_and_reload_block_reentrant_admission_before_retiring_old_work(self):
+        for method in ('unload', 'prepare_reload'):
+            with self.subTest(method=method), patch('rms_backend.opponent_prediction_requests.threading.Thread.start'):
+                gateway = OpponentPredictionGateway()
+                gateway._activity.reset(unloaded=False)
+                gateway._model_ready = True
+                discarded = []
+                def discard():
+                    discarded.append('old')
+                    self.assertFalse(gateway.accepts_requests())
+                    gateway.request_predict({}, 0, context={'nodeId': 'new'},
+                        on_discard=lambda: discarded.append('rejected'), mjai_events=[], include_ground_truth=False)
+                gateway.request_predict({}, 0, context={'nodeId': 'old'}, on_discard=discard,
+                                        mjai_events=[], include_ground_truth=False)
+                with patch.object(gateway._process_client, 'shutdown'), patch.object(gateway._process_client, 'restart'):
+                    getattr(gateway, method)()
+                self.assertEqual(discarded, ['old', 'rejected'])
+                self.assertFalse(gateway._requests.has_work())
+                self.assertEqual(gateway.accepts_requests(), method == 'prepare_reload')
+                gateway._requests.shutdown()
+
     def test_late_success_after_unload_does_not_restore_model_readiness(self):
         with patch('rms_backend.opponent_prediction_requests.threading.Thread.start'):
             gateway = OpponentPredictionGateway()
@@ -12,13 +40,7 @@ class SupersededPredictionTests(unittest.TestCase):
         callback = Mock()
         gateway._activity.reset(unloaded=False)
         gateway._model_ready = True
-        gateway._requests._latest_context = context
-        gateway._requests._pending = {
-            'snapshot': None, 'controlled_seat': 0, 'context': context,
-            'mjai_events': [], 'include_ground_truth': False,
-            'on_complete': callback,
-        }
-        gateway._requests._pending_event.set()
+        self.enqueue(gateway, context, callback)
 
         def finish_after_unload(*args, **kwargs):
             gateway.unload()
@@ -54,13 +76,7 @@ class SupersededPredictionTests(unittest.TestCase):
         old_callback = Mock()
         old = {'nodeId': 'old'}
         new = {'nodeId': 'new'}
-        gateway._requests._latest_context = old
-        gateway._requests._pending = {
-            'snapshot': None, 'controlled_seat': 0, 'context': old,
-            'mjai_events': [], 'include_ground_truth': False,
-            'on_complete': old_callback,
-        }
-        gateway._requests._pending_event.set()
+        self.enqueue(gateway, old, old_callback)
         expected = {'context': new, 'status': 'loading'}
 
         def fail_after_switch(*args, **kwargs):
@@ -87,17 +103,15 @@ class SupersededPredictionTests(unittest.TestCase):
             gateway = OpponentPredictionGateway()
         context = {'nodeId': 'current'}
         callback = Mock()
-        gateway._requests._latest_context = context
-        gateway._requests._pending = {
-            'snapshot': None, 'controlled_seat': 0, 'context': context,
-            'mjai_events': [], 'include_ground_truth': False,
-            'on_complete': callback,
-        }
-        gateway._requests._pending_event.set()
+        self.enqueue(gateway, context, callback)
 
         def fail(*args, **kwargs):
-            gateway._requests._running = False
             raise RuntimeError('current request failed')
+
+        finish = gateway._requests._finish_request
+        def stop_after_failure():
+            finish()
+            gateway._requests._running = False
 
         with patch.object(
              gateway._requests,
@@ -105,6 +119,7 @@ class SupersededPredictionTests(unittest.TestCase):
              return_value=False,
         ), \
              patch.object(gateway._process_client, 'request', side_effect=fail), \
+             patch.object(gateway._requests, '_finish_request', side_effect=stop_after_failure), \
              patch.object(gateway._activity, 'set') as activity, \
              patch('traceback.print_exc'), patch('builtins.print'):
             gateway._requests._run()
