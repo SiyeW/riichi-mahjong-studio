@@ -112,21 +112,13 @@
 }
 
 .analysis-dora-distribution {
-  display: grid;
   flex: 1 1 var(--analysis-dora-distribution-min-height);
-  grid-auto-columns: minmax(0, 1fr);
-  grid-auto-flow: column;
-  gap: 0;
   min-height: var(--analysis-dora-distribution-min-height);
 }
 
 .analysis-score-distribution {
-  display: flex;
   flex: 1 1 var(--analysis-score-distribution-min-height);
-  align-items: stretch;
-  gap: 0;
   min-height: var(--analysis-score-distribution-min-height);
-  overflow: hidden;
 }
 
 .analysis-score-modes {

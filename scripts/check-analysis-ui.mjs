@@ -2727,7 +2727,9 @@ try {
         bottomOverflow: canvases.map((canvas) => {
           const canvasRect = canvas.getBoundingClientRect()
           const distributionRect = canvas.parentElement?.getBoundingClientRect()
-          return distributionRect ? canvasRect.bottom - distributionRect.bottom : 0
+          // A physically snapped canvas may end just inside a fractional CSS
+          // box. That inset is not overflow; a painted pixel outside is.
+          return distributionRect ? Math.max(0, canvasRect.bottom - distributionRect.bottom) : 0
         }),
         renderSignatures: canvases.map(canvas => canvas.rmsDistributionRenderSignature || ''),
       }

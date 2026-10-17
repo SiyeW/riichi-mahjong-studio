@@ -31,9 +31,7 @@
             />
           </div>
         </div>
-        <div class="analysis-risk-scale" aria-hidden="true">
-          <span v-for="tick in riskScaleTicks" :key="tick.value" :style="{ top: riskScalePosition(tick.value) }"><i /><small>{{ tick.label }}</small></span>
-        </div>
+        <ProbabilityAxis class="analysis-risk-scale" :scale="displayedRiskScale" />
       </div>
       <div v-perceptual-surface="riskLegendSurface" class="analysis-source-legend">
         <span v-for="source in opponentSources" :key="source.key"><i :class="`source-${source.key}`" />{{ source.label }}</span>
@@ -48,7 +46,6 @@ import { analysisRiskGeometry } from '../analysisRiskGeometry'
 import {
   DEFAULT_PROBABILITY_SCALE as RISK_ADAPTIVE_MIN,
   probabilityScaleRatio,
-  probabilityScaleTicks,
 } from '../analysisProbabilityScale'
 import { analysisSurface } from '../analysisSurface'
 import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
@@ -60,6 +57,7 @@ import { useResponsiveGeometry } from '../useResponsiveGeometry'
 import { useCanvasPaintSnapshots } from '../canvasPaintSnapshot'
 import { useRiskAnalysisData } from '../useRiskAnalysisData'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
+import ProbabilityAxis from './ProbabilityAxis.vue'
 
 const props = defineProps<AnalysisPanelDataProps & {
   tileImageSrc: (tile: string) => string
@@ -103,14 +101,9 @@ const {
 } = useRiskAnalysisData(props)
 
 const showRiskAdaptiveThreshold = computed(() => displayedRiskScale.value > RISK_ADAPTIVE_MIN + 1e-6)
-const riskScaleTicks = computed(() => probabilityScaleTicks(displayedRiskScale.value))
 
 function displayedRiskRatio(value: number): number {
   return probabilityScaleRatio(value, displayedRiskScale.value)
-}
-
-function riskScalePosition(value: number): string {
-  return `${displayedRiskRatio(value) * 100}%`
 }
 
 function riskScaleTargets(): number[][][] {

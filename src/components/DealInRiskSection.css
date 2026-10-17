@@ -103,6 +103,8 @@
 }
 
 .analysis-risk-scale {
+  --probability-axis-tick-width: calc(var(--analysis-tile-width) * 0.12);
+  --probability-axis-label-left: calc(var(--analysis-tile-width) * 0.2);
   position: relative;
   top: calc(var(--analysis-tile-height) + var(--analysis-chart-gap));
   left: calc(var(--analysis-tile-width) * 0.12);
@@ -110,31 +112,6 @@
   height: var(--analysis-risk-bars-height);
   color: rgba(210, 224, 221, 0.52);
   pointer-events: none;
-}
-
-.analysis-risk-scale > span {
-  position: absolute;
-  left: 0;
-  width: 100%;
-  height: 0;
-}
-
-.analysis-risk-scale > span i {
-  position: absolute;
-  left: 0;
-  width: calc(var(--analysis-tile-width) * 0.12);
-  border-top: 1px solid rgba(198, 214, 211, 0.42);
-}
-
-.analysis-risk-scale > span small {
-  position: absolute;
-  left: calc(var(--analysis-tile-width) * 0.2);
-  color: rgba(210, 224, 221, 0.56);
-  font-size: var(--ui-text-caption);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  white-space: nowrap;
-  transform: translateY(-50%);
 }
 
 .analysis-source-legend i.source-kamicha { background: var(--ron-kamicha-color); }

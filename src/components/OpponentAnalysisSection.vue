@@ -55,6 +55,7 @@
             :show-labels="true"
             :track-surface="distributionTrackSurface"
             :reference-ratio="doraDistributionReferenceRatio"
+            :probability-scale="doraDistributionScale"
             @item-enter="(event, index) => showDistributionEntryTooltip(event, opponent.label, t('analysis.dora'), opponent.doraPrediction.distribution, index, 'tile')"
             @item-leave="tooltip.clear"
           />
@@ -80,6 +81,7 @@
             :show-labels="false"
             :track-surface="distributionTrackSurface"
             :reference-ratio="scoreDistributionReferenceRatio"
+            :probability-scale="scoreDistributionScale"
             @item-enter="(event, index) => showDistributionEntryTooltip(event, opponent.label, t('analysis.score'), opponent.scorePrediction.distribution, index, 'point')"
             @item-leave="tooltip.clear"
           />

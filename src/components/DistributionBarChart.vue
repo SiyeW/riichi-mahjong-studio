@@ -7,36 +7,49 @@
       'has-labels': showLabels,
     }"
   >
-    <canvas ref="canvasElement" class="analysis-distribution-canvas" aria-hidden="true" />
-    <template v-if="showLabels">
-      <span
-        v-for="(entry, index) in entries"
-        :key="entry.key"
-        class="analysis-distribution-cell"
-        :class="{ 'is-hovered': hoveredIndex === index }"
-        tabindex="0"
-        @mouseenter="enterItem($event, index)"
-        @mouseleave="leaveItem"
-        @focus="enterItem($event, index)"
-        @blur="leaveItem"
-      >
-        <i class="analysis-distribution-track" />
-        <small>{{ entry.label }}</small>
-      </span>
-    </template>
-    <template v-else>
-      <i
-        v-for="(entry, index) in entries"
-        :key="entry.key"
-        class="analysis-distribution-track analysis-distribution-cell"
-        :class="{ 'is-hovered': hoveredIndex === index }"
-        tabindex="0"
-        @mouseenter="enterItem($event, index)"
-        @mouseleave="leaveItem"
-        @focus="enterItem($event, index)"
-        @blur="leaveItem"
-      />
-    </template>
+    <div ref="viewportElement" class="analysis-distribution-viewport" @scroll="scheduleGeometry">
+      <div ref="plotElement" class="analysis-distribution-plot">
+        <canvas ref="canvasElement" class="analysis-distribution-canvas" aria-hidden="true" />
+        <template v-if="showLabels">
+          <span
+            v-for="(entry, index) in entries"
+            :key="entry.key"
+            class="analysis-distribution-cell"
+            :class="{ 'is-hovered': hoveredIndex === index }"
+            tabindex="0"
+            @mouseenter="enterItem($event, index)"
+            @mouseleave="leaveItem"
+            @focus="enterItem($event, index)"
+            @blur="leaveItem"
+          >
+            <i class="analysis-distribution-track" />
+            <small>{{ entry.label }}</small>
+          </span>
+        </template>
+        <template v-else>
+          <i
+            v-for="(entry, index) in entries"
+            :key="entry.key"
+            class="analysis-distribution-track analysis-distribution-cell"
+            :class="{ 'is-hovered': hoveredIndex === index }"
+            tabindex="0"
+            @mouseenter="enterItem($event, index)"
+            @mouseleave="leaveItem"
+            @focus="enterItem($event, index)"
+            @blur="leaveItem"
+          />
+        </template>
+      </div>
+    </div>
+    <ProbabilityAxis
+      v-if="probabilityScale !== undefined"
+      :scale="displayedProbabilityScale"
+      direction="up"
+      :style="axisLayoutStyle"
+      :height="axisHeight"
+      :label-spacing="axisLabelSpacing"
+      :clamp-endpoints="true"
+    />
   </div>
 </template>
 
@@ -47,6 +60,8 @@ import { vPerceptualSurface } from '../perceptualSurface'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
 import { useCanvasPaintSnapshots } from '../canvasPaintSnapshot'
+import { distributionBarGeometry } from '../distributionBarGeometry'
+import ProbabilityAxis from './ProbabilityAxis.vue'
 
 export type DistributionBarEntry = Readonly<{
   key: string | number
@@ -62,6 +77,7 @@ const props = defineProps<{
   showLabels: boolean
   trackSurface: PerceptualSurfaceBinding
   referenceRatio?: number | null
+  probabilityScale?: number
 }>()
 const emit = defineEmits<{
   itemEnter: [event: Event, index: number]
@@ -71,9 +87,16 @@ const emit = defineEmits<{
 type DistributionCanvasElement = HTMLCanvasElement & {
   readonly rmsDistributionRenderSignature?: string
   rmsDistributionGapPixels?: number[]
+  rmsDistributionTracks?: Array<{ left: number; right: number; top: number; bottom: number }>
   rmsDistributionGuideBounds?: { left: number; right: number; top: number; bottom: number } | null
 }
 const rootElement = ref<HTMLElement | null>(null)
+const viewportElement = ref<HTMLElement | null>(null)
+const plotElement = ref<HTMLElement | null>(null)
+const axisLayoutStyle = ref<Record<string, string>>({})
+const axisHeight = ref(0)
+const axisLabelSpacing = ref(0)
+const displayedProbabilityScale = ref(props.probabilityScale ?? 1)
 const canvasElement = ref<DistributionCanvasElement | null>(null)
 const hoveredIndex = ref<number | null>(null)
 let displayedScales: number[] = []
@@ -87,6 +110,7 @@ let renderGeometry: {
   gapColor: string
   guideTrack: { left: number; right: number; top: number; bottom: number; lineHeight: number } | null
   tracks: Array<{ left: number; right: number; top: number; bottom: number }>
+  gaps: Array<{ left: number; right: number }>
 } | null = null
 
 function structureKey(): string {
@@ -114,31 +138,39 @@ function targetScales(): number[] {
 }
 
 function measureGeometry() {
-  const root = rootElement.value
+  const root = plotElement.value
+  const viewport = viewportElement.value
   const canvas = canvasElement.value
-  if (!root || !canvas) {
+  if (!root || !viewport || !canvas) {
     renderGeometry = null
     return
   }
   const rootRect = root.getBoundingClientRect()
-  const ratio = Math.max(1, window.devicePixelRatio || 1)
-  const width = Math.max(1, Math.round(rootRect.width * ratio))
-  const height = Math.max(1, Math.round(rootRect.height * ratio))
+  const viewportRect = viewport.getBoundingClientRect()
+  if (viewportRect.width <= 0 || rootRect.height <= 0) { renderGeometry = null; return }
+  const ratio = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1
+  const originX = Math.ceil(rootRect.left * ratio)
+  const originY = Math.ceil(rootRect.top * ratio)
+  const height = Math.max(1, Math.floor(rootRect.bottom * ratio) - originY)
   const rootStyle = getComputedStyle(root)
   const color = rootStyle.getPropertyValue(props.colorVariable).trim()
   const gapColor = rootStyle.getPropertyValue('--analysis-distribution-gap-color').trim()
     || 'rgba(1, 42, 49, 0.82)'
-  const tracks = [...root.querySelectorAll<HTMLElement>('.analysis-distribution-track')].map((track) => {
-    const trackRect = track.getBoundingClientRect()
-    const trackStyle = getComputedStyle(track)
-    const borderLeft = Number.parseFloat(trackStyle.borderLeftWidth) || 0
-    return {
-      left: Math.max(0, Math.round((trackRect.left - rootRect.left + borderLeft) * ratio)),
-      right: Math.min(width, Math.round((trackRect.right - rootRect.left) * ratio)),
-      top: Math.max(0, Math.round((trackRect.top - rootRect.top) * ratio)),
-      bottom: Math.min(height, Math.round((trackRect.bottom - rootRect.top) * ratio)),
-    }
-  })
+  const cells = [...root.querySelectorAll<HTMLElement>('.analysis-distribution-cell')]
+  const firstTrack = root.querySelector<HTMLElement>('.analysis-distribution-track')?.getBoundingClientRect()
+  const top = Math.max(0, Math.ceil((firstTrack?.top ?? rootRect.top) * ratio) - originY)
+  const bottom = Math.min(height, Math.floor((firstTrack?.bottom ?? rootRect.bottom) * ratio) - originY)
+  const geometry = distributionBarGeometry(
+    Math.floor(viewportRect.right * ratio) - Math.ceil(viewportRect.left * ratio),
+    props.entries.map((entry, index) => index > 0 && (props.showLabels || Boolean(entry.gapBefore))),
+    (Number.parseFloat(rootStyle.getPropertyValue('--analysis-distribution-gap-width')) || 1) * ratio,
+  )
+  const width = geometry.contentWidth
+  const tracks = geometry.bars.map(bar => ({ ...bar, top, bottom }))
+  const offsetX = originX / ratio - rootRect.left
+  const offsetY = originY / ratio - rootRect.top
+  const axis = rootElement.value?.querySelector('.analysis-probability-axis')
+  const captionSize = axis ? Number.parseFloat(getComputedStyle(axis).fontSize) : 10
   const guideTrack = tracks.length ? {
     left: Math.min(...tracks.map(track => track.left)),
     right: Math.max(...tracks.map(track => track.right)),
@@ -150,7 +182,20 @@ function measureGeometry() {
   // including a newly revealed chart after a frame without a distribution.
   if (canvas.width !== width) canvas.width = width
   if (canvas.height !== height) canvas.height = height
-  renderGeometry = { width, height, color, gapColor, tracks, guideTrack }
+  // Exact CSS pixel coverage and aligned global origin prevent a second canvas
+  // resampling step. Cells/hovers and paint share the same integer allocation.
+  canvas.style.cssText = `left:${offsetX}px;top:${offsetY}px;width:${width / ratio}px;height:${height / ratio}px`
+  // Scroll extents are integer CSS pixels. Round the overflow container outward
+  // so its last physical column is reachable at fractional DPI as well.
+  root.style.width = `${Math.ceil(width / ratio + offsetX)}px`
+  cells.forEach((cell, index) => {
+    const track = tracks[index]!
+    cell.style.cssText = `position:absolute;left:${offsetX + track.left / ratio}px;top:0;width:${(track.right - track.left) / ratio}px;height:100%`
+  })
+  axisHeight.value = Math.max(0, bottom - top) / ratio
+  axisLabelSpacing.value = captionSize * 1.5
+  axisLayoutStyle.value = { top: `${offsetY + top / ratio}px`, height: `${axisHeight.value}px` }
+  renderGeometry = { width, height, color, gapColor, tracks, guideTrack, gaps: geometry.gaps }
   measuredStructureKey = structureKey()
   measuredColorVariable = props.colorVariable
 }
@@ -160,7 +205,7 @@ function render() {
   if (!canvas) return
   if (!renderGeometry) measureGeometry()
   if (!renderGeometry) return
-  const { width, height, color, gapColor, tracks } = renderGeometry
+  const { width, height, color, gapColor, tracks, gaps } = renderGeometry
   const context = canvas.getContext('2d')
   if (!context) return
   context.clearRect(0, 0, width, height)
@@ -173,14 +218,15 @@ function render() {
     context.fillRect(left, bottom - fillHeight, right - left, fillHeight)
   })
   const gapPixels: number[] = []
-  tracks.forEach(({ left, top, bottom }, index) => {
-    if (!props.entries[index]?.gapBefore || left <= 0 || bottom <= top) return
+  gaps.forEach(({ left, right }) => {
+    const { top, bottom } = tracks[0]!
     context.fillStyle = gapColor
-    context.fillRect(left, top, 1, bottom - top)
+    context.fillRect(left, top, right - left, bottom - top)
     gapPixels.push(left)
   })
   publishSnapshot(canvas, displayedScales)
   canvas.rmsDistributionGapPixels = gapPixels
+  canvas.rmsDistributionTracks = tracks
   canvas.rmsDistributionGuideBounds = null
   if (displayedReferenceRatio !== null && renderGeometry.guideTrack) {
     const { left, right, top, bottom } = renderGeometry.guideTrack
@@ -204,6 +250,8 @@ function animate() {
   if (!canvasElement.value) return
   stopAnimation()
   const target = targetScales()
+  const targetProbabilityScale = props.probabilityScale ?? 1
+  const sourceProbabilityScale = displayedProbabilityScale.value
   const targetReferenceRatio = Number.isFinite(props.referenceRatio)
     ? Math.max(0, Math.min(1, Number(props.referenceRatio)))
     : null
@@ -218,12 +266,13 @@ function animate() {
   const settledReferenceRatio = targetReferenceRatio ?? 1
   const referenceUnchanged = targetReferenceRatio === null
     || Math.abs(settledReferenceRatio - sourceReferenceRatio) <= 1e-6
-  const unchanged = referenceUnchanged
+  const unchanged = referenceUnchanged && Math.abs(sourceProbabilityScale - targetProbabilityScale) <= 1e-6
     && target.length === displayedScales.length
     && target.every((value, index) => Math.abs(value - displayedScales[index]) <= 1e-6)
   if (!displayedScales.length || props.reduceMotion || unchanged) {
     displayedScales = target
     displayedReferenceRatio = targetReferenceRatio
+    displayedProbabilityScale.value = targetProbabilityScale
     render()
     return
   }
@@ -239,13 +288,15 @@ function animate() {
     if (startedAt === null) startedAt = now
     const progress = Math.max(0, Math.min(1, (now - startedAt) / duration))
     const eased = easing(progress)
+    displayedProbabilityScale.value = sourceProbabilityScale + (targetProbabilityScale - sourceProbabilityScale) * eased
     displayedScales = target.map((value, index) => {
       const start = source[index] ?? value
       return start + ((value - start) * eased)
     })
     if (targetReferenceRatio !== null) {
-      displayedReferenceRatio = sourceReferenceRatio
-        + ((settledReferenceRatio - sourceReferenceRatio) * eased)
+      displayedReferenceRatio = props.probabilityScale !== undefined
+        ? Math.min(1, targetReferenceRatio * targetProbabilityScale / displayedProbabilityScale.value)
+        : sourceReferenceRatio + ((settledReferenceRatio - sourceReferenceRatio) * eased)
     }
     render()
     if (progress < 1) animationFrame = requestAnimationFrame(step)
@@ -262,12 +313,12 @@ function updateGeometry() {
   render()
 }
 
-useResponsiveGeometry(rootElement, updateGeometry, {
+const scheduleGeometry = useResponsiveGeometry(viewportElement, updateGeometry, {
   resizeAncestorSelector: '.analysis-opponent-prediction-grid',
   styleAncestorSelector: '.dock-module',
 })
 
-watch(() => [props.entries, props.colorVariable, props.reduceMotion, props.referenceRatio], () => {
+watch(() => [props.entries, props.colorVariable, props.reduceMotion, props.referenceRatio, props.probabilityScale], () => {
   void nextTick(() => {
     if (
       !renderGeometry
