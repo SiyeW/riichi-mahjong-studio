@@ -4,7 +4,8 @@ import './preview.css'
 import faceSource from '../../../src/assets/tiles/Regular_shortnames/5m.svg'
 import backSource from '../../../src/assets/tiles/Regular_shortnames/back.svg'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../../../src/uiMotion.ts'
-import { motionSample, sampledTime, sweepOffsets, sweepSampleCount, updateInterval } from './model.ts'
+import { motionSample, sampledTime, updateInterval } from './model.ts'
+import { PreviewRenderer } from './renderer'
 
 type Options = { every: number; seat: number; reverse: boolean; scale: number; distance: number;
   exposure: number; autoExposure: boolean; blur: boolean; reveal: boolean; diagonal: boolean; loop: boolean; reduced: boolean }
@@ -14,13 +15,7 @@ const duration = getUiMotionDurationMs(), ease = getUiMotionEasingFunction()
 $('#time').setAttribute('max', String(duration))
 const media = matchMedia('(prefers-reduced-motion: reduce)')
 const forcedFallback = new URLSearchParams(location.search).has('noFilter')
-const capable = !forcedFallback && typeof SVGFEOffsetElement !== 'undefined' && typeof SVGFECompositeElement !== 'undefined'
-  && typeof SVGFEGaussianBlurElement !== 'undefined'
-  && typeof CSS !== 'undefined' && CSS.supports('filter', 'url("#motion-blur")')
-const filter = $<SVGFilterElement & HTMLElement>('#motion-blur')
-let offsets: SVGFEOffsetElement[] = []
-let reconstruction: SVGFEGaussianBlurElement | null = null
-let coverageSupported = true
+let capable = false
 const panels = [...document.querySelectorAll<HTMLElement>('.stage')].map(stage => {
   stage.innerHTML = '<div class="sprite"><div class="direction"><div class="artwork"><img class="tileImg face" alt="五萬"><img class="tileImg back" alt="" aria-hidden="true"></div></div></div>'
   const face = stage.querySelector<HTMLImageElement>('.face')!, back = stage.querySelector<HTMLImageElement>('.back')!
@@ -29,33 +24,12 @@ const panels = [...document.querySelectorAll<HTMLElement>('.stage')].map(stage =
     artwork: stage.querySelector<HTMLElement>('.artwork')!, face, back }
 })
 let frame = 0, generation = 0, disposed = false, ready = false, shownTime = 0
-let geometry = { width: 0, height: 0, distance: 0, dx: 0, dy: 0, startX: 0, startY: 0, angle: 0 }
-
-function buildSweep() {
-  const count = sweepSampleCount(geometry.distance, Math.min(geometry.width, geometry.height))
-  coverageSupported = geometry.distance / (count - 1) <= Math.min(geometry.width, geometry.height) * 0.5
-  filter.replaceChildren()
-  offsets = []
-  reconstruction = null
-  if (!capable) return
-  for (let index = 0; index < count; index++) {
-    const offset = document.createElementNS('http://www.w3.org/2000/svg', 'feOffset')
-    offset.setAttribute('in', 'SourceGraphic'); offset.setAttribute('result', `tap-${index}`)
-    offset.setAttribute('dy', '0'); filter.append(offset); offsets.push(offset)
-    if (!index) continue
-    const average = document.createElementNS('http://www.w3.org/2000/svg', 'feComposite')
-    average.setAttribute('in', `tap-${index}`); average.setAttribute('in2', index === 1 ? 'tap-0' : `average-${index - 1}`)
-    average.setAttribute('operator', 'arithmetic'); average.setAttribute('k2', String(1 / (index + 1)))
-    average.setAttribute('k3', String(index / (index + 1))); average.setAttribute('result', `average-${index}`)
-    filter.append(average)
-  }
-  // Reconstruct between discrete spatial taps instead of leaving repeated
-  // high-contrast glyphs. This follows the complete sweep; it does not replace
-  // it with a short blur centered on the current tile.
-  reconstruction = document.createElementNS('http://www.w3.org/2000/svg', 'feGaussianBlur')
-  reconstruction.setAttribute('in', `average-${count - 1}`)
-  filter.append(reconstruction)
+let preparationGeneration = 0, preparation: Promise<void> | null = null
+let renderer: PreviewRenderer | null = null
+if (!forcedFallback) {
+  try { renderer = new PreviewRenderer(panels[1]!.stage); capable = true } catch { renderer?.dispose(); renderer = null }
 }
+let geometry = { width: 0, height: 0, distance: 0, dx: 0, dy: 0, startX: 0, startY: 0, angle: 0 }
 
 function layout() {
   $('.preview').style.setProperty('--zoom', String(options.scale))
@@ -72,9 +46,6 @@ function layout() {
   geometry = { width, height, distance, dx: dx * sign, dy: dy * sign,
     startX: panels[0]!.stage.clientWidth / 2 - dx * sign / 2,
     startY: panels[0]!.stage.clientHeight / 2 - dy * sign / 2, angle: Math.atan2(dy * sign, dx * sign) * 180 / Math.PI }
-  filter.setAttribute('x', String(-distance - extent)); filter.setAttribute('y', String(-extent))
-  filter.setAttribute('width', String(width + distance + extent * 2)); filter.setAttribute('height', String(height + extent * 2))
-  buildSweep()
   for (const panel of panels) {
     panel.direction.style.transform = `rotate(${geometry.angle}deg)`
     panel.artwork.style.transform = `rotate(${-geometry.angle - options.seat * 90}deg)`
@@ -87,15 +58,13 @@ function draw(time: number, submittedInterval?: number, coverLanding = false) {
   const exposure = options.autoExposure ? Math.max(updateInterval(165, options.every), submittedInterval ?? 0) : options.exposure
   const sharpEndpoint = reduced || (shownTime === duration && !coverLanding)
   const sample = motionSample(reduced ? duration : shownTime, duration, geometry.distance, sharpEndpoint ? 0 : exposure, options.reverse, ease)
-  const enabled = capable && coverageSupported && options.blur && !reduced && sample.blurLength > 0
-  if (enabled) {
-    const positions = sweepOffsets(sample.blurLength, offsets.length)
-    offsets.forEach((offset, index) => offset.setAttribute('dx', String(positions[index])))
-    reconstruction?.setAttribute('stdDeviation', `${sample.blurLength / (offsets.length - 1) * 0.5} 0`)
-  }
+  const enabled = Boolean(ready && capable && options.blur && !reduced && sample.blurLength > 0
+    && renderer?.draw(sample.progress, sample.previousProgress, options.reveal ? sample.backOpacity : 0))
+  if (!enabled) renderer?.hide()
   for (const panel of panels) {
     panel.sprite.style.transform = `translate3d(${geometry.startX + geometry.dx * sample.progress - geometry.width / 2}px, ${geometry.startY + geometry.dy * sample.progress - geometry.height / 2}px, 0)`
-    panel.direction.style.filter = panel.stage.dataset.pane === 'blur' && enabled ? 'url("#motion-blur")' : 'none'
+    panel.sprite.style.visibility = panel.stage.dataset.pane === 'blur' && enabled ? 'hidden' : ''
+    panel.stage.dataset.coverageEnabled = String(panel.stage.dataset.pane === 'blur' && enabled)
     panel.back.style.opacity = String(options.reveal ? sample.backOpacity : 0)
   }
   $<HTMLInputElement>('#time').value = String(shownTime)
@@ -103,8 +72,8 @@ function draw(time: number, submittedInterval?: number, coverLanding = false) {
   const exposureInput = $<HTMLInputElement>('[name="exposure"]')
   exposureInput.disabled = options.autoExposure
   if (options.autoExposure) exposureInput.value = exposure.toFixed(2)
-  $('#state').textContent = `${!capable || !coverageSupported ? '效果不可用：已回退到清晰图像。' : reduced ? '减少动态效果：不播放、不模糊。' : '轨迹覆盖近似，仍需目视比较。'} 实际距离 ${Math.round(geometry.distance)}px · 曝光 ${exposure.toFixed(2)}ms · 覆盖 ${sample.blurLength.toFixed(1)}px`
-  return { time: shownTime, ...sample, exposure, samples: offsets.length, coverageSupported, enabled, capable, reduced, geometry, pendingFrame: frame !== 0 }
+  $('#state').textContent = `${!capable ? '效果不可用：已回退到清晰图像。' : reduced ? '减少动态效果：不播放、不模糊。' : '固定注视对照。'} 实际距离 ${Math.round(geometry.distance)}px · 更新区间 ${exposure.toFixed(2)}ms · 覆盖 ${sample.blurLength.toFixed(1)}px`
+  return { time: shownTime, ...sample, exposure, coverageSupported: capable, enabled, capable, reduced, geometry, pendingFrame: frame !== 0 }
 }
 export function seek(time: number) { return draw(time) }
 
@@ -136,7 +105,26 @@ export function play() {
   }
   frame = requestAnimationFrame(tick)
 }
-export function configure(changes: Partial<Options>) {
+async function refresh() {
+  const ticket = ++preparationGeneration, time = shownTime
+  ready = false; renderer?.hide()
+  await preparation?.catch(() => {})
+  if (ticket !== preparationGeneration || disposed) return
+  layout(); draw(0)
+  if (renderer) {
+    const owner = renderer
+    const effect = panels[0]!.back.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 1, fill: 'both' })
+    effect.pause(); effect.currentTime = 0
+    preparation = owner.prepare(panels[0]!.sprite, effect, geometry.dx, geometry.dy)
+    try { await preparation } catch {
+      owner.dispose()
+      if (renderer === owner) { capable = false; renderer = null }
+    }
+    finally { effect.cancel(); preparation = null }
+  }
+  if (ticket === preparationGeneration && !disposed) { ready = true; draw(time) }
+}
+export async function configure(changes: Partial<Options>) {
   stop(); Object.assign(options, changes)
   options.every = Math.max(1, Math.min(3, Math.round(options.every)))
   options.seat = Math.max(0, Math.min(3, Math.round(options.seat)))
@@ -148,14 +136,14 @@ export function configure(changes: Partial<Options>) {
     if (control instanceof HTMLInputElement && control.type === 'checkbox') control.checked = Boolean(value)
     else if (control instanceof HTMLInputElement || control instanceof HTMLSelectElement) control.value = String(['reverse', 'autoExposure'].includes(name) ? Number(value) : value)
   }
-  layout(); return seek(shownTime)
+  await refresh(); return seek(shownTime)
 }
 const controlChange = (event: Event) => {
   const target = event.target as HTMLInputElement | HTMLSelectElement
-  configure({ [target.name]: target instanceof HTMLInputElement && target.type === 'checkbox' ? target.checked : ['reverse', 'autoExposure'].includes(target.name) ? target.value === '1' : Number(target.value) })
+  void configure({ [target.name]: target instanceof HTMLInputElement && target.type === 'checkbox' ? target.checked : ['reverse', 'autoExposure'].includes(target.name) ? target.value === '1' : Number(target.value) })
 }
 const scrub = () => { stop(); seek(Number($<HTMLInputElement>('#time').value)) }
-const resized = () => { stop(); layout(); seek(shownTime) }
+const resized = () => { stop(); void refresh() }
 const visibility = () => { if (document.hidden) { stop(); seek(duration) } }
 $('#controls').addEventListener('change', controlChange)
 $('#play').addEventListener('click', play); $('#stop').addEventListener('click', stop)
@@ -164,16 +152,19 @@ media.addEventListener('change', resized); document.addEventListener('visibility
 const observer = new ResizeObserver(resized); panels.forEach(panel => observer.observe(panel.stage))
 export function dispose() {
   if (disposed) return
-  disposed = true; stop(); observer.disconnect()
+  disposed = true; preparationGeneration++; stop(); observer.disconnect(); renderer?.dispose(); renderer = null
   window.removeEventListener('pagehide', dispose)
   media.removeEventListener('change', resized); document.removeEventListener('visibilitychange', visibility)
   $('#controls').removeEventListener('change', controlChange)
   $('#play').removeEventListener('click', play); $('#stop').removeEventListener('click', stop); $('#time').removeEventListener('input', scrub)
-  panels.forEach(panel => { panel.direction.style.filter = 'none' })
+  panels.forEach(panel => { panel.sprite.style.visibility = ''; panel.stage.dataset.coverageEnabled = 'false' })
 }
 window.addEventListener('pagehide', dispose, { once: true })
 if (import.meta.hot) import.meta.hot.dispose(dispose)
 try {
   await Promise.all(panels.flatMap(panel => [panel.face, panel.back]).map(image => image.decode()))
-  if (!disposed) { ready = true; layout(); seek(0); $<HTMLButtonElement>('#play').disabled = false; document.body.dataset.ready = 'true' }
+  if (!disposed) {
+    do { await refresh() } while (!ready && !disposed)
+    if (!disposed) { $<HTMLButtonElement>('#play').disabled = false; document.body.dataset.ready = 'true' }
+  }
 } catch { $('#state').textContent = '牌画载入失败，未播放。' }

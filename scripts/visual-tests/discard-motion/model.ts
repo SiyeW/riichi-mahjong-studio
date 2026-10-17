@@ -5,14 +5,6 @@ export function updateInterval(hz: number, every: number) {
   return Number.isFinite(interval) && interval > 0 ? interval : 0
 }
 
-export function sweepSampleCount(distance: number, tileSpan: number) {
-  return Math.max(8, Math.min(64, Math.ceil(distance / (tileSpan * 0.5)) + 1))
-}
-
-export function sweepOffsets(length: number, count: number) {
-  return Array.from({ length: count }, (_, index) => index === count - 1 ? 0 : -length * (1 - index / (count - 1)))
-}
-
 export function sampledTime(elapsed: number, duration: number, hz: number, every: number) {
   if (elapsed >= duration) return duration
   if (elapsed <= 0) return 0
@@ -29,8 +21,8 @@ export function motionSample(time: number, duration: number, distance: number, e
   const previousProgress = ease(Math.max(0, current - exposure) / duration)
   const fade = Math.max(0, Math.min(1, (current / duration - 0.2) / 0.55))
   // Cover the complete previous-to-current interval, rather than centering a
-  // short Gaussian around the current position. Spatial weights are uniform;
-  // face/pose still comes from the current sample, not a historical image.
+  // short tail around the current position. The shared Studio shader owns
+  // reconstruction; this model supplies only interval endpoints and face state.
   const blurLength = distance * Math.abs(progress - previousProgress)
   return { progress, previousProgress, blurLength, backOpacity: reverse ? fade : 1 - fade }
 }

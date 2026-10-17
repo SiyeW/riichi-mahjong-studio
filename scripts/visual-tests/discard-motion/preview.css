@@ -14,5 +14,4 @@ button:disabled { opacity: 0.45; cursor: default; } :focus-visible { outline: 1p
 .direction, .artwork { position: absolute; inset: 0; transform-origin: center; }
 .artwork .tileImg { position: absolute; inset: 0; transition: none; }
 .scrub { display: flex; gap: 0.75rem; align-items: center; }.scrub input { flex: 1; }.scrub output { width: 5rem; text-align: right; font-variant-numeric: tabular-nums; }
-.filter-definitions { position: absolute; width: 0; height: 0; pointer-events: none; }
 @media (max-width: 750px) { .comparison { grid-template-columns: 1fr; } }

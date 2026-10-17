@@ -47,7 +47,9 @@ async function pixelDifference(page, sweep = null) {
       const rect = stage.getBoundingClientRect()
       const scaleX = images[1].naturalWidth / rect.width, scaleY = images[1].naturalHeight / rect.height
       const steps = Math.max(1, Math.ceil(sweep.blurLength * 2))
-      for (let index = 0; index <= steps; index++) {
+      // Adjacent center cells own complementary antialiased endpoint pixels.
+      // Test strictly inside here; the GPU join fixture checks their boundary.
+      for (let index = 2; index < steps - 1; index++) {
         const position = previousProgress + (progress - previousProgress) * index / steps
         const x = Math.floor((parseFloat(stageStyle.borderLeftWidth) + geometry.startX + geometry.dx * position) * scaleX)
         const y = Math.floor((parseFloat(stageStyle.borderTopWidth) + geometry.startY + geometry.dy * position) * scaleY)
@@ -77,9 +79,9 @@ async function check(page, url, label) {
     })))
     assert.deepEqual(styles[0], styles[1], 'both comparisons have identical pose, position and face/back handoff')
     const pixels = await pixelDifference(page, sample)
-    assert.ok(pixels.changed > 100, `${label}: filter must change rendered pixels, not merely pass CSS.supports`)
-    assert.ok(pixels.massRatio > 0.8 && pixels.massRatio < 1.2, `${label}: blur must not hide or substantially clip the tile`)
-    assert.ok(pixels.minimumSweepSignal > 3, `${label}: the swept centerline must not contain a background-only hole: ${JSON.stringify(pixels)}`)
+    assert.ok(pixels.changed > 100, `${label}: reconstruction must change actual rendered pixels`)
+    assert.ok(pixels.massRatio > 0.8 && pixels.massRatio < 1.2, `${label}: blur must not hide or substantially clip the tile: ${JSON.stringify({seat,reverse,diagonal,pixels})}`)
+    assert.ok(pixels.minimumSweepSignal > 3, `${label}: the swept centerline must not contain a background-only hole: ${JSON.stringify({seat,reverse,diagonal,sample,pixels})}`)
     assert.equal(sample.exposure, 1000 * 3 / 165)
     different.push(pixels.changed)
     await invoke(page, 'seek', 110)
@@ -112,10 +114,10 @@ async function check(page, url, label) {
       const start = performance.now()
       preview.play()
       queue.shift()(start + 200)
-      if (document.querySelector('[data-pane="blur"] .direction').style.filter === 'none') throw Error('The landing interval was discarded after a missed flight')
+      if (document.querySelector('[data-pane="blur"]').dataset.coverageEnabled !== 'true') throw Error('The landing interval was discarded after a missed flight')
       const landingCleanup = queue.shift()
       landingCleanup(start + 206)
-      if (document.querySelector('[data-pane="blur"] .direction').style.filter !== 'none') throw Error('Landing did not return to a sharp static tile')
+      if (document.querySelector('[data-pane="blur"]').dataset.coverageEnabled !== 'false') throw Error('Landing did not return to a sharp static tile')
       preview.play()
       const stale = queue.shift()
       preview.play()
@@ -148,7 +150,18 @@ async function check(page, url, label) {
   await invoke(page, 'configure', { reduced: false })
   await invoke(page, 'configure', { blur: true, loop: true })
   for (let i = 0; i < 12; i++) { await invoke(page, 'play'); await invoke(page, 'stop') }
-  await invoke(page, 'dispose')
+  await page.evaluate(async apiPath => {
+    const preview = await import(apiPath), decode = HTMLImageElement.prototype.decode
+    let fail
+    HTMLImageElement.prototype.decode = () => new Promise((_resolve, reject) => { fail = reject })
+    try {
+      const pending = preview.configure({ scale: 1.7 })
+      const deadline = performance.now() + 2000
+      while (!fail) { if (performance.now() > deadline) throw Error('Pending preparation fixture did not reach decode'); await new Promise(resolve => setTimeout(resolve, 0)) }
+      preview.dispose(); fail(Error('Expected retired decode failure')); await pending
+    } finally { HTMLImageElement.prototype.decode = decode; preview.dispose() }
+  }, apiPath)
+  assert.equal(await page.locator('[data-pane="blur"] canvas').count(), 0, 'disposing pending preparation releases the renderer surface')
   await invoke(page, 'play')
   assert.equal((await invoke(page, 'seek', 50)).pendingFrame, false, 'disposed/replaced runs cannot schedule late frames')
   assert.deepEqual(errors, [])
@@ -157,15 +170,17 @@ async function check(page, url, label) {
   const fallback = await invoke(page, 'seek', 25)
   assert.equal(fallback.capable, false)
   assert.equal(fallback.enabled, false)
-  assert.equal(fallback.samples, 0, 'unsupported effects do not allocate an unused filter graph')
-  assert.ok((await pixelDifference(page)).changed < 8, 'unsupported filter falls back without removing the tile')
+  assert.equal(await page.locator('[data-pane="blur"] canvas').count(), 0, 'unsupported effects do not allocate an unused GPU surface')
+  assert.ok((await pixelDifference(page)).changed < 8, 'unsupported renderer falls back without removing the tile')
   await page.addInitScript(() => {
-    const original = CSS.supports.bind(CSS)
-    CSS.supports = (...args) => args[0] === 'filter' ? false : original(...args)
+    const original = HTMLCanvasElement.prototype.getContext
+    HTMLCanvasElement.prototype.getContext = function (kind, ...args) {
+      return kind === 'webgl2' ? null : original.call(this, kind, ...args)
+    }
   })
   await page.goto(url)
   await page.waitForFunction(() => document.body.dataset.ready === 'true')
-  assert.equal((await invoke(page, 'seek', 25)).enabled, false, 'real capability rejection also selects the sharp fallback')
+  assert.equal((await invoke(page, 'seek', 25)).enabled, false, 'real GPU capability rejection also selects the sharp fallback')
   assert.ok((await pixelDifference(page)).changed < 8)
   results.push({ label, filteredPixelChanges: different, reducedMotion: true, fallback: true, lifecycle: true })
 }

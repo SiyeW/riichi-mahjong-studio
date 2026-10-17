@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { parseCssEasing } from '../../../src/uiMotion.ts'
-import { motionSample, sampledTime, sweepOffsets, sweepSampleCount, updateInterval } from './model.ts'
+import { motionSample, sampledTime, updateInterval } from './model.ts'
 
 const ease = parseCssEasing('cubic-bezier(0.33, 1, 0.68, 1)')!
 test('sample-and-hold cadences use the same time and always reach the endpoint', () => {
@@ -19,16 +19,6 @@ test('full-interval exposure adapts to cadence instead of leaving a half-shutter
   assert.ok(slow.blurLength > fast.blurLength)
   assert.equal(slow.previousProgress, ease((30 - 1000 * 3 / 165) / 110))
   assert.equal(updateInterval(0, 1), 0)
-})
-test('sweep samples span the whole interval with overlapping tile coverage', () => {
-  for (const distance of [100, 400, 600]) for (const width of [24, 34, 80]) {
-    const count = sweepSampleCount(distance, width)
-    const offsets = sweepOffsets(distance, count)
-    assert.equal(offsets[0], -distance)
-    assert.equal(offsets.at(-1), 0)
-    assert.ok(count <= 64)
-    assert.ok(offsets.slice(1).every((value, index) => value - offsets[index]! <= width * 0.5 + 1e-9))
-  }
 })
 test('coverage follows ease-out, is not shortened to a small fixed tail, and endpoints are sharp', () => {
   const sample = (time: number) => motionSample(time, 110, 400, 18, false, ease)
