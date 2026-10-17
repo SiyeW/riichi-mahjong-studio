@@ -1,4 +1,4 @@
-import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 import { createDiscardCoverageRenderer, type DiscardCoverage } from './discardMotion/coverage'
 import type { GameView } from './contracts/game'
@@ -26,11 +26,11 @@ export interface PendingDiscardReturnFlight {
 export function useDiscardFlight(options: {
   status: StudioStatus
   reduceMotionEnabled: Readonly<Ref<boolean>>
+  motionBlurEnabled: Readonly<Ref<boolean>>
   tileImageSrc: (tile: string) => string
   scheduleAutoAdvance: () => void
 }) {
-  const { status, reduceMotionEnabled, tileImageSrc, scheduleAutoAdvance } = options
-  const coverageTrialEnabled = ref(false)
+  const { status, reduceMotionEnabled, motionBlurEnabled, tileImageSrc, scheduleAutoAdvance } = options
   // Admission includes queued nextTick/rAF and bounded snapshot preparation;
   // reverse ownership ends only after the destination has been revealed.
   const forwardMotionActive = ref(false), returnMotionActive = ref(false)
@@ -46,7 +46,7 @@ export function useDiscardFlight(options: {
       coverageRenderer.stop()
       scheduleAutoAdvance()
     }
-    else if (import.meta.env.DEV && coverageTrialEnabled.value) coverageRenderer.start()
+    else if (motionBlurEnabled.value) coverageRenderer.start()
     else {
       forwardCoverage?.cancel(); forwardCoverage = null
       returnCoverage?.cancel(); returnCoverage = null
@@ -54,7 +54,9 @@ export function useDiscardFlight(options: {
     }
   }
   document.addEventListener('visibilitychange', updateCoverage)
-  watch([coverageTrialEnabled, reduceMotionEnabled], updateCoverage)
+  // Start the default-on renderer after its DOM and cancellation owner exist.
+  onMounted(updateCoverage)
+  watch([motionBlurEnabled, reduceMotionEnabled], updateCoverage)
   const geometryChanged = () => {
     cancelPendingDiscardFlight()
     cancelPendingDiscardReturnFlight()
@@ -610,7 +612,6 @@ function schedulePendingDiscardFlight(seat: number, handHint: TileNextMoveClass 
   })
 
   return {
-    coverageTrialEnabled,
     autoAdvanceMotionDelayMs,
     cancelPendingDiscardFlight,
     cancelPendingDiscardReturnFlight,

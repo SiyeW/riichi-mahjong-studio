@@ -7,7 +7,7 @@ import { build } from 'vite'
 import { _electron as electron } from 'playwright'
 
 // Build the actual production modules without a development server. A small
-// dedicated entry can exercise a default-off trial without changing app settings.
+// dedicated entry exercises worker support/fallback without user settings.
 const root = path.resolve(import.meta.dirname, '..')
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'rms-built-coverage-'))
 const output = path.join(temporary, 'dist'), results = []
@@ -32,6 +32,8 @@ try {
     assert.equal(result.protocol, 'file:')
     assert.equal(result.sourceProtocol, 'file:')
     assert.equal(result.fallback, disabled, 'unsupported WebGL remains sharp; capable packaged worker must actually render')
+    assert.equal(result.owner.defaultStarted, true, 'production motion owner starts without a DEV trial toggle')
+    assert.equal(result.owner.supported, !disabled)
     assert.equal(await page.locator('.discard-motion-surface').count(), 0, 'compiled worker/surface retires')
     await application.close(); application = null
   }

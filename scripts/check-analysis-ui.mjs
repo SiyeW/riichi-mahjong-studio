@@ -9,6 +9,7 @@ import { checkWorkspaceDock } from './check-workspace-dock.mjs'
 import { checkReplayWorkflow } from './check-replay-workflow.mjs'
 import { checkRendererRecovery } from './check-renderer-recovery.mjs'
 import { checkDiscardMotion } from './check-discard-motion.mjs'
+import { checkSpecialActionMotion } from './check-special-action-motion.mjs'
 import { checkRuntimeResources } from './check-runtime-resources.mjs'
 import { checkAnalysisLoading } from './check-analysis-loading.mjs'
 import { checkAnalysisPresentationLifecycle } from './check-analysis-presentation-lifecycle.mjs'
@@ -85,7 +86,10 @@ let electronApp
 try {
   if (!externalRendererUrl) {
     server = await createServer({ root, mode: 'ui-test', cacheDir: path.join(directory, 'vite-cache'),
-      optimizeDeps: { entries: ['src/main.ts'] },
+      // Vite concatenates entries with the repository config's broad glob.
+      // This isolated app has one external runtime dependency; prepare it
+      // explicitly instead of rescanning unrelated test entrypoints at boot.
+      optimizeDeps: { noDiscovery: true, include: ['vue'] },
       server: { host: '127.0.0.1', port: 0, strictPort: false } })
   }
   await server?.listen()
@@ -366,16 +370,16 @@ try {
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
   await checkRuntimeResources(page)
   await checkTableTurnIndicators(page)
+  await page.locator('.discard-motion-surface[data-ready="true"]').waitFor({ state: 'attached' })
   await page.getByRole('button', { name: '设置', exact: true }).click()
   const coverageCheckbox = page.getByRole('checkbox', { name: /飞牌运动模糊/ })
-  assert.equal(await coverageCheckbox.isChecked(), false, 'the session trial defaults off')
+  assert.equal(await coverageCheckbox.isChecked(), true, 'motion blur defaults on')
   await coverageCheckbox.locator('..').click()
-  assert.equal(await page.evaluate(() => document.querySelector('#app').__vue_app__._instance.setupState.coverageTrialEnabled), true)
+  assert.equal(await page.evaluate(() => window.analysisCheck.vm.settings.display.tileMotionBlur), true, 'draft edits do not bypass settings save')
   const reducedCheckbox = page.getByRole('checkbox', { name: '减少动态效果', exact: true })
   await reducedCheckbox.locator('..').click()
-  assert.equal(await coverageCheckbox.isDisabled(), true, 'the trial honors reduced motion')
+  assert.equal(await coverageCheckbox.isDisabled(), true, 'motion blur honors reduced motion')
   await reducedCheckbox.locator('..').click()
-  await coverageCheckbox.locator('..').click()
   const cachePolicySelect = page.locator('.settings-modal select').filter({ has: page.locator('option[value="custom"]') })
   await cachePolicySelect.selectOption('custom')
   const cacheBudget = page.locator('.settings-modal input[type="number"][min="1"]')
@@ -386,6 +390,10 @@ try {
   await page.locator('.settings-modal .settings-btn-primary').click()
   await page.locator('.settings-modal').waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.analysisCheck.settingsSaves.at(-1).records.analysisCacheMiB), 64)
+  assert.equal(await page.evaluate(() => window.analysisCheck.settingsSaves.at(-1).display.tileMotionBlur), false)
+  assert.equal(await page.evaluate(() => window.analysisCheck.vm.settings.display.tileMotionBlur), false)
+  await page.locator('.discard-motion-surface').waitFor({ state: 'detached' })
+  await checkSpecialActionMotion(page)
   uiChecks: {
   if (process.env.RMS_UI_SURFACE_BATCH_ONLY) {
     console.log(`Perceptual surface batch: ${JSON.stringify(await page.evaluate(async () => (await import('/scripts/fixtures/perceptual-batch.js')).checkPerceptualBatch()))}`)

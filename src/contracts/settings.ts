@@ -63,6 +63,7 @@ export interface StudioSettings {
     language: 'system' | 'zh-CN' | 'ja-JP' | 'en-US'
     colorScheme: 'default' | 'killerducky' | 'naga'
     reduceMotion: boolean
+    tileMotionBlur: boolean
     uiScale: number
     showTsumogiriInPlay: boolean
     tablePosition: 'left' | 'center' | 'right'

@@ -6,17 +6,17 @@ export async function checkDiscardMotion(page) {
   await checkTableZoomOwnership(page)
   await checkWheelProgress(page)
   await checkFlightOcclusion(page)
-  // The ordinary pixel/occlusion suite above remains the default sharp path.
-  // This opt-in runs the real navigation owner below with coverage enabled.
-  const coverageTrial = Boolean(process.env.RMS_UI_COVERAGE_TRIAL)
-  await checkFlightBranchMarks(page,coverageTrial)
-  if (coverageTrial) {
+  // The pixel/occlusion controls above use the deliberately disabled setting.
+  // The coverage gate below verifies the same owner with the normal setting on.
+  const coverageEnabled = Boolean(process.env.RMS_UI_COVERAGE)
+  await checkFlightBranchMarks(page,coverageEnabled)
+  if (coverageEnabled) {
     await page.evaluate(() => {
       const state = document.querySelector('#app').__vue_app__._instance.setupState
       // The preceding pixel fixture cancels paused Animation objects directly.
       // Retire their owner too before sampling an actual idle cadence.
       state.cancelPendingDiscardFlight(); state.cancelPendingDiscardReturnFlight()
-      state.coverageTrialEnabled = true
+      state.settings.display.tileMotionBlur = true
     })
     await page.locator('.discard-motion-surface[data-ready="true"]').waitFor({ state: 'attached' })
   }
@@ -39,7 +39,7 @@ export async function checkDiscardMotion(page) {
       await Promise.resolve()
     }
   })
-  const cases = await page.evaluate(async coverageTrial => {
+  const cases = await page.evaluate(async coverageEnabled => {
     const { vm } = window.analysisCheck
     const original = JSON.parse(JSON.stringify(vm.gameView))
     const originalJump = window.studioAPI.jumpToNode
@@ -47,7 +47,7 @@ export async function checkDiscardMotion(page) {
     vm.status.visibleHands = false
     const frame = () => new Promise(resolve => requestAnimationFrame(resolve))
     const waitWarm = async () => {
-      if (!coverageTrial) return
+      if (!coverageEnabled) return
       const limit = performance.now() + 4000
       while (!document.querySelector('.discard-motion-surface[data-ready="true"]')) {
         if (performance.now() > limit) throw Error('Coverage warmup did not finish')
@@ -55,7 +55,7 @@ export async function checkDiscardMotion(page) {
       }
     }
     const readyCoverage = async () => {
-      if (!coverageTrial) return
+      if (!coverageEnabled) return
       const limit = performance.now() + 400
       while (!document.querySelector('.discard-flight-coverage')) {
         if (performance.now() > limit) throw Error('Opt-in flight did not finish preparation: ' + JSON.stringify(document.querySelector('.discard-motion-surface')?.dataset))
@@ -107,13 +107,17 @@ export async function checkDiscardMotion(page) {
         const item = { actor, riichi, movement: movement?.playState, fade: fade?.playState,
           movementTime: movement?.currentTime, fadeTime: fade?.currentTime,
           displacement: sameCenter }
-        if (coverageTrial) {
+        if (coverageEnabled) {
           const root = document.querySelector('.discard-flight-coverage')
           if (!root) throw Error('Opt-in navigation did not create its flight coverage')
           const native = [movement, fade].filter(Boolean)
           item.coverageSurfaces = document.querySelectorAll('.discard-flight-coverage').length
           const starts = [Number(root.dataset.startTime), ...native.map(a => a.startTime)]
+          if (!starts.every(Number.isFinite)) throw Error('A motion plane has no native timeline start')
           item.timelineSpread = Math.max(...starts) - Math.min(...starts)
+          // Chromium's Animation getter round-trips milliseconds internally.
+          // Allow only double-precision roundoff, not a frame/time tolerance.
+          item.timelineRoundoff = Math.max(1, ...starts.map(Math.abs)) * Number.EPSILON * 4
           if (root.querySelector('[data-pending-discard-seat], [data-hand-seat], .tileImg, .history-jump-target')) {
             throw Error('Visual coverage clones leaked interactive selectors')
           }
@@ -122,7 +126,7 @@ export async function checkDiscardMotion(page) {
         // wheel reversal does. Old callbacks must not cancel the new flight.
         await vm.jumpToNode(parent.currentNodeId)
         await frame()
-        if (coverageTrial) {
+        if (coverageEnabled) {
           await frame()
           await readyCoverage()
           if (!document.querySelector('.discard-flight-coverage')) throw Error('Reverse flight lost coverage')
@@ -132,7 +136,7 @@ export async function checkDiscardMotion(page) {
         await frame()
         item.replacementActive = Boolean(document.querySelector(`[data-pending-discard-seat="${actor}"]`)
           ?.getAnimations().some(animation => animation.playState === 'running'
-            || (coverageTrial && animation.playState === 'paused' && animation.currentTime === 0)))
+            || (coverageEnabled && animation.playState === 'paused' && animation.currentTime === 0)))
         if (!riichi) {
           const repeated = structuredClone(child)
           repeated.currentNodeId = `${childId}-same-face`
@@ -143,7 +147,7 @@ export async function checkDiscardMotion(page) {
           await frame()
           item.repeatedFaceActive = Boolean(document.querySelector(`[data-pending-discard-seat="${actor}"]`)
             ?.getAnimations().some(animation => animation.playState === 'running'
-              || (coverageTrial && animation.playState === 'paused' && animation.currentTime === 0)))
+              || (coverageEnabled && animation.playState === 'paused' && animation.currentTime === 0)))
         }
         await new Promise(resolve => setTimeout(resolve, 220))
         item.remainingOverlays = document.querySelectorAll('.discard-flight-back, .discard-flight-regular-pose, .discard-return-ghost').length
@@ -222,10 +226,10 @@ export async function checkDiscardMotion(page) {
       vm.gameView.table = original.table
       vm.gameView.currentNodeId = original.currentNodeId
       vm.gameView.tree = original.tree
-      document.querySelector('#app').__vue_app__._instance.setupState.coverageTrialEnabled = false
+      document.querySelector('#app').__vue_app__._instance.setupState.settings.display.tileMotionBlur = false
     }
     return cases
-  }, coverageTrial)
+  }, coverageEnabled)
   console.log(`Discard motion phases: ${JSON.stringify(cases)}`)
   assert.equal(cases[0].lifecycleRetirement, true, 'hidden, reduced and resized motion retires cleanly without blocking autoplay')
   for (const item of cases) {
@@ -239,9 +243,9 @@ export async function checkDiscardMotion(page) {
     assert.equal(item.remainingFaceEffects, 0, 'pose swaps cannot leave an opacity effect on a reused river tile')
     assert.equal(item.remainingCoverage, 0, 'coverage surfaces retire after finishing/replacement')
     assert.equal(item.remainingOpacity, '', 'coverage restores source opacity')
-    if (coverageTrial) {
+    if (coverageEnabled) {
       assert.equal(item.coverageSurfaces, 1, 'one bounded local surface replaces the sample tree')
-      assert.equal(item.timelineSpread, 0, 'source, face, pose and coverage use one native timeline')
+      assert.ok(item.timelineSpread <= item.timelineRoundoff, 'source, face, pose and coverage use one native timeline')
     }
   }
 }

@@ -207,7 +207,7 @@ try {
   try {await desktop?.close()}finally {try {await browser?.close()}finally {try {await server?.close()}finally {fs.rmSync(temporary,{recursive:true,force:true,maxRetries:5,retryDelay:200})}}}
 }
 const navigation=spawnSync(process.execPath,[path.join(root,'scripts/check-analysis-ui.mjs')],{cwd:root,stdio:'inherit',env:{...process.env,
-  ...(externalRendererUrl?{RMS_UI_TEST_URL:externalRendererUrl}:{}),RMS_UI_DISCARD_ONLY:'1',RMS_UI_COVERAGE_TRIAL:'1'}})
+  ...(externalRendererUrl?{RMS_UI_TEST_URL:externalRendererUrl}:{}),RMS_UI_DISCARD_ONLY:'1',RMS_UI_COVERAGE:'1'}})
 if(navigation.error)throw navigation.error
 process.exitCode=navigation.status??1
 if(navigation.status===0) {

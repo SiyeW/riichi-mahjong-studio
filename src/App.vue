@@ -190,7 +190,6 @@
           <div
             v-perceptual-surface="activePerceptualSurfaceBinding"
             class="grid-main"
-            :class="{ 'reset-without-motion': suppressAnalysisTransitions }"
           >
             <!-- 用户手牌（屏幕下方，south 方位） -->
             <div class="grid-hand-p0-container" :style="southLaneStyle">
@@ -563,7 +562,6 @@
     <SettingsDialog
       v-if="showSettingsPanel"
       v-model:mistake-threshold="mistakeThresholdDisplay"
-      v-model:coverage-trial-enabled="coverageTrialEnabled"
       :draft="settingsDraft"
       :sound-packs="settings.runtime?.soundPackCatalog.packs || []"
       :ui-scale-options="uiScaleOptions"
@@ -961,7 +959,6 @@ const {
 } = useTileArtwork(t)
 
 const {
-  coverageTrialEnabled,
   autoAdvanceMotionDelayMs,
   cancelPendingDiscardFlight,
   cancelPendingDiscardReturnFlight,
@@ -975,6 +972,7 @@ const {
   schedulePendingDiscardReturnFlight,
 } = useDiscardFlight({
   status,
+  motionBlurEnabled: computed(() => settings.display.tileMotionBlur !== false),
   reduceMotionEnabled,
   tileImageSrc,
   scheduleAutoAdvance: () => scheduleAutoAdvance(),

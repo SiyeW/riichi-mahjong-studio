@@ -107,8 +107,11 @@ try {
       vm.applyGameView((await window.studioAPI.jumpToNode(node)).view)
     }, process.env.RMS_RECORD_MOTION_START_NODE)
     await page.waitForTimeout(350)
-    if (process.env.RMS_RECORD_MOTION_COVERAGE === '1') {
-      await page.evaluate(() => { document.querySelector('#app').__vue_app__._instance.setupState.coverageTrialEnabled = true })
+    if (process.env.RMS_RECORD_MOTION_COVERAGE !== undefined) {
+      await page.evaluate(enabled => { document.querySelector('#app').__vue_app__._instance.setupState.settings.display.tileMotionBlur = enabled }, process.env.RMS_RECORD_MOTION_COVERAGE === '1')
+    }
+    const coverageEnabled = await page.evaluate(() => document.querySelector('#app').__vue_app__._instance.setupState.settings.display.tileMotionBlur)
+    if (coverageEnabled) {
       await page.locator('.discard-motion-surface[data-ready="true"]').waitFor({ state: 'attached' })
     }
     if (process.env.RMS_RECORD_MOTION_WAIT_ARTWORK === '1') {
@@ -355,7 +358,7 @@ try {
         stableForeground,
         inputMode: process.env.RMS_RECORD_MOTION_INPUT === 'trusted' ? 'trusted-browser-wheel' : 'dom-wheel',
         rasterizationRequested: rasterization,
-        coverageTrial: process.env.RMS_RECORD_MOTION_COVERAGE === '1',
+        coverageEnabled,
         traversal: { steps: motionSteps, stepDelayMs: motionStepDelay, direction: motionDirection, startNode: process.env.RMS_RECORD_MOTION_START_NODE || null },
         lockedSession: surface.power.idleState === 'locked' || surfaceAfter.power.idleState === 'locked'
           || surfaceAfter.locks !== surface.locks,

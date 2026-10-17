@@ -37,7 +37,7 @@ export function buildNextMoveHints(
   const hints: NextMoveHint[] = []
   for (const childId of children) {
     const child = nodeMap.get(childId)
-    if (!child || !child.action) continue
+    if (!child || !child.action || child.isDecision !== true) continue
     const action = child.action as Record<string, unknown>
     if (Number(action.actor) !== controlledSeat || typeof action.type !== 'string') {
       continue

@@ -19,6 +19,7 @@ function node(
     action,
     depth: 0,
     roundDepth: 0,
+    isDecision: true,
   } as GameTreeNode
 }
 
@@ -72,4 +73,29 @@ test('next move hints include only actions by the controlled seat', () => {
       consumed: [],
     },
   ])
+})
+
+test('forced riichi tsumogiri is not a branch choice, including absent decision metadata', () => {
+  for (const isDecision of [false, undefined]) {
+    const child = node('forced', { type: 'dahai', actor: 0, pai: '5pr', tsumogiri: true } as GameAction)
+    child.isDecision = isDecision
+    const nodes = new Map([
+      ['current', node('current', null, ['forced'], 'forced')], ['forced', child],
+    ])
+    assert.deepEqual(buildNextMoveHints(nodes, 'current', 0), [])
+  }
+})
+
+test('genuine riichi win, kan and skip choices retain their branch hints', () => {
+  const actions = [
+    { type: 'hora', variant: 'tsumo', actor: 0 },
+    { type: 'ankan', variant: 'ankan:5m', actor: 0, consumed: ['5mr', '5m', '5m', '5m'] },
+    { type: 'none', variant: 'skip_ankan', actor: 0 },
+  ] as GameAction[]
+  const ids = actions.map((_, index) => `choice-${index}`)
+  const nodes = new Map<string, GameTreeNode>([
+    ['current', node('current', null, ids, ids[0])],
+    ...actions.map((action, index): [string, GameTreeNode] => [ids[index], node(ids[index], action)]),
+  ])
+  assert.equal(buildNextMoveHints(nodes, 'current', 0).length, 3)
 })

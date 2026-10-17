@@ -7,7 +7,7 @@ export interface DiscardCoverage { readonly waiting: boolean; cancel(): void; fi
 interface FlightOptions { source: HTMLElement; effects: Animation[]; movement: Animation; duration: number; easing: string; dx: number; dy: number }
 const PREPARATION_BUDGET_MS = 120
 
-/** One enabled-trial owner, one outstanding preparation, one worker surface. */
+/** One renderer owner, one outstanding preparation, one worker surface. */
 export function createDiscardCoverageRenderer() {
   let worker: Worker | null = null, canvas: HTMLCanvasElement | null = null, warm = false, sequence = 0
   let active: { id: number; ready(preparationMs: number): void; retire(): void } | null = null

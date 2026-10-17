@@ -365,15 +365,10 @@
 }
 
 @starting-style {
-  .discard-bars:not(.recommendation-hidden) .choice-bar-fill {
+  .discard-bars:not(.recommendation-hidden) .choice-bar-fill,
+  .special-action-bar-track:not(.recommendation-hidden) .special-action-bar-fill {
     transform: scaleY(0) !important;
   }
-}
-
-.grid-main.reset-without-motion .choice-best-marker,
-.grid-main.reset-without-motion .special-action-bar-fill,
-.grid-main.reset-without-motion .choice-bar-fill {
-  transition: none;
 }
 
 .analysis-dock.reset-without-motion .shanten-chart svg {

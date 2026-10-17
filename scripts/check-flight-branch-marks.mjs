@@ -2,15 +2,15 @@ import assert from 'node:assert/strict'
 import fs from 'node:fs'
 import path from 'node:path'
 
-export async function checkFlightBranchMarks(page, coverageTrial) {
+export async function checkFlightBranchMarks(page, coverageEnabled) {
   const evidence=process.env.RMS_UI_BRANCH_MARK_EVIDENCE
     ? path.resolve(import.meta.dirname,'../.mjai-runtime/branch-mark-flight') : null
   if(evidence)fs.mkdirSync(evidence,{recursive:true})
   await page.evaluate(()=>{
     const state=document.querySelector('#app').__vue_app__._instance.setupState
     window.branchMarkOriginal={view:structuredClone(JSON.parse(JSON.stringify(window.analysisCheck.vm.gameView))),
-      jump:window.studioAPI.jumpToNode,animate:Element.prototype.animate,Worker:window.Worker,trial:state.coverageTrialEnabled}
-    state.cancelPendingDiscardFlight();state.cancelPendingDiscardReturnFlight();state.coverageTrialEnabled=false
+      jump:window.studioAPI.jumpToNode,animate:Element.prototype.animate,Worker:window.Worker,blur:state.settings.display.tileMotionBlur}
+    state.cancelPendingDiscardFlight();state.cancelPendingDiscardReturnFlight();state.settings.display.tileMotionBlur=false
     window.branchMarkAnimations=[];window.branchMarkPrepares=[];window.branchMarkReplies=[]
     Element.prototype.animate=function(...args){const a=window.branchMarkOriginal.animate.apply(this,args);a.pause();a.currentTime=0;window.branchMarkAnimations.push(a);return a}
     window.branchMarkFixture=async({mark,drawn,riichi,id})=>{
@@ -21,8 +21,8 @@ export async function checkFlightBranchMarks(page, coverageTrial) {
       parent.table.rivers[actor]=[];parent.table.actionHistory=[{type:'tsumo',actor,pai:'6s'}]
       parent.tree={rootNodeId:root,currentNodeId:root,currentRoundRootId:root,mainLeafNodeId:childId,revision:1,rounds:[],nodes:[
         {id:root,parentId:null,children:mark==='side'?[childId,otherId]:[childId],mainChildId:mark==='side'?otherId:childId,depth:0},
-        {id:childId,parentId:root,children:[],depth:1,action:mark==='none'?undefined:{type:'dahai',actor,pai,tsumogiri:drawn}},
-        ...(mark==='side'?[{id:otherId,parentId:root,children:[],depth:1,action:{type:'dahai',actor,pai:'3s',tsumogiri:false}}]:[])]}
+        {id:childId,parentId:root,children:[],depth:1,isDecision:mark!=='none',action:{type:'dahai',actor,pai,tsumogiri:drawn}},
+        ...(mark==='side'?[{id:otherId,parentId:root,children:[],depth:1,isDecision:true,action:{type:'dahai',actor,pai:'3s',tsumogiri:false}}]:[])]}
       const child=structuredClone(parent);child.currentNodeId=childId
       child.table.hands[actor].splice(drawn?13:10,1)
       child.table.pendingDiscard={actor,pai,tsumogiri:drawn,targetActor:actor,riichi}
@@ -96,7 +96,7 @@ export async function checkFlightBranchMarks(page, coverageTrial) {
         })
       }
     }
-    if(coverageTrial){
+    if(coverageEnabled){
       await page.evaluate(async()=>{
         Element.prototype.animate=window.branchMarkOriginal.animate
         window.Worker=class extends window.branchMarkOriginal.Worker{
@@ -109,7 +109,7 @@ export async function checkFlightBranchMarks(page, coverageTrial) {
             }super.postMessage(message,transfer)
           }
         }
-        document.querySelector('#app').__vue_app__._instance.setupState.coverageTrialEnabled=true
+        document.querySelector('#app').__vue_app__._instance.setupState.settings.display.tileMotionBlur=true
       })
       await page.locator('.discard-motion-surface[data-ready="true"]').waitFor({state:'attached'})
       for(const mark of ['main','side'])for(const drawn of [false,true])for(const riichi of [false,true]){
@@ -132,13 +132,13 @@ export async function checkFlightBranchMarks(page, coverageTrial) {
   }finally{
     await page.evaluate(async()=>{
       const original=window.branchMarkOriginal,state=document.querySelector('#app').__vue_app__._instance.setupState
-      state.cancelPendingDiscardFlight();state.cancelPendingDiscardReturnFlight();state.coverageTrialEnabled=false
+      state.cancelPendingDiscardFlight();state.cancelPendingDiscardReturnFlight();state.settings.display.tileMotionBlur=false
       Element.prototype.animate=original.animate;window.Worker=original.Worker
       window.studioAPI.jumpToNode=async()=>({state:JSON.parse(JSON.stringify(window.analysisCheck.vm.status)),view:original.view})
       await window.analysisCheck.vm.jumpToNode(original.view.currentNodeId)
-      window.studioAPI.jumpToNode=original.jump;state.coverageTrialEnabled=original.trial
+      window.studioAPI.jumpToNode=original.jump;state.settings.display.tileMotionBlur=original.blur
       delete window.branchMarkOriginal;delete window.branchMarkAnimations;delete window.branchMarkPrepares;delete window.branchMarkReplies;delete window.branchMarkFixture;delete window.branchMarkCase
     })
   }
-  console.log(`Branch-mark flights: ${results.length} native trajectories, marked worker snapshots ${coverageTrial?'verified':'not requested'}.`)
+  console.log(`Branch-mark flights: ${results.length} native trajectories, marked worker snapshots ${coverageEnabled?'verified':'not requested'}.`)
 }

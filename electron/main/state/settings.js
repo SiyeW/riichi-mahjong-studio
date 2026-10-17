@@ -44,6 +44,7 @@ const DEFAULT_DISPLAY_SETTINGS = Object.freeze({
   language: 'system',
   colorScheme: 'default',
   reduceMotion: false,
+  tileMotionBlur: true,
   uiScale: 1,
   showTsumogiriInPlay: true,
   tablePosition: 'center',
@@ -142,6 +143,7 @@ function normalizeDockPanelSizeFractions(value) {
 function normalizeDisplaySettings(display = {}) {
   return {
     ...display,
+    tileMotionBlur: display.tileMotionBlur !== false,
     language: ['system', 'zh-CN', 'ja-JP', 'en-US'].includes(display.language)
       ? display.language
       : DEFAULT_DISPLAY_SETTINGS.language,
