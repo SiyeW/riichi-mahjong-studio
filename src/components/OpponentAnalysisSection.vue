@@ -136,7 +136,6 @@ const props = defineProps<{
 
 const { t, numberLocale } = useI18n()
 const tooltip = useAnalysisHoverTooltipController()
-watch(() => props.analysis, tooltip.clear, { flush: 'sync' })
 const sectionElement = ref<HTMLElement | null>(null)
 const scoreModeCount = ref(3)
 const scoreModeLayoutStyle = ref<Record<string, string>>({})

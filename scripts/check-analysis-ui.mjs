@@ -11,7 +11,7 @@ import { checkRendererRecovery } from './check-renderer-recovery.mjs'
 import { checkDiscardMotion } from './check-discard-motion.mjs'
 import { checkRuntimeResources } from './check-runtime-resources.mjs'
 import { checkAnalysisLoading } from './check-analysis-loading.mjs'
-import { checkDistributionLifecycle } from './check-distribution-lifecycle.mjs'
+import { checkAnalysisPresentationLifecycle } from './check-analysis-presentation-lifecycle.mjs'
 import { checkIndicatorFamily, checkTableTurnIndicators } from './check-interface-indicators.mjs'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
@@ -391,8 +391,8 @@ try {
     console.log(`Perceptual surface batch: ${JSON.stringify(await page.evaluate(async () => (await import('/scripts/fixtures/perceptual-batch.js')).checkPerceptualBatch()))}`)
     break uiChecks
   }
-  if (process.env.RMS_UI_DISTRIBUTION_ONLY) {
-    await checkDistributionLifecycle(page)
+  if (process.env.RMS_UI_PRESENTATION_LIFECYCLE_ONLY) {
+    await checkAnalysisPresentationLifecycle(page)
     break uiChecks
   }
   if (process.env.RMS_UI_COUNT_GEOMETRY_ONLY) {
@@ -409,7 +409,7 @@ try {
   }
   if (!performanceOnly) {
   console.log(`Perceptual surface batch: ${JSON.stringify(await page.evaluate(async () => (await import('/scripts/fixtures/perceptual-batch.js')).checkPerceptualBatch()))}`)
-  await checkDistributionLifecycle(page)
+  await checkAnalysisPresentationLifecycle(page)
   await page.evaluate(() => {
     window.analysisCheck.vm.closeState.active = true
     window.analysisCheck.vm.closeState.stage = 'recovery'

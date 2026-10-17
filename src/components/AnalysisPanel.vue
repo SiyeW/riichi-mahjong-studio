@@ -66,7 +66,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import type { AnalysisCountLayout } from '../analysisCountSpacing'
 import type { AnalysisPanelProps } from '../analysisPanelTypes'
 import { useAnalysisHoverTooltip } from '../useAnalysisHoverTooltip'
@@ -79,7 +79,10 @@ import TileCountAnalysisSection from './TileCountAnalysisSection.vue'
 const props = defineProps<AnalysisPanelProps>()
 const emit = defineEmits<{ 'update:countLayout': [value: AnalysisCountLayout] }>()
 const analysisRootElement = ref<HTMLElement | null>(null)
-const { tooltip, tooltipElement } = useAnalysisHoverTooltip(analysisRootElement)
+const { tooltip, tooltipElement, controller } = useAnalysisHoverTooltip(analysisRootElement)
+// Shared hover content belongs to the displayed snapshot, not the next live
+// table or a prediction that has already been replaced/cleared.
+watch(() => [props.analysis, props.controlledSeat, props.dealer, props.section], controller.clear, { flush: 'sync' })
 </script>
 
 <style src="./AnalysisPanel.css"></style>
