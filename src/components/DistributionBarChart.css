@@ -9,7 +9,7 @@
 }
 .analysis-distribution-chart.has-outside-axis > .analysis-probability-axis {
   position: absolute;
-  left: 100%;
+  left: calc(100% + var(--distribution-axis-offset, 0px));
 }
 .analysis-distribution-viewport {
   width: 100%;

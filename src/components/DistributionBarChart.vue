@@ -53,7 +53,6 @@
       :height="axisHeight"
       :label-spacing="axisLabelSpacing"
       :clamp-endpoints="true"
-      :show-line="outsideAxis"
     />
   </div>
 </template>

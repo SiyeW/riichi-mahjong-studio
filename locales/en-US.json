@@ -354,6 +354,7 @@
   "shanten.five": "5-shanten",
   "shanten.six": "6-shanten",
   "shanten.furiten": "Furiten / no yaku",
+  "shanten.furitenLegend": "Furiten &\nno yaku",
   "shanten.emptyAria": "No shanten probabilities for {opponent}",
   "shanten.chartAria": "Shanten probability distribution for {opponent}",
   "result.unrevealedDora": "Unrevealed dora indicator",

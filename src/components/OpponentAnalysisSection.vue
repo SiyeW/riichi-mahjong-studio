@@ -3,6 +3,7 @@
     ref="sectionElement"
     v-perceptual-surface="opponentSurface"
     class="analysis-opponent-section"
+    :class="{ 'has-distributions': hasOpponentDoraDistributions || hasOpponentScoreDistributions }"
     :style="scoreModeLayoutStyle"
   >
     <div class="analysis-opponent-grid">
@@ -18,11 +19,12 @@
           @slice-leave="tooltip.clear"
         />
       </div>
-    </div>
-    <div class="analysis-shanten-legend" :aria-label="t('analysis.shantenLegend')">
-      <span v-for="(label, index) in shantenLabels" :key="label">
-        <i :style="{ backgroundColor: shantenColors[index] }" />{{ label }}
-      </span>
+      <div class="analysis-shanten-legend" :aria-label="t('analysis.shantenLegend')">
+        <span v-for="(label, index) in shantenLabels" :key="label">
+          <i :style="{ backgroundColor: shantenColors[index] }" />
+          <span class="analysis-shanten-legend-label">{{ index === shantenLabels.length - 1 ? t('shanten.furitenLegend') : label }}</span>
+        </span>
+      </div>
     </div>
     <div
       class="analysis-opponent-prediction-grid"
@@ -105,6 +107,9 @@
           </div>
         </div>
       </div>
+      <div class="analysis-opponent-scale-gutter" aria-hidden="true">
+        <span v-for="label in percentageLabels" :key="label">{{ label }}</span>
+      </div>
     </div>
   </section>
 </template>
@@ -112,6 +117,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { analysisSurface } from '../analysisSurface'
+import { probabilityScaleTicks } from '../analysisProbabilityScale'
 import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
 import { scoreModeGeometry } from '../analysisScoreModeGeometry'
 import type { AnalysisRecord } from '../useAnalysisOutputs'
@@ -166,6 +172,11 @@ const {
   formatMahjongScore,
   formatProbability,
 } = useOpponentAnalysisData(props, t, numberLocale)
+
+const percentageLabels = computed(() => [...new Set(
+  [doraDistributionScale.value, scoreDistributionScale.value]
+    .flatMap(scale => probabilityScaleTicks(scale).map(tick => tick.label).filter(Boolean)),
+)])
 
 const scoreModeMeasurementKey = computed(() => opponentCards.value.map((opponent) => (
   opponent.scoreModes.map((entry) => formatMahjongScore(entry.value)).join(',')

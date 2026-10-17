@@ -1494,12 +1494,39 @@ try {
     const predictions = [...section.querySelectorAll('.analysis-opponent-prediction')]
     const sectionBounds = section.getBoundingClientRect()
     const gridBounds = grid?.getBoundingClientRect()
+    const gutter = section.querySelector('.analysis-opponent-scale-gutter')
+    const divider = getComputedStyle(gutter)
+    const columnDivider = getComputedStyle(section.querySelectorAll('.analysis-opponent-predictions')[1])
+    const legend = section.querySelector('.analysis-shanten-legend')
+    const legendBounds = legend.getBoundingClientRect(), gutterBounds = gutter.getBoundingClientRect()
+    const cards = [...section.querySelectorAll('.analysis-opponent-card')]
+    const columns = [...section.querySelectorAll('.analysis-opponent-predictions')]
+    const legendStyle = getComputedStyle(legend)
+    const legendRows = [...legend.children].map(row => ({
+      box: row.getBoundingClientRect(),
+      color: row.querySelector('i').getBoundingClientRect(),
+      text: row.querySelector('.analysis-shanten-legend-label').getBoundingClientRect(),
+      gap: Number.parseFloat(getComputedStyle(row).columnGap),
+    }))
+    const requiredLegendWidth = Number.parseFloat(legendStyle.paddingLeft) + Number.parseFloat(legendStyle.paddingRight)
+      + Math.max(...legendRows.map(row => row.color.width + row.gap + row.text.width))
+    const requiredTickWidth = Math.max(...[...gutter.children].map(child => child.getBoundingClientRect().width))
     return {
       sectionHeight: sectionBounds.height,
       gridHeight: gridBounds?.height || 0,
       unusedBottomHeight: gridBounds ? sectionBounds.bottom - gridBounds.bottom : 0,
       doraHeight: dora?.getBoundingClientRect().height || 0,
       scoreHeight: score?.getBoundingClientRect().height || 0,
+      sharedDivider: divider.boxShadow === columnDivider.boxShadow && divider.boxShadow !== 'none'
+        && Math.abs(gutterBounds.top - gridBounds.top) < .03 && Math.abs(gutterBounds.bottom - gridBounds.bottom) < .03,
+      fourColumnLayout: cards.every((card, index) => {
+        const top = card.getBoundingClientRect(), bottom = columns[index].getBoundingClientRect()
+        return Math.abs(top.left - bottom.left) < .03 && Math.abs(top.width - bottom.width) < .03
+      }) && Math.abs(legendBounds.left - gutterBounds.left) < .03 && Math.abs(legendBounds.width - gutterBounds.width) < .03,
+      intrinsicGutter: Math.abs(gutterBounds.width - Math.max(requiredLegendWidth, requiredTickWidth)) < .1,
+      verticalLegend: legendRows.every((row, index) => row.color.right < row.text.left
+        && (index === 0 || row.box.top >= legendRows[index - 1].box.bottom)),
+      splitLegend: legend.lastElementChild.textContent.trim().split('\n').length === 2,
       comparisonAxes: ['dora', 'score'].map(kind => {
         const charts = [...section.querySelectorAll(`.analysis-${kind}-distribution`)]
         const axes = charts.flatMap(chart => [...chart.querySelectorAll('.analysis-probability-axis')])
@@ -1510,7 +1537,7 @@ try {
           count: axes.length,
           equalWidths: Math.max(...plots.map(box => box.width)) - Math.min(...plots.map(box => box.width)) < .03,
           outsideLast: bounds && bounds.left >= plots[2].right - .03 && bounds.right <= gridBounds.right + .03,
-          line: axis && Number.parseFloat(getComputedStyle(axis, '::before').borderLeftWidth) > 0,
+          axisStrokeAbsent: axis && getComputedStyle(axis, '::before').content === 'none',
           aligned: bounds && tracks.every(box => Math.abs(box.top - bounds.top) < 1 / devicePixelRatio
             && Math.abs(box.bottom - bounds.bottom) < 1 / devicePixelRatio),
         }
@@ -1579,15 +1606,25 @@ try {
   )
   const roomyOpponent = await opponentGeometry()
   const assertSharedAxes = geometry => {
+    assert.equal(geometry.fourColumnLayout, true, 'all three dividers align between pies and predictions')
+    assert.equal(geometry.intrinsicGutter, true, 'gutter uses the widest actual legend or tick content')
+    assert.equal(geometry.verticalLegend, true, 'legend has vertical rows with swatch left of text')
+    assert.equal(geometry.splitLegend, true, 'furiten/no-yaku legend wraps into two explicit lines')
+    assert.equal(geometry.sharedDivider, true, 'tick column uses the same full-height divider as opponent columns')
     for (const axis of geometry.comparisonAxes) {
       assert.equal(axis.count, 1, 'one shared outer axis per distribution comparison')
       assert.equal(axis.equalWidths, true, 'outer axis never shrinks only the last opponent')
       assert.equal(axis.outsideLast, true, 'axis lies outside the rightmost plot, inside the reserved gutter')
-      assert.equal(axis.line, true, 'shared axis has its vertical line')
+      assert.equal(axis.axisStrokeAbsent, true, 'ticks do not introduce a separate chart-axis stroke')
       assert.equal(axis.aligned, true, 'shared axis starts at the plots, not at their headings')
     }
   }
   assertSharedAxes(roomyOpponent)
+  for (const language of ['ja-JP', 'en-US', 'zh-CN']) {
+    await page.evaluate(value => { window.analysisCheck.vm.settings.display.language = value }, language)
+    await page.waitForTimeout(180)
+    assertSharedAxes(await opponentGeometry())
+  }
   assert.ok(roomyOpponent.doraHeight > 68, 'roomy opponent panel lets the dora distribution grow beyond its former cap')
   assert.ok(roomyOpponent.scoreHeight > 50, 'roomy opponent panel lets the score distribution grow beyond its former cap')
   assert.ok(Math.abs(roomyOpponent.unusedBottomHeight) < 1, 'opponent predictions consume the full remaining panel height')

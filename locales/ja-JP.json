@@ -354,6 +354,7 @@
   "shanten.five": "5シャンテン",
   "shanten.six": "6シャンテン",
   "shanten.furiten": "フリテン／役なし",
+  "shanten.furitenLegend": "フリテン&\n役なし",
   "shanten.emptyAria": "{opponent}のシャンテン数確率データなし",
   "shanten.chartAria": "{opponent}のシャンテン数確率分布",
   "result.unrevealedDora": "未公開のドラ表示牌",
