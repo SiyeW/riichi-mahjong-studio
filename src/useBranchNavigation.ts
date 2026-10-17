@@ -2,6 +2,7 @@ import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { sameViewRequestContext, sameViewRequestScope } from './analysisPosition'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
 import { recordCommandScope } from './recordCommandScope.ts'
+import { createWheelStepAccumulator, type NavigationWheelInput } from './wheelNavigation'
 import type { GameTreeNode, GameView, GameViewTransitionDirection, RoundSummary } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 
@@ -67,8 +68,13 @@ let wheelNavigationDirection: GameViewTransitionDirection | null = null
 const deferredWheelRuns: Array<{ offset: -1 | 1; count: number }> = []
 const wheelTraversalNodes = new Map<string, GameTreeNode>()
 const MAX_DEFERRED_WHEEL_RUNS = 256
+const MAX_DEFERRED_WHEEL_STEPS = 1024
+const wheelSteps = createWheelStepAccumulator()
+
+watch(() => [status.mode, gameView.viewToken?.sessionId || gameView.gameId], () => wheelSteps.reset())
 
 function cancelPendingWheelNavigation() {
+  wheelSteps.reset()
   wheelNavigationBurst += 1
   wheelNavigationEpoch += 1
   wheelNavigationDirection = null
@@ -364,14 +370,21 @@ function drainDeferredWheelSteps() {
 }
 
 function navigateTreeByOffset(offset: number) {
-  if (!offset) return
+  if (!Number.isSafeInteger(offset) || !offset) return
+  if (Math.abs(offset) + deferredWheelRuns.reduce((sum, run) => sum + run.count, 0) > MAX_DEFERRED_WHEEL_STEPS) {
+    cancelPendingWheelNavigation()
+    wheelNavigationCursorNodeId = gameView.currentNodeId
+    settleAnalysisVisit()
+    console.warn('Canceled an overloaded wheel navigation burst')
+    return
+  }
   const step = offset < 0 ? -1 : 1
   const direction = step < 0 ? 'backward' : 'forward'
   if (wheelNavigationDirection && wheelNavigationDirection !== direction) wheelNavigationEpoch++
   wheelNavigationDirection = direction
   const previous = deferredWheelRuns.at(-1)
-  if (previous?.offset === step) previous.count++
-  else deferredWheelRuns.push({ offset: step, count: 1 })
+  if (previous?.offset === step) previous.count += Math.abs(offset)
+  else deferredWheelRuns.push({ offset: step, count: Math.abs(offset) })
   if (deferredWheelRuns.length > MAX_DEFERRED_WHEEL_RUNS) {
     cancelPendingWheelNavigation()
     wheelNavigationCursorNodeId = gameView.currentNodeId
@@ -433,6 +446,7 @@ function navigateTreeByOffset(offset: number) {
     invalidateNavigation,
     jumpToNode,
     navigateTreeByOffset,
+    navigateTreeByWheel: (event: NavigationWheelInput) => navigateTreeByOffset(wheelSteps.consume(event)),
     nodeCommentDraft,
     nodeMutationRequestInFlight,
     onNodeCommentInput,

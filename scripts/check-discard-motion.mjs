@@ -296,6 +296,20 @@ async function checkWheelProgress(page) {
       if (vm.gameView.currentNodeId !== 'wheel-2') throw new Error('A reply from before wheel reversal moved the table backwards')
       requests.shift()()
       await settle()
+      delayed = false
+      await vm.jumpToNode('wheel-0'); await settle()
+      wheel(3); await settle()
+      if (vm.gameView.currentNodeId !== 'wheel-3') throw new Error('A coalesced wheel event lost its extra steps')
+      wheel(-3); await settle()
+      if (vm.gameView.currentNodeId !== 'wheel-0') throw new Error('Merged forward/backward wheel movement did not conserve the cursor')
+      for (let i = 0; i < 4; i++) wheel(.25)
+      await settle()
+      if (vm.gameView.currentNodeId !== 'wheel-1') throw new Error('Fractional wheel input did not accumulate to one step')
+      await vm.jumpToNode('wheel-0'); await settle()
+      wheel(.5); await settle()
+      await vm.jumpToNode('wheel-0'); await settle()
+      wheel(.5); await settle()
+      if (vm.gameView.currentNodeId !== 'wheel-0') throw new Error('An explicit jump retained an old fractional wheel gesture')
       // Only the active round's nodes are present. Queue steps at an unloaded
       // round, then use its reply as structural facts even after a reversal.
       const rounds = [

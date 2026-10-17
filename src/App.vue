@@ -1462,6 +1462,7 @@ const {
   invalidateNavigation,
   jumpToNode,
   navigateTreeByOffset,
+  navigateTreeByWheel,
   nodeCommentDraft,
   nodeMutationRequestInFlight,
   onNodeCommentInput,
@@ -1810,8 +1811,7 @@ watchEffect(() => {
 function onTableWheel(event: WheelEvent) {
   event.preventDefault()
   if (status.mode !== 'research') return
-  if (event.deltaY > 0) navigateTreeByOffset(1)
-  if (event.deltaY < 0) navigateTreeByOffset(-1)
+  navigateTreeByWheel(event)
 }
 
 function onTableContextMenu(event: MouseEvent) {
