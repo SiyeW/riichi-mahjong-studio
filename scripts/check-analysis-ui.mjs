@@ -2691,8 +2691,11 @@ try {
     const captureDistributionGeometry = () => {
       const distributions = [...document.querySelectorAll(
         '.analysis-panel-live .analysis-dora-distribution, .analysis-panel-live .analysis-score-distribution',
-      )]
-      const canvases = [...document.querySelectorAll('.analysis-panel-live .analysis-distribution-canvas')]
+      )].filter(element => getComputedStyle(element).display !== 'none')
+      // Partial real outputs can omit a different opponent at the next node.
+      // Hidden reusable canvases have no allocated box; compare actual visible
+      // tracks, just as the previous conditional-mount implementation did.
+      const canvases = distributions.map(element => element.querySelector('.analysis-distribution-canvas'))
       return {
         distributionHeights: distributions.map(element => element.getBoundingClientRect().height),
         trackHeights: distributions.map(distribution => (
