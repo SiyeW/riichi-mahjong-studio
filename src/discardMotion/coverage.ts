@@ -4,6 +4,7 @@ import { prepareEmbeddedTileArtwork } from '../tiles/artworkCatalog'
 
 export interface DiscardCoverage { readonly waiting: boolean; cancel(): void; finished: Promise<void> }
 interface FlightOptions { source: HTMLElement; effects: Animation[]; movement: Animation; duration: number; easing: string; dx: number; dy: number }
+const PREPARATION_BUDGET_MS = 120
 
 /** One enabled-trial owner, one outstanding preparation, one worker surface. */
 export function createDiscardCoverageRenderer() {
@@ -70,7 +71,7 @@ export function createDiscardCoverageRenderer() {
       surface.dataset.failure = String(reason); retire()
     }
     delete surface.dataset.failure
-    let watchdog = window.setTimeout(() => fail('Preparation timeout'), 120)
+    let watchdog = window.setTimeout(() => fail('Preparation timeout'), PREPARATION_BUDGET_MS)
     const resizeObserver = new ResizeObserver(() => {
       if (!source.isConnected || devicePixelRatio !== dpr) fail('Source retired or DPI changed')
       else {
@@ -104,6 +105,9 @@ export function createDiscardCoverageRenderer() {
     }
     active = { id, retire, ready(workerMs) {
       if (!waiting || !source.isConnected || document.hidden || devicePixelRatio !== dpr) { retire(); return }
+      // An overdue timer may run after this message when the main thread was
+      // blocked. Admission is governed by elapsed time, not callback ordering.
+      if (performance.now() - began > PREPARATION_BUDGET_MS) { fail('Preparation timeout'); return }
       clearTimeout(watchdog); watchdog = window.setTimeout(() => fail('Playback timeout'), duration + 600)
       playing = true
       const startTime = performance.now()
@@ -124,6 +128,7 @@ export function createDiscardCoverageRenderer() {
     snapshotBusy = true
     void captureMotionSnapshot(source, effects, dx, dy).then(snapshot => {
       if (!waiting || active?.id !== id) return
+      if (performance.now() - began > PREPARATION_BUDGET_MS) { fail('Preparation timeout'); return }
       surface.dataset.snapshotMs = String(performance.now() - began)
       surface.dataset.snapshotStages = JSON.stringify(snapshot.timings)
       Object.assign(surface.style, { left: `${snapshot.left}px`, top: `${snapshot.top}px`,

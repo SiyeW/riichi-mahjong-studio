@@ -4,6 +4,7 @@ export async function checkMotionWorkerFailures(page, label) {
   const result = await page.evaluate(async () => {
     const { createDiscardCoverageRenderer } = await import('/src/discardMotion/coverage.ts')
     const source = window.motionSource, OriginalWorker = window.Worker
+    const originalDecode = HTMLImageElement.prototype.decode
     const opacity = source.style.getPropertyValue('opacity'), priority = source.style.getPropertyPriority('opacity')
     const renderers = [], animations = [], urls = [], replies = []
     let probe, nonce = 0
@@ -50,6 +51,44 @@ export async function checkMotionWorkerFailures(page, label) {
       await new Promise(resolve=>setTimeout(resolve,30))
       if(!restarted.ready||!document.querySelector('.discard-motion-surface')) throw Error('A retired worker stopped its replacement')
       restarted.stop();restored()
+
+      // A busy main thread can deliver a ready message before the expired timer
+      // task. A timer alone cannot enforce the preparation admission deadline.
+      window.Worker=class extends OriginalWorker {
+        set onmessage(listener) {
+          super.onmessage=event=>{
+            if(event.data.type==='ready'&&event.data.id>0) {
+              const end=performance.now()+135;while(performance.now()<end){}
+            }
+            listener(event)
+          }
+        }
+      }
+      const delayedReady=renderer();delayedReady.start();await until(()=>delayedReady.ready)
+      const late=flight(delayedReady);await late.handle.finished
+      if(document.querySelector('.discard-flight-coverage')
+        ||document.querySelector('.discard-motion-surface')?.dataset.failure!=='Preparation timeout'
+        ||late.movement.playState!=='running')throw Error('Late ready message bypassed the elapsed admission deadline')
+      restored();late.movement.cancel();delayedReady.stop()
+
+      let prepares=0
+      window.Worker=class extends OriginalWorker {
+        postMessage(message,transfer) {
+          if(message.type==='prepare'&&message.id>0)prepares++
+          super.postMessage(message,transfer)
+        }
+      }
+      const delayedDecode=renderer();delayedDecode.start();await until(()=>delayedDecode.ready)
+      HTMLImageElement.prototype.decode=async function(...args) {
+        await originalDecode.apply(this,args)
+        const end=performance.now()+135;while(performance.now()<end){}
+      }
+      const decodedLate=flight(delayedDecode);await decodedLate.handle.finished
+      HTMLImageElement.prototype.decode=originalDecode
+      if(prepares!==0||document.querySelector('.discard-flight-coverage')
+        ||document.querySelector('.discard-motion-surface')?.dataset.failure!=='Preparation timeout'
+        ||decodedLate.movement.playState!=='running')throw Error('Late decoded snapshot still queued GPU preparation')
+      restored();decodedLate.movement.cancel();delayedDecode.stop()
 
       window.Worker=class extends OriginalWorker {
         constructor(url,options) {
@@ -114,10 +153,12 @@ export async function checkMotionWorkerFailures(page, label) {
       if(!fatal?.reason.includes('retirement')||fatal.probeStats.createdTextures!==fatal.probeStats.deletedTextures
         ||fatal.probeStats.createdFences!==fatal.probeStats.deletedFences) throw Error('A permanently stalled fence did not retire its context/resources')
       restored()
-      return {unsupported:true,malformed:true,lateWorkerIgnored:true,retiringRejected:true,retirementTimedOut:true,balanced}
+      return {unsupported:true,malformed:true,lateWorkerIgnored:true,lateReadyRejected:true,lateDecodeRejected:true,
+        retiringRejected:true,retirementTimedOut:true,balanced}
     } finally {
       animations.forEach(animation=>animation.cancel());renderers.forEach(r=>r.stop())
       window.Worker=OriginalWorker;urls.forEach(url=>URL.revokeObjectURL(url))
+      HTMLImageElement.prototype.decode=originalDecode
       if(opacity)source.style.setProperty('opacity',opacity,priority);else source.style.removeProperty('opacity')
     }
   })
