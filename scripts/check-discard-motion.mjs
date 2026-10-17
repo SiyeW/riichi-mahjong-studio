@@ -262,6 +262,9 @@ async function checkWheelProgress(page) {
     const original = JSON.parse(JSON.stringify(vm.gameView))
     const originalJump = window.studioAPI.jumpToNode
     const base = structuredClone(original)
+    base.viewToken = { sessionId: 'wheel-fixture', sequence: 0, intent: 0, gameId: base.gameId,
+      nodeId: 'wheel-0', seat: vm.status.controlledSeat, mode: vm.status.mode, visibleHands: false,
+      decisionEpoch: 0, opponentEpoch: 0 }
     base.tree = { rootNodeId: 'wheel-0', currentNodeId: 'wheel-0', mainLeafNodeId: 'wheel-3',
       currentRoundRootId: 'wheel-0', revision: 1, rounds: [], nodes: Array.from({ length: 4 }, (_, i) => ({
         id: `wheel-${i}`, parentId: i ? `wheel-${i-1}` : null, children: i < 3 ? [`wheel-${i+1}`] : [],
@@ -270,7 +273,8 @@ async function checkWheelProgress(page) {
     const requests = []
     let delayed = false
     window.studioAPI.jumpToNode = id => {
-      const response = { state: JSON.parse(JSON.stringify(vm.status)), view: { ...base, currentNodeId: id } }
+      const response = { state: JSON.parse(JSON.stringify(vm.status)), view: { ...base, currentNodeId: id,
+        viewToken: { ...base.viewToken, nodeId: id } } }
       if (!delayed) return Promise.resolve(response)
       return new Promise(resolve => requests.push(() => resolve(response)))
     }
@@ -305,6 +309,10 @@ async function checkWheelProgress(page) {
       for (let i = 0; i < 4; i++) wheel(.25)
       await settle()
       if (vm.gameView.currentNodeId !== 'wheel-1') throw new Error('Fractional wheel input did not accumulate to one step')
+      await vm.jumpToNode('wheel-0'); await settle()
+      wheel(1.5); await settle()
+      wheel(.5); await settle()
+      if (vm.gameView.currentNodeId !== 'wheel-2') throw new Error('An ordinary frame commit reset fractional wheel movement')
       await vm.jumpToNode('wheel-0'); await settle()
       wheel(.5); await settle()
       await vm.jumpToNode('wheel-0'); await settle()

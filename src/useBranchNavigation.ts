@@ -71,7 +71,7 @@ const MAX_DEFERRED_WHEEL_RUNS = 256
 const MAX_DEFERRED_WHEEL_STEPS = 1024
 const wheelSteps = createWheelStepAccumulator()
 
-watch(() => [status.mode, gameView.viewToken?.sessionId || gameView.gameId], () => wheelSteps.reset())
+watch([() => status.mode, () => gameView.viewToken?.sessionId || gameView.gameId], () => wheelSteps.reset())
 
 function cancelPendingWheelNavigation() {
   wheelSteps.reset()
