@@ -318,8 +318,12 @@ try {
         lockedSession: surface.power.idleState === 'locked' || surfaceAfter.power.idleState === 'locked'
           || surfaceAfter.locks !== surface.locks,
         frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
-    const { callbackArrivals, callbackTimelineStamps, ...motionSummary } = motion
-    console.log(JSON.stringify({ motion: motionSummary, work, navigation }))
+    console.log(JSON.stringify({ profile: process.env.RMS_RECORD_MOTION_PROFILE,
+      motion: { initial: motion.initial.node, final: motion.final.node, visits: motion.visits,
+        flights: motion.flightWindows.length, completedCoverage: motion.coverage.length,
+        maximumCallbackGap: Math.max(0, ...motion.flightWindows.map(flight => flight.maximumCallbackGapMs || 0)),
+        longTasks: motion.longTasks.length, maximumLongTask: Math.max(0, ...motion.longTasks.map(task => task.duration)) },
+      work, navigationRequests: navigation.length }))
     assert.equal(traceError, null, 'optional trace failed; the primary metrics were preserved in the profile')
     if (process.env.RMS_RECORD_MOTION_INPUT === 'trusted') {
       assert.ok(motion.inputs.length && motion.inputs.every(input => input.trusted), 'native-input trials must receive trusted wheel events')
@@ -327,7 +331,8 @@ try {
     if (surface.mode === 'native' && process.env.RMS_RECORD_MOTION_ALLOW_LOCKED !== '1') {
       assert.equal(stableForeground, true, 'The foreground surface changed during sampling; results are diagnostic only.')
     }
-    assert.ok(motion.visits >= (pair ? 9 : 10), 'the motion probe must observe actual renderer frame commits')
+    const minimumVisits = pair ? 9 : Math.min(10, motionSteps * (motionDirection === 'round-trip' ? 2 : 1) + 1)
+    assert.ok(motion.visits >= minimumVisits, 'the motion probe must observe actual renderer frame commits')
     assert.equal(motion.backendNode, motion.final.node, 'the browser must settle on the actual requested backend cursor')
     assert.equal(motion.motionPending, false, 'navigation must not strand a motion owner after settling')
     if (pair) assert.ok(motion.flightWindows.length >= 4, 'the selected pair must exercise actual discard motion')

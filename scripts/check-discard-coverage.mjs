@@ -181,3 +181,8 @@ const navigation=spawnSync(process.execPath,[path.join(root,'scripts/check-analy
   ...(externalRendererUrl?{RMS_UI_TEST_URL:externalRendererUrl}:{}),RMS_UI_DISCARD_ONLY:'1',RMS_UI_COVERAGE_TRIAL:'1'}})
 if(navigation.error)throw navigation.error
 process.exitCode=navigation.status??1
+if(navigation.status===0) {
+  const compiled=spawnSync(process.execPath,[path.join(root,'scripts/check-built-discard-coverage.mjs')],{cwd:root,stdio:'inherit',env:process.env})
+  if(compiled.error)throw compiled.error
+  process.exitCode=compiled.status??1
+}

@@ -27,6 +27,7 @@
     "preview:motion": "node scripts/preview-discard-motion.mjs",
     "test:motion": "node --test scripts/visual-tests/discard-motion/model.test.ts && tsc --noEmit -p scripts/visual-tests/discard-motion/tsconfig.json && node scripts/check-motion-blur.mjs",
     "test:coverage": "node scripts/check-discard-coverage.mjs",
+    "test:motion:surface": "node scripts/check-motion-surface-stall.mjs",
     "check:dependencies": "node scripts/check-dependency-cycles.mjs",
     "check": "npm run check:dependencies && npm test && npm run build && npm run test:ui && npm run test:coverage",
     "preview": "vite preview"
