@@ -5,11 +5,15 @@
     class="analysis-distribution-chart"
     :class="{
       'has-labels': showLabels,
+      'has-outside-axis': outsideAxis,
     }"
   >
     <div ref="viewportElement" class="analysis-distribution-viewport" @scroll="scheduleGeometry">
       <div ref="plotElement" class="analysis-distribution-plot">
         <canvas ref="canvasElement" class="analysis-distribution-canvas" aria-hidden="true" />
+        <span v-if="showLabels && !entries.length && showAxis" class="analysis-distribution-placeholder" aria-hidden="true">
+          <i class="analysis-distribution-track" /><small>&nbsp;</small>
+        </span>
         <template v-if="showLabels">
           <span
             v-for="(entry, index) in entries"
@@ -42,13 +46,14 @@
       </div>
     </div>
     <ProbabilityAxis
-      v-if="probabilityScale !== undefined"
+      v-if="showAxis && probabilityScale !== undefined"
       :scale="displayedProbabilityScale"
       direction="up"
       :style="axisLayoutStyle"
       :height="axisHeight"
       :label-spacing="axisLabelSpacing"
       :clamp-endpoints="true"
+      :show-line="outsideAxis"
     />
   </div>
 </template>
@@ -70,7 +75,7 @@ export type DistributionBarEntry = Readonly<{
   gapBefore?: boolean
 }>
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   entries: readonly DistributionBarEntry[]
   colorVariable: string
   reduceMotion: boolean
@@ -78,7 +83,9 @@ const props = defineProps<{
   trackSurface: PerceptualSurfaceBinding
   referenceRatio?: number | null
   probabilityScale?: number
-}>()
+  showAxis?: boolean
+  outsideAxis?: boolean
+}>(), { showAxis: true, outsideAxis: false })
 const emit = defineEmits<{
   itemEnter: [event: Event, index: number]
   itemLeave: []
@@ -269,7 +276,9 @@ function animate() {
   const unchanged = referenceUnchanged && Math.abs(sourceProbabilityScale - targetProbabilityScale) <= 1e-6
     && target.length === displayedScales.length
     && target.every((value, index) => Math.abs(value - displayedScales[index]) <= 1e-6)
-  if (!displayedScales.length || props.reduceMotion || unchanged) {
+  // An empty rightmost plot can still own the group's live outer scale.
+  // Its axis must animate even when there are no local bars to interpolate.
+  if ((!displayedScales.length && !props.outsideAxis) || props.reduceMotion || unchanged) {
     displayedScales = target
     displayedReferenceRatio = targetReferenceRatio
     displayedProbabilityScale.value = targetProbabilityScale

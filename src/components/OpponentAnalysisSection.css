@@ -38,12 +38,14 @@
 }
 
 .analysis-opponent-prediction-grid {
+  --probability-axis-width: calc(4ch + 0.32rem * var(--floating-panel-scale));
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  font-size: var(--ui-text-caption);
 }
-
 .analysis-opponent-prediction-grid.has-dora-distributions,
 .analysis-opponent-prediction-grid.has-score-distributions {
+  padding-right: var(--probability-axis-width);
   flex: 1 1 auto;
 }
 
@@ -80,7 +82,8 @@
 }
 
 .analysis-opponent-predictions + .analysis-opponent-predictions {
-  border-left: 1px solid var(--analysis-border);
+  /* A separator must not subtract width from only the second/third plot. */
+  box-shadow: inset 1px 0 var(--analysis-border);
 }
 
 .analysis-opponent-prediction {
@@ -127,6 +130,7 @@
   justify-content: center;
   gap: var(--analysis-score-mode-gap, calc(0.12rem * var(--floating-panel-scale)));
   margin-top: calc(0.12rem * var(--floating-panel-scale));
+  min-height: calc(var(--ui-text-caption) * 1.15 + 0.16rem * var(--floating-panel-scale));
 }
 
 .analysis-score-modes span {

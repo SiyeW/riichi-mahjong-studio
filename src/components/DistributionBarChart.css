@@ -4,6 +4,13 @@
   grid-template-columns: minmax(0, 1fr) auto;
   min-width: 0;
 }
+.analysis-distribution-chart.has-outside-axis {
+  grid-template-columns: minmax(0, 1fr);
+}
+.analysis-distribution-chart.has-outside-axis > .analysis-probability-axis {
+  position: absolute;
+  left: 100%;
+}
 .analysis-distribution-viewport {
   width: 100%;
   min-width: 0;
@@ -39,11 +46,13 @@
   flex: 1 1 0;
 }
 
-.analysis-distribution-chart.has-labels .analysis-distribution-plot > .analysis-distribution-cell {
+.analysis-distribution-chart.has-labels .analysis-distribution-plot > .analysis-distribution-cell,
+.analysis-distribution-placeholder {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: calc(0.06rem * var(--floating-panel-scale));
 }
+.analysis-distribution-placeholder { height: 100%; visibility: hidden; }
 
 .analysis-distribution-track {
   position: relative;
@@ -69,7 +78,8 @@
   background: rgba(228, 241, 237, 0.1);
 }
 
-.analysis-distribution-cell > small {
+.analysis-distribution-cell > small,
+.analysis-distribution-placeholder > small {
   position: relative;
   z-index: 2;
   overflow: hidden;

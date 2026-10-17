@@ -1,5 +1,5 @@
 <template>
-  <div class="analysis-probability-axis" aria-hidden="true">
+  <div class="analysis-probability-axis" :class="{ 'has-axis-line': showLine }" aria-hidden="true">
     <span v-for="tick in ticks" :key="tick.value" :style="{ top: `${position(tick.value) * 100}%` }">
       <i />
       <small :style="labelStyle(tick.value)">{{ tick.label }}</small>
@@ -16,6 +16,7 @@ const props = withDefaults(defineProps<{
   height?: number
   labelSpacing?: number
   clampEndpoints?: boolean
+  showLine?: boolean
 }>(), { direction: 'down', labelSpacing: 0 })
 const ticks = computed(() => {
   const every = props.height && props.labelSpacing
@@ -40,10 +41,16 @@ function labelStyle(value: number) {
 <style scoped>
 :where(.analysis-probability-axis) {
   position: relative;
-  width: calc(4ch + var(--probability-axis-label-left, 0.32rem * var(--floating-panel-scale)));
+  width: var(--probability-axis-width, calc(4ch + var(--probability-axis-label-left, 0.32rem * var(--floating-panel-scale))));
   font-size: var(--ui-text-caption);
   color: rgba(210, 224, 221, 0.52);
   pointer-events: none;
+}
+.has-axis-line::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-left: 1px solid rgba(198, 214, 211, 0.42);
+  content: '';
 }
 .analysis-probability-axis > span { position: absolute; left: 0; width: 100%; height: 0; }
 .analysis-probability-axis > span i {

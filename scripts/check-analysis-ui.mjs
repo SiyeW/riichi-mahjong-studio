@@ -1500,6 +1500,21 @@ try {
       unusedBottomHeight: gridBounds ? sectionBounds.bottom - gridBounds.bottom : 0,
       doraHeight: dora?.getBoundingClientRect().height || 0,
       scoreHeight: score?.getBoundingClientRect().height || 0,
+      comparisonAxes: ['dora', 'score'].map(kind => {
+        const charts = [...section.querySelectorAll(`.analysis-${kind}-distribution`)]
+        const axes = charts.flatMap(chart => [...chart.querySelectorAll('.analysis-probability-axis')])
+        const plots = charts.map(chart => chart.querySelector('.analysis-distribution-viewport').getBoundingClientRect())
+        const tracks = charts.map(chart => chart.querySelector('.analysis-distribution-track')?.getBoundingClientRect()).filter(Boolean)
+        const axis = axes[0], bounds = axis?.getBoundingClientRect()
+        return {
+          count: axes.length,
+          equalWidths: Math.max(...plots.map(box => box.width)) - Math.min(...plots.map(box => box.width)) < .03,
+          outsideLast: bounds && bounds.left >= plots[2].right - .03 && bounds.right <= gridBounds.right + .03,
+          line: axis && Number.parseFloat(getComputedStyle(axis, '::before').borderLeftWidth) > 0,
+          aligned: bounds && tracks.every(box => Math.abs(box.top - bounds.top) < 1 / devicePixelRatio
+            && Math.abs(box.bottom - bounds.bottom) < 1 / devicePixelRatio),
+        }
+      }),
       chartsStayInsideRows: [dora, score].every((chart) => {
         if (!chart) return true
         const chartBounds = chart.getBoundingClientRect()
@@ -1563,6 +1578,16 @@ try {
     'non-dealer score charts render four left-edge tier boundaries on physical pixels',
   )
   const roomyOpponent = await opponentGeometry()
+  const assertSharedAxes = geometry => {
+    for (const axis of geometry.comparisonAxes) {
+      assert.equal(axis.count, 1, 'one shared outer axis per distribution comparison')
+      assert.equal(axis.equalWidths, true, 'outer axis never shrinks only the last opponent')
+      assert.equal(axis.outsideLast, true, 'axis lies outside the rightmost plot, inside the reserved gutter')
+      assert.equal(axis.line, true, 'shared axis has its vertical line')
+      assert.equal(axis.aligned, true, 'shared axis starts at the plots, not at their headings')
+    }
+  }
+  assertSharedAxes(roomyOpponent)
   assert.ok(roomyOpponent.doraHeight > 68, 'roomy opponent panel lets the dora distribution grow beyond its former cap')
   assert.ok(roomyOpponent.scoreHeight > 50, 'roomy opponent panel lets the score distribution grow beyond its former cap')
   assert.ok(Math.abs(roomyOpponent.unusedBottomHeight) < 1, 'opponent predictions consume the full remaining panel height')
@@ -1828,6 +1853,7 @@ try {
   await page.setViewportSize({ width: 1400, height: 430 })
   await page.waitForTimeout(100)
   const shortOpponent = await opponentGeometry()
+  assertSharedAxes(shortOpponent)
   assert.ok(shortOpponent.gridHeight < roomyOpponent.gridHeight, 'opponent prediction area follows reductions in allotted height')
   assert.ok(shortOpponent.doraHeight < roomyOpponent.doraHeight, 'dora distribution shrinks with the panel')
   assert.ok(shortOpponent.scoreHeight < roomyOpponent.scoreHeight, 'score distribution shrinks with the panel')
@@ -1836,6 +1862,19 @@ try {
   }
 
   await page.setViewportSize({ width: 1400, height: 1000 })
+  await page.evaluate(() => {
+    const { vm, result, publish } = window.analysisCheck
+    const partial = result()
+    const lastSeat = (vm.status.controlledSeat + 1) % 4
+    for (const id of ['opponent-dora-count', 'opponent-score']) {
+      partial.outputs[id].players = partial.outputs[id].players.filter(player => player.seat !== lastSeat)
+    }
+    publish(partial)
+  })
+  await page.waitForTimeout(200)
+  assertSharedAxes(await opponentGeometry())
+  assert.equal(await page.locator('.analysis-opponent-predictions').last()
+    .locator('.analysis-distribution-cell').count(), 0, 'missing rightmost data does not invent bars to retain the axis')
   await page.evaluate(() => {
     const result = window.analysisCheck.result()
     for (const outputId of ['opponent-dora-count', 'opponent-score']) {

@@ -31,7 +31,7 @@
         'has-score-distributions': hasOpponentScoreDistributions,
       }"
     >
-      <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-predictions">
+      <div v-for="(opponent, index) in opponentCards" :key="opponent.key" class="analysis-opponent-predictions">
         <div
           class="analysis-opponent-prediction is-dora-prediction"
           tabindex="0"
@@ -44,10 +44,10 @@
             <small>{{ t('analysis.dora') }}</small>
             <strong>{{ opponent.dora }}</strong>
           </div>
-          <!-- Preserve the small canvas owner across absent results, not old
-               prediction data. Empty charts have no cells and stay hidden. -->
+          <!-- Preserve canvas owners, not old predictions. Empty charts have
+               no data cells; the last may retain the group's shared axis. -->
           <DistributionBarChart
-            v-show="opponent.doraPrediction.distribution.length"
+            v-show="opponent.doraPrediction.distribution.length || (index === 2 && hasOpponentDoraDistributions)"
             class="analysis-dora-distribution"
             :entries="distributionEntries(opponent.doraPrediction.distribution, doraDistributionScale, true)"
             color-variable="--analysis-dora-color"
@@ -56,6 +56,8 @@
             :track-surface="distributionTrackSurface"
             :reference-ratio="doraDistributionReferenceRatio"
             :probability-scale="doraDistributionScale"
+            :show-axis="index === 2"
+            :outside-axis="true"
             @item-enter="(event, index) => showDistributionEntryTooltip(event, opponent.label, t('analysis.dora'), opponent.doraPrediction.distribution, index, 'tile')"
             @item-leave="tooltip.clear"
           />
@@ -73,7 +75,7 @@
             <strong>{{ opponent.score }}</strong>
           </div>
           <DistributionBarChart
-            v-show="opponent.scorePrediction.distribution.length"
+            v-show="opponent.scorePrediction.distribution.length || (index === 2 && hasOpponentScoreDistributions)"
             class="analysis-score-distribution"
             :entries="scoreDistributionEntries(opponent.scorePrediction.distribution, opponent.seat === dealer)"
             color-variable="--analysis-score-color"
@@ -82,10 +84,12 @@
             :track-surface="distributionTrackSurface"
             :reference-ratio="scoreDistributionReferenceRatio"
             :probability-scale="scoreDistributionScale"
+            :show-axis="index === 2"
+            :outside-axis="true"
             @item-enter="(event, index) => showDistributionEntryTooltip(event, opponent.label, t('analysis.score'), opponent.scorePrediction.distribution, index, 'point')"
             @item-leave="tooltip.clear"
           />
-          <div v-if="opponent.scoreModes.length" class="analysis-score-modes">
+          <div v-if="opponent.scoreModes.length || hasOpponentScoreDistributions" class="analysis-score-modes">
             <span
               v-for="entry in visibleScoreModes(opponent.scoreModes)"
               :key="entry.value"
