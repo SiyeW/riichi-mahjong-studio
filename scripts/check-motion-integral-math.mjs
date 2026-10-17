@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 
-// Independent direct reflected-pixel integration, not a prefix implementation.
+// Independent direct integration of rigidly translated source pixels.
 // Exercises arbitrary directions and the actual source-over crossfade equation.
 export async function checkMotionIntegralMath(page, label) {
   const result = await page.evaluate(async () => {
-    const { rowIntegrals, rowSupport, ROW_INTEGRAL_PADDING, integralVertex, integralFragment } = await import('/src/discardMotion/integral.ts')
+    const { rowIntegrals, ROW_INTEGRAL_PADDING, integralVertex, integralFragment } = await import('/src/discardMotion/integral.ts')
     const width = 11, height = 13, output = new OffscreenCanvas(256, 192)
     const gl = output.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, preserveDrawingBuffer: true })
     if (!gl) throw Error('Integral math WebGL2 unavailable')
@@ -12,8 +12,7 @@ export async function checkMotionIntegralMath(page, label) {
     let seed = 13
     const random = () => { seed = (1664525 * seed + 1013904223) >>> 0; return seed >>> 24 }
     for (const pixels of [a,b]) for (let i = 0; i < pixels.length; i++) pixels[i] = random()
-    // Unequal transparent padding and one empty union row must not turn into
-    // a rectangle or give the product plane an independently moving footprint.
+    // Unequal transparent padding must not change the trajectory of other rows.
     for (let y=0;y<height;y++) for(let x=0;x<width;x++) {
       if (y===2 || x<2 || x>width-2) a[(y*width+x)*4+3]=0
       if (y===2 || x<1 || x>width-3) b[(y*width+x)*4+3]=0
@@ -29,8 +28,7 @@ export async function checkMotionIntegralMath(page, label) {
       gl.linkProgram(program)
       if (!gl.getProgramParameter(program,gl.LINK_STATUS)) throw Error(gl.getProgramInfoLog(program))
       gl.useProgram(program)
-      const support=rowSupport(a,width,height,b)
-      const prefixes = [rowIntegrals(a,width,height,undefined,support),rowIntegrals(b,width,height,undefined,support),rowIntegrals(a,width,height,b,support)]
+      const prefixes = [rowIntegrals(a,width,height),rowIntegrals(b,width,height),rowIntegrals(a,width,height,b)]
       for (const [unit,name] of ['planeA','planeB','product'].entries()) {
         const texture = gl.createTexture(); textures.push(texture)
         gl.activeTexture(gl.TEXTURE0+unit); gl.bindTexture(gl.TEXTURE_2D,texture)
@@ -55,32 +53,11 @@ export async function checkMotionIntegralMath(page, label) {
         let maxError=0, comparisons=0
         for (let py=0;py<output.height;py+=5) for (let px=0;px<output.width;px+=5) {
           const qx=px+.5-cx,qy=py+.5-cy,x=qx*ux+qy*uy+width/2,y=-qx*uy+qy*ux+height/2
-          const y0=Math.floor(y-.5),fy=y-.5-y0,sum=[0,0,0,0]
+          const n=Math.max(1,span),left=x+(span-n)/2,right=left+n,y0=Math.floor(y-.5),fy=y-.5-y0,sum=[0,0,0,0]
           for (let iy=y0;iy<=y0+1;iy++) if (iy>=0&&iy<height) {
             const wy=iy===y0?1-fy:fy
-            let first=width,last=0
-            for(let ix=0;ix<width;ix++)if(a[(iy*width+ix)*4+3]||b[(iy*width+ix)*4+3]){first=Math.min(first,ix);last=ix+1}
-            const w=last-first
-            if(!w)continue
-            const ratio=Math.max(0,Math.min(1,span/w)),blend=ratio*ratio*(3-2*ratio)
-            const extent=Math.max(w,span),offset=(first+last-width)/2*(1-blend),q=x-(width-span)/2-offset+extent/2
-            const softness=Math.min(span*.5,w*.25)
-            const softIntegral=x=>{
-              if(softness<.0001)return Math.max(x,0)
-              const t=Math.max(0,Math.min(1,x/softness+.5))
-              return Math.max(x-softness/2,0)+softness*(t**3-.5*t**4)
-            }
-            const coverage=Math.max(0,Math.min(1,softIntegral(q+.5)-softIntegral(q-.5)-softIntegral(q-extent+.5)+softIntegral(q-extent-.5)))
-            const n=Math.min(2*w,Math.max(1,2*span)),left=q-n/2,right=q+n/2
-            const overlap=(l,r)=>Math.max(0,Math.min(right,r)-Math.max(left,l))
-            for (let ix=first;ix<last;ix++) {
-              let box=0
-              if(span===0)box=Math.max(0,Math.min(x+.5,ix+1)-Math.max(x-.5,ix))
-              else if(span>=w)box=coverage/extent
-              else for(let period=-1;period<=1;period++){
-                const start=2*w*period,cell=ix-first
-                box+=(overlap(start+cell,start+cell+1)+overlap(start+2*w-cell-1,start+2*w-cell))*coverage/n
-              }
+            for (let ix=Math.max(0,Math.floor(left));ix<Math.min(width,Math.ceil(right));ix++) {
+              const box=Math.max(0,Math.min(right,ix+1)-Math.max(left,ix))/n
               const i=(iy*width+ix)*4,aa=a[i+3]/255,ba=b[i+3]/255
               for (let c=0;c<4;c++) {
                 const av=c===3?aa:a[i+c]/255*aa,bv=c===3?ba:b[i+c]/255*ba

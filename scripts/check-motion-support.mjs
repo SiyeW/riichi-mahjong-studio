@@ -5,7 +5,7 @@ import assert from 'node:assert/strict'
 export async function checkMotionSupport(page, label, evidence) {
   const result = await page.evaluate(async () => {
     const { captureMotionSnapshot } = await import('/src/discardMotion/snapshot.ts')
-    const { integralVertex, integralFragment, rowIntegrals, rowSupport, ROW_INTEGRAL_PADDING } = await import('/src/discardMotion/integral.ts')
+    const { integralVertex, integralFragment, rowIntegrals, ROW_INTEGRAL_PADDING } = await import('/src/discardMotion/integral.ts')
     const dpr=devicePixelRatio,output = new OffscreenCanvas(Math.round(360*dpr),Math.round(280*dpr))
     const gl = output.getContext('webgl2',{alpha:true,premultipliedAlpha:true,antialias:false,preserveDrawingBuffer:true})
     if (!gl) throw Error('Artwork support GL unavailable')
@@ -43,9 +43,15 @@ export async function checkMotionSupport(page, label, evidence) {
             }
           }finally{effects.forEach(effect=>effect.cancel());source.remove()}
           const g=snapshot.geometry,bytes=g.spriteWidth*g.spriteHeight*4,a=snapshot.pixels.subarray(0,bytes),b=mode==='face'?a:snapshot.pixels.subarray(bytes)
-          const support=rowSupport(a,g.spriteWidth,g.spriteHeight,b),weights=mode==='face'?[1,0,0]:mode==='overlay'?[.5,.5,0]:[.4,.6,.24]
+          const support=new Uint32Array(g.spriteHeight*2),weights=mode==='face'?[1,0,0]:mode==='overlay'?[.5,.5,0]:[.4,.6,.24]
+          // Test-only source bounds, never used to move or reshape the drawing.
+          for(let y=0;y<g.spriteHeight;y++){
+            let left=g.spriteWidth,right=0
+            for(let x=0;x<g.spriteWidth;x++)if(a[(y*g.spriteWidth+x)*4+3]||b[(y*g.spriteWidth+x)*4+3]){left=Math.min(left,x);right=x+1}
+            support[y*2]=left;support[y*2+1]=right
+          }
           textures.forEach(texture=>gl.deleteTexture(texture));textures.length=0
-          const prefixes=[rowIntegrals(a,g.spriteWidth,g.spriteHeight,undefined,support),rowIntegrals(b,g.spriteWidth,g.spriteHeight,undefined,support),rowIntegrals(a,g.spriteWidth,g.spriteHeight,b,support)]
+          const prefixes=[rowIntegrals(a,g.spriteWidth,g.spriteHeight),rowIntegrals(b,g.spriteWidth,g.spriteHeight),rowIntegrals(a,g.spriteWidth,g.spriteHeight,b)]
           for(const[unit,name]of['planeA','planeB','product'].entries()){
             const texture=gl.createTexture();textures.push(texture);gl.activeTexture(gl.TEXTURE0+unit);gl.bindTexture(gl.TEXTURE_2D,texture)
             gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.NEAREST);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.NEAREST)
@@ -57,27 +63,40 @@ export async function checkMotionSupport(page, label, evidence) {
             const span=fraction*g.spriteWidth,cx=output.width/2+span*g.axisX/2,cy=output.height/2+span*g.axisY/2
             gl.uniform2f(u('center'),cx,cy);gl.uniform1f(u('span'),span);gl.drawArrays(gl.TRIANGLES,0,3)
             const data=new Uint8Array(output.width*output.height*4);gl.readPixels(0,0,output.width,output.height,gl.RGBA,gl.UNSIGNED_BYTE,data)
-            let mass=0,exterior=0,maxPremultipliedError=0
+            let mass=0,exterior=0,maxPremultipliedError=0,rigidPixelMaxError=0,activeComparisons=0
             const image=new Uint8ClampedArray(data.length)
             for(let y=0;y<output.height;y++)for(let x=0;x<output.width;x++){
               const i=(y*output.width+x)*4,j=((output.height-1-y)*output.width+x)*4,alpha=data[j+3]
               mass+=alpha/255;image[i+3]=alpha
               for(let c=0;c<3;c++){image[i+c]=alpha?Math.round(data[j+c]*255/alpha):0;maxPremultipliedError=Math.max(maxPremultipliedError,data[j+c]-alpha)}
-              if(span===0)continue
               const qx=x+.5-cx,qy=y+.5-cy,px=qx*g.axisX+qy*g.axisY+g.spriteWidth/2,py=-qx*g.axisY+qy*g.axisX+g.spriteHeight/2
               const row=Math.floor(py-.5)
               const outside=iy=>{
                 if(iy<0||iy>=g.spriteHeight)return true
-                const left=support[iy*2],right=support[iy*2+1],w=right-left
-                if(w<=0)return true
-                const t=Math.min(1,span/w),blend=t*t*(3-2*t),extent=Math.max(w,span),offset=(left+right-g.spriteWidth)/2*(1-blend)
-                const softness=Math.min(span*.5,w*.25)
-                return Math.abs(px-(g.spriteWidth-span)/2-offset)>extent/2+softness/2+.6
+                const left=support[iy*2],right=support[iy*2+1],n=Math.max(1,span),sampleLeft=px+(span-n)/2
+                return right<=left||sampleLeft+n<=left||sampleLeft>=right
               }
               if(outside(row)&&outside(row+1))exterior=Math.max(exterior,alpha)
+              if(x%Math.round(9*dpr)===0&&y%Math.round(9*dpr)===0){
+                // Literal rigid source-pixel translations, independent of the
+                // GPU prefix implementation and of the rejected row reshaping.
+                const n=Math.max(1,span),left=px+(span-n)/2,right=left+n,fy=py-.5-row,expected=[0,0,0,0]
+                for(let iy=row;iy<=row+1;iy++)if(iy>=0&&iy<g.spriteHeight){
+                  const wy=iy===row?1-fy:fy
+                  for(let ix=Math.max(0,Math.floor(left));ix<Math.min(g.spriteWidth,Math.ceil(right));ix++){
+                    const k=(iy*g.spriteWidth+ix)*4,aa=a[k+3]/255,ba=b[k+3]/255,weight=wy*Math.max(0,Math.min(right,ix+1)-Math.max(left,ix))/n
+                    for(let c=0;c<4;c++){
+                      const av=c===3?aa:a[k+c]/255*aa,bv=c===3?ba:b[k+c]/255*ba
+                      expected[c]+=weight*(weights[0]*av+weights[1]*bv-weights[2]*av*ba)
+                    }
+                  }
+                }
+                if(expected[3]>.01)activeComparisons++
+                for(let c=0;c<4;c++)rigidPixelMaxError=Math.max(rigidPixelMaxError,Math.abs(data[j+c]-Math.round(Math.max(0,Math.min(1,expected[c]))*255)))
+              }
             }
             if(!column)nativeMass=mass
-            cases.push({mode,angle,fraction,exterior,massRatio:mass/nativeMass,maxPremultipliedError,glError:gl.getError()})
+            cases.push({mode,angle,fraction,exterior,massRatio:mass/nativeMass,maxPremultipliedError,rigidPixelMaxError,activeComparisons,glError:gl.getError()})
             // Unpremultiply only for this 2D diagnostic consumer, never in the
             // production premultiplied renderer. Avoid a PNG encode/decode loop.
             const tile=new OffscreenCanvas(output.width,output.height);tile.getContext('2d').putImageData(new ImageData(image,output.width,output.height),0,0)
@@ -93,7 +112,9 @@ export async function checkMotionSupport(page, label, evidence) {
   })
   try {
     for(const item of result.cases){
-      assert.equal(item.exterior,0,`${label}: no pixels beyond the soft support ${JSON.stringify(item)}`)
+      assert.equal(item.exterior,0,`${label}: no pixels beyond the rigid swept footprint ${JSON.stringify(item)}`)
+      assert.ok(item.rigidPixelMaxError<=1,`${label}: preserve whole-source rigid geometry ${JSON.stringify(item)}`)
+      assert.ok(item.activeComparisons>10,`${label}: compare real artwork, not only empty background ${JSON.stringify(item)}`)
       assert.ok(Math.abs(item.massRatio-1)<.03,`${label}: artwork mass ${JSON.stringify(item)}`)
       assert.ok(item.maxPremultipliedError<=1,`${label}: premultiplied color ${JSON.stringify(item)}`)
       assert.equal(item.glError,0)

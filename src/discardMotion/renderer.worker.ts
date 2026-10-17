@@ -1,5 +1,5 @@
 import { parseCssEasing } from '../motionCurve'
-import { integralFragment, integralVertex, opacityAt, rowIntegrals, rowSupport, ROW_INTEGRAL_PADDING } from './integral'
+import { integralFragment, integralVertex, opacityAt, rowIntegrals, ROW_INTEGRAL_PADDING } from './integral'
 import type { MotionRequest, MotionReply, SubmittedInterval } from './messages'
 
 const scope = self as unknown as {
@@ -185,13 +185,10 @@ async function prepare(request: Extract<MotionRequest, { type: 'prepare' }>) {
     if (request.planeCount !== (request.mode === 'single' ? 1 : 2)
       || pixels.length !== planeBytes * request.planeCount) throw Error('Invalid motion pixel atlas')
     const a = pixels.subarray(0, planeBytes), b = request.planeCount === 2 ? pixels.subarray(planeBytes) : a
-    // All compositing terms use one union support, preserving source-over
-    // linearity when face, back and the riichi hand pose have different bounds.
-    const support = rowSupport(a, g.spriteWidth, g.spriteHeight, b)
-    texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight, undefined, support), 0, 'planeA')
-    if (request.mode !== 'single') texture(rowIntegrals(b, g.spriteWidth, g.spriteHeight, undefined, support), 1, 'planeB')
+    texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight), 0, 'planeA')
+    if (request.mode !== 'single') texture(rowIntegrals(b, g.spriteWidth, g.spriteHeight), 1, 'planeB')
     else gl.uniform1i(uniforms.planeB, 0)
-    if (request.mode === 'crossfade') texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight, b, support), 2, 'product')
+    if (request.mode === 'crossfade') texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight, b), 2, 'product')
     else gl.uniform1i(uniforms.product, 0)
     previous = 0; started = performance.timeOrigin + performance.now(); previousTime = started; phase = 'motion'; intervals = []
     draw(0, 0, started)

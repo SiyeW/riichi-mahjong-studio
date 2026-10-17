@@ -1,5 +1,5 @@
 import { captureMotionSnapshot, type MotionSnapshot } from '../../../src/discardMotion/snapshot'
-import { integralFragment, integralVertex, rowIntegrals, rowSupport, ROW_INTEGRAL_PADDING } from '../../../src/discardMotion/integral'
+import { integralFragment, integralVertex, rowIntegrals, ROW_INTEGRAL_PADDING } from '../../../src/discardMotion/integral'
 
 // A controlled visual sampler. It shares Studio's pixels/shader, not its worker
 // cadence; preview updates are never presented-FPS measurements.
@@ -57,14 +57,12 @@ export class PreviewRenderer {
     gl.useProgram(this.program); gl.viewport(0, 0, g.width, g.height)
     const u = (name: string) => this.uniforms[name]!
     const count = g.spriteWidth * g.spriteHeight * 4
-    const support = rowSupport(snapshot.pixels.subarray(0, count), g.spriteWidth, g.spriteHeight,
-      snapshot.planeCount === 2 ? snapshot.pixels.subarray(count) : undefined)
     for (let index = 0; index < snapshot.planeCount; index++) {
       const texture = gl.createTexture()!; this.textures.push(texture)
       gl.activeTexture(gl.TEXTURE0 + index); gl.bindTexture(gl.TEXTURE_2D, texture)
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, g.spriteWidth + ROW_INTEGRAL_PADDING, g.spriteHeight, 0, gl.RGBA, gl.FLOAT,
-        rowIntegrals(snapshot.pixels.subarray(index * count, (index + 1) * count), g.spriteWidth, g.spriteHeight, undefined, support))
+        rowIntegrals(snapshot.pixels.subarray(index * count, (index + 1) * count), g.spriteWidth, g.spriteHeight))
       gl.uniform1i(u(index ? 'planeB' : 'planeA'), index)
     }
     gl.uniform1i(u('product'), 0)
