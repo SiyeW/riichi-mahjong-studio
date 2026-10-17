@@ -53,17 +53,14 @@
           <span class="settings-checkbox-label">{{ t('settings.reduceMotion') }}</span>
         </label>
         <label class="settings-checkbox">
+          <input v-model="props.draft.display.tileMotionBlur" type="checkbox" :disabled="props.draft.display.reduceMotion" />
+          <span class="settings-checkbox-control" aria-hidden="true"></span>
+          <span class="settings-checkbox-label">{{ t('settings.flightCoverage') }}</span>
+        </label>
+        <label class="settings-checkbox">
           <input v-model="props.draft.display.showTsumogiriInPlay" type="checkbox" />
           <span class="settings-checkbox-control" aria-hidden="true"></span>
           <span class="settings-checkbox-label">{{ t('settings.showTsumogiri') }}</span>
-        </label>
-        <label class="settings-checkbox settings-checkbox-with-description">
-          <input v-model="props.draft.display.tileMotionBlur" type="checkbox" :disabled="props.draft.display.reduceMotion" />
-          <span class="settings-checkbox-control" aria-hidden="true"></span>
-          <span class="settings-checkbox-copy">
-            <span class="settings-checkbox-label">{{ t('settings.flightCoverage') }}</span>
-            <span class="settings-checkbox-description">{{ t('settings.flightCoverage.description') }}</span>
-          </span>
         </label>
       </div>
       <div class="settings-subsection">
@@ -87,6 +84,16 @@
       </div>
       <div class="settings-subsection">
         <h3>{{ t('settings.records') }}</h3>
+        <label class="settings-checkbox settings-checkbox-with-description">
+          <input v-model="props.draft.records.saveRecoveryOnExit" type="checkbox" />
+          <span class="settings-checkbox-control" aria-hidden="true"></span>
+          <span class="settings-checkbox-copy">
+            <span class="settings-checkbox-label">{{ t('settings.keepRecovery') }}</span>
+            <span class="settings-checkbox-description">
+              {{ t('settings.keepRecovery.description') }}
+            </span>
+          </span>
+        </label>
         <label>
           <span>{{ t('settings.analysisCache') }}</span>
           <select v-model="cachePolicy">
@@ -100,25 +107,12 @@
             :min="recordCachePolicy.minimumMiB" :max="recordCachePolicy.maximumMiB" step="1"
             :aria-invalid="invalidBudget" />
         </label>
-        <p class="settings-checkbox-description cache-description">
-          {{ t('settings.analysisCache.description') }}
-        </p>
         <p v-if="invalidBudget" class="cache-warning" role="alert">
           {{ t('settings.cacheInvalid', { min: recordCachePolicy.minimumMiB, max: recordCachePolicy.maximumMiB }) }}
         </p>
         <p v-else-if="exceedsAvailableMemory" class="cache-warning" role="status">
           {{ t('settings.cacheMemoryWarning') }}
         </p>
-        <label class="settings-checkbox settings-checkbox-with-description">
-          <input v-model="props.draft.records.saveRecoveryOnExit" type="checkbox" />
-          <span class="settings-checkbox-control" aria-hidden="true"></span>
-          <span class="settings-checkbox-copy">
-            <span class="settings-checkbox-label">{{ t('settings.keepRecovery') }}</span>
-            <span class="settings-checkbox-description">
-              {{ t('settings.keepRecovery.description') }}
-            </span>
-          </span>
-        </label>
       </div>
     </section>
   </div>
@@ -171,6 +165,5 @@ const { t } = useI18n()
   margin-bottom: calc(0.2rem * var(--chrome-scale));
   font-size: var(--ui-text-heading);
 }
-.cache-description { margin: 0; }
 .cache-warning { margin: 0; color: var(--status-loading); font-size: var(--ui-text-caption); }
 </style>

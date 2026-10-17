@@ -372,7 +372,14 @@ try {
   await checkTableTurnIndicators(page)
   await page.locator('.discard-motion-surface[data-ready="true"]').waitFor({ state: 'attached' })
   await page.getByRole('button', { name: '设置', exact: true }).click()
-  const coverageCheckbox = page.getByRole('checkbox', { name: /飞牌运动模糊/ })
+  const coverageCheckbox = page.getByRole('checkbox', { name: '牌张运动模糊', exact: true })
+  assert.equal(await coverageCheckbox.locator('..').evaluate(label => label.previousElementSibling.textContent.trim()), '减少动态效果')
+  assert.equal(await coverageCheckbox.locator('..').locator('.settings-checkbox-description').count(), 0)
+  const cacheLayout = await page.locator('.settings-modal select').filter({ has: page.locator('option[value="custom"]') })
+    .evaluate(select => ({ previous: select.parentElement.previousElementSibling.querySelector('.settings-checkbox-label')?.textContent.trim(),
+      descriptions: select.closest('.settings-subsection').querySelectorAll('p.settings-checkbox-description').length }))
+  assert.equal(cacheLayout.previous, '退出后恢复上次内容')
+  assert.equal(cacheLayout.descriptions, 0)
   assert.equal(await coverageCheckbox.isChecked(), true, 'motion blur defaults on')
   await coverageCheckbox.locator('..').click()
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.settings.display.tileMotionBlur), true, 'draft edits do not bypass settings save')
@@ -393,8 +400,12 @@ try {
   assert.equal(await page.evaluate(() => window.analysisCheck.settingsSaves.at(-1).display.tileMotionBlur), false)
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.settings.display.tileMotionBlur), false)
   await page.locator('.discard-motion-surface').waitFor({ state: 'detached' })
-  await checkSpecialActionMotion(page)
   uiChecks: {
+  if (process.env.RMS_UI_SETTINGS_ONLY) {
+    console.log('Settings layout, motion preference, cache validation and save checks passed.')
+    break uiChecks
+  }
+  await checkSpecialActionMotion(page)
   if (process.env.RMS_UI_SURFACE_BATCH_ONLY) {
     console.log(`Perceptual surface batch: ${JSON.stringify(await page.evaluate(async () => (await import('/scripts/fixtures/perceptual-batch.js')).checkPerceptualBatch()))}`)
     break uiChecks
@@ -3304,7 +3315,8 @@ try {
   }
   }
   assert.deepEqual(errors, [])
-  console.log(process.env.RMS_UI_DISCARD_ONLY ? 'Discard motion and wheel-progress checks passed.'
+  console.log(process.env.RMS_UI_SETTINGS_ONLY ? 'Settings UI checks passed.'
+    : process.env.RMS_UI_DISCARD_ONLY ? 'Discard motion and wheel-progress checks passed.'
     : process.env.RMS_UI_RECORD_IO_ONLY ? 'Record I/O UI checks passed.' : performanceOnly
     ? 'Analysis UI performance scenario passed.'
     : 'Analysis UI: events, hover, navigation motion, cache, geometry, artwork and workspace docking passed.')
