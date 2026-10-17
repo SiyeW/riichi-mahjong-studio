@@ -1625,6 +1625,80 @@ try {
     await page.waitForTimeout(180)
     assertSharedAxes(await opponentGeometry())
   }
+  const beforeDenseResize = await page.evaluate(async () => {
+    const check = window.analysisCheck, vm = check.vm
+    const original = JSON.parse(JSON.stringify(vm.gameView.opponentAnalysis))
+    const dense = JSON.parse(JSON.stringify(original))
+    const { isPossibleRiichiHandValue } = await import('/src/riichiScoring.ts')
+    for (const player of dense.outputs['opponent-score'].players) {
+      const values = Array.from({ length: 640 }, (_, index) => (index + 1) * 50)
+        .filter(value => isPossibleRiichiHandValue(value, player.seat === vm.gameView.table.dealer))
+      const weights = values.map((_, index) => 1 / (index + 1)), sum = weights.reduce((a, b) => a + b, 0)
+      player.prediction.distribution = values.map((value, index) => ({ value, probability: weights[index] / sum }))
+    }
+    check.publish(dense)
+    return original
+  })
+  await page.waitForTimeout(180)
+  const resizeFrames = await page.locator('.analysis-panel-live > .analysis-opponent-section').evaluate(async section => {
+    const previousWidth = section.style.width
+    const samples = []
+    let pending
+    const observer = new ResizeObserver(() => {
+      if (!pending) return
+      const resolve = pending; pending = null
+      queueMicrotask(() => resolve([...section.querySelectorAll('.analysis-distribution-canvas')].map(canvas => {
+        const viewport = canvas.closest('.analysis-distribution-viewport'), box = viewport.getBoundingClientRect()
+        return { width: canvas.width, viewportWidth: box.width * devicePixelRatio,
+          right: (canvas.getBoundingClientRect().right - box.left) * devicePixelRatio,
+          overflow: viewport.scrollWidth > viewport.clientWidth + 1,
+          tracks: canvas.rmsDistributionTracks.map(track => ({ left: track.left, right: track.right })) }
+      })))
+    })
+    observer.observe(section)
+    try {
+      for (let width = 420; width >= 160; width -= 4) {
+        const charts = await new Promise((resolve, reject) => {
+          const deadline = setTimeout(() => reject(Error(`Resize did not settle at ${width}px`)), 3000)
+          requestAnimationFrame(() => {
+            pending = value => { clearTimeout(deadline); resolve(value) }
+            section.style.width = `${width}px`
+          })
+        })
+        samples.push({ width, charts, ratio: devicePixelRatio })
+      }
+    } finally { observer.disconnect(); section.style.width = previousWidth }
+    return samples
+  })
+  for (let i = 0; i < resizeFrames.length; i++) {
+    const frame = resizeFrames[i]
+    assert.equal(new Set(frame.charts.map(chart => chart.width)).size, 1, 'all six plots resize on the same physical budget before paint')
+    for (let j = 0; j < frame.charts.length; j++) {
+      const chart = frame.charts[j]
+      assert.equal(chart.overflow, false, 'continuous resizing never creates plot scrollbars')
+      assert.ok(chart.right <= chart.viewportWidth + .04, 'new layout never presents the old wider bitmap')
+      assert.ok(chart.tracks.every(track => track.right > track.left), 'dense plots preserve all candidates')
+      if (i) {
+        const old = resizeFrames[i - 1].charts[j]
+        assert.ok(chart.tracks.every((track, k) => Math.abs(track.left - old.tracks[k].left) <= Math.ceil(4 * frame.ratio / 3) + 2), 'bar boundaries do not jump by a whole domain during resize')
+      }
+    }
+  }
+  assert.ok(resizeFrames[0].charts.filter(chart => chart.tracks.length > 20).length === 3, 'continuous resizing covers full legal score domains, not a sparse seven-bin example')
+  await page.waitForTimeout(180)
+  if (process.env.RMS_OPPONENT_RESIZE_SCREENSHOT) {
+    const section = page.locator('.analysis-panel-live > .analysis-opponent-section')
+    for (const width of [420, 280, 160]) {
+      await section.evaluate((element, width) => { element.style.width = `${width}px` }, width)
+      await page.waitForTimeout(80)
+      await section.screenshot({ path: `${process.env.RMS_OPPONENT_RESIZE_SCREENSHOT}-${width}.png` })
+    }
+    await section.evaluate(element => { element.style.width = '' })
+    await page.waitForTimeout(180)
+  }
+  console.log(`Opponent resize: ${resizeFrames.length} before-paint samples; shared widths, no stale bitmaps, bounded boundary motion, no scrollbars.`)
+  await page.evaluate(original => window.analysisCheck.publish(original), beforeDenseResize)
+  await page.waitForTimeout(180)
   assert.ok(roomyOpponent.doraHeight > 68, 'roomy opponent panel lets the dora distribution grow beyond its former cap')
   assert.ok(roomyOpponent.scoreHeight > 50, 'roomy opponent panel lets the score distribution grow beyond its former cap')
   assert.ok(Math.abs(roomyOpponent.unusedBottomHeight) < 1, 'opponent predictions consume the full remaining panel height')

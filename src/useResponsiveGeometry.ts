@@ -4,6 +4,7 @@ import { PERCEPTUAL_SURFACE_CHANGE_EVENT } from './perceptualSurface'
 type ResponsiveGeometryOptions = Readonly<{
   resizeAncestorSelector?: string
   styleAncestorSelector?: string
+  synchronousResize?: boolean
 }>
 
 export function useResponsiveGeometry(
@@ -59,7 +60,11 @@ export function useResponsiveGeometry(
     setGlobalListeners(Boolean(element))
     if (!element) return
 
-    resizeObserver = new ResizeObserver(schedule)
+    resizeObserver = new ResizeObserver(options.synchronousResize ? () => {
+      // ResizeObserver runs after layout and before paint. Deferring this work
+      // to rAF would present one frame of old pixels inside the new box.
+      if (!disposed && target.value) update()
+    } : schedule)
     resizeObserver.observe(element)
     const resizeAncestor = options.resizeAncestorSelector
       ? element.closest(options.resizeAncestorSelector)

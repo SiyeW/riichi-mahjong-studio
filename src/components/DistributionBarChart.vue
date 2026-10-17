@@ -8,7 +8,7 @@
       'has-outside-axis': outsideAxis,
     }"
   >
-    <div ref="viewportElement" class="analysis-distribution-viewport" @scroll="scheduleGeometry">
+    <div ref="viewportElement" class="analysis-distribution-viewport">
       <div ref="plotElement" class="analysis-distribution-plot">
         <canvas ref="canvasElement" class="analysis-distribution-canvas" aria-hidden="true" />
         <span v-if="showLabels && !entries.length && showAxis" class="analysis-distribution-placeholder" aria-hidden="true">
@@ -166,13 +166,24 @@ function measureGeometry() {
   const firstTrack = root.querySelector<HTMLElement>('.analysis-distribution-track')?.getBoundingClientRect()
   const top = Math.max(0, Math.ceil((firstTrack?.top ?? rootRect.top) * ratio) - originY)
   const bottom = Math.min(height, Math.floor((firstTrack?.bottom ?? rootRect.bottom) * ratio) - originY)
+  const group = viewport.closest('.analysis-opponent-prediction-grid')
+  const viewports = group ? [...group.querySelectorAll<HTMLElement>('.analysis-distribution-viewport')] : [viewport]
+  const commonWidth = Math.min(...viewports.map(element => element.getBoundingClientRect().width).filter(width => width > 0))
   const geometry = distributionBarGeometry(
-    Math.floor(viewportRect.right * ratio) - Math.ceil(viewportRect.left * ratio),
+    // All three opponents use one width budget independent of global pixel
+    // phase; leave one physical pixel for aligning the canvas origin inside it.
+    Math.floor(commonWidth * ratio) - 1,
     props.entries.map((entry, index) => index > 0 && (props.showLabels || Boolean(entry.gapBefore))),
     (Number.parseFloat(rootStyle.getPropertyValue('--analysis-distribution-gap-width')) || 1) * ratio,
   )
   const width = geometry.contentWidth
   const tracks = geometry.bars.map(bar => ({ ...bar, top, bottom }))
+  const labels = cells.map(cell => cell.querySelector('small'))
+  const firstLabel = labels.find(label => label !== null)
+  const context = canvas.getContext('2d')
+  if (context && firstLabel) context.font = getComputedStyle(firstLabel).font
+  const labelWidth = context ? Math.max(0, ...labels.map(label => context.measureText(label?.textContent ?? '').width)) : 0
+  const labelStep = Math.max(1, Math.ceil(labelWidth * ratio / Math.max(Number.EPSILON, geometry.barWidth)))
   const offsetX = originX / ratio - rootRect.left
   const offsetY = originY / ratio - rootRect.top
   const axis = rootElement.value?.querySelector('.analysis-probability-axis')
@@ -191,12 +202,14 @@ function measureGeometry() {
   // Exact CSS pixel coverage and aligned global origin prevent a second canvas
   // resampling step. Cells/hovers and paint share the same integer allocation.
   canvas.style.cssText = `left:${offsetX}px;top:${offsetY}px;width:${width / ratio}px;height:${height / ratio}px`
-  // Scroll extents are integer CSS pixels. Round the overflow container outward
-  // so its last physical column is reachable at fractional DPI as well.
-  root.style.width = `${Math.ceil(width / ratio + offsetX)}px`
   cells.forEach((cell, index) => {
     const track = tracks[index]!
     cell.style.cssText = `position:absolute;left:${offsetX + track.left / ratio}px;top:0;width:${(track.right - track.left) / ratio}px;height:100%`
+    const label = labels[index]
+    if (label) {
+      label.style.visibility = index % labelStep === 0 ? '' : 'hidden'
+      label.style.width = `${(tracks[Math.min(tracks.length - 1, index + labelStep - 1)]!.right - track.left) / ratio}px`
+    }
   })
   axisHeight.value = Math.max(0, bottom - top) / ratio
   axisLabelSpacing.value = captionSize * 1.5
@@ -215,6 +228,9 @@ function render() {
   const context = canvas.getContext('2d')
   if (!context) return
   context.clearRect(0, 0, width, height)
+  // Disjoint fractional areas add coverage instead of attenuating one another
+  // through source-over alpha. Integer boxes are unchanged.
+  context.globalCompositeOperation = 'lighter'
   tracks.forEach(({ left, right, top, bottom }, index) => {
     const trackHeight = Math.max(0, bottom - top)
     const scale = Math.max(0, Math.min(1, displayedScales[index] || 0))
@@ -230,6 +246,7 @@ function render() {
     context.fillRect(left, top, right - left, bottom - top)
     gapPixels.push(left)
   })
+  context.globalCompositeOperation = 'source-over'
   publishSnapshot(canvas, displayedScales)
   canvas.rmsDistributionGapPixels = gapPixels
   canvas.rmsDistributionTracks = tracks
@@ -321,9 +338,10 @@ function updateGeometry() {
   render()
 }
 
-const scheduleGeometry = useResponsiveGeometry(viewportElement, updateGeometry, {
+useResponsiveGeometry(viewportElement, updateGeometry, {
   resizeAncestorSelector: '.analysis-opponent-prediction-grid',
   styleAncestorSelector: '.dock-module',
+  synchronousResize: true,
 })
 
 watch(() => [props.entries, props.colorVariable, props.reduceMotion, props.referenceRatio, props.probabilityScale], () => {

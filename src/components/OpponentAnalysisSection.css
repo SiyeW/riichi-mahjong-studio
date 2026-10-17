@@ -40,6 +40,10 @@
 .analysis-opponent-card :deep(.shanten-opp-label) {
   color: rgba(226, 239, 235, 0.82);
   font-size: var(--ui-text-body);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .analysis-opponent-prediction-grid {
@@ -106,6 +110,10 @@
 }
 
 .analysis-prediction-heading strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: rgba(229, 240, 237, 0.88);
   font-size: var(--ui-text-body);
   font-weight: 400;
@@ -115,6 +123,9 @@
 .analysis-prediction-heading small {
   color: rgba(186, 211, 207, 0.68);
   font-size: var(--ui-text-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .analysis-dora-distribution {
@@ -158,7 +169,7 @@
   flex-direction: column;
   justify-content: center;
   gap: calc(0.18rem * var(--floating-panel-scale));
-  padding: calc(0.34rem * var(--floating-panel-scale)) calc(0.36rem * var(--floating-panel-scale));
+  padding: calc(0.34rem * var(--floating-panel-scale)) calc(0.12rem * var(--floating-panel-scale)) calc(0.34rem * var(--floating-panel-scale)) calc(0.24rem * var(--floating-panel-scale));
   color: rgba(205, 224, 220, 0.7);
   font-size: var(--ui-text-caption);
 }
@@ -186,7 +197,7 @@
   width: max-content;
   height: 0;
   padding-left: calc(0.32rem * var(--floating-panel-scale));
-  padding-right: calc(0.36rem * var(--floating-panel-scale));
+  padding-right: calc(0.12rem * var(--floating-panel-scale));
   visibility: hidden;
   font-variant-numeric: tabular-nums;
 }
