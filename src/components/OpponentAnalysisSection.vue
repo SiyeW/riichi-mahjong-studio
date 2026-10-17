@@ -44,8 +44,10 @@
             <small>{{ t('analysis.dora') }}</small>
             <strong>{{ opponent.dora }}</strong>
           </div>
+          <!-- Preserve the small canvas owner across absent results, not old
+               prediction data. Empty charts have no cells and stay hidden. -->
           <DistributionBarChart
-            v-if="opponent.doraPrediction.distribution.length"
+            v-show="opponent.doraPrediction.distribution.length"
             class="analysis-dora-distribution"
             :entries="distributionEntries(opponent.doraPrediction.distribution, doraDistributionScale, true)"
             color-variable="--analysis-dora-color"
@@ -70,7 +72,7 @@
             <strong>{{ opponent.score }}</strong>
           </div>
           <DistributionBarChart
-            v-if="opponent.scorePrediction.distribution.length"
+            v-show="opponent.scorePrediction.distribution.length"
             class="analysis-score-distribution"
             :entries="scoreDistributionEntries(opponent.scorePrediction.distribution, opponent.seat === dealer)"
             color-variable="--analysis-score-color"
@@ -134,6 +136,7 @@ const props = defineProps<{
 
 const { t, numberLocale } = useI18n()
 const tooltip = useAnalysisHoverTooltipController()
+watch(() => props.analysis, tooltip.clear, { flush: 'sync' })
 const sectionElement = ref<HTMLElement | null>(null)
 const scoreModeCount = ref(3)
 const scoreModeLayoutStyle = ref<Record<string, string>>({})

@@ -11,6 +11,7 @@ import { checkRendererRecovery } from './check-renderer-recovery.mjs'
 import { checkDiscardMotion } from './check-discard-motion.mjs'
 import { checkRuntimeResources } from './check-runtime-resources.mjs'
 import { checkAnalysisLoading } from './check-analysis-loading.mjs'
+import { checkDistributionLifecycle } from './check-distribution-lifecycle.mjs'
 import { checkIndicatorFamily, checkTableTurnIndicators } from './check-interface-indicators.mjs'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
@@ -386,6 +387,14 @@ try {
   await page.locator('.settings-modal').waitFor({ state: 'hidden' })
   assert.equal(await page.evaluate(() => window.analysisCheck.settingsSaves.at(-1).records.analysisCacheMiB), 64)
   uiChecks: {
+  if (process.env.RMS_UI_SURFACE_BATCH_ONLY) {
+    console.log(`Perceptual surface batch: ${JSON.stringify(await page.evaluate(async () => (await import('/scripts/fixtures/perceptual-batch.js')).checkPerceptualBatch()))}`)
+    break uiChecks
+  }
+  if (process.env.RMS_UI_DISTRIBUTION_ONLY) {
+    await checkDistributionLifecycle(page)
+    break uiChecks
+  }
   if (process.env.RMS_UI_COUNT_GEOMETRY_ONLY) {
     console.log(`Count geometry batches: ${JSON.stringify(await checkCountGeometryBatches(page))}`)
     break uiChecks
@@ -399,6 +408,8 @@ try {
     break uiChecks
   }
   if (!performanceOnly) {
+  console.log(`Perceptual surface batch: ${JSON.stringify(await page.evaluate(async () => (await import('/scripts/fixtures/perceptual-batch.js')).checkPerceptualBatch()))}`)
+  await checkDistributionLifecycle(page)
   await page.evaluate(() => {
     window.analysisCheck.vm.closeState.active = true
     window.analysisCheck.vm.closeState.stage = 'recovery'

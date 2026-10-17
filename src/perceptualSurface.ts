@@ -191,16 +191,16 @@ export function effectiveBackgroundColor(
 
 type PerceptualSurfaceState = {
   binding: PerceptualSurfaceBinding
-  frame: number
   observer: MutationObserver
   headObserver: MutationObserver
   resize: () => void
 }
 
 const surfaceStates = new WeakMap<HTMLElement, PerceptualSurfaceState>()
+const pendingSurfaces = new Map<HTMLElement, PerceptualSurfaceState>()
+let surfaceFrame = 0
 
-function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceState) {
-  state.frame = 0
+function measurePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceState) {
   const surface = state.binding.surfaceOverride || effectiveBackgroundColor(
     element,
     state.binding.surfaceLayerVariables,
@@ -209,6 +209,15 @@ function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceS
     ? engineStatusVariables(surface, state.binding.tuning)
     : perceptualSurfaceVariables(state.binding.palette, surface, state.binding.tuning)
   const variableNames = state.binding.statusOnly ? ENGINE_STATUS_VARIABLES : PERCEPTUAL_SURFACE_VARIABLES
+  return { element, state, binding: state.binding, surface, variables, variableNames }
+}
+
+function applyPerceptualSurface(update: ReturnType<typeof measurePerceptualSurface>) {
+  const { element, state, binding, surface, variables, variableNames } = update
+  // Event listeners from an earlier owner can retire or replace another owner.
+  // Never publish a now-obsolete calibration to that replacement.
+  if (surfaceStates.get(element) !== state || !element.isConnected) return
+  if (state.binding !== binding) { schedulePerceptualSurface(element, state); return }
   let changed = false
   for (const variable of variableNames) {
     const value = variables[variable]
@@ -237,8 +246,19 @@ function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceS
 }
 
 function schedulePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceState) {
-  cancelAnimationFrame(state.frame)
-  state.frame = requestAnimationFrame(() => updatePerceptualSurface(element, state))
+  pendingSurfaces.set(element, state)
+  if (surfaceFrame) return
+  surfaceFrame = requestAnimationFrame(() => {
+    surfaceFrame = 0
+    const pending = [...pendingSurfaces]
+    pendingSurfaces.clear()
+    // All computed-style reads precede CSS mutations. Per-owner rAF callbacks
+    // otherwise force another global restyle after each calibrated surface.
+    const updates = pending
+      .filter(([owner, current]) => owner.isConnected && surfaceStates.get(owner) === current)
+      .map(([owner, current]) => measurePerceptualSurface(owner, current))
+    updates.forEach(applyPerceptualSurface)
+  })
 }
 
 function observeSurfaceAncestors(element: HTMLElement, state: PerceptualSurfaceState) {
@@ -252,7 +272,6 @@ export const vPerceptualSurface: Directive<HTMLElement, PerceptualSurfaceBinding
   mounted(element, binding) {
     const state: PerceptualSurfaceState = {
       binding: binding.value,
-      frame: 0,
       observer: new MutationObserver(() => schedulePerceptualSurface(element, state)),
       headObserver: new MutationObserver(() => schedulePerceptualSurface(element, state)),
       resize: () => schedulePerceptualSurface(element, state),
@@ -274,7 +293,8 @@ export const vPerceptualSurface: Directive<HTMLElement, PerceptualSurfaceBinding
   beforeUnmount(element) {
     const state = surfaceStates.get(element)
     if (!state) return
-    cancelAnimationFrame(state.frame)
+    pendingSurfaces.delete(element)
+    if (!pendingSurfaces.size) { cancelAnimationFrame(surfaceFrame); surfaceFrame = 0 }
     state.observer.disconnect()
     state.headObserver.disconnect()
     window.removeEventListener('resize', state.resize)

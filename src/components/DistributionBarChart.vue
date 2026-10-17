@@ -124,8 +124,6 @@ function measureGeometry() {
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const width = Math.max(1, Math.round(rootRect.width * ratio))
   const height = Math.max(1, Math.round(rootRect.height * ratio))
-  if (canvas.width !== width) canvas.width = width
-  if (canvas.height !== height) canvas.height = height
   const rootStyle = getComputedStyle(root)
   const color = rootStyle.getPropertyValue(props.colorVariable).trim()
   const gapColor = rootStyle.getPropertyValue('--analysis-distribution-gap-color').trim()
@@ -148,6 +146,10 @@ function measureGeometry() {
     bottom: Math.max(...tracks.map(track => track.bottom)),
     lineHeight: Math.max(1, Math.round(ratio)),
   } : null
+  // Bitmap resize can invalidate style/layout. Finish every track read first,
+  // including a newly revealed chart after a frame without a distribution.
+  if (canvas.width !== width) canvas.width = width
+  if (canvas.height !== height) canvas.height = height
   renderGeometry = { width, height, color, gapColor, tracks, guideTrack }
   measuredStructureKey = structureKey()
   measuredColorVariable = props.colorVariable
