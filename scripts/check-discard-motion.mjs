@@ -282,6 +282,9 @@ async function checkWheelProgress(page) {
     const wheel = direction => document.querySelector('.grid-main').dispatchEvent(
       new WheelEvent('wheel', { deltaY: direction * 100, bubbles: true, cancelable: true }))
     try {
+      // Bind this synthetic cursor's identity without simulating a record open;
+      // the fixture must not reset unrelated analysis/cache/display preferences.
+      vm.gameView.viewToken = base.viewToken
       await vm.jumpToNode('wheel-0')
       await settle()
       delayed = true
@@ -338,6 +341,7 @@ async function checkWheelProgress(page) {
       window.studioAPI.jumpToNode = id => {
         const b = id.startsWith('b-') || id === 'round-b'
         const response = { state: JSON.parse(JSON.stringify(vm.status)), view: { ...original, currentNodeId: id,
+          viewToken: { ...base.viewToken, nodeId: id },
           tree: { ...base.tree, currentNodeId: id, currentRoundRootId: b ? 'round-b' : 'round-a',
             rootNodeId: b ? 'round-b' : 'round-a', rounds, nodes: b ? bNodes : aNodes } } }
         return delayed ? new Promise((resolve, reject) => requests.push(Object.assign(() => resolve(response), { reject }))) : Promise.resolve(response)
@@ -371,6 +375,7 @@ async function checkWheelProgress(page) {
       if (vm.gameView.currentNodeId !== 'b-one') throw new Error('A retired request failure discarded a newer wheel burst')
     } finally {
       window.studioAPI.jumpToNode = async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: original })
+      vm.gameView.viewToken = original.viewToken
       await vm.jumpToNode(original.currentNodeId)
       window.studioAPI.jumpToNode = originalJump
     }
