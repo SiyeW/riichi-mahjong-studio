@@ -91,7 +91,12 @@
           >
             <button @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
           </span>
-          <button @click="openWallView" :disabled="!gameView.table">{{ t('toolbar.wall') }}</button>
+          <button
+            :class="{ active: showWallView }"
+            :aria-pressed="showWallView"
+            @click="showWallView ? closeWallView() : openWallView()"
+            :disabled="!gameView.table"
+          >{{ t('toolbar.wall') }}</button>
           <span class="hover-action-menu">
             <button
               :class="{ active: showAnalysisDock }"
@@ -129,7 +134,11 @@
           </button>
         </span>
         <span class="toolbar-section">
-          <button @click="openEngineWindow">{{ t('toolbar.engine') }}</button>
+          <button
+            :class="{ active: showEngineWindow }"
+            :aria-pressed="showEngineWindow"
+            @click="showEngineWindow ? closeEngineWindow() : openEngineWindow()"
+          >{{ t('toolbar.engine') }}</button>
           <button @click="openSettingsPanel">{{ t('toolbar.settings') }}</button>
           <button @click="showAboutPanel = true">{{ t('toolbar.about') }}</button>
         </span>

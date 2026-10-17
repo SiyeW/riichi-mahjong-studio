@@ -10,6 +10,7 @@ import { checkReplayWorkflow } from './check-replay-workflow.mjs'
 import { checkRendererRecovery } from './check-renderer-recovery.mjs'
 import { checkDiscardMotion } from './check-discard-motion.mjs'
 import { checkSpecialActionMotion } from './check-special-action-motion.mjs'
+import { checkToolbarWindowToggles } from './check-toolbar-window-toggles.mjs'
 import { checkRuntimeResources } from './check-runtime-resources.mjs'
 import { checkAnalysisLoading } from './check-analysis-loading.mjs'
 import { checkAnalysisPresentationLifecycle } from './check-analysis-presentation-lifecycle.mjs'
@@ -405,6 +406,8 @@ try {
     console.log('Settings layout, motion preference, cache validation and save checks passed.')
     break uiChecks
   }
+  await checkToolbarWindowToggles(page)
+  if (process.env.RMS_UI_TOOLBAR_ONLY) break uiChecks
   await checkSpecialActionMotion(page)
   if (process.env.RMS_UI_SURFACE_BATCH_ONLY) {
     console.log(`Perceptual surface batch: ${JSON.stringify(await page.evaluate(async () => (await import('/scripts/fixtures/perceptual-batch.js')).checkPerceptualBatch()))}`)
@@ -955,7 +958,7 @@ try {
   await numericOption.press('Tab')
   await page.waitForFunction(() => window.analysisCheck.vm.engineSaveMessage !== '')
   assert.equal(await numericOption.inputValue(), '2', 'invalid engine option restores the persisted value')
-  await page.evaluate(() => window.analysisCheck.vm.closeEngineWindow())
+  await page.locator('.toolbar').getByRole('button', { name: '引擎', exact: true }).click()
   await page.waitForFunction(() => window.analysisCheck.settingsSaves.some(save => (
     save.engines?.profiles?.[0]?.name === 'Renamed UI Test Engine'
   )))
@@ -3316,6 +3319,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(process.env.RMS_UI_SETTINGS_ONLY ? 'Settings UI checks passed.'
+    : process.env.RMS_UI_TOOLBAR_ONLY ? 'Toolbar window checks passed.'
     : process.env.RMS_UI_DISCARD_ONLY ? 'Discard motion and wheel-progress checks passed.'
     : process.env.RMS_UI_RECORD_IO_ONLY ? 'Record I/O UI checks passed.' : performanceOnly
     ? 'Analysis UI performance scenario passed.'
