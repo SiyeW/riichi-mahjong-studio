@@ -1591,6 +1591,11 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
     cancelPendingDiscardReturnFlight()
     holdAutoAdvanceForTableMotion()
   }
+  // The hand's branch mark belongs to the departing presentation. Capture it
+  // before replacing the cursor/tree that supplies tileNextMoveClass.
+  const departingHandHint = !isNewGame && transitionDirection === 'forward'
+    && pendingDiscardChanged && nextPendingDiscard && nextPendingDiscard.actor === status.controlledSeat
+    ? tileNextMoveClass(nextPendingDiscard.pai, Boolean(nextPendingDiscard.tsumogiri)) : ''
   const returnFlight = !isNewGame
     && transitionDirection === 'backward'
     && previousPendingDiscard
@@ -1653,7 +1658,7 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   if (returnFlight) {
     schedulePendingDiscardReturnFlight(returnFlight)
   } else if (!isNewGame && transitionDirection === 'forward' && pendingDiscardChanged && nextPendingDiscard) {
-    schedulePendingDiscardFlight(nextPendingDiscard.actor)
+    schedulePendingDiscardFlight(nextPendingDiscard.actor, departingHandHint)
   }
   if (showWallView.value) void refreshWallView()
   if (showCustomTenhouExport.value) customTenhouExportRefreshKey.value += 1

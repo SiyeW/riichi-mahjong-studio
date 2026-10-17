@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { checkFlightOcclusion } from './check-flight-occlusion.mjs'
+import { checkFlightBranchMarks } from './check-flight-branch-marks.mjs'
 
 export async function checkDiscardMotion(page) {
   await checkTableZoomOwnership(page)
@@ -8,6 +9,7 @@ export async function checkDiscardMotion(page) {
   // The ordinary pixel/occlusion suite above remains the default sharp path.
   // This opt-in runs the real navigation owner below with coverage enabled.
   const coverageTrial = Boolean(process.env.RMS_UI_COVERAGE_TRIAL)
+  await checkFlightBranchMarks(page,coverageTrial)
   if (coverageTrial) {
     await page.evaluate(() => {
       const state = document.querySelector('#app').__vue_app__._instance.setupState

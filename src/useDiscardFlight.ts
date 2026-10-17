@@ -3,6 +3,7 @@ import { getUiMotionDurationMs, getUiMotionEasing } from './uiMotion'
 import { createDiscardCoverageRenderer, type DiscardCoverage } from './discardMotion/coverage'
 import type { GameView } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
+import type { TileNextMoveClass } from './useNextMoveHints'
 
 const IMAGE_POSE_PROPERTIES = ['position', 'left', 'top', 'right', 'bottom', 'float', 'transform', 'transform-origin'] as const
 
@@ -218,6 +219,7 @@ function createDiscardFlightRegularPose(
   initialOpacity: number,
   useBackImage: boolean,
   inheritDiscardTone: boolean,
+  handHint: TileNextMoveClass = '',
 ): HTMLElement | null {
   const sourceImage = tile.querySelector<HTMLElement>('.tileImg:not(.discard-flight-back)')
   if (!sourceImage) return null
@@ -237,6 +239,7 @@ function createDiscardFlightRegularPose(
   // hand pose must instead use the ordinary orientation rules below.
   IMAGE_POSE_PROPERTIES.forEach(property => poseImage.style.removeProperty(property))
   poseImage.classList.remove('river-riichi', 'last-discard')
+  setBranchMark(poseImage, handHint)
   if (!inheritDiscardTone) poseImage.classList.remove('river-tsumogiri')
   if (useBackImage) {
     poseImage.src = tileImageSrc('?')
@@ -255,11 +258,17 @@ function createDiscardFlightRegularPose(
   return pose
 }
 
-function animateDiscardPoseSwap(
+function setBranchMark(image: HTMLElement | null, hint: TileNextMoveClass) {
+  image?.classList.remove('tile-next-main', 'tile-next-side')
+  if (hint) image?.classList.add(hint)
+}
+
+function animateDiscardPoseTransition(
   regularPose: HTMLElement,
   settledImage: HTMLElement,
   direction: 'settle' | 'restore',
   duration: number,
+  crossfade: boolean,
 ) {
   const regularVisible = direction === 'settle' ? '1' : '0'
   const regularHidden = direction === 'settle' ? '0' : '1'
@@ -272,6 +281,9 @@ function animateDiscardPoseSwap(
     ],
     { duration, easing: 'linear', fill: 'forwards' },
   )
+  // Same-pose branch marks are an overlay over an opaque tile, not a whole-
+  // tile crossfade (which would dim it halfway through an ordinary discard).
+  if (!crossfade) return [regularAnimation]
   const settledAnimation = settledImage.animate(
     [
       { opacity: regularHidden, offset: 0 },
@@ -378,6 +390,19 @@ function resolvePendingDiscardReturnDestination(flight: PendingDiscardReturnFlig
   flight.deltaY = (destinationRect.top + (destinationRect.height / 2))
     - flight.sourceCenterY
   closest.style.visibility = 'hidden'
+  const destinationImage = closest.querySelector<HTMLElement>('.tileImg')
+  const handHint: TileNextMoveClass = destinationImage?.classList.contains('tile-next-main') ? 'tile-next-main'
+    : destinationImage?.classList.contains('tile-next-side') ? 'tile-next-side' : ''
+  if (handHint && !flight.regularPose) {
+    const tile = flight.ghost.firstElementChild as HTMLElement | null
+    const povClass = [...flight.ghost.classList].find(name => /^pov-p[0-3]$/.test(name))
+    if (tile && povClass) {
+      flight.backOverlay?.remove(); flight.backOverlay = null
+      flight.regularPose = createDiscardFlightRegularPose(tile, povClass, 0,
+        shouldAnimateDiscardFaceChange(flight.seat), false, handHint)
+    }
+  }
+  if (flight.regularPose) setBranchMark(flight.regularPose.querySelector('.tileImg'), handHint)
   return true
 }
 
@@ -415,7 +440,8 @@ function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) 
         pendingDiscardReturnEffects = [animateDiscardBackOverlay(flight.backOverlay, 'reveal', duration)]
       }
       if (flight.regularPose && flight.settledImage) {
-        pendingDiscardReturnEffects = animateDiscardPoseSwap(flight.regularPose, flight.settledImage, 'restore', duration)
+        pendingDiscardReturnEffects = animateDiscardPoseTransition(flight.regularPose, flight.settledImage, 'restore', duration,
+          Boolean(flight.ghost.firstElementChild?.classList.contains('river-riichi')))
       }
       pendingDiscardReturnAnimation = flight.ghost.animate(
         [{ transform: 'translate(0px, 0px)' }, { transform: `translate(${flight.deltaX}px, ${flight.deltaY}px)` }],
@@ -447,7 +473,7 @@ function schedulePendingDiscardReturnFlight(flight: PendingDiscardReturnFlight) 
   })
 }
 
-function schedulePendingDiscardFlight(seat: number) {
+function schedulePendingDiscardFlight(seat: number, handHint: TileNextMoveClass = '') {
   if (reduceMotionEnabled.value || document.hidden) return
   const generation = ++pendingDiscardFlightGeneration
   forwardMotionActive.value = true
@@ -467,13 +493,15 @@ function schedulePendingDiscardFlight(seat: number) {
 
     const povClass = [...(target.closest<HTMLElement>('[class*="pov-p"]')?.classList || [])]
       .find((className) => /^pov-p[0-3]$/.test(className))
-    const regularPose = target.classList.contains('river-riichi') && povClass
+    const swapsPose = target.classList.contains('river-riichi')
+    const regularPose = (swapsPose || handHint) && povClass
       ? createDiscardFlightRegularPose(
           target,
           povClass,
           1,
           shouldAnimateDiscardFaceChange(seat),
-          true,
+          !handHint,
+          handHint,
         )
       : null
     const backOverlay = !regularPose && shouldAnimateDiscardFaceChange(seat)
@@ -514,7 +542,7 @@ function schedulePendingDiscardFlight(seat: number) {
         pendingDiscardFlightEffects = [animateDiscardBackOverlay(backOverlay, 'hide', duration)]
       }
       if (regularPose) {
-        pendingDiscardFlightEffects = animateDiscardPoseSwap(regularPose, targetTile, 'settle', duration)
+        pendingDiscardFlightEffects = animateDiscardPoseTransition(regularPose, targetTile, 'settle', duration, swapsPose)
       }
 
       pendingDiscardFlightAnimation = target.animate(
