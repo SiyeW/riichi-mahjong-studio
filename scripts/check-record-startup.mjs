@@ -152,11 +152,13 @@ try {
       assert.equal(surface.documentVisibility, 'visible', 'an occluded surface is not a visible rendering baseline')
     }
     const client = await page.context().newCDPSession(page)
+    let wheelPoint = null
     if (process.env.RMS_RECORD_MOTION_INPUT === 'trusted') {
       const bounds = await page.locator('.grid-main').boundingBox()
       assert.ok(bounds, 'trusted wheel needs a visible table hit target')
-      await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + 4)
-      await page.exposeFunction('__rmsMotionWheel', deltaY => page.mouse.wheel(0, deltaY))
+      wheelPoint = { x: bounds.x + bounds.width / 2, y: bounds.y + 4 }
+      await page.mouse.move(wheelPoint.x, wheelPoint.y)
+      if (pair) await page.exposeFunction('__rmsMotionWheel', deltaY => page.mouse.wheel(0, deltaY))
     }
     await client.send('Performance.enable')
     const recordCpu = !process.env.RMS_RECORD_MOTION_SAMPLE_ONLY
@@ -170,7 +172,8 @@ try {
       await client.send('Tracing.start', { categories: process.env.RMS_RECORD_MOTION_TRACE_CATEGORIES || categories, transferMode: 'ReturnAsStream' })
     }
     const before = await client.send('Performance.getMetrics')
-    const motion = await page.evaluate(async ({ pair, steps, stepDelay, direction }) => {
+    const externalInput = Boolean(wheelPoint && !pair)
+    const motionTask = page.evaluate(async ({ pair, steps, stepDelay, direction, externalInput }) => {
       const frameTimes = [], timelineTimes = [], visits = [], longTasks = [], zooms = new Set(), flights = [], inputs = [], commits = [], coverage = []
       const animations = new Map()
       let lastCoverage = ''
@@ -182,6 +185,7 @@ try {
       visits.push(initial.node)
       const table = document.querySelector('.grid-main')
       const wheel = event => inputs.push({ at: performance.now(), deltaY: event.deltaY, trusted: event.isTrusted,
+        deltaMode: event.deltaMode, legacyDeltaY: event.wheelDeltaY ?? null,
         beforeNode: vm.gameView.currentNodeId })
       table.addEventListener('wheel', wheel, { capture: true })
       const dispatchWheel = deltaY => window.__rmsMotionWheel ? window.__rmsMotionWheel(deltaY)
@@ -233,7 +237,10 @@ try {
       }
       frame = requestAnimationFrame(sample)
       try {
-        if (pair) {
+        if (externalInput) {
+          await new Promise(resolve => { window.__rmsFinishMotionProbe = resolve })
+          delete window.__rmsFinishMotionProbe
+        } else if (pair) {
           for (let round = 0; round < 4; round++) for (const direction of [1, -1]) {
             await dispatchWheel(direction * 100)
             await new Promise(resolve => setTimeout(resolve, 700))
@@ -257,6 +264,13 @@ try {
         backendNode: (await window.studioAPI.getGameView()).view.currentNodeId,
         zooms: [...zooms], visits: visits.length, inputs, commits,
         coverage, motionPending: vm.tableMotionActive, frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
+        cleanup: {
+          ghostsAndOverlays: document.querySelectorAll('.discard-return-ghost, .discard-flight-back, .discard-flight-regular-pose').length,
+          activeCoverage: document.querySelectorAll('.discard-flight-coverage').length,
+          workerSurfaces: document.querySelectorAll('.discard-motion-surface').length,
+          pausedTableAnimations: document.getAnimations().filter(animation => animation.playState === 'paused'
+            && animation.effect?.target instanceof Element && animation.effect.target.closest('.grid-main')).length,
+        },
         p95: intervals[Math.floor(intervals.length * .95)], max: intervals.at(-1), longTasks,
         flightWindows: flights.map(flight => {
           if (!Number.isFinite(flight.startTime)) return { ...flight, callbackCount: null, maximumCallbackGapMs: null }
@@ -266,7 +280,35 @@ try {
           return { ...flight, observedDuration: end - flight.startTime, callbackCount: callbacks.length,
             maximumCallbackGapMs: Math.max(...times.slice(1).map((time, index) => time - times[index])) }
         }), probeStartedAt, callbackArrivals: frameTimes, callbackTimelineStamps: timelineTimes }
-    }, { pair: pair || null, steps: motionSteps, stepDelay: motionStepDelay, direction: motionDirection })
+    }, { pair: pair || null, steps: motionSteps, stepDelay: motionStepDelay, direction: motionDirection, externalInput })
+    // Observe early renderer failure while its independent input producer is
+    // still waiting for admission; the awaited task below retains that error.
+    void motionTask.catch(() => {})
+    const injectedInputs = [], pendingInputs = new Set(), inputTasks = []
+    let inputError = null
+    if (externalInput) {
+      try {
+        await page.waitForFunction(() => typeof window.__rmsFinishMotionProbe === 'function')
+        const directions = motionDirection === 'forward' ? [1] : motionDirection === 'backward' ? [-1] : [-1, 1]
+        const began = performance.now()
+        for (const direction of directions) for (let index = 0; index < motionSteps; index++) {
+          const target = began + injectedInputs.length * motionStepDelay
+          await new Promise(resolve => setTimeout(resolve, Math.max(0, target - performance.now())))
+          assert.ok(pendingInputs.size < 32, 'native input acknowledgements exceeded the bounded producer capacity')
+          const deltaY = direction * 100
+          injectedInputs.push({ at: performance.now() - began, deltaY })
+          const task = client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...wheelPoint, deltaX: 0, deltaY })
+            .then(() => { pendingInputs.delete(task) }, error => { pendingInputs.delete(task); inputError ??= String(error) })
+          pendingInputs.add(task); inputTasks.push(task)
+        }
+      } catch (error) { inputError ??= String(error) }
+      finally {
+        await Promise.all(inputTasks)
+        await page.evaluate(() => window.__rmsFinishMotionProbe?.())
+      }
+    }
+    const motion = await motionTask
+    motion.inputProducer = { independent: externalInput, intervalMs: motionStepDelay, inputs: injectedInputs, error: inputError }
     const surfaceAfter = await readSurface()
     const stableForeground = stableForegroundSample(surface, surfaceAfter)
     const after = await client.send('Performance.getMetrics')
@@ -325,6 +367,7 @@ try {
         longTasks: motion.longTasks.length, maximumLongTask: Math.max(0, ...motion.longTasks.map(task => task.duration)) },
       work, navigationRequests: navigation.length }))
     assert.equal(traceError, null, 'optional trace failed; the primary metrics were preserved in the profile')
+    assert.equal(inputError, null, 'independent input failed; its primary metrics were preserved in the profile')
     if (process.env.RMS_RECORD_MOTION_INPUT === 'trusted') {
       assert.ok(motion.inputs.length && motion.inputs.every(input => input.trusted), 'native-input trials must receive trusted wheel events')
     }
@@ -335,6 +378,10 @@ try {
     assert.ok(motion.visits >= minimumVisits, 'the motion probe must observe actual renderer frame commits')
     assert.equal(motion.backendNode, motion.final.node, 'the browser must settle on the actual requested backend cursor')
     assert.equal(motion.motionPending, false, 'navigation must not strand a motion owner after settling')
+    const { workerSurfaces, ...retiredMotion } = motion.cleanup
+    assert.deepEqual(retiredMotion, { ghostsAndOverlays: 0, activeCoverage: 0, pausedTableAnimations: 0 },
+      'settled rapid navigation must retire overlays and paused effects')
+    assert.ok(workerSurfaces <= 1, 'rapid navigation must not accumulate worker surfaces')
     if (pair) assert.ok(motion.flightWindows.length >= 4, 'the selected pair must exercise actual discard motion')
   }
 
