@@ -1,5 +1,5 @@
 import { onBeforeUnmount, watch, type Ref } from 'vue'
-import { PERCEPTUAL_SURFACE_CHANGE_EVENT } from './perceptualSurface'
+import { PERCEPTUAL_SURFACE_CHANGE_EVENT } from './perceptualSurface.ts'
 
 type ResponsiveGeometryOptions = Readonly<{
   resizeAncestorSelector?: string

@@ -1,6 +1,8 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, ref, watchPostEffect } from 'vue'
 import type { TranslationParams } from './i18n'
 import type { StudioStatus } from './contracts/runtime'
+import { useResponsiveGeometry } from './useResponsiveGeometry.ts'
+import { useCanvasPaintSnapshots } from './canvasPaintSnapshot.ts'
 
 type Translate = (key: string, params?: TranslationParams) => string
 
@@ -20,13 +22,13 @@ export function useAutomaticAnalysis(options: UseAutomaticAnalysisOptions) {
   const { status, t, applyStatus } = options
   const autoAnalysisRequestInFlight = ref(false)
   const autoAnalysisCanvasEl = ref<HTMLCanvasElement | null>(null)
-  let autoAnalysisCanvasRaf = 0
-  let autoAnalysisResizeObserver: ResizeObserver | null = null
+  const { publish: publishPaint } = useCanvasPaintSnapshots<string>('rmsAutomaticAnalysisTimeline', value => value)
 
   const autoAnalysisRunning = computed(() => status.autoAnalysis.status === 'running')
   const autoAnalysisTimeline = computed(() => status.autoAnalysis.timeline || '')
   const autoAnalysisTimelineTotal = computed(() => autoAnalysisTimeline.value.length)
   const autoAnalysisPercent = computed(() => {
+    if (!status.gameLoaded) return 0
     const total = autoAnalysisTimelineTotal.value
     const completed = Math.max(0, Number(status.autoAnalysis.timelineReady) || 0)
     if (!total) return status.autoAnalysis.status === 'completed' ? 100 : 0
@@ -49,7 +51,7 @@ export function useAutomaticAnalysis(options: UseAutomaticAnalysisOptions) {
 
   function prepareAutoAnalysisCanvas(canvas: HTMLCanvasElement) {
     const rect = canvas.getBoundingClientRect()
-    const ratio = Math.max(1, window.devicePixelRatio || 1)
+    const ratio = window.devicePixelRatio > 0 ? window.devicePixelRatio : 1
     const width = Math.max(1, Math.round(rect.width * ratio))
     const height = Math.max(1, Math.round(rect.height * ratio))
     if (canvas.width !== width) canvas.width = width
@@ -63,7 +65,8 @@ export function useAutomaticAnalysis(options: UseAutomaticAnalysisOptions) {
     const { context, width, height } = prepareAutoAnalysisCanvas(canvas)
     if (!context) return
     context.clearRect(0, 0, width, height)
-    const timeline = autoAnalysisTimeline.value
+    const timeline = status.gameLoaded ? autoAnalysisTimeline.value : ''
+    publishPaint(canvas, timeline)
     if (!timeline.length) return
 
     const slotWidth = width / timeline.length
@@ -99,15 +102,12 @@ export function useAutomaticAnalysis(options: UseAutomaticAnalysisOptions) {
     }
   }
 
-  function scheduleAutoAnalysisCanvasDraw() {
-    if (autoAnalysisCanvasRaf) return
-    autoAnalysisCanvasRaf = window.requestAnimationFrame(() => {
-      autoAnalysisCanvasRaf = 0
-      drawAutoAnalysisMainCanvas()
-    })
-  }
+  // Progress is record-owned: paint after the label/trigger DOM update, without
+  // depending on a current-round render or another animation-frame handoff.
+  // Track the actual template ref as well as data, including canvas replacement.
+  watchPostEffect(drawAutoAnalysisMainCanvas)
+  useResponsiveGeometry(autoAnalysisCanvasEl, drawAutoAnalysisMainCanvas, { synchronousResize: true })
 
-  watch(autoAnalysisTimeline, scheduleAutoAnalysisCanvasDraw)
   async function toggleAutoAnalysis() {
     if (!window.studioAPI || !status.gameLoaded || autoAnalysisRequestInFlight.value) return
     autoAnalysisRequestInFlight.value = true
@@ -129,28 +129,12 @@ export function useAutomaticAnalysis(options: UseAutomaticAnalysisOptions) {
     }
   }
 
-  onMounted(() => {
-    autoAnalysisResizeObserver = new ResizeObserver(scheduleAutoAnalysisCanvasDraw)
-    if (autoAnalysisCanvasEl.value) autoAnalysisResizeObserver.observe(autoAnalysisCanvasEl.value)
-    scheduleAutoAnalysisCanvasDraw()
-  })
-
-  onBeforeUnmount(() => {
-    autoAnalysisResizeObserver?.disconnect()
-    autoAnalysisResizeObserver = null
-    if (autoAnalysisCanvasRaf) {
-      cancelAnimationFrame(autoAnalysisCanvasRaf)
-      autoAnalysisCanvasRaf = 0
-    }
-  })
-
   return {
     autoAnalysisCanvasEl,
     autoAnalysisLabel,
     autoAnalysisPercent,
     autoAnalysisRequestInFlight,
     autoAnalysisRunning,
-    scheduleAutoAnalysisCanvasDraw,
     toggleAutoAnalysis,
   }
 }

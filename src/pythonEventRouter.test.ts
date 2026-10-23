@@ -90,6 +90,19 @@ test('python event routing rejects stale game progress before mutating status', 
   assert.notEqual(status.autoAnalysis, progress)
 })
 
+test('record-wide automatic progress is independent of the visible node and analysis visit', () => {
+  const { route, status, gameView, calls } = createHarness()
+  const progress = { status: 'running', timeline: 'OMso', timelineReady: 2, completed: 2, total: 4,
+    currentNodeId: 'another-round-node', currentModel: 'opponent', cached: 0, analyzed: 2, failed: 0, message: '' }
+  route({ type: 'auto_analysis_progress', gameId: gameView.gameId, nodeId: 'another-round-node',
+    viewToken: { sessionId: 'other-visit', nodeId: 'another-round-node', sequence: 1,
+      intent: 1, gameId: gameView.gameId, seat: 1, mode: 'research', visibleHands: false,
+      decisionEpoch: 0, opponentEpoch: 0 }, autoAnalysis: progress } as unknown as PythonEvent)
+  assert.deepEqual(status.autoAnalysis, progress)
+  assert.equal(gameView.currentNodeId, 'node-current')
+  assert.equal(calls.opponent.length, 0)
+})
+
 test('opponent analysis must match the current game, node, seat, and cache epoch', () => {
   const { calls, options, route } = createHarness()
   const analysis = { context: { cacheEpoch: 7 } } as NonNullable<GameView['opponentAnalysis']>

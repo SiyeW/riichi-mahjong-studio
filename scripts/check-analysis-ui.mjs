@@ -13,6 +13,7 @@ import { checkSpecialActionMotion } from './check-special-action-motion.mjs'
 import { checkToolbarWindowToggles } from './check-toolbar-window-toggles.mjs'
 import { checkRuntimeResources } from './check-runtime-resources.mjs'
 import { checkAnalysisLoading } from './check-analysis-loading.mjs'
+import { checkAutomaticAnalysisEvents } from './check-automatic-analysis-events.mjs'
 import { checkAnalysisPresentationLifecycle } from './check-analysis-presentation-lifecycle.mjs'
 import { checkIndicatorFamily, checkTableTurnIndicators } from './check-interface-indicators.mjs'
 
@@ -979,6 +980,7 @@ try {
     '1',
     'auto-analysis progress details stay visible without hover',
   )
+  await checkAutomaticAnalysisEvents(page)
   await page.evaluate(() => {
     const vm = window.analysisCheck.vm
     window.originalSpecialActionFixture = {
