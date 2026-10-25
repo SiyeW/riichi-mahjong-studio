@@ -5,7 +5,7 @@ export interface MotionGeometry {
   startX: number; startY: number; dx: number; dy: number; axisX: number; axisY: number
 }
 export type MotionRequest =
-  | { type: 'init'; canvas: OffscreenCanvas }
+  | { type: 'init'; canvas: OffscreenCanvas; diagnostics?: boolean }
   | { type: 'prepare'; id: number; geometry: MotionGeometry; pixels: Uint8ClampedArray; planeCount: 1 | 2;
       mode: 'single' | 'overlay' | 'crossfade'; stops: OpacityStop[][]; duration: number; easing: string }
   | { type: 'start'; id: number; absoluteTime: number }
@@ -16,5 +16,5 @@ export interface SubmittedInterval { fromTime: number; time: number; previous: n
 export type MotionReply =
   | { type: 'warm' }
   | { type: 'ready'; id: number; preparationMs: number }
-  | { type: 'done'; id: number; intervals: SubmittedInterval[] }
+  | { type: 'done'; id: number; intervals?: SubmittedInterval[] }
   | { type: 'failed'; id: number; reason: string }

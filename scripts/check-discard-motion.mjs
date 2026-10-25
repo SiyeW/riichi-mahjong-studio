@@ -153,6 +153,8 @@ export async function checkDiscardMotion(page) {
         item.remainingOverlays = document.querySelectorAll('.discard-flight-back, .discard-flight-regular-pose, .discard-return-ghost').length
         item.remainingCoverage = document.querySelectorAll('.discard-flight-coverage').length
         item.remainingOpacity = document.querySelector(`[data-pending-discard-seat="${actor}"]`)?.style.opacity || ''
+        item.remainingPromotion = document.querySelector(`[data-pending-discard-seat="${actor}"]`)?.style.willChange || ''
+        item.remainingMovement = document.querySelector(`[data-pending-discard-seat="${actor}"]`)?.getAnimations().length || 0
         item.remainingFaceEffects = [...document.querySelectorAll('.grid-discard .tileImg')]
           .flatMap(image => image.getAnimations()).filter(animation => animation.effect.getKeyframes().some(key => key.opacity !== undefined)).length
         cases.push(item)
@@ -181,8 +183,26 @@ export async function checkDiscardMotion(page) {
           }))
         }
       }
+      const completed = async (label, movement) => {
+        if (!movement) throw Error(`${label} did not create a native movement`)
+        const deadline = performance.now() + 2000
+        while (state.tableMotionActive) {
+          if (performance.now() > deadline) throw Error(`${label} did not finish`)
+          await new Promise(resolve => setTimeout(resolve, 2))
+        }
+        retired(label)
+        if (movement.playState !== 'idle') throw Error(`${label} retained its finished native effect`)
+      }
       try {
         Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+        await start()
+        const forward = document.querySelector(`[data-pending-discard-seat="${actor}"]`).getAnimations()
+          .find(animation => animation.effect.getKeyframes().some(key => key.transform))
+        await completed('Normal forward completion', forward)
+        await vm.jumpToNode(parent.currentNodeId); await frame(); await frame(); await readyCoverage()
+        const reverse = document.querySelector('.discard-return-ghost')?.getAnimations()
+          .find(animation => animation.effect.getKeyframes().some(key => key.transform))
+        await completed('Normal reverse completion', reverse)
         await start()
         hidden = true; document.dispatchEvent(new Event('visibilitychange')); await Promise.resolve()
         retired('Hidden document')
@@ -243,6 +263,8 @@ export async function checkDiscardMotion(page) {
     assert.equal(item.remainingFaceEffects, 0, 'pose swaps cannot leave an opacity effect on a reused river tile')
     assert.equal(item.remainingCoverage, 0, 'coverage surfaces retire after finishing/replacement')
     assert.equal(item.remainingOpacity, '', 'coverage restores source opacity')
+    assert.equal(item.remainingPromotion, '', 'normal completion uses the same layer-hint retirement as cancellation')
+    assert.equal(item.remainingMovement, 0, 'normal completion releases the native movement effect')
     if (coverageEnabled) {
       assert.equal(item.coverageSurfaces, 1, 'one bounded local surface replaces the sample tree')
       assert.ok(item.timelineSpread <= item.timelineRoundoff, 'source, face, pose and coverage use one native timeline')

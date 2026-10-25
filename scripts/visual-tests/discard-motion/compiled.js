@@ -40,10 +40,22 @@ async function checkProductionOwner() {
 }
 
 async function boot() {
-  if (new URLSearchParams(location.search).has('no-webgl')) {
+  const parameters = new URLSearchParams(location.search)
+  const diagnostics = parameters.has('diagnostics')
+  if (parameters.has('no-webgl')) {
     const NativeWorker = Worker
     window.Worker = class extends NativeWorker {
       constructor(_url, options) { super(unsupportedWorkerUrl, options) }
+    }
+  }
+  const NativeWorker = Worker
+  let completedReply
+  window.Worker = class extends NativeWorker {
+    constructor(url, options) {
+      super(url, options)
+      this.addEventListener('message', event => {
+        if (event.data.type === 'done') completedReply = event.data
+      })
     }
   }
   document.body.style.cssText = 'margin:0;background:#02191e;--zoom:1.5'
@@ -51,7 +63,7 @@ async function boot() {
   const source = document.querySelector('.tileDiv'), image = source.querySelector('img')
   image.src = sourceUrl; await image.decode()
   source.style.setProperty('opacity', '.8', 'important')
-  const renderer = createDiscardCoverageRenderer()
+  const renderer = createDiscardCoverageRenderer({ diagnostics })
   let movement
   try {
     renderer.start()
@@ -69,10 +81,16 @@ async function boot() {
     const surface = document.querySelector('.discard-motion-surface')
     const intervals = JSON.parse(surface?.dataset.intervals || '[]')
     const span = intervals.reduce((sum, interval) => sum + interval.span, 0)
-    if (handle && (intervals.length < 2 || Math.abs(span - 300 * devicePixelRatio) > 1e-5)) throw Error('Compiled worker did not submit the exact full trajectory')
+    if (handle && !completedReply) throw Error('Compiled worker did not finish its actual flight')
+    if (handle && diagnostics && (intervals.length < 2 || Math.abs(span - 300 * devicePixelRatio) > 1e-5)) throw Error('Compiled worker did not submit the exact full trajectory')
+    const diagnosticAttributes = ['intervals', 'startTime', 'admissionMs', 'workerPreparationMs', 'snapshotMs', 'snapshotStages']
+      .filter(key => surface && key in surface.dataset)
+    const workerHasIntervals = completedReply ? Object.hasOwn(completedReply, 'intervals') : false
+    if (!diagnostics && (workerHasIntervals || diagnosticAttributes.length)) throw Error('Default motion retained detailed diagnostics')
     if (source.style.opacity !== '0.8' || source.style.getPropertyPriority('opacity') !== 'important') throw Error('Compiled motion lost the original source style')
     return { protocol: location.protocol, sourceProtocol: new URL(image.src).protocol, fallback: !handle,
-      owner, duration, submitted: intervals.length, span, pixelRatio: devicePixelRatio, failure: surface?.dataset.failure || null }
+      owner, duration, diagnostics, rendered: Boolean(completedReply), workerHasIntervals, diagnosticAttributes,
+      submitted: intervals.length, span, pixelRatio: devicePixelRatio, failure: surface?.dataset.failure || null }
   } finally { renderer.stop(); movement?.cancel() }
 }
 

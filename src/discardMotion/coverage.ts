@@ -8,7 +8,7 @@ interface FlightOptions { source: HTMLElement; effects: Animation[]; movement: A
 const PREPARATION_BUDGET_MS = 120
 
 /** One renderer owner, one outstanding preparation, one worker surface. */
-export function createDiscardCoverageRenderer() {
+export function createDiscardCoverageRenderer({ diagnostics = false }: { diagnostics?: boolean } = {}) {
   let worker: Worker | null = null, canvas: HTMLCanvasElement | null = null, warm = false, sequence = 0
   let active: { id: number; ready(preparationMs: number): void; retire(): void } | null = null
   let snapshotBusy = false
@@ -48,14 +48,15 @@ export function createDiscardCoverageRenderer() {
         if (!active || message.id !== active.id) return
         if (message.type === 'ready') active.ready(message.preparationMs)
         else {
-          if (message.type === 'done') canvas!.dataset.intervals = JSON.stringify(message.intervals)
-          else canvas!.dataset.failure = message.reason
+          if (message.type === 'done') {
+            if (diagnostics && message.intervals) canvas!.dataset.intervals = JSON.stringify(message.intervals)
+          } else canvas!.dataset.failure = message.reason
           active.retire(); active = null
         }
       }
       worker.onerror = () => { if (worker === owner) stop() }
       const surface = canvas.transferControlToOffscreen()
-      post({ type: 'init', canvas: surface }, [surface])
+      post({ type: 'init', canvas: surface, diagnostics }, [surface])
     } catch { stop() }
   }
 
@@ -116,9 +117,11 @@ export function createDiscardCoverageRenderer() {
       const startTime = performance.now()
       surface.dataset.active = String(id)
       surface.classList.add('discard-flight-coverage')
-      surface.dataset.startTime = String(startTime)
-      surface.dataset.admissionMs = String(startTime - began)
-      surface.dataset.workerPreparationMs = String(workerMs)
+      if (diagnostics) {
+        surface.dataset.startTime = String(startTime)
+        surface.dataset.admissionMs = String(startTime - began)
+        surface.dataset.workerPreparationMs = String(workerMs)
+      }
       source.style.setProperty('opacity', '0', 'important')
       surface.style.visibility = 'visible'
       animations.forEach(animation => { animation.play(); animation.startTime = startTime })
@@ -132,8 +135,10 @@ export function createDiscardCoverageRenderer() {
     void captureMotionSnapshot(source, effects, dx, dy, atlasCache).then(snapshot => {
       if (!waiting || active?.id !== id) return
       if (performance.now() - began > PREPARATION_BUDGET_MS) { fail('Preparation timeout'); return }
-      surface.dataset.snapshotMs = String(performance.now() - began)
-      surface.dataset.snapshotStages = JSON.stringify(snapshot.timings)
+      if (diagnostics) {
+        surface.dataset.snapshotMs = String(performance.now() - began)
+        surface.dataset.snapshotStages = JSON.stringify(snapshot.timings)
+      }
       Object.assign(surface.style, { left: `${snapshot.left}px`, top: `${snapshot.top}px`,
         width: `${snapshot.geometry.width / snapshot.dpr}px`, height: `${snapshot.geometry.height / snapshot.dpr}px`, opacity: snapshot.opacity })
       post({ type: 'prepare', id, geometry: snapshot.geometry, pixels: snapshot.pixels, planeCount: snapshot.planeCount, mode: snapshot.mode,
