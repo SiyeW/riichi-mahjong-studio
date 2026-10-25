@@ -29,7 +29,8 @@ function runtime(context, directory) {
     })
   }
   if (!directory) {
-    directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rms-incremental-record-'))
+    // The backend resolves Windows 8.3 aliases; use the same physical root.
+    directory = fs.realpathSync.native(fs.mkdtempSync(path.join(os.tmpdir(), 'rms-incremental-record-')))
     owners.directories.push(directory)
   }
   let child
