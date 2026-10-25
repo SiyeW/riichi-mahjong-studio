@@ -1,43 +1,38 @@
 <template>
   <div class="engine-profile-column">
-    <div class="engine-output-filters" :aria-label="t('engine.filterByOutput')">
+    <div ref="outputFiltersElement" class="engine-output-filters" :style="{ '--engine-filter-columns': filterColumns }" :aria-label="t('engine.filterByOutput')">
       <button
         v-for="output in outputs"
         :key="output.id"
         class="engine-output-filter"
-        :class="{
-          assigned: output.assigned,
-          loaded: output.loaded,
-          loading: output.loading,
-          error: output.error,
-          selected: output.selected,
-        }"
+        :class="{ selected: output.selected }"
+        :data-status="output.status || undefined"
+        :aria-label="output.status ? `${output.label} · ${statusLabel(output.status)}` : output.label"
         :aria-pressed="output.selected"
+        v-perceptual-surface="statusSurface"
+        v-ui-tooltip="{ text: output.label, revealTarget: '.engine-output-label' }"
         @click="emit('toggle-output', output.id)"
       >
-        {{ output.label }}
+        <span class="engine-output-label">{{ output.label }}</span>
       </button>
     </div>
     <div class="engine-profile-list">
-      <div
+      <button
         v-for="profile in profiles"
         :key="profile.id"
+        type="button"
         class="engine-profile-item"
-        :class="profile.classes"
+        :class="{ selected: profile.selected }"
+        :data-status="profile.status"
+        :aria-label="`${profile.name || t('common.unnamedEngine')} · ${statusLabel(profile.status)}`"
+        :aria-pressed="profile.selected"
+        v-perceptual-surface="statusSurface"
+        v-ui-tooltip="{ text: profile.name || t('common.unnamedEngine'), revealTarget: '.engine-profile-name' }"
         @click="emit('select', profile.id)"
       >
-        <span>{{ profile.name || t('common.unnamedEngine') }}</span>
-        <small>{{ profile.subtitle }}</small>
-        <button
-          v-if="profile.showAction"
-          class="engine-load-button"
-          :class="{ unload: profile.loaded }"
-          :disabled="busy"
-          @click.stop="emit('action', profile.id)"
-        >
-          {{ profile.loaded ? t('engine.unload') : t('engine.load') }}
-        </button>
-      </div>
+        <span class="engine-profile-name">{{ profile.name || t('common.unnamedEngine') }}</span>
+        <small v-if="profile.subtitle">{{ profile.subtitle }}</small>
+      </button>
     </div>
     <div class="engine-list-actions">
       <button :disabled="!canMoveUp" @click="emit('move', -1)">{{ t('engine.moveUp') }}</button>
@@ -52,15 +47,17 @@
 </template>
 
 <script setup lang="ts">
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type {
   EngineOutputFilterItem,
   EngineProfileListItem,
+  EngineLoadStatus,
 } from '../presentation.ts'
 import type { SupportedEngineOutputId } from '../useEngineCatalog.ts'
 import { useI18n } from '../../i18n.ts'
+import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../../perceptualSurface.ts'
 
-defineProps<{
-  busy: boolean
+const props = defineProps<{
   canDelete: boolean
   canDuplicate: boolean
   canMoveDown: boolean
@@ -68,10 +65,54 @@ defineProps<{
   deleteConfirmation: boolean
   outputs: EngineOutputFilterItem[]
   profiles: EngineProfileListItem[]
+  perceptualSurface: PerceptualSurfaceBinding
 }>()
 
+const statusSurface = computed<PerceptualSurfaceBinding>(() => ({
+  palette: props.perceptualSurface.palette,
+  tuning: props.perceptualSurface.tuning,
+  statusOnly: true,
+}))
+
+const outputFiltersElement = ref<HTMLElement | null>(null)
+const filterColumns = ref(3)
+let outputFilterResizeObserver: ResizeObserver | null = null
+
+function updateFilterColumns() {
+  const container = outputFiltersElement.value
+  if (!container) return
+  const buttons = [...container.querySelectorAll<HTMLElement>('.engine-output-filter')]
+  if (!buttons.length) return
+  const context = document.createElement('canvas').getContext('2d')
+  if (!context) return
+  const gap = Number.parseFloat(getComputedStyle(container).columnGap) || 0
+  const requiredWidth = Math.max(...buttons.map((button) => {
+    const label = button.querySelector<HTMLElement>('.engine-output-label')
+    if (!label) return 0
+    const buttonStyle = getComputedStyle(button)
+    const labelStyle = getComputedStyle(label)
+    context.font = labelStyle.font
+    const letterSpacing = Number.parseFloat(labelStyle.letterSpacing) || 0
+    return context.measureText(label.textContent || '').width
+      + letterSpacing * Math.max(0, (label.textContent || '').length - 1)
+      + Number.parseFloat(buttonStyle.paddingLeft)
+      + Number.parseFloat(buttonStyle.paddingRight)
+      + Number.parseFloat(buttonStyle.borderLeftWidth)
+      + Number.parseFloat(buttonStyle.borderRightWidth)
+      + 2
+  }))
+  filterColumns.value = Math.max(3, Math.min(buttons.length, Math.floor((container.clientWidth + gap) / (requiredWidth + gap))))
+}
+
+onMounted(() => {
+  outputFilterResizeObserver = new ResizeObserver(updateFilterColumns)
+  if (outputFiltersElement.value) outputFilterResizeObserver.observe(outputFiltersElement.value)
+  updateFilterColumns()
+})
+onBeforeUnmount(() => outputFilterResizeObserver?.disconnect())
+watch(() => props.outputs.map(output => output.label).join('\0'), () => nextTick(updateFilterColumns), { flush: 'post' })
+
 const emit = defineEmits<{
-  action: [profileId: string]
   add: []
   delete: []
   duplicate: []
@@ -80,6 +121,16 @@ const emit = defineEmits<{
   'toggle-output': [outputId: SupportedEngineOutputId]
 }>()
 const { t } = useI18n()
+const statusTranslationKeys: Record<EngineLoadStatus, string> = {
+  loaded: 'engine.status.loaded',
+  loading: 'engine.status.loading',
+  unloading: 'engine.status.unloading',
+  error: 'engine.status.failed',
+  unloaded: 'engine.status.notLoaded',
+}
+function statusLabel(status: EngineLoadStatus): string {
+  return t(statusTranslationKeys[status])
+}
 </script>
 
 <style scoped>
@@ -105,7 +156,7 @@ const { t } = useI18n()
 
 .engine-output-filters {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--engine-filter-columns), minmax(0, 1fr));
   gap: calc(0.24rem * var(--floating-panel-scale));
   padding-bottom: calc(0.38rem * var(--floating-panel-scale));
   border-bottom: 1px solid var(--border-subtle);
@@ -113,8 +164,10 @@ const { t } = useI18n()
 
 .engine-output-filter {
   position: relative;
+  --engine-indicator-size: calc(0.28rem * var(--floating-panel-scale));
+  --engine-indicator-offset: calc(0.22rem * var(--floating-panel-scale));
   min-width: 0;
-  padding: calc(0.32rem * var(--floating-panel-scale)) calc(0.42rem * var(--floating-panel-scale));
+  padding: calc(0.32rem * var(--floating-panel-scale)) calc(0.9rem * var(--floating-panel-scale)) calc(0.32rem * var(--floating-panel-scale)) calc(0.42rem * var(--floating-panel-scale));
   overflow: hidden;
   border: 1px solid var(--engine-state-idle-border);
   border-radius: calc(2px * var(--floating-panel-scale));
@@ -127,29 +180,46 @@ const { t } = useI18n()
   cursor: pointer;
 }
 
-.engine-output-filter.assigned {
-  color: var(--text-dim);
-  background: var(--engine-state-unloaded-bg);
+.engine-output-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.engine-output-filter.loaded {
-  color: var(--text-main);
-  background: var(--engine-state-loaded-bg);
+.engine-output-filter[data-status]::after,
+.engine-profile-item[data-status]::after {
+  position: absolute;
+  top: var(--engine-indicator-offset);
+  right: var(--engine-indicator-offset);
+  width: var(--engine-indicator-size);
+  height: var(--engine-indicator-size);
+  border-radius: 50%;
+  background: var(--engine-status-unloaded);
+  content: '';
 }
 
-.engine-output-filter.loading {
-  color: var(--text-dim);
-  background: var(--engine-state-loading-bg);
+.engine-output-filter[data-status='loaded']::after,
+.engine-profile-item[data-status='loaded']::after {
+  background: var(--engine-status-loaded);
 }
 
-.engine-output-filter.error {
-  color: var(--text-main);
-  background: var(--engine-state-error-bg);
+.engine-output-filter[data-status='loading']::after,
+.engine-output-filter[data-status='unloading']::after,
+.engine-profile-item[data-status='loading']::after,
+.engine-profile-item[data-status='unloading']::after {
+  background: var(--engine-status-loading);
+}
+
+.engine-output-filter[data-status='error']::after,
+.engine-profile-item[data-status='error']::after {
+  background: var(--engine-status-error);
 }
 
 .engine-output-filter.selected {
   color: var(--text-main);
-  background: var(--engine-state-idle-selected-bg);
+  background: var(--engine-state-selected-bg);
 }
 
 .engine-output-filter.selected::before {
@@ -157,38 +227,29 @@ const { t } = useI18n()
   right: calc(0.24rem * var(--floating-panel-scale));
   bottom: 0;
   left: calc(0.24rem * var(--floating-panel-scale));
-  height: calc(3px * var(--floating-panel-scale));
-  background: var(--text-main);
+  height: calc(var(--indicator-thickness) * var(--floating-panel-scale));
+  background: var(--indicator-neutral);
   content: '';
-}
-
-.engine-output-filter.assigned.selected {
-  background: var(--engine-state-unloaded-selected-bg);
-}
-
-.engine-output-filter.loaded.selected {
-  background: var(--engine-state-loaded-selected-bg);
-}
-
-.engine-output-filter.loading.selected {
-  background: var(--engine-state-loading-selected-bg);
-}
-
-.engine-output-filter.error.selected {
-  background: var(--engine-state-error-selected-bg);
 }
 
 .engine-output-filter:hover {
   color: var(--text-main);
-  filter: brightness(1.08);
+  border-color: var(--border-strong);
+}
+
+.engine-profile-item:hover {
+  border-color: var(--border-strong);
 }
 
 .engine-profile-item {
   position: relative;
+  --engine-indicator-size: calc(0.38rem * var(--floating-panel-scale));
+  --engine-indicator-offset: calc(0.4rem * var(--floating-panel-scale));
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   gap: calc(0.12rem * var(--floating-panel-scale));
   width: 100%;
+  min-height: calc(3.2rem * var(--floating-panel-scale));
   padding:
     calc(0.48rem * var(--floating-panel-scale))
     calc(0.58rem * var(--floating-panel-scale))
@@ -207,7 +268,7 @@ const { t } = useI18n()
   top: calc(0.28rem * var(--floating-panel-scale));
   bottom: calc(0.28rem * var(--floating-panel-scale));
   left: calc(0.18rem * var(--floating-panel-scale));
-  width: calc(0.22rem * var(--floating-panel-scale));
+  width: calc(var(--indicator-thickness) * var(--floating-panel-scale));
   background: transparent;
   content: '';
 }
@@ -218,7 +279,13 @@ const { t } = useI18n()
 }
 
 .engine-profile-item > span {
+  min-width: 0;
+  overflow: hidden;
+  padding-block: 0.08em;
   font-size: var(--ui-text-body);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .engine-profile-item small {
@@ -228,84 +295,18 @@ const { t } = useI18n()
   text-overflow: ellipsis;
 }
 
-.engine-profile-item.loaded {
-  color: var(--text-main);
-  background: var(--engine-state-loaded-bg);
-}
-
-.engine-profile-item.loading {
-  background: var(--engine-state-loading-bg);
-}
-
-.engine-profile-item.error {
-  background: var(--engine-state-error-bg);
-}
-
-.engine-profile-item.unloaded {
-  color: var(--text-dim);
-  background: var(--engine-state-unloaded-bg);
-}
-
 .engine-profile-item.selected {
   color: var(--text-main);
-  background: var(--engine-state-idle-selected-bg);
+  background: var(--engine-state-selected-bg);
 }
 
 .engine-profile-item.selected::before {
-  background: var(--text-main);
+  background: var(--indicator-neutral);
 }
 
-.engine-profile-item.selected.unloaded {
-  background: var(--engine-state-unloaded-selected-bg);
-}
-
-.engine-profile-item.selected.loaded {
-  background: var(--engine-state-loaded-selected-bg);
-}
-
-.engine-profile-item.selected.loading {
-  background: var(--engine-state-loading-selected-bg);
-}
-
-.engine-profile-item.selected.error {
-  background: var(--engine-state-error-selected-bg);
-}
-
-.engine-output-filter.assigned,
-.engine-output-filter.loaded,
-.engine-output-filter.loading,
-.engine-output-filter.error,
 .engine-output-filter.selected,
-.engine-profile-item.loaded,
-.engine-profile-item.loading,
-.engine-profile-item.error,
-.engine-profile-item.unloaded,
 .engine-profile-item.selected {
   border-color: var(--engine-state-border);
-}
-
-.engine-load-button {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-  align-self: center;
-  padding: calc(0.24rem * var(--floating-panel-scale)) calc(0.48rem * var(--floating-panel-scale));
-  border: 1px solid rgba(226, 244, 239, 0.32);
-  border-radius: calc(2px * var(--floating-panel-scale));
-  color: var(--text-main);
-  background: rgba(30, 116, 78, 0.92);
-  font-size: var(--ui-text-caption);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--ui-motion-duration) var(--ui-motion-easing);
-}
-
-.engine-load-button.unload {
-  background: rgba(88, 105, 105, 0.92);
-}
-
-.engine-profile-item:hover .engine-load-button,
-.engine-load-button:focus-visible {
-  opacity: 1;
 }
 
 .engine-list-actions {

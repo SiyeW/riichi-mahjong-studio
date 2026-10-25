@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const test = require('node:test')
+const { EventEmitter } = require('node:events')
 const { createMainWindow, resolveZoomShortcut } = require('./main-window')
 
 test('zoom shortcuts accept platform modifiers and reject unrelated input', () => {
@@ -10,10 +11,12 @@ test('zoom shortcuts accept platform modifiers and reject unrelated input', () =
   assert.equal(resolveZoomShortcut({ type: 'keyDown', control: true, meta: false, alt: true, code: 'Equal' }), null)
 })
 
-test('main window owns construction, first display, and close persistence', async () => {
+test('main window saves size after resize and does not rewrite settings on close', async () => {
   let constructedOptions
   let savedSettings
+  let settingsSaveCount = 0
   let closeHandler
+  let resizeSave
   const windowEvents = new Map()
   const webEvents = new Map()
   const calls = []
@@ -55,11 +58,12 @@ test('main window owns construction, first display, and close persistence', asyn
     isDev: true,
     rendererUrl: 'http://127.0.0.1:5173',
     gameFileStore,
-    writeRecoveryGameRecord: async () => calls.push(['writeRecoveryGameRecord']),
+    prepareRecordClose: async () => calls.push(['prepareRecordClose']),
+    confirmRecordClose: async () => calls.push(['confirmRecordClose']),
     t: (key) => key,
     loadSettingsImpl: () => structuredClone(settings),
-    saveSettingsImpl: (value) => { savedSettings = value },
-    requestRendererFlushImpl: async (...args) => calls.push(['requestRendererFlush', ...args]),
+    saveSettingsImpl: (value) => { savedSettings = value; settingsSaveCount += 1 },
+    requestRendererFlushImpl: async (...args) => calls.push(['requestRendererFlush', ...args.slice(0, 3)]),
     persistBeforeCloseImpl: async (flush, shouldRecover, recover, onStage) => {
       onStage('flushing')
       await flush()
@@ -68,6 +72,8 @@ test('main window owns construction, first display, and close persistence', asyn
         await recover()
       }
     },
+    setTimeoutImpl: (callback) => { resizeSave = callback; return 1 },
+    clearTimeoutImpl: () => {},
   })
 
   assert.equal(constructedOptions.width, 1200)
@@ -80,6 +86,10 @@ test('main window owns construction, first display, and close persistence', asyn
     ['maximize'],
     ['show'],
   ])
+  windowEvents.get('resize')()
+  resizeSave()
+  assert.deepEqual(savedSettings.window, { width: 1400, height: 900 })
+  assert.equal(settingsSaveCount, 1)
 
   let prevented = false
   closeHandler({ preventDefault: () => { prevented = true } })
@@ -87,12 +97,14 @@ test('main window owns construction, first display, and close persistence', asyn
 
   assert.equal(prevented, true)
   assert.deepEqual(savedSettings.window, { width: 1400, height: 900 })
+  assert.equal(settingsSaveCount, 1)
   assert.deepEqual(calls.slice(4), [
     ['send', 'record:close-state', { active: true, stage: 'preparing' }],
     ['send', 'record:close-state', { active: true, stage: 'flushing' }],
     ['requestRendererFlush', window, ipcMain, 'native.closeSaveTimeout'],
     ['send', 'record:close-state', { active: true, stage: 'recovery' }],
-    ['writeRecoveryGameRecord'],
+    ['prepareRecordClose'],
+    ['confirmRecordClose'],
     ['close'],
   ])
 })
@@ -127,7 +139,7 @@ test('development window retries a failed main-frame load and cancels pending re
     isDev: true,
     rendererUrl: 'http://127.0.0.1:5173',
     gameFileStore: {},
-    writeRecoveryGameRecord: async () => {},
+    prepareRecordClose: async () => {}, confirmRecordClose: async () => {},
     t: (key) => key,
     loadSettingsImpl: () => ({ window: { width: 1200, height: 800 } }),
     setTimeoutImpl: (callback) => { timers.push(callback); return timers.length },
@@ -146,4 +158,144 @@ test('development window retries a failed main-frame load and cancels pending re
   assert.equal(timers.length, 2)
   windowEvents.get('closed')()
   assert.equal(timers[1], null)
+})
+
+test('canceling a failed close restores interaction and permits a later complete save', async () => {
+  const states = []
+  let closes = 0
+  let flushes = 0
+  let writes = 0
+  class Window extends EventEmitter {
+    constructor() {
+      super()
+      this.webContents = new EventEmitter()
+      this.webContents.setZoomFactor = () => {}
+      this.webContents.send = (channel, payload) => {
+        if (channel === 'record:close-state') states.push(payload)
+      }
+    }
+    isDestroyed() { return false }
+    loadURL() { return Promise.resolve() }
+    close() { closes += 1 }
+  }
+  const window = createMainWindow({
+    BrowserWindow: Window, dialog: { showMessageBox: async () => ({ response: 0 }) },
+    ipcMain: {}, appOptions: {}, projectRoot: process.cwd(), isDev: true, rendererUrl: 'unused',
+    gameFileStore: { isDirty: () => true }, t: key => key,
+    loadSettingsImpl: () => ({ window: { width: 1200, height: 800 }, records: { saveRecoveryOnExit: true } }),
+    requestRendererFlushImpl: async () => { if (++flushes === 1) throw new Error('pending edit failed') },
+    prepareRecordClose: async onStage => { writes += 1; onStage('encoding'); onStage('writing') },
+    confirmRecordClose: async () => {}, cancelRecordClose: async () => {},
+  })
+  const requestClose = () => window.emit('close', { preventDefault() {} })
+  requestClose()
+  requestClose()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(flushes, 1, 'duplicate close events must not start another save')
+  assert.equal(writes, 0)
+  assert.equal(closes, 0)
+  assert.deepEqual(states.at(-1), { active: false, stage: '' })
+  requestClose()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(writes, 1)
+  assert.equal(closes, 1)
+  assert.deepEqual(states.slice(-2).map(state => state.stage), ['encoding', 'writing'])
+})
+
+test('a slow save remains owned after canceling exit and its late completion cannot close the window', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const states = []
+  const prompts = []
+  let finish
+  let closes = 0
+  let writes = 0
+  class Window extends EventEmitter {
+    constructor() {
+      super()
+      this.webContents = new EventEmitter()
+      this.webContents.setZoomFactor = () => {}
+      this.webContents.send = (channel, value) => { if (channel === 'record:close-state') states.push(value) }
+    }
+    isDestroyed() { return false }
+    loadURL() { return Promise.resolve() }
+    close() { closes += 1 }
+  }
+  const window = createMainWindow({
+    BrowserWindow: Window, dialog: { showMessageBox: async (_window, options) => {
+      prompts.push(options)
+      return { response: 1 }
+    } },
+    ipcMain: {}, appOptions: {}, projectRoot: process.cwd(), isDev: true, rendererUrl: 'unused',
+    gameFileStore: { isDirty: () => true }, t: key => key,
+    loadSettingsImpl: () => ({ window: { width: 1200, height: 800 }, records: { saveRecoveryOnExit: true } }),
+    requestRendererFlushImpl: async () => {},
+    prepareRecordClose: async () => { writes += 1; await new Promise(resolve => { finish = resolve }) },
+    confirmRecordClose: async () => {}, cancelRecordClose: async () => {},
+  })
+  window.emit('close', { preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  t.mock.timers.tick(30_000)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(prompts[0].title, 'native.closeSavePending.title')
+  assert.deepEqual(states.at(-1), { active: false, stage: '' })
+  assert.equal(writes, 1)
+  finish()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(closes, 0)
+  window.emit('close', { preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  finish()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(closes, 1)
+})
+
+test('canceling exit during edit flush prevents the late acknowledgement from starting a close barrier', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const states = []
+  let finishFlush
+  let prepares = 0
+  let confirms = 0
+  let cancellations = 0
+  let closes = 0
+  class Window extends EventEmitter {
+    constructor() {
+      super()
+      this.webContents = new EventEmitter()
+      this.webContents.setZoomFactor = () => {}
+      this.webContents.send = (channel, value) => { if (channel === 'record:close-state') states.push(value) }
+    }
+    isDestroyed() { return false }
+    loadURL() { return Promise.resolve() }
+    close() { closes += 1 }
+  }
+  const window = createMainWindow({
+    BrowserWindow: Window, dialog: { showMessageBox: async () => ({ response: 1 }) },
+    ipcMain: {}, appOptions: {}, projectRoot: process.cwd(), isDev: true, rendererUrl: 'unused',
+    gameFileStore: {}, t: key => key,
+    loadSettingsImpl: () => ({ window: { width: 1200, height: 800 } }),
+    requestRendererFlushImpl: () => new Promise(resolve => { finishFlush = resolve }),
+    prepareRecordClose: async () => { prepares += 1 },
+    confirmRecordClose: async () => { confirms += 1 },
+    cancelRecordClose: async () => { cancellations += 1 },
+  })
+  window.emit('close', { preventDefault() {} })
+  await new Promise(resolve => setImmediate(resolve))
+  t.mock.timers.tick(30_000)
+  await new Promise(resolve => setImmediate(resolve))
+  assert.deepEqual(states.at(-1), { active: false, stage: '' })
+  assert.equal(cancellations, 1)
+  const finishCancelledFlush = finishFlush
+  window.emit('close', { preventDefault() {} })
+  finishCancelledFlush()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(prepares, 0, 'a cancelled flush must not newly freeze the resumed record')
+  assert.equal(confirms, 0)
+  assert.equal(closes, 0)
+  assert.deepEqual(states.at(-1), { active: true, stage: 'flushing' }, 'old completion must not dismiss the new attempt')
+
+  finishFlush()
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(prepares, 1)
+  assert.equal(confirms, 1)
+  assert.equal(closes, 1)
 })

@@ -9,7 +9,7 @@ from rms_backend.auto_analysis_runtime import AutoAnalysisRuntime
 
 class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
     def test_prediction_submission_and_callback_combinations_finish_cleanly(self):
-        for mode in ('raise', 'callback', 'callback_then_raise', 'cancel_then_raise'):
+        for mode in ('raise', 'callback', 'callback_then_raise', 'cancel_then_raise', 'discard', 'discard_then_raise'):
             with self.subTest(mode=mode):
                 runtime = AutoAnalysisRuntime()
                 items = [{'kind': 'opponent', 'nodeId': str(i), 'cacheKey': 'test', 'cached': False}
@@ -20,9 +20,11 @@ class AutoAnalysisSubmissionFailureTests(unittest.TestCase):
                 def submit(*args, **kwargs):
                     if mode.startswith('callback'):
                         kwargs['on_complete']({'status': 'prediction_error', 'context': kwargs['context']})
+                    if mode.startswith('discard'):
+                        kwargs['on_discard']()
                     if mode == 'cancel_then_raise':
                         runtime.cancel('canceled')
-                    if mode != 'callback':
+                    if mode not in ('callback', 'discard'):
                         raise RuntimeError('submission failed')
                     return True
 

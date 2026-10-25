@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import copy
 import math
+import struct
 from typing import Any
 
-import numpy as np
+_FLOAT32 = struct.Struct('<f')
 
 TILE34_NAMES = [
     *(f"{number}m" for number in range(1, 10)),
@@ -220,11 +221,8 @@ class OpponentPredictionProtocolAdapter:
             if "shanten" in player:
                 shanten = list(player["shanten"])
                 furiten = float(player["furiten"])
-                display = np.zeros(8, dtype=np.float32)
-                display[0] = shanten[0] * (1.0 - furiten)
-                display[1:7] = shanten[1:7]
-                display[7] = shanten[0] * furiten
-                opponents[label] = [float(value) for value in display]
+                display = [shanten[0] * (1.0 - furiten), *shanten[1:7], shanten[0] * furiten]
+                opponents[label] = [_FLOAT32.unpack(_FLOAT32.pack(value))[0] for value in display]
                 raw[label].update(
                     {
                         "shanten_probs": shanten,

@@ -1,6 +1,11 @@
 import type { Directive, DirectiveBinding } from 'vue'
+import { rgbString } from './perceptualColor.ts'
+import { effectiveBackgroundColor } from './perceptualSurface.ts'
 
-type TooltipValue = string | null | undefined | false
+type TooltipValue = string | null | undefined | false | Readonly<{
+  text: string
+  revealTarget: string
+}>
 
 type TooltipState = {
   value: TooltipValue
@@ -20,7 +25,13 @@ const states = new WeakMap<HTMLElement, TooltipState>()
 let tooltipSequence = 0
 
 function tooltipText(value: TooltipValue): string {
-  return typeof value === 'string' ? value.trim() : ''
+  return (typeof value === 'string' ? value : value && value.text ? value.text : '').trim()
+}
+
+function revealTarget(element: HTMLElement, value: TooltipValue): HTMLElement | null {
+  if (!value || typeof value !== 'object') return null
+  const target = element.querySelector(value.revealTarget)
+  return target instanceof HTMLElement ? target : null
 }
 
 function removeTooltip(state: TooltipState) {
@@ -35,6 +46,66 @@ function removeTooltip(state: TooltipState) {
 function positionTooltip(element: HTMLElement, state: TooltipState) {
   const tooltip = state.tooltip
   if (!tooltip) return
+  const target = revealTarget(element, state.value)
+  if (target) {
+    const anchor = target.getBoundingClientRect()
+    const style = getComputedStyle(target)
+    let angle = 0
+    for (let parent: HTMLElement | null = target; parent; parent = parent.parentElement) {
+      const transform = getComputedStyle(parent).transform
+      if (transform !== 'none') {
+        const matrix = new DOMMatrixReadOnly(transform)
+        angle += Math.atan2(matrix.b, matrix.a)
+      }
+    }
+    const turn = ((Math.round(angle / (Math.PI / 2)) % 4) + 4) % 4
+    const radians = turn * Math.PI / 2
+    const rotated = turn % 2 === 1
+    const width = rotated ? anchor.height : anchor.width
+    const originX = turn === 1 || turn === 2 ? anchor.right : anchor.left
+    const originY = turn === 2 || turn === 3 ? anchor.bottom : anchor.top
+    const inlineSpace = [window.innerWidth - anchor.left, window.innerHeight - anchor.top, anchor.right, anchor.bottom][turn]!
+    const fontSize = Number.parseFloat(style.fontSize) || 0
+    const extraTop = fontSize * 0.12
+    const extraBottom = fontSize * 0.12
+    const extraLeft = fontSize * 0.18
+    const extraRight = fontSize * 0.18
+    tooltip.classList.add('is-inline-reveal')
+    tooltip.style.transformOrigin = '0 0'
+    tooltip.style.transform = `rotate(${turn * 90}deg)`
+    tooltip.style.left = `${originX - extraLeft * Math.cos(radians) + extraTop * Math.sin(radians)}px`
+    tooltip.style.top = `${originY - extraLeft * Math.sin(radians) - extraTop * Math.cos(radians)}px`
+    tooltip.style.minWidth = `${width + extraLeft + extraRight}px`
+    tooltip.style.maxWidth = `${Math.max(width + extraLeft + extraRight, Math.min(fontSize * 24, inlineSpace + extraLeft - 8))}px`
+    tooltip.style.font = style.font
+    tooltip.style.lineHeight = style.lineHeight
+    tooltip.style.letterSpacing = style.letterSpacing
+    tooltip.style.padding = style.padding
+    tooltip.style.paddingTop = `${(Number.parseFloat(style.paddingTop) || 0) + extraTop}px`
+    tooltip.style.paddingBottom = `${(Number.parseFloat(style.paddingBottom) || 0) + extraBottom}px`
+    tooltip.style.paddingRight = `${(Number.parseFloat(style.paddingRight) || 0) + extraRight}px`
+    tooltip.style.paddingLeft = `${(Number.parseFloat(style.paddingLeft) || 0) + extraLeft}px`
+    tooltip.style.color = style.color
+    tooltip.style.backgroundColor = rgbString(effectiveBackgroundColor(element))
+    tooltip.style.visibility = 'visible'
+    return
+  }
+  tooltip.classList.remove('is-inline-reveal')
+  tooltip.style.transform = ''
+  tooltip.style.transformOrigin = ''
+  tooltip.style.minWidth = ''
+  tooltip.style.maxWidth = ''
+  tooltip.style.maxHeight = ''
+  tooltip.style.font = ''
+  tooltip.style.lineHeight = ''
+  tooltip.style.letterSpacing = ''
+  tooltip.style.padding = ''
+  tooltip.style.paddingTop = ''
+  tooltip.style.paddingBottom = ''
+  tooltip.style.paddingRight = ''
+  tooltip.style.paddingLeft = ''
+  tooltip.style.color = ''
+  tooltip.style.backgroundColor = ''
   const anchor = element.getBoundingClientRect()
   const width = tooltip.offsetWidth
   const height = tooltip.offsetHeight
@@ -65,7 +136,9 @@ function schedulePosition(element: HTMLElement, state: TooltipState) {
 
 function showTooltip(element: HTMLElement, state: TooltipState) {
   const text = tooltipText(state.value)
-  if (!text) {
+  const target = revealTarget(element, state.value)
+  if (!text || (typeof state.value === 'object' && state.value && !target)
+    || (target && target.scrollWidth <= target.clientWidth)) {
     removeTooltip(state)
     return
   }
@@ -112,7 +185,7 @@ function mountTooltip(element: HTMLElement, binding: DirectiveBinding<TooltipVal
       state.keyboardFocusInside = false
       if (!state.pointerInside) removeTooltip(state)
     },
-    onViewportChange: () => schedulePosition(element, state),
+    onViewportChange: () => showTooltip(element, state),
   }
   element.addEventListener('pointerenter', state.onPointerEnter)
   element.addEventListener('pointerleave', state.onPointerLeave)

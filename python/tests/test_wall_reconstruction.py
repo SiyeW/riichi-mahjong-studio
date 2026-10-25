@@ -8,6 +8,7 @@ from collections import Counter
 from rms_backend.game_setup import create_initial_snapshot, create_match_state
 from rms_backend.mortal_report_import import build_mortal_report_game
 from rms_backend.service_helpers import build_wall
+from rms_backend.mjai_stream import build_mjai_stream
 from rms_backend.wall_reconstruction import (
     DORA_POSITIONS,
     RINSHAN_DRAW_POSITIONS,
@@ -65,6 +66,16 @@ def _report_from_wall(wall):
 
 
 class WallGenerationTests(unittest.TestCase):
+    def test_reconstruction_changes_future_wall_not_model_observation_history(self):
+        report = _report_from_wall(build_wall(random.Random(123456)))
+        game, _ = build_mortal_report_game(report, 'https://example.invalid/report', 'game', 'now')
+        before = {(key, seat, full): build_mjai_stream(node['snapshot'], seat, reveal_all=full)
+                  for key, node in game['nodes'].items() for seat in range(4) for full in (False, True)}
+        reconstruct_imported_walls(game, 654321, generated_at='now')
+        after = {(key, seat, full): build_mjai_stream(node['snapshot'], seat, reveal_all=full)
+                 for key, node in game['nodes'].items() for seat in range(4) for full in (False, True)}
+        self.assertEqual(after, before)
+
     def test_wall_sections_use_majsoul_display_positions(self):
         self.assertEqual(RINSHAN_DRAW_POSITIONS, (135, 134, 133, 132))
         self.assertEqual(DORA_POSITIONS, (131, 129, 127, 125, 123))

@@ -1,16 +1,51 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import zlib from 'node:zlib'
 import { createServer } from 'vite'
 import { _electron as electron, chromium } from 'playwright'
 import { checkWorkspaceDock } from './check-workspace-dock.mjs'
+import { checkReplayWorkflow } from './check-replay-workflow.mjs'
+import { checkRendererRecovery } from './check-renderer-recovery.mjs'
+import { checkDiscardMotion } from './check-discard-motion.mjs'
+import { checkSpecialActionMotion } from './check-special-action-motion.mjs'
+import { checkToolbarWindowToggles } from './check-toolbar-window-toggles.mjs'
+import { checkRuntimeResources } from './check-runtime-resources.mjs'
+import { checkAnalysisLoading } from './check-analysis-loading.mjs'
+import { checkAutomaticAnalysisEvents } from './check-automatic-analysis-events.mjs'
+import { checkAnalysisPresentationLifecycle } from './check-analysis-presentation-lifecycle.mjs'
+import { checkIndicatorFamily, checkTableTurnIndicators } from './check-interface-indicators.mjs'
 
 // Real renderer, isolated bridge: no user records, engine processes or settings.
 const root = path.resolve(import.meta.dirname, '..')
 const realisticPerformance = Boolean(process.env.RMS_UI_REALISTIC_PERFORMANCE)
 const performanceOnly = Boolean(process.env.RMS_UI_PERFORMANCE_ONLY)
 const externalRendererUrl = process.env.RMS_UI_TEST_URL || null
+
+async function checkCountGeometryBatches(page) {
+  const layout = await page.evaluate(() => {
+    const vm = window.analysisCheck.vm, previous = JSON.parse(JSON.stringify(vm.workspaceLayout))
+    vm.settings.display.workspaceLayout = { ...previous, analysisVisible: true,
+      analysisPanels: { opponents: false, game: false, risk: false, counts: true },
+      layout: { type: 'split', direction: 'horizontal', weights: [2, 1], children: [
+        { type: 'item', id: 'table' }, { type: 'item', id: 'analysis-counts' },
+      ] } }
+    return previous
+  })
+  try {
+    await page.locator('.analysis-count-grid canvas').first().waitFor()
+    await page.waitForTimeout(160)
+    const phases = await page.evaluate(async () => (await import('/scripts/fixtures/count-geometry.js')).checkCountGeometryPhases())
+    assert.equal(phases.cssBatch, true)
+    assert.equal(phases.bitmapBatch, true)
+    assert.ok(phases.reads > 0 && phases.bitmapWrites > 0)
+    return phases
+  } finally {
+    await page.evaluate(layout => { window.analysisCheck.vm.settings.display.workspaceLayout = layout }, layout)
+    await page.waitForTimeout(160)
+  }
+}
 
 function loadRealisticAnalysisFixtures() {
   if (!realisticPerformance) return { analyses: [], crowdedTable: null }
@@ -46,12 +81,19 @@ function loadRealisticAnalysisFixtures() {
 }
 
 const realisticFixtures = loadRealisticAnalysisFixtures()
-const server = externalRendererUrl
-  ? null
-  : await createServer({ root, mode: 'ui-test', server: { host: '127.0.0.1', port: 0, strictPort: false } })
+const directory = externalRendererUrl ? null : fs.mkdtempSync(path.join(os.tmpdir(), 'rms-analysis-ui-'))
+let server
 let browser
 let electronApp
 try {
+  if (!externalRendererUrl) {
+    server = await createServer({ root, mode: 'ui-test', cacheDir: path.join(directory, 'vite-cache'),
+      // Vite concatenates entries with the repository config's broad glob.
+      // This isolated app has one external runtime dependency; prepare it
+      // explicitly instead of rescanning unrelated test entrypoints at boot.
+      optimizeDeps: { noDiscovery: true, include: ['vue'] },
+      server: { host: '127.0.0.1', port: 0, strictPort: false } })
+  }
   await server?.listen()
   const rendererUrl = externalRendererUrl || server.resolvedUrls.local[0]
   let page
@@ -96,7 +138,7 @@ try {
   await page.addInitScript(() => {
     window.setupRmsAnalysisTest = vm => {
       window.analysisCheck = {
-        vm, reads: 0, epoch: 0, wallReads: 0, runtimeMetricReads: 0, settingsSaves: [],
+        vm, reads: 0, epoch: 0, wallReads: 0, runtimeMetricReads: 0, settingsSaves: [], engineDescribes: [],
         result(expectedValue = 1) {
           return {
             status: 'ready',
@@ -225,14 +267,21 @@ try {
       // Dedicated responsive checks below still exercise every supported language.
       vm.settings.display.language = 'zh-CN'
       window.studioAPI = {
+        notifyBootstrapComplete: () => {},
         getSettings: async () => JSON.parse(JSON.stringify(vm.settings)),
         getStatus: async () => JSON.parse(JSON.stringify(vm.status)),
         getRuntimeMetrics: async () => {
           check.runtimeMetricReads++
           return {
+            memoryBasis: 'resident',
             electronBytes: 512 * 1024 * 1024,
             backendBytes: 256 * 1024 * 1024,
             engineBytes: 0,
+            codecBytes: 32 * 1024 * 1024,
+            applicationBytes: 800 * 1024 * 1024,
+            recordCache: { residentBytes: 16 * 1024 * 1024, budgetBytes: 32 * 1024 * 1024,
+              protectedBytes: 2 * 1024 * 1024, protectedOvershootBytes: 0, encodedPendingBytes: 0,
+              pendingResults: 0, queuedWrites: 0, error: null },
             engineProcessCount: 0,
             systemTotalBytes: 16 * 1024 * 1024 * 1024,
             systemAvailableBytes: 8 * 1024 * 1024 * 1024,
@@ -255,19 +304,30 @@ try {
         },
         setAnalysisVisibility: async () => ({ state: JSON.parse(JSON.stringify(vm.status)) }),
         saveSettings: async settings => { check.settingsSaves.push(JSON.parse(JSON.stringify(settings))); return settings },
-        describeEngine: async request => ({
-          protocol: { name: 'riichi-engine-protocol', major: 2, minor: 2 },
-          engine: { id: request.engineId || 'ui-test-engine', name: 'UI Test Engine', version: request.engineVersion || '1.0.0' },
-          outputContracts: [{ id: 'opponent-shanten', methods: ['analysis.get'] }],
-          weightSlots: [],
-          devices: [{ type: 'cpu', title: 'CPU' }],
-          optionsSchema: {
-            type: 'object',
-            properties: {
-              sampleCount: { type: 'integer', minimum: 0, maximum: 4, default: 2 },
+        describeEngine: async request => {
+          check.engineDescribes.push(request.enginePath)
+          if (request.enginePath.endsWith('engine-0.exe') && !check.firstEngineDescribeReleased) {
+            await new Promise(resolve => {
+              check.releaseFirstDescribe = () => {
+                check.firstEngineDescribeReleased = true
+                resolve()
+              }
+            })
+          }
+          return {
+            protocol: { name: 'riichi-engine-protocol', major: 2, minor: 2 },
+            engine: { id: request.engineId || 'ui-test-engine', name: 'UI Test Engine', version: request.engineVersion || '1.0.0' },
+            outputContracts: [{ id: 'opponent-shanten', methods: ['analysis.get'] }],
+            weightSlots: [],
+            devices: [{ type: 'cpu', title: 'CPU' }],
+            optionsSchema: {
+              type: 'object',
+              properties: {
+                sampleCount: { type: 'integer', minimum: 0, maximum: 4, default: 2 },
+              },
             },
-          },
-        }),
+          }
+        },
         toggleVisibleHands: async () => ({ ...JSON.parse(JSON.stringify(vm.status)), visibleHands: !vm.status.visibleHands }),
         getGameView: async () => ({ state: JSON.parse(JSON.stringify(vm.status)), view: JSON.parse(JSON.stringify(vm.gameView)) }),
         clearAnalysisCaches: async () => {
@@ -310,16 +370,78 @@ try {
     await page.screenshot({ path: path.resolve(process.env.RMS_UI_SCREENSHOT), fullPage: true })
   }
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.bootstrapError), '', 'fixture boots through the normal desktop bridge path')
+  await checkRuntimeResources(page)
+  await checkTableTurnIndicators(page)
+  await page.locator('.discard-motion-surface[data-ready="true"]').waitFor({ state: 'attached' })
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  const coverageCheckbox = page.getByRole('checkbox', { name: '牌张运动模糊', exact: true })
+  assert.equal(await coverageCheckbox.locator('..').evaluate(label => label.previousElementSibling.textContent.trim()), '减少动态效果')
+  assert.equal(await coverageCheckbox.locator('..').locator('.settings-checkbox-description').count(), 0)
+  const cacheLayout = await page.locator('.settings-modal select').filter({ has: page.locator('option[value="custom"]') })
+    .evaluate(select => ({ previous: select.parentElement.previousElementSibling.querySelector('.settings-checkbox-label')?.textContent.trim(),
+      descriptions: select.closest('.settings-subsection').querySelectorAll('p.settings-checkbox-description').length }))
+  assert.equal(cacheLayout.previous, '退出后恢复上次内容')
+  assert.equal(cacheLayout.descriptions, 0)
+  assert.equal(await coverageCheckbox.isChecked(), true, 'motion blur defaults on')
+  await coverageCheckbox.locator('..').click()
+  assert.equal(await page.evaluate(() => window.analysisCheck.vm.settings.display.tileMotionBlur), true, 'draft edits do not bypass settings save')
+  const reducedCheckbox = page.getByRole('checkbox', { name: '减少动态效果', exact: true })
+  await reducedCheckbox.locator('..').click()
+  assert.equal(await coverageCheckbox.isDisabled(), true, 'motion blur honors reduced motion')
+  await reducedCheckbox.locator('..').click()
+  const cachePolicySelect = page.locator('.settings-modal select').filter({ has: page.locator('option[value="custom"]') })
+  await cachePolicySelect.selectOption('custom')
+  const cacheBudget = page.locator('.settings-modal input[type="number"][min="1"]')
+  await cacheBudget.fill('0')
+  assert.equal(await page.locator('.settings-modal .settings-btn-primary').isDisabled(), true)
+  await cacheBudget.fill('64')
+  assert.equal(await page.locator('.settings-modal .settings-btn-primary').isDisabled(), false)
+  await page.locator('.settings-modal .settings-btn-primary').click()
+  await page.locator('.settings-modal').waitFor({ state: 'hidden' })
+  assert.equal(await page.evaluate(() => window.analysisCheck.settingsSaves.at(-1).records.analysisCacheMiB), 64)
+  assert.equal(await page.evaluate(() => window.analysisCheck.settingsSaves.at(-1).display.tileMotionBlur), false)
+  assert.equal(await page.evaluate(() => window.analysisCheck.vm.settings.display.tileMotionBlur), false)
+  await page.locator('.discard-motion-surface').waitFor({ state: 'detached' })
+  uiChecks: {
+  if (process.env.RMS_UI_SETTINGS_ONLY) {
+    console.log('Settings layout, motion preference, cache validation and save checks passed.')
+    break uiChecks
+  }
+  await checkToolbarWindowToggles(page)
+  if (process.env.RMS_UI_TOOLBAR_ONLY) break uiChecks
+  await checkSpecialActionMotion(page)
+  if (process.env.RMS_UI_SURFACE_BATCH_ONLY) {
+    console.log(`Perceptual surface batch: ${JSON.stringify(await page.evaluate(async () => (await import('/scripts/fixtures/perceptual-batch.js')).checkPerceptualBatch()))}`)
+    break uiChecks
+  }
+  if (process.env.RMS_UI_PRESENTATION_LIFECYCLE_ONLY) {
+    await checkAnalysisPresentationLifecycle(page)
+    break uiChecks
+  }
+  if (process.env.RMS_UI_COUNT_GEOMETRY_ONLY) {
+    console.log(`Count geometry batches: ${JSON.stringify(await checkCountGeometryBatches(page))}`)
+    break uiChecks
+  }
+  if (process.env.RMS_UI_LOADING_ONLY) {
+    await checkAnalysisLoading(page)
+    break uiChecks
+  }
+  if (process.env.RMS_UI_DISCARD_ONLY) {
+    await checkDiscardMotion(page)
+    break uiChecks
+  }
   if (!performanceOnly) {
+  console.log(`Perceptual surface batch: ${JSON.stringify(await page.evaluate(async () => (await import('/scripts/fixtures/perceptual-batch.js')).checkPerceptualBatch()))}`)
+  await checkAnalysisPresentationLifecycle(page)
   await page.evaluate(() => {
     window.analysisCheck.vm.closeState.active = true
     window.analysisCheck.vm.closeState.stage = 'recovery'
   })
-  const exitSavingOverlay = page.locator('.exit-saving-overlay')
+  const exitSavingOverlay = page.locator('.record-operation-overlay')
   await exitSavingOverlay.waitFor({ state: 'visible' })
   const exitSavingGeometry = await exitSavingOverlay.evaluate((overlay) => {
     const overlayRect = overlay.getBoundingClientRect()
-    const card = overlay.querySelector('.exit-saving-card')
+    const card = overlay.querySelector('.record-operation-card')
     if (!card) throw new Error('exit-saving overlay is missing its status card')
     return {
       role: overlay.getAttribute('role'),
@@ -332,7 +454,7 @@ try {
     }
   })
   assert.equal(exitSavingGeometry.role, 'status', 'exit persistence feedback is exposed as a status')
-  assert.equal(exitSavingGeometry.live, 'assertive', 'exit persistence feedback is announced immediately')
+  assert.equal(exitSavingGeometry.live, 'polite', 'record operation feedback is accessible without repeated interruptions')
   assert.ok(exitSavingGeometry.text.includes('正在保存恢复数据'), `exit feedback reports the active persistence stage: ${exitSavingGeometry.text}`)
   assert.deepEqual(
     exitSavingGeometry.overlay,
@@ -350,9 +472,102 @@ try {
   })
   await exitSavingOverlay.waitFor({ state: 'detached' })
 
-  await page.locator('.toolbar-panel-menu > button').hover()
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('.toolbar-panel-menu-items')).visibility === 'visible')
-  const analysisMenuStyles = await page.locator('.toolbar-panel-menu-items').evaluate(menu => {
+  // Every record replacement uses the same operation-scoped discard guard.
+  await page.evaluate(async () => {
+    const check = window.analysisCheck
+    const vm = check.vm
+    vm.status.gameLoaded = true
+    vm.recordDirty = true
+    await new Promise(resolve => setTimeout(resolve, 0))
+    let opens = 0
+    const originalOpen = window.studioAPI.openGame
+    window.studioAPI.openGame = async () => { opens += 1; return null }
+    await vm.openGame()
+    if (opens || vm.discardConfirmation !== 'open') throw new Error(`dirty open bypassed discard confirmation: ${JSON.stringify({opens, pending: vm.discardConfirmation, dirty: vm.recordDirty, loaded: vm.status.gameLoaded, operation: vm.gameFileOperation})}`)
+    await vm.createGame()
+    if (vm.discardConfirmation !== 'create') throw new Error('open confirmation incorrectly authorized new record')
+    vm.openRecordImportPanel()
+    if (vm.showRecordImportPanel || vm.discardConfirmation !== 'import') throw new Error('dirty import bypassed discard confirmation')
+    vm.openRecordImportPanel()
+    if (!vm.showRecordImportPanel || vm.discardConfirmation !== null) throw new Error('confirmed import did not open its dialog')
+    vm.closeRecordImportPanel()
+    await vm.closeGame()
+    if (vm.discardConfirmation !== 'close') throw new Error('dirty close lost its guard')
+    await vm.openGame()
+    if (opens || vm.discardConfirmation !== 'open') throw new Error('close confirmation incorrectly authorized open')
+    await vm.openGame()
+    if (opens !== 1 || !vm.recordDirty) throw new Error('cancelled file picker lost the dirty record')
+    window.studioAPI.openGame = originalOpen
+  })
+  await page.evaluate(() => window.analysisCheck.vm.openGame())
+  assert.equal(await page.locator('.toolbar button.confirm-discard').count(), 1)
+  assert.equal(await page.locator('.toolbar button.confirm-discard').textContent(), '丢弃')
+  await page.waitForFunction(() => window.analysisCheck.vm.discardConfirmation === null)
+  assert.equal(await page.locator('.toolbar button.confirm-discard').count(), 0)
+
+  for (const [method, title] of [['openGame', '正在打开牌谱'], ['saveGameAs', '正在另存牌谱'], ['saveGame', '正在保存牌谱']]) {
+    const previousGame = await page.evaluate(() => window.analysisCheck.vm.gameView.gameId)
+    await page.evaluate(async method => {
+      window.analysisCheck.vm.recordDirty = true
+      window.studioAPI[method] = () => new Promise(resolve => { window.analysisCheck.finishFileOperation = resolve })
+      if (method === 'openGame') await window.analysisCheck.vm.openGame()
+      window.analysisCheck.pendingFileOperation = window.analysisCheck.vm[method]()
+    }, method)
+    await exitSavingOverlay.waitFor({ state: 'visible' })
+    assert.ok((await exitSavingOverlay.textContent()).includes(title))
+    if (method === 'openGame') {
+      const viewport = page.viewportSize()
+      await page.setViewportSize({ width: 320, height: 600 })
+      for (const language of ['zh-CN', 'ja-JP', 'en-US']) {
+        await page.evaluate(language => { window.analysisCheck.vm.settings.display.language = language }, language)
+        const fits = await page.locator('.record-operation-card').evaluate(card => {
+          const rect = card.getBoundingClientRect()
+          return rect.left >= 0 && rect.right <= window.innerWidth && card.scrollWidth <= card.clientWidth
+        })
+        assert.equal(fits, true, `record operation feedback fits a narrow viewport in ${language}`)
+      }
+      await page.evaluate(() => { window.analysisCheck.vm.settings.display.language = 'zh-CN' })
+      await page.setViewportSize(viewport)
+    }
+    assert.equal(await page.evaluate(() => window.analysisCheck.vm.gameView.gameId), previousGame,
+      'the previous complete record remains displayed while file I/O is pending')
+    assert.equal(await page.locator('.toolbar button').first().isDisabled(), true)
+    await page.evaluate(async () => {
+      window.analysisCheck.finishFileOperation(null)
+      await window.analysisCheck.pendingFileOperation
+    })
+    await exitSavingOverlay.waitFor({ state: 'detached' })
+  }
+  await page.evaluate(async () => {
+    window.studioAPI.openGame = async () => { throw new Error('fixture damaged record') }
+    await window.analysisCheck.vm.openGame()
+    await window.analysisCheck.vm.openGame()
+  })
+  assert.ok((await page.locator('[role="alert"]').textContent()).includes('fixture damaged record'))
+  await page.evaluate(() => { window.analysisCheck.vm.recordOperationError = '' })
+  await page.evaluate(() => {
+    window.analysisCheck.vm.showRecordImportPanel = true
+    window.studioAPI.importCustomTenhou = () => new Promise((resolve, reject) => {
+      window.analysisCheck.failImport = reject
+    })
+  })
+  await page.locator('.record-import-modal textarea').fill('{}')
+  await page.locator('.record-import-modal button[type="submit"]').click()
+  await exitSavingOverlay.waitFor({ state: 'visible' })
+  assert.ok((await exitSavingOverlay.textContent()).includes('正在导入牌谱'))
+  await page.evaluate(() => window.analysisCheck.failImport(new Error('fixture import failed')))
+  await exitSavingOverlay.waitFor({ state: 'detached' })
+  assert.ok((await page.locator('.record-import-error').textContent()).includes('fixture import failed'))
+  await page.evaluate(() => window.analysisCheck.vm.closeRecordImportPanel())
+  if (process.env.RMS_UI_RECORD_IO_ONLY) {
+    await checkReplayWorkflow(page)
+    await checkRendererRecovery(page)
+    break uiChecks
+  }
+
+  await page.locator('.toolbar .hover-action-menu > button').hover()
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.toolbar .hover-action-menu-items')).visibility === 'visible')
+  const analysisMenuStyles = await page.locator('.toolbar .hover-action-menu-items').evaluate(menu => {
     const durationMs = value => {
       const number = Number.parseFloat(value)
       return value.trim().endsWith('ms') ? number : number * 1000
@@ -404,7 +619,7 @@ try {
     `analysis menu label feedback uses the global motion duration: ${JSON.stringify(analysisMenuStyles)}`,
   )
   if (process.env.RMS_ANALYSIS_MENU_SCREENSHOT) {
-    await page.locator('.toolbar-panel-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_SCREENSHOT })
+    await page.locator('.toolbar .hover-action-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_SCREENSHOT })
   }
   if (process.env.RMS_ANALYSIS_MENU_CONTEXT_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_ANALYSIS_MENU_CONTEXT_SCREENSHOT, fullPage: true })
@@ -433,7 +648,7 @@ try {
     'mouse-click focus does not leave the analysis menu hover outline stuck after the pointer leaves',
   )
   if (process.env.RMS_ANALYSIS_MENU_CLICK_SCREENSHOT) {
-    await page.locator('.toolbar-panel-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_CLICK_SCREENSHOT })
+    await page.locator('.toolbar .hover-action-menu-items').screenshot({ path: process.env.RMS_ANALYSIS_MENU_CLICK_SCREENSHOT })
   }
   await clickedMenuItem.click()
   assert.equal(await clickedMenuInput.isChecked(), false, 'the analysis menu fixture restores the original panel selection')
@@ -441,23 +656,31 @@ try {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur()
   })
   await page.mouse.move(0, 0)
-  await page.evaluate(() => { window.analysisCheck.vm.showMjaiDebug = true })
-  assert.deepEqual(
-    await page.locator('.mjai-debug-panel').evaluate(panel => ({
-      maxHeight: getComputedStyle(panel).maxHeight,
-      headerPosition: getComputedStyle(panel.querySelector('.settings-modal-header')).position,
-      backgroundImage: getComputedStyle(panel).backgroundImage,
-      headerBackgroundImage: getComputedStyle(panel.querySelector('.settings-modal-header')).backgroundImage,
-    })),
-    { maxHeight: '900px', headerPosition: 'static', backgroundImage: 'none', headerBackgroundImage: 'none' },
-    'MJAI debug dialog keeps its component-owned geometry and uses solid shared surfaces',
-  )
-  await page.locator('.mjai-debug-panel .settings-modal-actions button').last().click()
-  assert.equal(
-    await page.locator('.mjai-debug-panel').count(),
-    0,
-    'MJAI debug dialog closes through its component event',
-  )
+  const autoAnalysisMenu = page.locator('.auto-analysis-menu')
+  await autoAnalysisMenu.locator('.auto-analysis-button').hover()
+  assert.equal(await autoAnalysisMenu.locator('.auto-analysis-menu-action').isVisible(), true, 'auto-analysis exposes the cache action on hover')
+  const cacheActionStyles = await autoAnalysisMenu.locator('.auto-analysis-menu-action').evaluate(action => ({
+    background: getComputedStyle(action).backgroundColor,
+    border: getComputedStyle(action).borderTopStyle,
+    menuBackground: getComputedStyle(action.parentElement).backgroundColor,
+  }))
+  assert.equal(cacheActionStyles.border, 'solid', 'cache action uses the shared bordered button treatment')
+  assert.notEqual(cacheActionStyles.background, cacheActionStyles.menuBackground, 'cache action is visibly distinct from its menu surface')
+  const cacheMenuGeometry = await autoAnalysisMenu.locator('.auto-analysis-menu-items').evaluate(menu => {
+    const action = menu.querySelector('.auto-analysis-menu-action')
+    const text = document.createRange()
+    text.selectNodeContents(action)
+    const actionStyle = getComputedStyle(action)
+    const menuStyle = getComputedStyle(menu)
+    return {
+      actual: menu.getBoundingClientRect().width,
+      content: text.getBoundingClientRect().width
+        + parseFloat(actionStyle.paddingLeft) + parseFloat(actionStyle.paddingRight)
+        + parseFloat(menuStyle.paddingLeft) + parseFloat(menuStyle.paddingRight)
+        + parseFloat(menuStyle.borderLeftWidth) + parseFloat(menuStyle.borderRightWidth),
+    }
+  })
+  assert.ok(cacheMenuGeometry.actual <= cacheMenuGeometry.content + 2, 'single-action menu follows its content width')
   await page.evaluate(() => window.analysisCheck.vm.openWallView())
   assert.equal(
     await page.locator('.analysis-float-panel').evaluate(panel => getComputedStyle(panel).backgroundImage),
@@ -483,16 +706,73 @@ try {
     const vm = window.analysisCheck.vm
     vm.settings.engines.profiles = Array.from({ length: 14 }, (_, index) => ({
       id: index === 0 ? 'profile.ui-test' : `profile.ui-test-${index}`,
-      name: index === 0 ? 'UI Test Engine' : `Additional UI Test Engine ${index}`,
+      name: index === 0 ? 'UI Test Engine' : `Additional UI Test Engine ${index} with a long descriptive name`,
       engineId: 'ui-test-engine', engineVersion: '1.0.0',
-      enginePath: 'C:\\ui-test\\engine.exe', engineCommand: ['C:\\ui-test\\engine.exe'], engineCwd: '',
+      enginePath: `C:\\ui-test\\engine-${index}.exe`, engineCommand: [`C:\\ui-test\\engine-${index}.exe`], engineCwd: '',
       builtIn: false, available: true, autoName: false, weights: [], device: 'cpu', options: { sampleCount: 2 },
     }))
     vm.settings.engines.outputAssignments['opponent-shanten'] = 'profile.ui-test'
     vm.openEngineWindow()
   })
   await page.locator('.engine-window').waitFor()
+  await page.locator('.engine-profile-item').nth(9).click()
   assert.equal(await page.evaluate(() => window.analysisCheck.vm.showEngineWindow), true)
+  await page.waitForFunction(() => window.analysisCheck.engineDescribes.length >= 2)
+  assert.deepEqual(
+    await page.evaluate(() => window.analysisCheck.engineDescribes.slice(0, 2).map(path => path.match(/engine-(\d+)\.exe$/)?.[1])),
+    ['0', '9'],
+    'the selected engine is described ahead of the background queue',
+  )
+  await page.evaluate(() => window.analysisCheck.releaseFirstDescribe())
+  await page.locator('.engine-profile-item').first().click()
+  await checkIndicatorFamily(page)
+  const engineStateStyles = await page.evaluate(() => {
+    const selectors = ['.engine-profile-item', '.engine-output-filter[data-status]']
+    return selectors.map((selector) => {
+      const item = document.querySelector(selector)
+      if (!(item instanceof HTMLElement)) throw new Error(`Missing engine state item: ${selector}`)
+      const originalStatus = item.getAttribute('data-status')
+      const originallySelected = item.classList.contains('selected')
+      const states = ['unloaded', 'loaded', 'loading', 'unloading', 'error']
+      const backgrounds = []
+      const selectedBackgrounds = []
+      const indicators = []
+      for (const state of states) {
+        item.setAttribute('data-status', state)
+        item.classList.remove('selected')
+        backgrounds.push(getComputedStyle(item).backgroundColor)
+        item.classList.add('selected')
+        selectedBackgrounds.push(getComputedStyle(item).backgroundColor)
+        const indicator = getComputedStyle(item, '::after')
+        indicators.push({ color: indicator.backgroundColor, width: indicator.width, height: indicator.height })
+      }
+      if (originalStatus === null) item.removeAttribute('data-status')
+      else item.setAttribute('data-status', originalStatus)
+      item.classList.toggle('selected', originallySelected)
+      return { backgrounds, selectedBackgrounds, indicators }
+    })
+  })
+  for (const item of engineStateStyles) {
+    assert.equal(new Set(item.backgrounds).size, 1, 'load state does not recolor an unselected engine item')
+    assert.equal(new Set(item.selectedBackgrounds).size, 1, 'load state does not recolor a selected engine item')
+    assert.notEqual(item.backgrounds[0], item.selectedBackgrounds[0], 'selection changes the item background')
+    assert.equal(new Set(item.indicators.map(indicator => indicator.color)).size, 4, 'unloading shares the yellow transition lamp')
+    assert.equal(item.indicators[2].color, item.indicators[3].color, 'loading and unloading use the same transition color')
+    assert.ok(item.indicators.every(indicator => indicator.width === indicator.height), 'status lamps stay circular')
+  }
+  await page.waitForFunction(() => [...document.querySelectorAll('.engine-profile-item')].slice(0, 2)
+    .every(item => item.dataset.perceptualSurfaceColor))
+  const engineLampSurfaces = await page.locator('.engine-profile-item').evaluateAll(items => items.slice(0, 2).map(item => ({
+    surface: item.dataset.perceptualSurfaceColor,
+    unloaded: getComputedStyle(item).getPropertyValue('--engine-status-unloaded').trim(),
+    lamp: getComputedStyle(item, '::after').backgroundColor,
+  })))
+  assert.notEqual(engineLampSurfaces[0].surface, engineLampSurfaces[1].surface, 'selected and unselected lamps measure their own rendered backgrounds')
+  assert.notEqual(engineLampSurfaces[0].unloaded, engineLampSurfaces[1].unloaded, 'unlit lamp color is compensated for each local background')
+  assert.equal(engineLampSurfaces[1].lamp, engineLampSurfaces[1].unloaded.replaceAll(' ', ', '), 'the inactive lamp uses its local status variable')
+  if (process.env.RMS_ENGINE_LAMP_SCREENSHOT) {
+    await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_LAMP_SCREENSHOT })
+  }
   const engineCheckboxStyles = await page.locator('.engine-output-assignment').first().evaluate(item => {
     const control = item.querySelector('.settings-checkbox-control')
     const label = item.querySelector('.settings-checkbox-label')
@@ -504,6 +784,124 @@ try {
   })
   assert.ok(Math.abs(engineCheckboxStyles.controlWidth - analysisMenuStyles.controlWidth) < 0.01, 'analysis menu and engine assignment reuse one checkbox size')
   assert.ok(engineCheckboxStyles.labelFontSize < analysisMenuStyles.labelFontSize, 'shared checkbox structure preserves context-specific text hierarchy')
+  assert.equal(await page.locator('.engine-profile-item .engine-load-button').count(), 0, 'list items do not hide a layout-shifting action')
+  assert.equal(await page.locator('.engine-profile-action-button').count(), 1, 'the selected engine has one persistent detail action')
+  const actionColors = await page.locator('.engine-profile-action-button').evaluate(button => ({
+    background: getComputedStyle(button).backgroundColor,
+    text: getComputedStyle(button).color,
+    fieldBackground: getComputedStyle(document.querySelector('.engine-profile-detail input[type="text"]')).backgroundColor,
+  }))
+  assert.notEqual(actionColors.background, actionColors.fieldBackground, 'the action button does not use the light input surface with light text')
+  await page.locator('.engine-profile-item').first().hover()
+  assert.equal(await page.locator('.ui-hover-tooltip-portal').count(), 0, 'a fully visible engine name does not open a reveal')
+  const longName = page.locator('.engine-profile-item').nth(9)
+  const nameBeforeHover = await longName.locator('.engine-profile-name').boundingBox()
+  await longName.hover()
+  const nameReveal = page.locator('.ui-hover-tooltip-portal.is-inline-reveal')
+  await nameReveal.waitFor({ state: 'visible' })
+  assert.match(await nameReveal.textContent(), /long descriptive name/)
+  const nameAfterHover = await longName.locator('.engine-profile-name').boundingBox()
+  const nameRevealBox = await nameReveal.boundingBox()
+  const nameTextOrigins = await longName.locator('.engine-profile-name').evaluate(element => {
+    const reveal = document.querySelector('.ui-hover-tooltip-portal.is-inline-reveal')
+    return {
+      originalTop: element.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(element).paddingTop),
+      revealedTop: reveal.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(reveal).paddingTop),
+      originalLeft: element.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(element).paddingLeft),
+      revealedLeft: reveal.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(reveal).paddingLeft),
+    }
+  })
+  assert.ok(nameRevealBox.y < nameAfterHover.y && nameRevealBox.x < nameAfterHover.x, 'the reveal frame extends above and left of the original text box')
+  assert.ok(Math.abs(nameTextOrigins.revealedLeft - nameTextOrigins.originalLeft) < 0.6 && Math.abs(nameTextOrigins.revealedTop - nameTextOrigins.originalTop) < 0.6, 'the full name glyphs stay over the clipped text')
+  const longRevealGeometry = await nameReveal.evaluate(element => ({
+    width: element.getBoundingClientRect().width,
+    height: element.getBoundingClientRect().height,
+    lineHeight: Number.parseFloat(getComputedStyle(element).lineHeight),
+    fontSize: Number.parseFloat(getComputedStyle(element).fontSize),
+    paddingTop: Number.parseFloat(getComputedStyle(element).paddingTop),
+    paddingBottom: Number.parseFloat(getComputedStyle(element).paddingBottom),
+    scrollWidth: element.scrollWidth,
+    scrollHeight: element.scrollHeight,
+    clientWidth: element.clientWidth,
+    clientHeight: element.clientHeight,
+  }))
+  assert.ok(longRevealGeometry.width <= longRevealGeometry.fontSize * 24 + 1, 'long names wrap within the inline reveal reading width')
+  assert.ok(longRevealGeometry.height - longRevealGeometry.paddingTop - longRevealGeometry.paddingBottom > longRevealGeometry.lineHeight * 1.5, 'long names reveal on multiple lines')
+  assert.ok(longRevealGeometry.scrollWidth <= longRevealGeometry.clientWidth && longRevealGeometry.scrollHeight <= longRevealGeometry.clientHeight, 'wrapped inline reveal does not clip its content')
+  if (process.env.RMS_ENGINE_NAME_REVEAL_SCREENSHOT) {
+    await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_NAME_REVEAL_SCREENSHOT })
+  }
+  assert.equal(nameAfterHover.width, nameBeforeHover.width, 'hovering a long name does not change its width')
+  assert.equal(nameAfterHover.height, nameBeforeHover.height, 'hovering a long name does not change its line count')
+  const doraOutput = page.locator('.engine-output-filter').nth(5)
+  const fullDoraLabel = (await doraOutput.textContent()).trim()
+  const doraLabel = doraOutput.locator('.engine-output-label')
+  assert.equal(await doraLabel.evaluate(element => element.scrollWidth > element.clientWidth + 1), true, 'the dora filter label is actually clipped in the fixture')
+  await doraOutput.hover()
+  await nameReveal.waitFor({ state: 'visible' })
+  assert.equal(await nameReveal.textContent(), fullDoraLabel, 'truncated output labels reveal their full text')
+  const doraLabelBox = await doraLabel.boundingBox()
+  const doraRevealBox = await nameReveal.boundingBox()
+  const doraTextOrigins = await doraLabel.evaluate(element => {
+    const reveal = document.querySelector('.ui-hover-tooltip-portal.is-inline-reveal')
+    return {
+      originalTop: element.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(element).paddingTop),
+      revealedTop: reveal.getBoundingClientRect().top + Number.parseFloat(getComputedStyle(reveal).paddingTop),
+      originalLeft: element.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(element).paddingLeft),
+      revealedLeft: reveal.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(reveal).paddingLeft),
+    }
+  })
+  assert.ok(doraRevealBox.y < doraLabelBox.y && doraRevealBox.x < doraLabelBox.x, 'the output reveal has room above and left of its glyphs')
+  assert.ok(Math.abs(doraTextOrigins.revealedLeft - doraTextOrigins.originalLeft) < 0.6 && Math.abs(doraTextOrigins.revealedTop - doraTextOrigins.originalTop) < 0.6, 'the output glyphs stay over the original label')
+  if (process.env.RMS_ENGINE_OUTPUT_REVEAL_SCREENSHOT) {
+    await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_OUTPUT_REVEAL_SCREENSHOT })
+  }
+  const engineBody = page.locator('.engine-manager-body')
+  const priorListWidth = await engineBody.evaluate(element => element.style.getPropertyValue('--engine-list-width'))
+  await engineBody.evaluate(element => element.style.setProperty('--engine-list-width', '208px'))
+  const narrowFilterLayout = await page.locator('.engine-output-filters').evaluate(element => ({
+    columns: getComputedStyle(element).gridTemplateColumns.split(' ').length,
+    width: element.getBoundingClientRect().width,
+    scrollWidth: element.scrollWidth,
+  }))
+  assert.equal(narrowFilterLayout.columns, 3, 'narrow engine list keeps at least three output filters per row')
+  assert.ok(narrowFilterLayout.scrollWidth <= narrowFilterLayout.width + 1, 'narrow output filters do not overflow')
+  const shantenOutput = page.locator('.engine-output-filter').nth(1)
+  assert.equal(await shantenOutput.locator('.engine-output-label').evaluate(element => element.scrollWidth > element.clientWidth), true, 'the narrow fixture clips the shanten filter label')
+  await shantenOutput.hover()
+  const shantenReveal = page.locator('.ui-hover-tooltip-portal.is-inline-reveal')
+  await shantenReveal.waitFor({ state: 'visible' })
+  const shortRevealGeometry = await shantenReveal.evaluate(element => ({
+    label: element.textContent,
+    width: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    height: element.clientHeight,
+    scrollHeight: element.scrollHeight,
+    overflow: getComputedStyle(element).overflow,
+  }))
+  assert.ok(shortRevealGeometry.scrollWidth <= shortRevealGeometry.width && shortRevealGeometry.scrollHeight <= shortRevealGeometry.height, `short inline reveal must not show native scrollbars: ${JSON.stringify(shortRevealGeometry)}`)
+  assert.equal(shortRevealGeometry.overflow, 'visible', 'inline text reveal never becomes a scroll container')
+  if (process.env.RMS_ENGINE_SHORT_REVEAL_SCREENSHOT) {
+    await page.locator('.engine-window').screenshot({ path: process.env.RMS_ENGINE_SHORT_REVEAL_SCREENSHOT })
+  }
+  await engineBody.evaluate((element, previous) => element.style.setProperty('--engine-list-width', previous), priorListWidth)
+  await engineBody.evaluate(element => element.style.setProperty('--engine-list-width', '480px'))
+  // Column fitting is applied by ResizeObserver, after layout. Reading in the
+  // very next evaluate can observe the previous narrow column count.
+  await page.waitForFunction(() => {
+    const filters = document.querySelector('.engine-output-filters')
+    return filters && getComputedStyle(filters).gridTemplateColumns.split(' ').length > 3
+  })
+  const wideFilterLayout = await page.locator('.engine-output-filters').evaluate(element => ({
+    columns: getComputedStyle(element).gridTemplateColumns.split(' ').length,
+    width: element.getBoundingClientRect().width,
+    scrollWidth: element.scrollWidth,
+    clippedLabels: [...element.querySelectorAll('.engine-output-label')].filter(label => label.scrollWidth > label.clientWidth + 1).map(label => label.textContent),
+  }))
+  assert.ok(wideFilterLayout.columns > narrowFilterLayout.columns, 'widening the engine list fits more output filters on each row')
+  assert.ok(wideFilterLayout.scrollWidth <= wideFilterLayout.width + 1, 'wide output filters do not overflow')
+  assert.deepEqual(wideFilterLayout.clippedLabels, [], 'wide engine list does not add columns until every output label fits')
+  await engineBody.evaluate((element, previous) => element.style.setProperty('--engine-list-width', previous), priorListWidth)
   const engineWindowMetrics = await page.evaluate(() => {
     const windowElement = document.querySelector('.engine-window')
     const list = document.querySelector('.engine-profile-list')
@@ -530,6 +928,28 @@ try {
   assert.ok(engineWindowMetrics.listScrollTop > 0, 'the engine profile list can be scrolled')
   assert.equal(engineWindowMetrics.listOverflowY, 'auto', 'the engine profile list owns its vertical scrollbar')
   assert.equal(engineWindowMetrics.detailOverflowY, 'auto', 'engine details retain their independent vertical scrollbar')
+  await page.locator('.engine-window').evaluate(element => {
+    element.style.left = '100px'
+    element.style.top = '50px'
+    element.style.right = 'auto'
+  })
+  const windowBeforeResize = await page.locator('.engine-window').boundingBox()
+  const corner = await page.locator('.engine-window-resizer').boundingBox()
+  await page.mouse.move(corner.x + corner.width / 2, corner.y + corner.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(corner.x + corner.width / 2 + 55, corner.y + corner.height / 2 + 40)
+  await page.mouse.up()
+  const windowAfterResize = await page.locator('.engine-window').boundingBox()
+  assert.ok(windowAfterResize.width >= windowBeforeResize.width + 45, 'corner drag grows the window width')
+  assert.ok(windowAfterResize.height >= windowBeforeResize.height + 30, 'corner drag grows the window height')
+  const columnBeforeResize = await page.locator('.engine-profile-column').boundingBox()
+  const divider = await page.locator('.engine-column-resizer').boundingBox()
+  await page.mouse.move(divider.x + divider.width / 2, divider.y + divider.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(divider.x + divider.width / 2 + 36, divider.y + divider.height / 2)
+  await page.mouse.up()
+  const columnAfterResize = await page.locator('.engine-profile-column').boundingBox()
+  assert.ok(columnAfterResize.width >= columnBeforeResize.width + 25, 'divider drag reallocates width to the engine list')
   if (process.env.RMS_ENGINE_UI_CHECK_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_ENGINE_UI_CHECK_SCREENSHOT })
   }
@@ -539,16 +959,28 @@ try {
   await numericOption.press('Tab')
   await page.waitForFunction(() => window.analysisCheck.vm.engineSaveMessage !== '')
   assert.equal(await numericOption.inputValue(), '2', 'invalid engine option restores the persisted value')
-  await page.evaluate(() => window.analysisCheck.vm.closeEngineWindow())
+  await page.locator('.toolbar').getByRole('button', { name: '引擎', exact: true }).click()
   await page.waitForFunction(() => window.analysisCheck.settingsSaves.some(save => (
     save.engines?.profiles?.[0]?.name === 'Renamed UI Test Engine'
   )))
   assert.equal(await page.locator('.engine-window').count(), 0, 'engine profile owner closes and flushes its editor')
+  const firstEngineReads = await page.evaluate(() => window.analysisCheck.engineDescribes.filter(path => path.endsWith('engine-0.exe')).length)
+  await page.evaluate(() => window.analysisCheck.vm.openEngineWindow())
+  const restoredWindow = await page.locator('.engine-window').boundingBox()
+  assert.ok(Math.abs(restoredWindow.width - windowAfterResize.width) <= 2, 'window width survives reopening')
+  assert.ok(Math.abs(restoredWindow.height - windowAfterResize.height) <= 2, 'window height survives reopening')
+  assert.equal(
+    await page.evaluate(() => window.analysisCheck.engineDescribes.filter(path => path.endsWith('engine-0.exe')).length),
+    firstEngineReads,
+    'reopening uses the cached selected-engine description',
+  )
+  await page.evaluate(() => window.analysisCheck.vm.closeEngineWindow())
   assert.equal(
     await page.locator('.auto-analysis-progress small').evaluate(element => getComputedStyle(element).opacity),
     '1',
     'auto-analysis progress details stay visible without hover',
   )
+  await checkAutomaticAnalysisEvents(page)
   await page.evaluate(() => {
     const vm = window.analysisCheck.vm
     window.originalSpecialActionFixture = {
@@ -656,6 +1088,22 @@ try {
     delete window.originalSpecialActionFixture
   })
   const treeHitRegion = page.locator('.tree-hit-region').last()
+  const treeScroll = page.locator('.tree-scroll-svg')
+  const treeHeightHandle = page.locator('.tree-height-resizer')
+  assert.equal(await treeScroll.evaluate(element => element.style.height), '', 'branch tree keeps its existing default height before manual resizing')
+  const treeHeightBefore = (await treeScroll.boundingBox()).height
+  await treeHeightHandle.scrollIntoViewIfNeeded()
+  const treeHandleBox = await treeHeightHandle.boundingBox()
+  await page.mouse.move(treeHandleBox.x + treeHandleBox.width / 2, treeHandleBox.y + treeHandleBox.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(treeHandleBox.x + treeHandleBox.width / 2, treeHandleBox.y + treeHandleBox.height / 2 + 80, { steps: 4 })
+  await page.mouse.up()
+  const treeHeightAfterDrag = (await treeScroll.boundingBox()).height
+  assert.ok(treeHeightAfterDrag > treeHeightBefore + 50, 'dragging the branch tree divider increases its viewport height')
+  await treeHeightHandle.focus()
+  await page.keyboard.press('ArrowUp')
+  assert.ok((await treeScroll.boundingBox()).height < treeHeightAfterDrag - 10, 'keyboard adjustment decreases branch tree height')
+  assert.ok(Number(await page.evaluate(() => localStorage.getItem('rms.branch-tree-height'))) > 0, 'manual branch tree height is retained')
   await treeHitRegion.hover()
   assert.equal(await page.locator('.tree-hover-indicator').count(), 1, 'the hovered branch node receives one crisp indicator')
   assert.equal(await page.locator('.tree-axis-label.is-hovered').count(), 1, 'branch labels share the active node hover feedback')
@@ -806,6 +1254,34 @@ try {
   await target().hover()
   await tooltip.waitFor({ state: 'visible' })
 
+  // Terminal views use their branch's preceding cached result without prediction.
+  const beforeTerminal = await readCount()
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    check.vm.stageOpponentAnalysisForView({ ...check.result(1.75), status: 'terminal' })
+  })
+  await page.waitForFunction(() => document.querySelector('.count-tooltip-estimate')?.textContent.includes('1.75'))
+  assert.equal(await page.evaluate(() => window.analysisCheck.vm.displayedAnalysisTable !== null), true)
+  assert.equal(await readCount(), beforeTerminal)
+  // Without that cache, do not substitute whatever unrelated chart was visible.
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    const previous = check.result()
+    check.vm.stageOpponentAnalysisForView({
+      status: 'terminal', context: previous.context,
+      predictions: {}, ground_truth: {},
+    })
+  })
+  await page.waitForFunction(() => window.analysisCheck.vm.displayedAnalysisTable === null)
+  assert.equal(await tooltip.count(), 0)
+  assert.equal(await page.evaluate(() => window.analysisCheck.vm.gameView.opponentAnalysis.status), 'terminal')
+  assert.equal(await readCount(), beforeTerminal, 'terminal result must not request a new prediction')
+  await page.evaluate(() => {
+    const check = window.analysisCheck
+    check.vm.stageOpponentAnalysisForView(check.result(), { withoutMotion: true })
+  })
+  await page.waitForFunction(() => window.analysisCheck.vm.displayedAnalysisTable !== null)
+
   // Navigation performs one new read and dismisses the previous position's hover.
   const beforeNavigation = await readCount()
   await page.evaluate(() => { window.analysisCheck.vm.gameView.currentNodeId = 'node-2' })
@@ -833,7 +1309,13 @@ try {
     check.oldResult = check.result()
     window.studioAPI.getAnalysis = read
   })
-  await page.evaluate(() => window.analysisCheck.vm.clearLoadedAnalysisCaches())
+  await page.locator('.auto-analysis-menu .auto-analysis-button').hover()
+  await page.locator('.auto-analysis-menu-action').click()
+  await page.waitForFunction(() => window.analysisCheck.epoch > 0)
+  assert.ok(
+    await page.locator('.auto-analysis-menu-items').evaluate(menu => menu.getBoundingClientRect().width) <= cacheMenuGeometry.actual + 2,
+    'cache result wraps without widening the action menu',
+  )
   await page.evaluate(async () => { const check = window.analysisCheck; check.resolveRead(check.oldResult); await check.pendingRead })
   await page.evaluate(() => {
     const check = window.analysisCheck
@@ -884,8 +1366,8 @@ try {
   })
 
   // The visible retry control must restart the backend, not repeat bootstrap reads.
-  for (const hasCheckpoint of [true, false]) {
-    await page.evaluate(hasCheckpoint => {
+  for (const hasRecovery of [true, false]) {
+    await page.evaluate(hasRecovery => {
       const check = window.analysisCheck
       check.recoverySavedState = JSON.parse(JSON.stringify(check.vm.status))
       check.recoverySavedView = JSON.parse(JSON.stringify(check.vm.gameView))
@@ -894,11 +1376,11 @@ try {
         check.restartCalls++
         return new Promise((resolve, reject) => { check.finishRestart = resolve; check.failRestart = reject })
       }
-      check.vm.handlePythonEvent({ type: 'service_stopped', hasCheckpoint })
-    }, hasCheckpoint)
+      check.vm.handlePythonEvent({ type: 'service_stopped', hasCheckpoint: hasRecovery })
+    }, hasRecovery)
     const retry = page.locator('.startup-banner button')
-    assert.equal(await retry.textContent().then(text => text.trim()), hasCheckpoint ? '恢复对局' : '重新启动')
-    if (!hasCheckpoint && process.env.RMS_RECOVERY_SCREENSHOT) {
+    assert.equal(await retry.textContent().then(text => text.trim()), hasRecovery ? '恢复对局' : '重新启动')
+    if (!hasRecovery && process.env.RMS_RECOVERY_SCREENSHOT) {
       await page.screenshot({ path: process.env.RMS_RECOVERY_SCREENSHOT })
     }
     await retry.click()
@@ -908,16 +1390,16 @@ try {
     await page.waitForFunction(() => !document.querySelector('.startup-banner button').disabled)
     assert.match(await page.locator('.startup-banner').textContent(), /test restart failure/)
     await retry.click()
-    await page.evaluate(hasCheckpoint => {
+    await page.evaluate(hasRecovery => {
       const check = window.analysisCheck
-      const state = hasCheckpoint ? check.recoverySavedState : { ...check.recoverySavedState, gameLoaded: false }
-      const view = hasCheckpoint ? check.recoverySavedView : { ...check.recoverySavedView,
+      const state = hasRecovery ? check.recoverySavedState : { ...check.recoverySavedState, gameLoaded: false }
+      const view = hasRecovery ? check.recoverySavedView : { ...check.recoverySavedView,
         gameId: null, matchId: null, currentNodeId: null, table: null, tree: null,
         nodeComment: '', legalActions: [], analysis: null, opponentAnalysis: null, pendingReview: null }
       check.vm.handlePythonEvent({ type: 'service_restored', state, view })
-      if (!hasCheckpoint && (check.vm.status.gameLoaded || check.vm.gameView.currentNodeId)) throw new Error('Empty restart retained the old game')
+      if (!hasRecovery && (check.vm.status.gameLoaded || check.vm.gameView.currentNodeId)) throw new Error('Empty restart retained the old game')
       check.finishRestart({ ok: true })
-    }, hasCheckpoint)
+    }, hasRecovery)
     await page.waitForFunction(() => !document.querySelector('.startup-banner'))
     assert.equal(await page.evaluate(() => window.analysisCheck.restartCalls), 2)
     await page.evaluate(() => {
@@ -1014,12 +1496,54 @@ try {
     const predictions = [...section.querySelectorAll('.analysis-opponent-prediction')]
     const sectionBounds = section.getBoundingClientRect()
     const gridBounds = grid?.getBoundingClientRect()
+    const gutter = section.querySelector('.analysis-opponent-scale-gutter')
+    const divider = getComputedStyle(gutter)
+    const columnDivider = getComputedStyle(section.querySelectorAll('.analysis-opponent-predictions')[1])
+    const legend = section.querySelector('.analysis-shanten-legend')
+    const legendBounds = legend.getBoundingClientRect(), gutterBounds = gutter.getBoundingClientRect()
+    const cards = [...section.querySelectorAll('.analysis-opponent-card')]
+    const columns = [...section.querySelectorAll('.analysis-opponent-predictions')]
+    const legendStyle = getComputedStyle(legend)
+    const legendRows = [...legend.children].map(row => ({
+      box: row.getBoundingClientRect(),
+      color: row.querySelector('i').getBoundingClientRect(),
+      text: row.querySelector('.analysis-shanten-legend-label').getBoundingClientRect(),
+      gap: Number.parseFloat(getComputedStyle(row).columnGap),
+    }))
+    const requiredLegendWidth = Number.parseFloat(legendStyle.paddingLeft) + Number.parseFloat(legendStyle.paddingRight)
+      + Math.max(...legendRows.map(row => row.color.width + row.gap + row.text.width))
+    const requiredTickWidth = Math.max(...[...gutter.children].map(child => child.getBoundingClientRect().width))
     return {
       sectionHeight: sectionBounds.height,
       gridHeight: gridBounds?.height || 0,
       unusedBottomHeight: gridBounds ? sectionBounds.bottom - gridBounds.bottom : 0,
       doraHeight: dora?.getBoundingClientRect().height || 0,
       scoreHeight: score?.getBoundingClientRect().height || 0,
+      sharedDivider: divider.boxShadow === columnDivider.boxShadow && divider.boxShadow !== 'none'
+        && Math.abs(gutterBounds.top - gridBounds.top) < .03 && Math.abs(gutterBounds.bottom - gridBounds.bottom) < .03,
+      fourColumnLayout: cards.every((card, index) => {
+        const top = card.getBoundingClientRect(), bottom = columns[index].getBoundingClientRect()
+        return Math.abs(top.left - bottom.left) < .03 && Math.abs(top.width - bottom.width) < .03
+      }) && Math.abs(legendBounds.left - gutterBounds.left) < .03 && Math.abs(legendBounds.width - gutterBounds.width) < .03,
+      intrinsicGutter: Math.abs(gutterBounds.width - Math.max(requiredLegendWidth, requiredTickWidth)) < .1,
+      verticalLegend: legendRows.every((row, index) => row.color.right < row.text.left
+        && (index === 0 || row.box.top >= legendRows[index - 1].box.bottom)),
+      splitLegend: legend.lastElementChild.textContent.trim().split('\n').length === 2,
+      comparisonAxes: ['dora', 'score'].map(kind => {
+        const charts = [...section.querySelectorAll(`.analysis-${kind}-distribution`)]
+        const axes = charts.flatMap(chart => [...chart.querySelectorAll('.analysis-probability-axis')])
+        const plots = charts.map(chart => chart.querySelector('.analysis-distribution-viewport').getBoundingClientRect())
+        const tracks = charts.map(chart => chart.querySelector('.analysis-distribution-track')?.getBoundingClientRect()).filter(Boolean)
+        const axis = axes[0], bounds = axis?.getBoundingClientRect()
+        return {
+          count: axes.length,
+          equalWidths: Math.max(...plots.map(box => box.width)) - Math.min(...plots.map(box => box.width)) < .03,
+          outsideLast: bounds && bounds.left >= plots[2].right - .03 && bounds.right <= gridBounds.right + .03,
+          axisStrokeAbsent: axis && getComputedStyle(axis, '::before').content === 'none',
+          aligned: bounds && tracks.every(box => Math.abs(box.top - bounds.top) < 1 / devicePixelRatio
+            && Math.abs(box.bottom - bounds.bottom) < 1 / devicePixelRatio),
+        }
+      }),
       chartsStayInsideRows: [dora, score].every((chart) => {
         if (!chart) return true
         const chartBounds = chart.getBoundingClientRect()
@@ -1083,14 +1607,108 @@ try {
     'non-dealer score charts render four left-edge tier boundaries on physical pixels',
   )
   const roomyOpponent = await opponentGeometry()
+  const assertSharedAxes = geometry => {
+    assert.equal(geometry.fourColumnLayout, true, 'all three dividers align between pies and predictions')
+    assert.equal(geometry.intrinsicGutter, true, 'gutter uses the widest actual legend or tick content')
+    assert.equal(geometry.verticalLegend, true, 'legend has vertical rows with swatch left of text')
+    assert.equal(geometry.splitLegend, true, 'furiten/no-yaku legend wraps into two explicit lines')
+    assert.equal(geometry.sharedDivider, true, 'tick column uses the same full-height divider as opponent columns')
+    for (const axis of geometry.comparisonAxes) {
+      assert.equal(axis.count, 1, 'one shared outer axis per distribution comparison')
+      assert.equal(axis.equalWidths, true, 'outer axis never shrinks only the last opponent')
+      assert.equal(axis.outsideLast, true, 'axis lies outside the rightmost plot, inside the reserved gutter')
+      assert.equal(axis.axisStrokeAbsent, true, 'ticks do not introduce a separate chart-axis stroke')
+      assert.equal(axis.aligned, true, 'shared axis starts at the plots, not at their headings')
+    }
+  }
+  assertSharedAxes(roomyOpponent)
+  for (const language of ['ja-JP', 'en-US', 'zh-CN']) {
+    await page.evaluate(value => { window.analysisCheck.vm.settings.display.language = value }, language)
+    await page.waitForTimeout(180)
+    assertSharedAxes(await opponentGeometry())
+  }
+  const beforeDenseResize = await page.evaluate(async () => {
+    const check = window.analysisCheck, vm = check.vm
+    const original = JSON.parse(JSON.stringify(vm.gameView.opponentAnalysis))
+    const dense = JSON.parse(JSON.stringify(original))
+    const { isPossibleRiichiHandValue } = await import('/src/riichiScoring.ts')
+    for (const player of dense.outputs['opponent-score'].players) {
+      const values = Array.from({ length: 640 }, (_, index) => (index + 1) * 50)
+        .filter(value => isPossibleRiichiHandValue(value, player.seat === vm.gameView.table.dealer))
+      const weights = values.map((_, index) => 1 / (index + 1)), sum = weights.reduce((a, b) => a + b, 0)
+      player.prediction.distribution = values.map((value, index) => ({ value, probability: weights[index] / sum }))
+    }
+    check.publish(dense)
+    return original
+  })
+  await page.waitForTimeout(180)
+  const resizeFrames = await page.locator('.analysis-panel-live > .analysis-opponent-section').evaluate(async section => {
+    const previousWidth = section.style.width
+    const samples = []
+    let pending
+    const observer = new ResizeObserver(() => {
+      if (!pending) return
+      const resolve = pending; pending = null
+      queueMicrotask(() => resolve([...section.querySelectorAll('.analysis-distribution-canvas')].map(canvas => {
+        const viewport = canvas.closest('.analysis-distribution-viewport'), box = viewport.getBoundingClientRect()
+        return { width: canvas.width, viewportWidth: box.width * devicePixelRatio,
+          right: (canvas.getBoundingClientRect().right - box.left) * devicePixelRatio,
+          overflow: viewport.scrollWidth > viewport.clientWidth + 1,
+          tracks: canvas.rmsDistributionTracks.map(track => ({ left: track.left, right: track.right })) }
+      })))
+    })
+    observer.observe(section)
+    try {
+      for (let width = 420; width >= 160; width -= 4) {
+        const charts = await new Promise((resolve, reject) => {
+          const deadline = setTimeout(() => reject(Error(`Resize did not settle at ${width}px`)), 3000)
+          requestAnimationFrame(() => {
+            pending = value => { clearTimeout(deadline); resolve(value) }
+            section.style.width = `${width}px`
+          })
+        })
+        samples.push({ width, charts, ratio: devicePixelRatio })
+      }
+    } finally { observer.disconnect(); section.style.width = previousWidth }
+    return samples
+  })
+  for (let i = 0; i < resizeFrames.length; i++) {
+    const frame = resizeFrames[i]
+    assert.equal(new Set(frame.charts.map(chart => chart.width)).size, 1, 'all six plots resize on the same physical budget before paint')
+    for (let j = 0; j < frame.charts.length; j++) {
+      const chart = frame.charts[j]
+      assert.equal(chart.overflow, false, 'continuous resizing never creates plot scrollbars')
+      assert.ok(chart.right <= chart.viewportWidth + .04, 'new layout never presents the old wider bitmap')
+      assert.ok(chart.tracks.every(track => track.right > track.left), 'dense plots preserve all candidates')
+      if (i) {
+        const old = resizeFrames[i - 1].charts[j]
+        assert.ok(chart.tracks.every((track, k) => Math.abs(track.left - old.tracks[k].left) <= Math.ceil(4 * frame.ratio / 3) + 2), 'bar boundaries do not jump by a whole domain during resize')
+      }
+    }
+  }
+  assert.ok(resizeFrames[0].charts.filter(chart => chart.tracks.length > 20).length === 3, 'continuous resizing covers full legal score domains, not a sparse seven-bin example')
+  await page.waitForTimeout(180)
+  if (process.env.RMS_OPPONENT_RESIZE_SCREENSHOT) {
+    const section = page.locator('.analysis-panel-live > .analysis-opponent-section')
+    for (const width of [420, 280, 160]) {
+      await section.evaluate((element, width) => { element.style.width = `${width}px` }, width)
+      await page.waitForTimeout(80)
+      await section.screenshot({ path: `${process.env.RMS_OPPONENT_RESIZE_SCREENSHOT}-${width}.png` })
+    }
+    await section.evaluate(element => { element.style.width = '' })
+    await page.waitForTimeout(180)
+  }
+  console.log(`Opponent resize: ${resizeFrames.length} before-paint samples; shared widths, no stale bitmaps, bounded boundary motion, no scrollbars.`)
+  await page.evaluate(original => window.analysisCheck.publish(original), beforeDenseResize)
+  await page.waitForTimeout(180)
   assert.ok(roomyOpponent.doraHeight > 68, 'roomy opponent panel lets the dora distribution grow beyond its former cap')
   assert.ok(roomyOpponent.scoreHeight > 50, 'roomy opponent panel lets the score distribution grow beyond its former cap')
   assert.ok(Math.abs(roomyOpponent.unusedBottomHeight) < 1, 'opponent predictions consume the full remaining panel height')
   assert.equal(roomyOpponent.chartsStayInsideRows, true, 'expanded distributions stay inside their fixed prediction rows')
   const baselineGuideCounts = await page.evaluate(async () => {
-    const count = () => document.querySelectorAll(
-      '.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line',
-    ).length
+    const count = () => [...document.querySelectorAll(
+      '.analysis-dora-distribution canvas, .analysis-score-distribution canvas',
+    )].filter(canvas => canvas.rmsDistributionGuideBounds).length
     const samples = [count()]
     await new Promise(resolve => requestAnimationFrame(resolve))
     samples.push(count())
@@ -1103,9 +1721,10 @@ try {
     `default-range dora and score guides remain absent throughout frame motion: ${JSON.stringify(baselineGuideCounts)}`,
   )
   assert.equal(
-    await page.locator('.analysis-dora-distribution.has-reference-line, .analysis-score-distribution.has-reference-line').count(),
+    await page.locator('.analysis-dora-distribution canvas, .analysis-score-distribution canvas')
+      .evaluateAll(canvases => canvases.filter(canvas => canvas.rmsDistributionGuideBounds).length),
     0,
-    '30% and 50% guide lines stay hidden while the default ranges are sufficient',
+    '30% and 60% guide lines stay hidden while the default ranges are sufficient',
   )
   const baselineModeStrengths = await page.locator('.analysis-score-modes span').evaluateAll(elements => (
     elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))
@@ -1127,8 +1746,8 @@ try {
     const result = window.analysisCheck.resultForNode(vm.gameView.currentNodeId, 1)
     for (const player of result.outputs['opponent-dora-count'].players) {
       player.prediction.distribution = [
-        { value: 0, probability: 0.55 },
-        { value: 1, probability: 0.2 },
+        { value: 0, probability: 0.65 },
+        { value: 1, probability: 0.1 },
         { value: 2, probability: 0.1 },
         { value: 3, probability: 0.07 },
         { value: 4, probability: 0.04 },
@@ -1148,11 +1767,19 @@ try {
     window.analysisCheck.publish(result)
   })
   const adaptiveGuideMotion = await page.evaluate(async () => {
+    let styleMutations = 0
+    const charts = [...document.querySelectorAll('.analysis-dora-distribution, .analysis-score-distribution')]
+    const observer = new MutationObserver(records => { styleMutations += records.filter(record => record.attributeName === 'style').length })
+    charts.forEach(chart => observer.observe(chart, { attributes: true }))
     const sample = () => {
-      const track = document.querySelector('.analysis-score-distribution .analysis-distribution-track')
+      const chart = document.querySelector('.analysis-score-distribution')
+      const canvas = chart?.querySelector('canvas')
+      const guide = canvas?.rmsDistributionGuideBounds
+      const track = chart?.querySelector('.analysis-distribution-track')
       const bounds = track?.getBoundingClientRect()
-      return bounds && bounds.height > 0
-        ? Number.parseFloat(getComputedStyle(track, '::before').top) / bounds.height
+      const canvasRect = canvas?.getBoundingClientRect()
+      return guide && bounds && canvasRect && bounds.height > 0
+        ? ((guide.top / devicePixelRatio) - (bounds.top - canvasRect.top)) / bounds.height
         : -1
     }
     await new Promise(resolve => requestAnimationFrame(resolve))
@@ -1160,7 +1787,9 @@ try {
     await new Promise(resolve => setTimeout(resolve, 35))
     const middle = sample()
     await new Promise(resolve => setTimeout(resolve, 120))
-    return { start, middle, end: sample() }
+    const end = sample()
+    observer.disconnect()
+    return { start, middle, end, styleMutations }
   })
   assert.ok(
     adaptiveGuideMotion.start >= 0
@@ -1168,20 +1797,99 @@ try {
       && adaptiveGuideMotion.middle < adaptiveGuideMotion.end,
     `the score reference line enters from the outer scale edge instead of jumping: ${JSON.stringify(adaptiveGuideMotion)}`,
   )
+  assert.equal(adaptiveGuideMotion.styleMutations, 0, 'guide motion does not invalidate inherited chart styles or color calibration')
   await page.waitForFunction(() => {
-    const doraTrack = document.querySelector('.analysis-dora-distribution .analysis-distribution-track')
-    const scoreTrack = document.querySelector('.analysis-score-distribution .analysis-distribution-track')
-    return doraTrack && scoreTrack
-      && Number.parseFloat(getComputedStyle(doraTrack, '::before').top) > 2
-      && Number.parseFloat(getComputedStyle(scoreTrack, '::before').top) > 2
+    const dora = document.querySelector('.analysis-dora-distribution canvas')?.rmsDistributionGuideBounds
+    const score = document.querySelector('.analysis-score-distribution canvas')?.rmsDistributionGuideBounds
+    return dora && score && dora.top > 2 && score.top > 2
   })
   const adaptiveGuideRatios = await page.locator('.analysis-dora-distribution, .analysis-score-distribution').evaluateAll(charts => charts.slice(0, 2).map(chart => {
     const track = chart.querySelector('.analysis-distribution-track')
     const bounds = track?.getBoundingClientRect()
-    return bounds ? Number.parseFloat(getComputedStyle(track, '::before').top) / bounds.height : -1
+    const canvas = chart.querySelector('canvas'), guide = canvas?.rmsDistributionGuideBounds
+    const canvasRect = canvas?.getBoundingClientRect()
+    return bounds && canvasRect && guide ? ((guide.top / devicePixelRatio) - (bounds.top - canvasRect.top)) / bounds.height : -1
   }))
-  assert.ok(Math.abs(adaptiveGuideRatios[0] - (1 - (0.5 / 0.55))) < 0.02, 'the 50% dora guide moves inside an expanded range')
+  assert.ok(Math.abs(adaptiveGuideRatios[0] - (1 - (0.6 / 0.65))) < 0.02, 'the 60% dora guide moves inside an expanded range')
   assert.ok(Math.abs(adaptiveGuideRatios[1] - (1 - (0.3 / 0.62))) < 0.02, 'the 30% score guide moves inside an expanded range')
+  const continuousGuides = await page.locator('.analysis-dora-distribution canvas, .analysis-score-distribution canvas').evaluateAll(canvases => canvases.map(canvas => {
+    const guide = canvas.rmsDistributionGuideBounds
+    const tracks = [...canvas.parentElement.querySelectorAll('.analysis-distribution-track')]
+    const root = canvas.getBoundingClientRect()
+    const first = tracks[0].getBoundingClientRect(), last = tracks.at(-1).getBoundingClientRect()
+    return guide && guide.left <= Math.round((first.left - root.left) * devicePixelRatio) + 1
+      && guide.right >= Math.round((last.right - root.left) * devicePixelRatio) - 1
+      && guide.top >= 0 && guide.bottom <= canvas.height
+  }))
+  assert.ok(continuousGuides.length === 6 && continuousGuides.every(Boolean), 'each reference guide spans the whole fixed chart without overflowing')
+  const surfaceRouting = await page.evaluate(async () => (await import('/scripts/fixtures/chart-paint.js')).checkSurfacePaintRouting())
+  assert.deepEqual(surfaceRouting, { own: 1, ancestor: 1, descendant: 1, foreign: 0,
+    coalesced: 1, detached: 0, replacement: 1, unmounted: 0, added: 2, removed: 2 },
+  'calibrated paint changes are scoped, coalesced and released with their component')
+  const retainedPaint = await page.evaluate(async () => (await import('/scripts/fixtures/chart-paint.js')).checkDistributionPalettePaint())
+  assert.equal(retainedPaint.before.matches, true)
+  assert.equal(retainedPaint.after.matches, true, 'unchanged data is repainted after its calibrated color changes')
+  assert.notDeepEqual(retainedPaint.before.pixel, retainedPaint.after.pixel, 'paint really changes instead of only changing a CSS variable')
+  const shantenPaint = await page.evaluate(async () => (await import('/scripts/fixtures/chart-paint.js')).checkShantenPaintUpdates())
+  assert.equal(shantenPaint.unchangedWrites, 0, 'unchanged pie geometry does not repeatedly mutate SVG attributes')
+  assert.ok(shantenPaint.firstChangedPath && shantenPaint.firstChangedPath !== shantenPaint.oldPath
+    && shantenPaint.firstChangedPath !== shantenPaint.finalPath, 'a delayed first callback does not consume the pie animation')
+  assert.ok(shantenPaint.zeroPaths.every(slice => slice.path === 'M 0 0 Z' && slice.tabindex === '-1'), 'impossible slices stay empty and unfocusable')
+  assert.equal(shantenPaint.writesAfterUnmount, 0, 'retired charts do not continue painting detached SVG nodes')
+  const presentationOwnership = await page.evaluate(async () => {
+    const { vm } = window.analysisCheck
+    const { checkAnalysisPresentationOwnership } = await import('/scripts/fixtures/analysis-session.js')
+    return checkAnalysisPresentationOwnership(JSON.parse(JSON.stringify({ gameView: vm.gameView, status: vm.status, settings: vm.settings })))
+  })
+  assert.equal(presentationOwnership.queuedAfterReplacement, 1, 'superseded next-tick windows cannot register unowned frame callbacks')
+  assert.equal(presentationOwnership.ordinaryPresented, 'queued-current', 'an ordinary frame does not wait for nonexistent table motion')
+  assert.equal(presentationOwnership.flightHeld, true, 'actual table flight retains its priority window')
+  assert.equal(presentationOwnership.guessedDeadlineTimers, 0, 'motion priority does not expire on a guessed deadline')
+  assert.equal(presentationOwnership.presentedOnRetirement, true, 'actual owner retirement releases the current analysis')
+  assert.equal(presentationOwnership.framesAfterUnmount, 0)
+  assert.equal(presentationOwnership.framesAfterLateCall, 0, 'retired presentation owners reject late schedules')
+  const savedPredictionMotion = await page.evaluate(async () => {
+    const check = window.analysisCheck
+    const { checkSavedPredictionMotion } = await import('/scripts/fixtures/analysis-session.js')
+    return checkSavedPredictionMotion(check.vm, nodeId => check.resultForNode(nodeId, 4))
+  })
+  assert.equal(savedPredictionMotion.unloaded, true)
+  assert.ok(savedPredictionMotion.states >= 3, `saved analysis still animates without a loaded provider: ${JSON.stringify(savedPredictionMotion)}`)
+  const unchangedGamePaint = await page.evaluate(async () => {
+    let owner = document.querySelector('.analysis-dora-distribution').__vueParentComponent
+    while (owner && owner.type.__name !== 'OpponentAnalysisSection') owner = owner.parent
+    if (!owner) throw new Error('Missing analysis data fixture owner')
+    const { analysis, analysisOpponents, controlledSeat, dealer, perceptualSurface } = owner.props
+    const { checkUnchangedGamePaint } = await import('/scripts/fixtures/chart-paint.js')
+    return checkUnchangedGamePaint({ analysis, analysisOpponents, controlledSeat, dealer, perceptualSurface })
+  })
+  assert.equal(unchangedGamePaint.unchanged, true)
+  assert.equal(unchangedGamePaint.emptyOutcomeAlpha, 0, 'unavailable game probabilities do not paint a fabricated certain outcome')
+  assert.ok(unchangedGamePaint.draws >= 1 && unchangedGamePaint.draws <= 2,
+    `unchanged game data repaints once instead of running another animation: ${JSON.stringify(unchangedGamePaint)}`)
+  const snapshotRetirement = await page.evaluate(async () => (await import('/scripts/fixtures/chart-paint.js')).checkPaintSnapshotRetirement())
+  assert.deepEqual(snapshotRetirement, { transientPreserved: true, removedReleased: true, retiredOwnerReleased: true },
+    'diagnostics preserve reused refs but release removed nodes and retired owners')
+  console.log(`Analysis presentation: ${JSON.stringify({ presentationOwnership, savedPredictionMotion, unchangedGamePaint })}`)
+  console.log(`Count geometry batches: ${JSON.stringify(await checkCountGeometryBatches(page))}`)
+  const oldPalette = await page.evaluate(async () => {
+    const { sampleDistributionColor } = await import('/scripts/fixtures/chart-paint.js')
+    return { scheme: window.analysisCheck.vm.settings.display.colorScheme,
+      sample: sampleDistributionColor('.analysis-dora-distribution', '--analysis-dora-color') }
+  })
+  assert.equal(oldPalette.sample.matches, true, 'canvas initially paints its calibrated color')
+  try {
+    await page.evaluate(() => { window.analysisCheck.vm.settings.display.colorScheme = 'naga' })
+    try {
+      await page.waitForFunction(async old => {
+        const { sampleDistributionColor } = await import('/scripts/fixtures/chart-paint.js')
+        const next = sampleDistributionColor('.analysis-dora-distribution', '--analysis-dora-color')
+        return next.matches && next.expected.join(',') !== old.join(',')
+      }, oldPalette.sample.expected)
+    } catch (cause) { throw new Error('Canvas palette stayed stale after calibration completed', { cause }) }
+  } finally {
+    await page.evaluate(scheme => { window.analysisCheck.vm.settings.display.colorScheme = scheme }, oldPalette.scheme)
+  }
   const adaptiveModeStrengths = await page.locator('.analysis-score-modes').first().locator('span').evaluateAll(elements => (
     elements.map(element => Number.parseFloat(getComputedStyle(element).getPropertyValue('--analysis-score-mode-strength')))
   ))
@@ -1258,6 +1966,7 @@ try {
   await page.setViewportSize({ width: 1400, height: 430 })
   await page.waitForTimeout(100)
   const shortOpponent = await opponentGeometry()
+  assertSharedAxes(shortOpponent)
   assert.ok(shortOpponent.gridHeight < roomyOpponent.gridHeight, 'opponent prediction area follows reductions in allotted height')
   assert.ok(shortOpponent.doraHeight < roomyOpponent.doraHeight, 'dora distribution shrinks with the panel')
   assert.ok(shortOpponent.scoreHeight < roomyOpponent.scoreHeight, 'score distribution shrinks with the panel')
@@ -1266,6 +1975,19 @@ try {
   }
 
   await page.setViewportSize({ width: 1400, height: 1000 })
+  await page.evaluate(() => {
+    const { vm, result, publish } = window.analysisCheck
+    const partial = result()
+    const lastSeat = (vm.status.controlledSeat + 1) % 4
+    for (const id of ['opponent-dora-count', 'opponent-score']) {
+      partial.outputs[id].players = partial.outputs[id].players.filter(player => player.seat !== lastSeat)
+    }
+    publish(partial)
+  })
+  await page.waitForTimeout(200)
+  assertSharedAxes(await opponentGeometry())
+  assert.equal(await page.locator('.analysis-opponent-predictions').last()
+    .locator('.analysis-distribution-cell').count(), 0, 'missing rightmost data does not invent bars to retain the axis')
   await page.evaluate(() => {
     const result = window.analysisCheck.result()
     for (const outputId of ['opponent-dora-count', 'opponent-score']) {
@@ -1526,6 +2248,25 @@ try {
     document.querySelector('.analysis-count-source-row-canvas')?.rmsCountRenderSignature === expected
   ), baselineSignature)
 
+  const sourceFrameContext = await page.evaluate(async () => {
+    const { vm } = window.analysisCheck
+    const original = JSON.parse(JSON.stringify(vm.gameView.opponentAnalysis))
+    const sourceTable = JSON.parse(JSON.stringify(vm.gameView.table))
+    sourceTable.dealer = (sourceTable.dealer + 1) % 4
+    const alias = {
+      ...original, status: 'terminal',
+      context: { ...original.context, gameId: vm.gameView.gameId, nodeId: vm.gameView.currentNodeId,
+        seat: vm.status.controlledSeat, sourceNodeId: 'prediction-before-result', sourceTable },
+    }
+    vm.stageOpponentAnalysisForView(alias, { withoutMotion: true })
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    const observed = { source: vm.displayedAnalysisTable?.dealer, live: vm.gameView.table.dealer }
+    vm.stageOpponentAnalysisForView(original, { withoutMotion: true })
+    await new Promise(resolve => requestAnimationFrame(resolve))
+    return observed
+  })
+  assert.notEqual(sourceFrameContext.source, sourceFrameContext.live, 'terminal prediction keeps its source-table context, not the settled live table')
+
   // Backward frame navigation restores a pending discard to its hand. The
   // returning tile must remain hidden in the new hand until the river ghost
   // reaches it; otherwise it flashes in the former gap and duplicates itself.
@@ -1604,6 +2345,7 @@ try {
   assert.equal(reverseDiscardFlight.duringFlight.returnedSlotHidden, true, 'the returned hand slot stays hidden during its reverse flight')
   assert.equal(reverseDiscardFlight.afterFlight.ghost, false, 'the returning ghost is removed after it reaches the hand')
   assert.equal(reverseDiscardFlight.afterFlight.returnedSlotHidden, false, 'the restored hand tile becomes visible after the reverse flight')
+  await checkDiscardMotion(page)
   if (process.env.RMS_COUNT_BASELINE_SCREENSHOT) {
     await page.screenshot({ path: process.env.RMS_COUNT_BASELINE_SCREENSHOT })
   }
@@ -2123,8 +2865,11 @@ try {
     const captureDistributionGeometry = () => {
       const distributions = [...document.querySelectorAll(
         '.analysis-panel-live .analysis-dora-distribution, .analysis-panel-live .analysis-score-distribution',
-      )]
-      const canvases = [...document.querySelectorAll('.analysis-panel-live .analysis-distribution-canvas')]
+      )].filter(element => getComputedStyle(element).display !== 'none')
+      // Partial real outputs can omit a different opponent at the next node.
+      // Hidden reusable canvases have no allocated box; compare actual visible
+      // tracks, just as the previous conditional-mount implementation did.
+      const canvases = distributions.map(element => element.querySelector('.analysis-distribution-canvas'))
       return {
         distributionHeights: distributions.map(element => element.getBoundingClientRect().height),
         trackHeights: distributions.map(distribution => (
@@ -2134,7 +2879,9 @@ try {
         bottomOverflow: canvases.map((canvas) => {
           const canvasRect = canvas.getBoundingClientRect()
           const distributionRect = canvas.parentElement?.getBoundingClientRect()
-          return distributionRect ? canvasRect.bottom - distributionRect.bottom : 0
+          // A physically snapped canvas may end just inside a fractional CSS
+          // box. That inset is not overflow; a painted pixel outside is.
+          return distributionRect ? Math.max(0, canvasRect.bottom - distributionRect.bottom) : 0
         }),
         renderSignatures: canvases.map(canvas => canvas.rmsDistributionRenderSignature || ''),
       }
@@ -2719,72 +3466,16 @@ try {
   }
 
   if (!performanceOnly) {
-  // A slow result retains the previous analysis. Loading feedback appears only
-  // after the delay and disappears when the complete next result is presented.
-  await page.evaluate(async () => {
-    const check = window.analysisCheck
-    const { vm } = check
-    check.originalJumpForSlowAnalysis = window.studioAPI.jumpToNode
-    check.originalReadForSlowAnalysis = window.studioAPI.getAnalysis
-    check.slowNodeId = `${vm.gameView.currentNodeId}-slow`
-    check.slowResult = check.resultForNode(check.slowNodeId, 3)
-    window.studioAPI.getAnalysis = () => new Promise(resolve => { check.resolveSlowRead = resolve })
-    window.studioAPI.jumpToNode = async () => {
-      const view = JSON.parse(JSON.stringify(vm.gameView))
-      view.currentNodeId = check.slowNodeId
-      view.opponentAnalysis = null
-      return { state: JSON.parse(JSON.stringify(vm.status)), view }
-    }
-    check.oldSlowPiePath = document.querySelector('.analysis-panel-live .shanten-chart path')?.getAttribute('d') || ''
-    check.oldSlowRiskCanvas = document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || ''
-    await vm.jumpToNode(check.slowNodeId)
-  })
-  await page.waitForFunction(() => typeof window.analysisCheck.resolveSlowRead === 'function')
-  await page.waitForTimeout(350)
-  assert.equal(await page.locator('.analysis-loading-overlay').count(), 0, 'short waits do not flash a loading layer')
-  assert.equal(
-    await page.locator('.analysis-panel-live .shanten-chart path').first().getAttribute('d'),
-    await page.evaluate(() => window.analysisCheck.oldSlowPiePath),
-    'slow analysis keeps the previous result visible',
-  )
-  await page.waitForTimeout(200)
-  assert.equal(
-    await page.locator('.analysis-loading-overlay').count(),
-    realisticPerformance ? 4 : 2,
-    'each visible analysis panel shows delayed loading feedback',
-  )
-  if (process.env.RMS_ANALYSIS_LOADING_SCREENSHOT) {
-    await page.screenshot({ path: process.env.RMS_ANALYSIS_LOADING_SCREENSHOT })
-  }
-  await page.evaluate(() => {
-    const check = window.analysisCheck
-    check.resolveSlowRead(check.slowResult)
-  })
-  await page.waitForFunction(() => document.querySelectorAll('.analysis-loading-overlay').length === 0)
-  await page.waitForFunction(() => (
-    document.getAnimations().some(animation => (
-      animation.effect?.target instanceof Element
-      && Boolean(animation.effect.target.closest('.analysis-panel-live'))
-    ))
-    || (document.querySelector('.analysis-panel-live .analysis-risk-row-canvas')?.rmsRiskRenderSignature || '')
-      !== window.analysisCheck.oldSlowRiskCanvas
-  ))
-  await page.waitForTimeout(140)
-  assert.equal(await page.evaluate(() => document.getAnimations().filter(animation => (
-    animation.playState !== 'finished'
-    && animation.effect?.target instanceof Element
-    && Boolean(animation.effect.target.closest('.analysis-panel-live'))
-  )).length), 0, 'slow-result handoff also finishes its value animations')
-  await page.evaluate(() => {
-    const check = window.analysisCheck
-    window.studioAPI.jumpToNode = check.originalJumpForSlowAnalysis
-    window.studioAPI.getAnalysis = check.originalReadForSlowAnalysis
-  })
+  await checkAnalysisLoading(page)
 
   await checkWorkspaceDock(page)
   }
+  }
   assert.deepEqual(errors, [])
-  console.log(performanceOnly
+  console.log(process.env.RMS_UI_SETTINGS_ONLY ? 'Settings UI checks passed.'
+    : process.env.RMS_UI_TOOLBAR_ONLY ? 'Toolbar window checks passed.'
+    : process.env.RMS_UI_DISCARD_ONLY ? 'Discard motion and wheel-progress checks passed.'
+    : process.env.RMS_UI_RECORD_IO_ONLY ? 'Record I/O UI checks passed.' : performanceOnly
     ? 'Analysis UI performance scenario passed.'
     : 'Analysis UI: events, hover, navigation motion, cache, geometry, artwork and workspace docking passed.')
 } catch (error) {
@@ -2798,7 +3489,14 @@ try {
   }
   throw error
 } finally {
-  await browser?.close()
-  await electronApp?.close()
-  await server?.close()
+  try {
+    await browser?.close()
+    await electronApp?.close()
+  } finally {
+    try {
+      await server?.close()
+    } finally {
+      if (directory) fs.rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    }
+  }
 }

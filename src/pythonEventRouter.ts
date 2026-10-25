@@ -2,7 +2,8 @@ import type { Ref } from 'vue'
 import { backendStoppedState } from './backendStoppedState.ts'
 import { applyModelActivityEvent } from './modelActivityEvent.ts'
 import { analysisResultHasRows } from './useAnalysisSession.ts'
-import type { GameTreeNode, GameView } from './contracts/game'
+import { createAnalysisVisitInbox } from './analysisVisitInbox.ts'
+import type { AnalysisPresentationContext, GameTreeNode, GameView } from './contracts/game'
 import type { PythonEvent, StudioStatus } from './contracts/runtime'
 
 type Translate = (key: string, params?: Record<string, string | number>) => string
@@ -67,7 +68,22 @@ function applyTreeUpdates(
 }
 
 export function createPythonEventRouter(options: PythonEventRouterOptions) {
-  return function handlePythonEvent(event: PythonEvent) {
+  const visits = createAnalysisVisitInbox()
+  visits.commit(options.gameView.viewToken)
+
+  function applyAnalysisDisplay(event: PythonEvent) {
+    if (!eventMatchesCurrentAnalysisView(event, options.gameView, options.status.controlledSeat)) return
+    if (event.type === 'opponent_analysis_ready' && event.opponentAnalysis) {
+      const context = event.opponentAnalysis.context as Record<string, unknown> | undefined
+      if (options.acceptsOpponentEventEpoch(context?.cacheEpoch)) options.applyOpponentAnalysisEvent(event.opponentAnalysis)
+    } else if (event.type === 'analysis_ready' && event.analysis
+      && !options.clearingAnalysisCaches.value && options.effectiveDecisionRecommendationsEnabled.value
+      && options.acceptsDecisionEventEpoch(event.cacheEpoch)) {
+      options.gameView.analysis = event.analysis
+    }
+  }
+
+  function handlePythonEvent(event: PythonEvent) {
     if (event.type === 'service_recovery_failed') {
       options.bootstrapError.value = options.t('recovery.failed', { message: event.error || '' })
       return
@@ -85,6 +101,7 @@ export function createPythonEventRouter(options: PythonEventRouterOptions) {
     }
 
     if (event.type === 'service_ready' || event.type === 'service_stopped') {
+      visits.reset()
       options.resetForBackendLifecycle()
       options.invalidateGameplayResponses()
       options.invalidateNavigation()
@@ -107,6 +124,14 @@ export function createPythonEventRouter(options: PythonEventRouterOptions) {
       (event.type === 'analysis_ready' || event.type === 'auto_analysis_tree_updates')
       && !options.acceptsDecisionEventEpoch(event.cacheEpoch)
     ) return
+
+    if (event.viewToken && (event.type === 'analysis_ready' || event.type === 'opponent_analysis_ready')
+      && (event.viewToken.sessionId !== options.gameView.viewToken?.sessionId
+        || event.nodeId !== options.gameView.currentNodeId)) {
+      visits.receive(event.type === 'analysis_ready' ? 'decision' : 'opponent', event.viewToken,
+        () => applyAnalysisDisplay(event))
+      return
+    }
 
     if (event.type === 'auto_analysis_progress' && event.autoAnalysis) {
       if (!eventMatchesGame(event, options.gameView.gameId)) return
@@ -132,19 +157,17 @@ export function createPythonEventRouter(options: PythonEventRouterOptions) {
     if (event.type === 'model_activity') {
       const { opponentFailed } = applyModelActivityEvent(options.status, event, options.t('error.unknown'))
       if (opponentFailed) {
-        if (!analysisResultHasRows(options.gameView.opponentAnalysis)) {
+        const context = options.gameView.opponentAnalysis?.context as AnalysisPresentationContext | undefined
+        if (context?.dataState !== 'reading' && !analysisResultHasRows(options.gameView.opponentAnalysis)) {
           options.clearOpponentAnalysisWithoutMotion()
         }
         void options.fetchAnalysisOnce()
       }
       return
     }
-    if (
-      event.type === 'opponent_analysis_ready'
-      && event.opponentAnalysis
-      && eventMatchesCurrentAnalysisView(event, options.gameView, options.status.controlledSeat)
-    ) {
-      options.applyOpponentAnalysisEvent(event.opponentAnalysis)
+    if (event.type === 'opponent_analysis_ready' && event.opponentAnalysis) {
+      if (options.gameView.viewToken) visits.receive('opponent', event.viewToken, () => applyAnalysisDisplay(event))
+      else applyAnalysisDisplay(event)
       return
     }
     if (event.type !== 'analysis_ready' || !event.nodeId || !event.analysis) return
@@ -154,11 +177,18 @@ export function createPythonEventRouter(options: PythonEventRouterOptions) {
       ? Number(event.analysis.seat)
       : null
     if (analysisSeat !== null && analysisSeat !== options.status.controlledSeat) return
-    if (event.state) options.applyStatus(event.state)
+    if (event.viewToken && event.viewToken.sessionId !== options.gameView.viewToken?.sessionId) return
     applyTreeUpdates(event, options.gameView, options.nodeMapById.value)
 
     const analysis = event.analysis as NonNullable<GameView['analysis']>
     options.cacheDecisionAnalysis(event.gameId || options.gameView.gameId, event.nodeId, analysis)
-    if (event.nodeId === options.gameView.currentNodeId) options.gameView.analysis = analysis
+    if (options.gameView.viewToken) visits.receive('decision', event.viewToken, () => applyAnalysisDisplay(event))
+    else applyAnalysisDisplay(event)
   }
+  return Object.assign(handlePythonEvent, {
+    expectAnalysisVisit: visits.expect,
+    commitAnalysisVisit: visits.commit,
+    invalidateAnalysisVisit: visits.invalidate,
+    expectRecordReplacement: visits.expectReplacement,
+  })
 }

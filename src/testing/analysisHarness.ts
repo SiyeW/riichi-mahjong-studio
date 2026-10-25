@@ -2,10 +2,19 @@ import type { AnalysisCountLayout } from '../analysisCountSpacing'
 import type { StudioSettings } from '../contracts/settings'
 import type { GameView, TableState } from '../contracts/game'
 import type { PythonEvent, StudioStatus } from '../contracts/runtime'
+import type { AnalysisStageOptions } from '../useAnalysisSession'
 
 // Explicit fixture controls for the isolated renderer. This module is only
 // installed in Vite's ui-test mode, never in the desktop application.
 export interface AnalysisTestApi {
+  openGame: () => Promise<void>
+  createGame: () => Promise<void>
+  closeGame: () => Promise<void>
+  openRecordImportPanel: () => void
+  readonly discardConfirmation: 'create' | 'open' | 'import' | 'close' | null
+  closeRecordImportPanel: () => void
+  showRecordImportPanel: boolean
+  recordOperationError: string
   recordDirty: boolean
   readonly recordPath: string
   saveGame: () => Promise<void>
@@ -22,12 +31,11 @@ export interface AnalysisTestApi {
   readonly displayedAnalysisTable: TableState | null
   stageOpponentAnalysisForView: (
     result: Record<string, unknown> | null | undefined,
-    options?: { resetDisplay?: boolean; withoutMotion?: boolean },
+    options?: AnalysisStageOptions,
   ) => void
   readonly showWallView: boolean
   readonly wallTiles: Array<{ index: number; tile: string; status: string }>
   readonly showEngineWindow: boolean
-  showMjaiDebug: boolean
   handlePythonEvent: (event: PythonEvent) => void
   fetchAnalysisOnce: () => Promise<void>
   jumpToNode: (nodeId: string) => Promise<void>

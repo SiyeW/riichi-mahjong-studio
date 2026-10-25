@@ -1,6 +1,24 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+// The close handshake belongs to the page, not to a Vue component. Even a
+// failed/unmounted renderer must answer instead of looking like a slow save.
+let closeRegistration = null
+ipcRenderer.on('record:before-close', async (_event, token) => {
+  const registration = closeRegistration
+  let errorMessage = 'RENDERER_UNAVAILABLE'
+  if (registration) {
+    try {
+      await registration.callback()
+      errorMessage = ''
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error)
+    }
+  }
+  ipcRenderer.send('record:close-ready', token, errorMessage)
+})
+
 contextBridge.exposeInMainWorld('studioAPI', {
+  notifyBootstrapComplete: () => ipcRenderer.send('app:bootstrap-complete'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   describeEngine: (profile) => ipcRenderer.invoke('engine:describe', profile),
@@ -14,13 +32,13 @@ contextBridge.exposeInMainWorld('studioAPI', {
   getGameView: () => ipcRenderer.invoke('game:view'),
   createGame: () => ipcRenderer.invoke('game:create'),
   closeGame: () => ipcRenderer.invoke('game:close'),
-  advanceGame: () => ipcRenderer.invoke('game:advance'),
-  confirmPendingReview: () => ipcRenderer.invoke('game:confirm-review'),
+  advanceGame: (scope) => ipcRenderer.invoke('game:advance', scope),
+  confirmPendingReview: (scope) => ipcRenderer.invoke('game:confirm-review', scope),
   submitUserAction: (action) => ipcRenderer.invoke('game:submit-action', action),
-  jumpToNode: (nodeId, treeRevision) => ipcRenderer.invoke('game:jump-to-node', nodeId, treeRevision),
-  setMainBranch: (nodeId) => ipcRenderer.invoke('game:set-main-branch', nodeId),
-  setNodeComment: (nodeId, comment) => ipcRenderer.invoke('game:set-node-comment', nodeId, comment),
-  deleteNode: (nodeId) => ipcRenderer.invoke('game:delete-node', nodeId),
+  jumpToNode: (nodeId, treeRevision, navigationIntent) => ipcRenderer.invoke('game:jump-to-node', nodeId, treeRevision, navigationIntent),
+  setMainBranch: (nodeId, scope) => ipcRenderer.invoke('game:set-main-branch', nodeId, scope),
+  setNodeComment: (nodeId, comment, scope) => ipcRenderer.invoke('game:set-node-comment', nodeId, comment, scope),
+  deleteNode: (nodeId, scope) => ipcRenderer.invoke('game:delete-node', nodeId, scope),
   saveGame: () => ipcRenderer.invoke('game:save'),
   saveGameAs: () => ipcRenderer.invoke('game:save-as'),
   openGame: () => ipcRenderer.invoke('game:open'),
@@ -29,6 +47,9 @@ contextBridge.exposeInMainWorld('studioAPI', {
   importMortalReport: (payload) => ipcRenderer.invoke('game:import-mortal-report', payload),
   importCustomTenhou: (payload) => ipcRenderer.invoke('game:import-custom-tenhou', payload),
   exportCustomTenhou: () => ipcRenderer.invoke('game:export-custom-tenhou'),
+  selectRecordImportFile: () => ipcRenderer.invoke('game:select-import-file'),
+  importReplayFile: (payload) => ipcRenderer.invoke('game:import-replay-file', payload),
+  setPlayerName: (seat, name, scope) => ipcRenderer.invoke('game:set-player-name', seat, name, scope),
   setMode: (mode) => ipcRenderer.invoke('mode:set', mode),
   requestSeatSwitch: (seat) => ipcRenderer.invoke('seatSwitch:request', seat),
   toggleVisibleHands: () => ipcRenderer.invoke('visibleHands:toggle'),
@@ -37,9 +58,7 @@ contextBridge.exposeInMainWorld('studioAPI', {
   getWallView: () => ipcRenderer.invoke('game:wall-view'),
   reconstructWalls: (seed) => ipcRenderer.invoke('game:reconstruct-walls', seed),
   importWall: (tiles) => ipcRenderer.invoke('game:import-wall', tiles),
-  getLatestMjaiDebug: () => ipcRenderer.invoke('debug:latest-mjai'),
   getAnalysis: () => ipcRenderer.invoke('analysis:get'),
-  getAnalysisDebug: () => ipcRenderer.invoke('debug:analysis'),
   clearAnalysisCaches: () => ipcRenderer.invoke('debug:clear-analysis-caches'),
   startAutoAnalysis: () => ipcRenderer.invoke('analysis:auto-start'),
   cancelAutoAnalysis: () => ipcRenderer.invoke('analysis:auto-cancel'),
@@ -64,17 +83,11 @@ contextBridge.exposeInMainWorld('studioAPI', {
     return () => ipcRenderer.removeListener('record:dirty-changed', handler)
   },
   onBeforeClose: (callback) => {
-    const handler = async (_event, token) => {
-      let errorMessage = ''
-      try {
-        await callback()
-      } catch (error) {
-        errorMessage = error instanceof Error ? error.message : String(error)
-      }
-      ipcRenderer.send('record:close-ready', token, errorMessage)
+    const registration = { callback }
+    closeRegistration = registration
+    return () => {
+      if (closeRegistration === registration) closeRegistration = null
     }
-    ipcRenderer.on('record:before-close', handler)
-    return () => ipcRenderer.removeListener('record:before-close', handler)
   },
   onCloseState: (callback) => {
     const handler = (_event, state) => callback(state)

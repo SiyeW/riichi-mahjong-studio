@@ -28,3 +28,26 @@ test('point values never use locale grouping separators', () => {
   assert.equal(formatting.formatDistributionPoints(11700), '11700')
   assert.equal(formatting.formatDistributionPoints(12000), '12000')
 })
+
+test('point formatting reuses locale formatters and refreshes them on language change', (t) => {
+  const NumberFormat = Intl.NumberFormat
+  let constructions = 0
+  t.mock.method(Intl, 'NumberFormat', function (locales?: Intl.LocalesArgument, options?: Intl.NumberFormatOptions) {
+    constructions++
+    return new NumberFormat(locales, options)
+  })
+  const locale = ref('en-US')
+  const current = createAnalysisFormatting(key => key, locale)
+  for (let index = 0; index < 200; index++) {
+    assert.equal(current.formatCompactPoints(3900), '3900')
+    assert.equal(current.formatCompactPoints(-12345), '-12.3K')
+  }
+  assert.equal(constructions, 2, 'one standard and one compact formatter for the active locale')
+  locale.value = 'ja-JP'
+  assert.equal(current.formatCompactPoints(12345), '1.2万')
+  assert.equal(current.formatSignedCompactPoints(-12345), '−1.2万')
+  assert.equal(constructions, 4)
+  assert.equal(current.formatCompactPoints(null), '—')
+  assert.equal(current.formatCompactPoints(Number.NaN), '—')
+  assert.equal(constructions, 4, 'unavailable values do not construct formatters')
+})

@@ -8,6 +8,7 @@ import threading
 from typing import Any, Callable, Dict, Optional
 
 from .opponent_prediction_gateway import OpponentPredictionGateway
+from .opponent_prediction_completion import PredictionCompletion
 
 
 SHANTEN_OUTPUT = "opponent-shanten"
@@ -149,51 +150,75 @@ class OpponentPredictionCoordinator:
             merged["engineFingerprint"] = "sha256:" + hashlib.sha256(encoded).hexdigest()
         return merged
 
-    def _combined_callback(
+    def _request_callbacks(
         self,
         gateways: list[OpponentPredictionGateway],
         callback: Optional[Callable[[Dict[str, Any]], None]],
-    ) -> list[Callable[[Dict[str, Any]], None]]:
-        if not callable(callback) or len(gateways) <= 1:
-            return [callback] * len(gateways)
+        on_discard: Optional[Callable[[], None]],
+    ):
+        completion = PredictionCompletion(callback, on_discard)
+        if len(gateways) <= 1:
+            if not gateways:
+                completion.discard()
+            return [completion.complete] * len(gateways), completion.discard
         lock = threading.Lock()
         results: Dict[int, Dict[str, Any]] = {}
+        closed = False
+
+        def discard():
+            nonlocal closed
+            with lock:
+                closed = True
+                results.clear()
+            completion.discard()
 
         def collect(index: int, result: Dict[str, Any]) -> None:
+            nonlocal closed
             ready = None
             with lock:
-                if index in results:
+                if closed or index in results:
                     return
                 results[index] = copy.deepcopy(result)
                 if len(results) == len(gateways):
-                    ready = self._merge_results([results[i] for i in range(len(gateways))])
+                    closed = True
+                    ready = [results[i] for i in range(len(gateways))]
             if ready is not None:
-                callback(ready)
+                try:
+                    completion.complete(self._merge_results(ready))
+                except Exception:
+                    discard()
+                    raise
+                finally:
+                    with lock:
+                        results.clear()
 
-        return [lambda result, index=index: collect(index, result) for index in range(len(gateways))]
+        return ([lambda result, index=index: collect(index, result) for index in range(len(gateways))], discard)
 
-    def request_predict(self, *args, on_complete=None, **kwargs) -> None:
+    def request_predict(self, *args, on_complete=None, on_discard=None, **kwargs) -> None:
         gateways = self._request_gateways()
-        callbacks = self._combined_callback(gateways, on_complete)
-        for gateway, callback in zip(gateways, callbacks):
-            gateway.request_predict(*args, on_complete=callback, **kwargs)
+        callbacks, discard = self._request_callbacks(gateways, on_complete, on_discard)
+        try:
+            for gateway, callback in zip(gateways, callbacks):
+                gateway.request_predict(*args, on_complete=callback, on_discard=discard, **kwargs)
+        except Exception:
+            discard()
+            raise
 
-    def request_background_predict(self, *args, on_complete=None, **kwargs) -> bool:
+    def request_background_predict(self, *args, on_complete=None, on_discard=None, **kwargs) -> bool:
         gateways = self._request_gateways()
-        callbacks = self._combined_callback(gateways, on_complete)
+        callbacks, discard = self._request_callbacks(gateways, on_complete, on_discard)
         accepted = False
-        for gateway, callback in zip(gateways, callbacks):
-            child_accepted = gateway.request_background_predict(
-                *args,
-                on_complete=callback,
-                **kwargs,
-            )
-            if not child_accepted and callable(callback) and len(gateways) > 1:
-                callback({
-                    "status": "request_rejected",
-                    "context": copy.deepcopy(kwargs.get("context", args[3] if len(args) > 3 else None) or {}),
-                })
-            accepted = child_accepted or accepted
+        try:
+            for gateway, callback in zip(gateways, callbacks):
+                child_accepted = gateway.request_background_predict(
+                    *args, on_complete=callback, on_discard=discard, **kwargs)
+                if not child_accepted:
+                    discard()
+                    return False
+                accepted = child_accepted or accepted
+        except Exception:
+            discard()
+            raise
         return accepted
 
     def get_latest(self) -> Dict[str, Any]:

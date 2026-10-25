@@ -43,10 +43,10 @@ export function useGameAnalysisData(
     const selfDealIn = self?.dealInProbability || 0
     const horizontal = kyokuOutcome.value.hasTotals ? Math.max(0, 1 - draw - selfWin - selfDealIn) : 0
     const segments = [
-      { key: 'draw', label: t('analysis.draw'), probability: draw },
       { key: 'self-win', label: t('analysis.selfWin'), probability: selfWin },
       { key: 'self-deal-in', label: t('analysis.selfDealIn'), probability: selfDealIn },
       { key: 'horizontal', label: t('analysis.horizontal'), probability: horizontal },
+      { key: 'draw', label: t('analysis.draw'), probability: draw },
     ]
     const total = segments.reduce((sum, segment) => sum + segment.probability, 0) || 1
     return segments.map((segment) => ({ ...segment, displayProbability: segment.probability / total }))

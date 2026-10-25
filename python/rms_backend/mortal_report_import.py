@@ -283,7 +283,7 @@ def _round_index(event: Dict[str, Any]) -> int:
     return _WINDS.get(str(event.get("bakaze") or "E"), 0) * 4 + max(0, int(event.get("kyoku") or 1) - 1)
 
 
-def _new_round_snapshot(event: Dict[str, Any], match_id: str) -> Dict[str, Any]:
+def _new_round_snapshot(event: Dict[str, Any], match_id: str, source_kind: str = 'mortal-report') -> Dict[str, Any]:
     hands = event.get("tehais")
     if not isinstance(hands, list) or len(hands) != 4:
         raise ValueError("Mortal report start_kyoku is missing four starting hands.")
@@ -324,7 +324,7 @@ def _new_round_snapshot(event: Dict[str, Any], match_id: str) -> Dict[str, Any]:
         "roundIndex": _round_index(event),
         "westEntered": str(event.get("bakaze") or "E") in ("W", "N"),
         "inRenchan": False,
-        "lastAction": {"type": "start_kyoku", "source": "mortal-report"},
+        "lastAction": {"type": "start_kyoku", "source": source_kind},
         "melds": [[], [], [], []],
         "riichiDeclared": [False, False, False, False],
         "riichiAccepted": [False, False, False, False],
@@ -512,6 +512,7 @@ def _build_round_result_snapshot(
     snapshot: Dict[str, Any],
     terminal_events: List[Dict[str, Any]],
     settlement: Dict[str, Any] | None,
+    source_kind: str = 'mortal-report',
 ) -> Dict[str, Any]:
     result_snapshot = copy.deepcopy(snapshot)
     hora_events = [copy.deepcopy(event) for event in terminal_events if event.get("type") == "hora"]
@@ -525,7 +526,7 @@ def _build_round_result_snapshot(
         ]
 
     if hora_events:
-        event_data = hora_events[0]
+        event_data = copy.deepcopy(hora_events[0])
         event_data["deltas"] = settlement_deltas
         if len(hora_events) > 1:
             event_data["horaEvents"] = hora_events
@@ -566,7 +567,7 @@ def _build_round_result_snapshot(
     result_snapshot["lastAction"] = {
         "type": "round_result",
         "result": result,
-        "source": "mortal-report",
+        "source": source_kind,
     }
     result_snapshot["actionHistory"].append(copy.deepcopy(result_snapshot["lastAction"]))
     return result_snapshot
@@ -818,6 +819,7 @@ def build_mortal_report_game(
     source_url: str,
     game_id: str,
     created_at: str,
+    *, source_kind: str = 'mortal-report',
 ) -> tuple[Dict[str, Any], int]:
     if not isinstance(report, dict):
         raise ValueError("Mortal report must be a JSON object.")
@@ -834,7 +836,7 @@ def build_mortal_report_game(
     if controlled_seat not in range(4):
         controlled_seat = 0
     match_id = f"mortal_{game_id.removeprefix('game_')}"
-    first_snapshot = _new_round_snapshot(start_events[0], match_id)
+    first_snapshot = _new_round_snapshot(start_events[0], match_id, source_kind)
     round_settlements = _extract_round_settlements(report)
     nodes: Dict[str, Any] = {
         "n_root": {
@@ -884,7 +886,7 @@ def build_mortal_report_game(
         nonlocal current_snapshot, terminal_events
         if current_snapshot is None or not terminal_events:
             return
-        current_snapshot = _build_round_result_snapshot(current_snapshot, terminal_events, current_settlement)
+        current_snapshot = _build_round_result_snapshot(current_snapshot, terminal_events, current_settlement, source_kind)
         append_node(copy.deepcopy(current_snapshot["lastAction"]), current_snapshot)
         terminal_events = []
 
@@ -894,7 +896,7 @@ def build_mortal_report_game(
         event_type = str(raw_event.get("type") or "")
         if event_type == "start_kyoku":
             append_round_result_if_ready()
-            current_snapshot = _new_round_snapshot(raw_event, match_id)
+            current_snapshot = _new_round_snapshot(raw_event, match_id, source_kind)
             settlement_key = (
                 _round_index(raw_event),
                 int(raw_event.get("honba") or 0),
@@ -903,7 +905,7 @@ def build_mortal_report_game(
             matching_settlements = round_settlements.get(settlement_key) or []
             current_settlement = matching_settlements.pop(0) if matching_settlements else None
             terminal_events = []
-            append_node({"type": "start_kyoku", "source": "mortal-report"}, current_snapshot)
+            append_node({"type": "start_kyoku", "source": source_kind}, current_snapshot)
         elif event_type in _SUPPORTED_EVENTS:
             if current_snapshot is None:
                 raise ValueError("Mortal report action appeared before start_kyoku.")
@@ -916,7 +918,7 @@ def build_mortal_report_game(
                 prepared_event["reasonLabel"] = str(current_settlement.get("label") or "流局")
             current_snapshot = _apply_event(copy.deepcopy(current_snapshot), prepared_event)
             action = copy.deepcopy(current_snapshot["lastAction"])
-            action["source"] = "mortal-report"
+            action["source"] = source_kind
             append_node(action, current_snapshot)
             if event_type in ("hora", "ryukyoku"):
                 terminal_events.append(copy.deepcopy(action))
@@ -949,7 +951,7 @@ def build_mortal_report_game(
             append_node(
                 {
                     "type": "match_end",
-                    "source": "mortal-report",
+                    "source": source_kind,
                     "result": copy.deepcopy(match_result),
                 },
                 current_snapshot,
@@ -995,7 +997,7 @@ def build_mortal_report_game(
         "createdAt": created_at,
         "metadata": {
             "label": match_id,
-            "source": "mortal-report",
+            "source": source_kind,
             "sourceUrl": source_url,
             "readOnly": True,
             "readOnlyReason": _READ_ONLY_REASON_CODE,

@@ -8,7 +8,6 @@ function fixture(cleared = {}) {
   const backendGateway = {
     setAnalysisVisibility: async (value) => ({ value }),
     getAnalysis: async () => 'analysis',
-    getAnalysisDebug: async () => 'debug',
     clearAnalysisCaches: async () => ({ cleared }),
     startAutoAnalysis: async () => 'started',
     cancelAutoAnalysis: async () => 'canceled',
@@ -28,7 +27,6 @@ test('analysis IPC registers the complete analysis channel boundary', () => {
     'analysis:auto-start',
     'analysis:get',
     'analysis:visibility',
-    'debug:analysis',
     'debug:clear-analysis-caches',
   ])
 })

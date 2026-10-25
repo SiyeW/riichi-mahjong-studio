@@ -5,15 +5,21 @@ from __future__ import annotations
 import copy
 import time
 from dataclasses import dataclass
+from contextlib import contextmanager
 from typing import Any, Callable, MutableMapping, Optional
 
 from .action_recommendation_adapter import analyze_action_choices, analyze_discard_choices
+from .records.legacy_codec import AnalysisReadError
+from .records.analysis_refs import AnalysisReference, ready_analysis
+from .decision_analysis_use import DecisionAnalysisUse
+from .auto_analysis_plan import is_terminal_analysis_node
 from .analysis_cache import (
     cache_key_context,
     decision_cache_key,
     find_stale_cache_entry,
     prune_stale_cache_entries,
     register_analysis_source,
+    cache_presentation_metadata,
 )
 from .service_helpers import (
     build_comparison_result,
@@ -34,6 +40,9 @@ class DecisionAnalysisDependencies:
     set_timeline_cached: Callable[[str, str, bool], None]
     build_state: Callable[[], dict[str, Any]]
     emit: Callable[[dict[str, Any]], None]
+    read_presenter: Any = None
+    record_access: Any = None
+    comparisons_changed: Callable[..., None] = lambda *args: None
 
 
 class DecisionAnalysisSession:
@@ -56,6 +65,7 @@ class DecisionAnalysisSession:
         self.dependencies = dependencies
         self._tasks: dict[tuple[Any, ...], Any] = {}
         self._completed: set[tuple[Any, ...]] = set()
+        self._active_use = None
 
     @staticmethod
     def _task_key(game: Any, node_id: Any, analysis_key: Any) -> tuple[Any, ...]:
@@ -95,6 +105,9 @@ class DecisionAnalysisSession:
         self._completed.difference_update(completed_keys)
 
     def cancel_pending(self) -> None:
+        if self.dependencies.record_access is not None:
+            with self.state_lock:
+                self.dependencies.record_access.cancel(role='foreground', kind='decision')
         for future in list(self._tasks.values()):
             try:
                 future.cancel()
@@ -136,6 +149,7 @@ class DecisionAnalysisSession:
         result: Any,
         *,
         source: Optional[dict[str, Any]] = None,
+        ticket=None,
     ) -> Optional[dict[str, Any]]:
         if (
             not isinstance(game, dict)
@@ -154,6 +168,9 @@ class DecisionAnalysisSession:
         expected_source_id = (cache_key_context(cache_key) or {}).get("sourceId")
         if expected_source_id != resolved_source["id"]:
             return None
+        access = self.dependencies.record_access
+        if access is not None and access.enabled(game):
+            return access.store(ticket, game, node, cache_key, result, resolved_source)
         register_analysis_source(game, resolved_source, result)
         compact = copy.deepcopy(result)
         compact.pop("engineFingerprint", None)
@@ -239,6 +256,7 @@ class DecisionAnalysisSession:
             updates.append(
                 {"id": child_id, "comparison": copy.deepcopy(comparison)}
             )
+        self.dependencies.comparisons_changed(game, updates)
         return updates
 
     def backfill_child_comparisons(
@@ -248,6 +266,9 @@ class DecisionAnalysisSession:
         controlled_seat = int(self.state["controlledSeat"])
         updates = []
         for parent_node in game.get("nodes", {}).values():
+            children = [game["nodes"][key] for key in parent_node.get("children", []) if key in game["nodes"]]
+            if not children or all(child.get("comparison") for child in children):
+                continue
             snapshot = parent_node.get("snapshot") or {}
             phase = str(snapshot.get("phase") or "")
             if phase == "draw_or_discard":
@@ -258,6 +279,11 @@ class DecisionAnalysisSession:
                 self.engine_management.decision_source(),
             )
             analysis = (parent_node.get("analysisCache") or {}).get(analysis_key)
+            if getattr(analysis, 'pending_io', False):
+                # Saved comparisons remain visible. Missing derived comparisons
+                # are filled when their frame is visited, not by reading every
+                # unopened analysis block during record activation.
+                continue
             if not isinstance(analysis, dict) or analysis.get("error"):
                 continue
             updates.extend(
@@ -276,6 +302,8 @@ class DecisionAnalysisSession:
         current_node: dict[str, Any],
         snapshot: dict[str, Any],
     ) -> None:
+        if is_terminal_analysis_node(current_node):
+            return
         if not self.state.get("decisionRecommendationsEnabled", True):
             return
         if snapshot.get("phase") not in (
@@ -314,6 +342,14 @@ class DecisionAnalysisSession:
             snapshot,
             controlled_seat=seat,
         )
+        access, ticket = self.dependencies.record_access, None
+        if access is not None and access.enabled(game):
+            if not self.action_gateway.accepts_requests():
+                return
+            ticket = access.reserve(game, 'decision', foreground=True)
+            if ticket is None:
+                access.defer(game, 'decision', self.request_current)
+                return
 
         def task() -> dict[str, Any]:
             started_at = time.perf_counter()
@@ -370,6 +406,7 @@ class DecisionAnalysisSession:
                             current_node,
                             analysis_key,
                             result,
+                            ticket=ticket,
                         )
                         if stored is not None:
                             self.dependencies.set_timeline_cached(
@@ -382,7 +419,10 @@ class DecisionAnalysisSession:
                                 seat,
                             )
                             should_mark_completed = True
-                    if self.state.get("decisionRecommendationsEnabled", True):
+                    if isinstance(stored if should_mark_completed else None, AnalysisReference):
+                        self.publish_current(current_node, stored)
+                    elif self.state.get("decisionRecommendationsEnabled", True) and (
+                        access is None or not access.enabled(game) or isinstance(result, dict) and result.get('error')):
                         self.dependencies.emit(
                             {
                                 "type": "analysis_ready",
@@ -400,6 +440,8 @@ class DecisionAnalysisSession:
                 except Exception:  # pylint: disable=broad-except
                     pass
                 finally:
+                    if ticket is not None:
+                        access.cancel(ticket)
                     if self._tasks.get(task_key) is future:
                         self._tasks.pop(task_key, None)
                     if should_mark_completed:
@@ -413,9 +455,26 @@ class DecisionAnalysisSession:
                             }
                         )
 
-        future = self.executor.submit(task)
+        try:
+            future = self.executor.submit(task)
+        except Exception:
+            if ticket is not None:
+                access.cancel(ticket)
+            raise
         self._tasks[task_key] = future
         future.add_done_callback(complete)
+
+    def request_current(self):
+        game = self.state.get('game')
+        if self.state.get('gameLoaded') and isinstance(game, dict):
+            node = game.get('nodes', {}).get(game.get('currentNodeId'))
+            if isinstance(node, dict):
+                self.submit_background(node, node['snapshot'])
+
+    def publish_current(self, node, reference):
+        if (self.state.get('decisionRecommendationsEnabled', True)
+                and self.state['game'].get('currentNodeId') == node.get('id')):
+            self.dependencies.read_presenter.publish(reference, kind='decision')
 
     def get_or_schedule(
         self,
@@ -423,16 +482,33 @@ class DecisionAnalysisSession:
         snapshot: dict[str, Any],
         legal_actions: list[dict[str, Any]],
     ) -> Optional[dict[str, Any]]:
+        try:
+            return self._get_or_schedule(current_node, snapshot, legal_actions)
+        except AnalysisReadError as error:
+            return {'error': str(error), 'discardEntries': [], 'reactionEntries': []}
+
+    def _get_or_schedule(self, current_node, snapshot, legal_actions):
+        if is_terminal_analysis_node(current_node):
+            return None
         if not self.state.get("decisionRecommendationsEnabled", True):
             return None
         if not legal_actions:
             return None
+        if (self._active_use is not None and self._active_use.node is current_node
+                and self._active_use.matches(self.state, self.engine_management.decision_cache_epoch)):
+            return self._active_use.value
 
         analysis_key = self.cache_key(snapshot)
         if analysis_key in current_node.get("analysisCache", {}):
-            return copy.deepcopy(current_node["analysisCache"][analysis_key])
+            cached = current_node["analysisCache"][analysis_key]
+            if isinstance(cached, AnalysisReference):
+                return self._read_cached_display(cached)
+            if getattr(cached, 'pending_io', False):
+                self.update_child_comparisons(self.state['game'], current_node, cached,
+                                              int(self.state['controlledSeat']), only_missing=True)
+            return copy.deepcopy(cached)
         if not self.action_gateway.accepts_requests():
-            return find_stale_cache_entry(
+            return self._stale_analysis(
                 self.state.get("game"),
                 current_node,
                 analysis_key,
@@ -446,12 +522,29 @@ class DecisionAnalysisSession:
         ):
             return None
         self.submit_background(current_node, snapshot)
-        return find_stale_cache_entry(
+        retained = self._stale_analysis(
             self.state.get("game"),
             current_node,
             analysis_key,
             "analysisCache",
         )
+        if retained and retained.get('error'):
+            return retained
+        return self._pending_display('running', retained)
+
+    def _pending_display(self, data_state, retained=None):
+        return {"model": "", "seat": int(self.state["controlledSeat"]), "discardEntries": [],
+                **(retained or {}), "context": {**((retained or {}).get('context') or {}), "dataState": data_state}}
+
+    def _read_cached_display(self, reference, metadata=None):
+        ready = self.dependencies.read_presenter.read(reference, kind='decision', metadata=metadata)
+        return ready if ready is not None else self._pending_display('reading', metadata)
+
+    def _stale_analysis(self, game, node, key, field):
+        cached = find_stale_cache_entry(game, node, key, field, resolve=False)
+        if isinstance(cached, AnalysisReference):
+            return self._read_cached_display(cached, cache_presentation_metadata(game, cached.cache_key, key))
+        return find_stale_cache_entry(game, node, key, field) if cached is not None else None
 
     def resolve_current(
         self,
@@ -459,6 +552,8 @@ class DecisionAnalysisSession:
         snapshot: dict[str, Any],
         legal_actions: list[dict[str, Any]],
     ) -> Optional[dict[str, Any]]:
+        if is_terminal_analysis_node(current_node):
+            return None
         if not self.state.get("decisionRecommendationsEnabled", True):
             return None
         if not legal_actions:
@@ -512,14 +607,23 @@ class DecisionAnalysisSession:
         else:
             return None
 
+        access, ticket = self.dependencies.record_access, None
+        resolved = None
         try:
             if analysis_key not in current_node["analysisCache"]:
+                if access is not None and access.enabled(self.state['game']):
+                    ticket = access.reserve(self.state['game'], 'decision', foreground=True)
+                    if ticket is None:
+                        access.defer(self.state['game'], 'decision', self.request_current)
                 resolved = resolver()
+                if ticket is None and access is not None and access.enabled(self.state['game']):
+                    return resolved  # Actual review may use policy while derived storage is paused.
                 cached_analysis = self.store(
                     self.state["game"],
                     current_node,
                     analysis_key,
                     resolved,
+                    ticket=ticket,
                 )
                 self.dependencies.set_timeline_cached(
                     "decision",
@@ -528,10 +632,21 @@ class DecisionAnalysisSession:
                     and not cached_analysis.get("error"),
                 )
             cached = current_node.get("analysisCache", {}).get(analysis_key)
+            if isinstance(cached, AnalysisReference):
+                self.dependencies.read_presenter.read(cached, kind='decision')
+                # Review consumes the already obtained policy result locally;
+                # display waits for canonical publication and never blocks here.
+                return ready_analysis(cached) or resolved
+            if isinstance(cached, dict) and getattr(cached, 'pending_io', False):
+                self.update_child_comparisons(self.state['game'], current_node, cached,
+                                              int(self.state['controlledSeat']), only_missing=True)
             return copy.deepcopy(cached) if isinstance(cached, dict) else empty
         except Exception as error:  # pylint: disable=broad-except
             empty["error"] = str(error)
             return empty
+        finally:
+            if ticket is not None:
+                access.cancel(ticket)
 
     def ensure_cached(
         self,
@@ -541,6 +656,9 @@ class DecisionAnalysisSession:
         if not self.state.get("decisionRecommendationsEnabled", True):
             return None
         self.dependencies.sync_snapshot(snapshot)
+        if (self._active_use is not None and self._active_use.node is current_node
+                and self._active_use.matches(self.state, self.engine_management.decision_cache_epoch)):
+            return self._active_use.value
         if snapshot.get("phase") not in (
             "draw_or_discard",
             "discard",
@@ -552,7 +670,11 @@ class DecisionAnalysisSession:
 
         analysis_key = self.cache_key(snapshot)
         if analysis_key in current_node["analysisCache"]:
-            return current_node["analysisCache"][analysis_key]
+            cached = current_node["analysisCache"][analysis_key]
+            if isinstance(cached, AnalysisReference):
+                self.dependencies.read_presenter.read(cached, kind='decision')
+                return ready_analysis(cached)
+            return cached
         if not self.action_gateway.accepts_requests():
             return None
 
@@ -566,21 +688,11 @@ class DecisionAnalysisSession:
             if bg_future.done():
                 try:
                     result = bg_future.result()
-                    self._tasks.pop(task_key, None)
+                    result = result.get('analysis') if isinstance(result, dict) and 'analysis' in result else result
                     if isinstance(result, dict) and not result.get("error"):
-                        stored = self.store(
-                            self.state["game"],
-                            current_node,
-                            analysis_key,
-                            result,
-                        )
-                        if stored is not None:
-                            self.dependencies.set_timeline_cached(
-                                "decision", current_node.get("id"), True
-                            )
-                            return stored
+                        return result  # Its completion callback owns the admission and cache write.
                 except Exception:  # pylint: disable=broad-except
-                    self._tasks.pop(task_key, None)
+                    return None
             return None
 
         if analysis_key in current_node["analysisCache"]:
@@ -594,14 +706,27 @@ class DecisionAnalysisSession:
         analysis = self.resolve_current(current_node, snapshot, legal_actions)
         if analysis is None or analysis.get("error"):
             return None
-        stored = self.store(
-            self.state["game"],
-            current_node,
-            analysis_key,
-            analysis,
-        )
-        if stored is not None:
-            self.dependencies.set_timeline_cached(
-                "decision", current_node.get("id"), True
-            )
-        return stored
+        return analysis  # resolve_current already owns the single cache write.
+
+    def prepare_use(self):
+        if not self.state.get('gameLoaded') or not self.state.get('decisionRecommendationsEnabled', True):
+            return None
+        game = self.state['game']
+        node = game['nodes'][game['currentNodeId']]
+        key = self.cache_key(node['snapshot'])
+        reference = node.get('analysisCache', {}).get(key)
+        if not isinstance(reference, AnalysisReference):
+            return None
+        return DecisionAnalysisUse(reference, game, node, int(self.state['controlledSeat']), key,
+                                   self.engine_management.decision_cache_epoch)
+
+    @contextmanager
+    def use_prepared(self, prepared):
+        if (not prepared.matches(self.state, self.engine_management.decision_cache_epoch)
+                or self.cache_key(prepared.node['snapshot']) != prepared.cache_key):
+            raise ValueError('The decision analysis changed before the action could be applied.')
+        previous, self._active_use = self._active_use, prepared
+        try:
+            yield
+        finally:
+            self._active_use = previous

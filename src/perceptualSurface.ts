@@ -24,10 +24,13 @@ export type PerceptualSurfaceTuning = Readonly<{
 export type PerceptualSurfaceBinding = Readonly<{
   palette: PerceptualColorPalette
   tuning: PerceptualSurfaceTuning
+  statusOnly?: boolean
   surfaceOverride?: RgbColor
   surfaceLayerVariables?: readonly string[]
   debugLabel?: string
 }>
+
+export const PERCEPTUAL_SURFACE_CHANGE_EVENT = 'perceptual-surface-change'
 
 export const DEFAULT_PERCEPTUAL_SURFACE_TUNING: PerceptualSurfaceTuning = Object.freeze({
   lightnessCompensation: 0,
@@ -39,6 +42,24 @@ export const DEFAULT_PERCEPTUAL_SURFACE_TUNING: PerceptualSurfaceTuning = Object
 // Keeping it as the transform's neutral point makes every tuning coefficient
 // leave that reference appearance unchanged.
 export const PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND: RgbColor = [18, 66, 75]
+export const ENGINE_STATUS_CALIBRATION_BACKGROUND: RgbColor = [2, 25, 30]
+
+// Keep load-state meaning independent of the selectable player color scheme.
+// Lit anchors match the shared status colors in styles.css; the unlit lamp is
+// deliberately darker so it does not compete with an active state.
+const STATUS_COLORS = {
+  unloaded: [68, 90, 92],
+  loaded: [76, 175, 80],
+  loading: [242, 174, 61],
+  error: [228, 91, 85],
+} as const satisfies Record<string, RgbColor>
+
+const ENGINE_STATUS_VARIABLES = [
+  '--engine-status-unloaded',
+  '--engine-status-loaded',
+  '--engine-status-loading',
+  '--engine-status-error',
+] as const
 
 const PERCEPTUAL_SURFACE_VARIABLES = [
   '--decision-recommendation-color',
@@ -55,15 +76,17 @@ const PERCEPTUAL_SURFACE_VARIABLES = [
   '--analysis-rank-2-color',
   '--analysis-rank-3-color',
   '--analysis-rank-4-color',
+  ...ENGINE_STATUS_VARIABLES,
 ] as const
 
 function surfaceAdjustedColor(
   color: RgbColor,
   surface: RgbColor,
   tuning: PerceptualSurfaceTuning,
+  calibrationSurface: RgbColor = PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND,
 ): RgbColor {
   const canonical = rgbToOklab(color)
-  const calibration = rgbToOklab(PERCEPTUAL_COLOR_CALIBRATION_BACKGROUND)
+  const calibration = rgbToOklab(calibrationSurface)
   const background = rgbToOklab(surface)
   const lightnessDelta = calibration.l - background.l
   const aDelta = calibration.a - background.a
@@ -77,6 +100,18 @@ function surfaceAdjustedColor(
     a: adjustedA * chromaMultiplier,
     b: adjustedB * chromaMultiplier,
   })
+}
+
+export function engineStatusVariables(
+  surface: RgbColor,
+  tuning: PerceptualSurfaceTuning = DEFAULT_PERCEPTUAL_SURFACE_TUNING,
+): Record<(typeof ENGINE_STATUS_VARIABLES)[number], string> {
+  return {
+    '--engine-status-unloaded': rgbString(surfaceAdjustedColor(STATUS_COLORS.unloaded, surface, tuning, ENGINE_STATUS_CALIBRATION_BACKGROUND)),
+    '--engine-status-loaded': rgbString(surfaceAdjustedColor(STATUS_COLORS.loaded, surface, tuning, ENGINE_STATUS_CALIBRATION_BACKGROUND)),
+    '--engine-status-loading': rgbString(surfaceAdjustedColor(STATUS_COLORS.loading, surface, tuning, ENGINE_STATUS_CALIBRATION_BACKGROUND)),
+    '--engine-status-error': rgbString(surfaceAdjustedColor(STATUS_COLORS.error, surface, tuning, ENGINE_STATUS_CALIBRATION_BACKGROUND)),
+  }
 }
 
 export function perceptualSurfaceVariables(
@@ -105,6 +140,7 @@ export function perceptualSurfaceVariables(
     '--analysis-rank-2-color': rgbString(mixOklab(kamicha, placementFirst, 2 / 3)),
     '--analysis-rank-3-color': rgbString(mixOklab(kamicha, placementFirst, 1 / 3)),
     '--analysis-rank-4-color': rgbString(kamicha),
+    ...engineStatusVariables(surface, tuning),
   }
 }
 
@@ -155,28 +191,37 @@ export function effectiveBackgroundColor(
 
 type PerceptualSurfaceState = {
   binding: PerceptualSurfaceBinding
-  frame: number
   observer: MutationObserver
   headObserver: MutationObserver
   resize: () => void
 }
 
 const surfaceStates = new WeakMap<HTMLElement, PerceptualSurfaceState>()
+const pendingSurfaces = new Map<HTMLElement, PerceptualSurfaceState>()
+let surfaceFrame = 0
 
-function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceState) {
-  state.frame = 0
+function measurePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceState) {
   const surface = state.binding.surfaceOverride || effectiveBackgroundColor(
     element,
     state.binding.surfaceLayerVariables,
   )
-  const variables = perceptualSurfaceVariables(
-    state.binding.palette,
-    surface,
-    state.binding.tuning,
-  )
+  const variables: Partial<Record<(typeof PERCEPTUAL_SURFACE_VARIABLES)[number], string>> = state.binding.statusOnly
+    ? engineStatusVariables(surface, state.binding.tuning)
+    : perceptualSurfaceVariables(state.binding.palette, surface, state.binding.tuning)
+  const variableNames = state.binding.statusOnly ? ENGINE_STATUS_VARIABLES : PERCEPTUAL_SURFACE_VARIABLES
+  return { element, state, binding: state.binding, surface, variables, variableNames }
+}
+
+function applyPerceptualSurface(update: ReturnType<typeof measurePerceptualSurface>) {
+  const { element, state, binding, surface, variables, variableNames } = update
+  // Event listeners from an earlier owner can retire or replace another owner.
+  // Never publish a now-obsolete calibration to that replacement.
+  if (surfaceStates.get(element) !== state || !element.isConnected) return
+  if (state.binding !== binding) { schedulePerceptualSurface(element, state); return }
   let changed = false
-  for (const variable of PERCEPTUAL_SURFACE_VARIABLES) {
+  for (const variable of variableNames) {
     const value = variables[variable]
+    if (value === undefined) continue
     if (element.style.getPropertyValue(variable) === value) continue
     element.style.setProperty(variable, value)
     changed = true
@@ -190,7 +235,7 @@ function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceS
     delete element.dataset.perceptualSurfaceLayers
   }
   if (changed) {
-    element.dispatchEvent(new CustomEvent('perceptual-surface-change', {
+    element.dispatchEvent(new CustomEvent(PERCEPTUAL_SURFACE_CHANGE_EVENT, {
       detail: {
         label: state.binding.debugLabel || '',
         surface,
@@ -201,8 +246,19 @@ function updatePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceS
 }
 
 function schedulePerceptualSurface(element: HTMLElement, state: PerceptualSurfaceState) {
-  cancelAnimationFrame(state.frame)
-  state.frame = requestAnimationFrame(() => updatePerceptualSurface(element, state))
+  pendingSurfaces.set(element, state)
+  if (surfaceFrame) return
+  surfaceFrame = requestAnimationFrame(() => {
+    surfaceFrame = 0
+    const pending = [...pendingSurfaces]
+    pendingSurfaces.clear()
+    // All computed-style reads precede CSS mutations. Per-owner rAF callbacks
+    // otherwise force another global restyle after each calibrated surface.
+    const updates = pending
+      .filter(([owner, current]) => owner.isConnected && surfaceStates.get(owner) === current)
+      .map(([owner, current]) => measurePerceptualSurface(owner, current))
+    updates.forEach(applyPerceptualSurface)
+  })
 }
 
 function observeSurfaceAncestors(element: HTMLElement, state: PerceptualSurfaceState) {
@@ -216,7 +272,6 @@ export const vPerceptualSurface: Directive<HTMLElement, PerceptualSurfaceBinding
   mounted(element, binding) {
     const state: PerceptualSurfaceState = {
       binding: binding.value,
-      frame: 0,
       observer: new MutationObserver(() => schedulePerceptualSurface(element, state)),
       headObserver: new MutationObserver(() => schedulePerceptualSurface(element, state)),
       resize: () => schedulePerceptualSurface(element, state),
@@ -238,7 +293,8 @@ export const vPerceptualSurface: Directive<HTMLElement, PerceptualSurfaceBinding
   beforeUnmount(element) {
     const state = surfaceStates.get(element)
     if (!state) return
-    cancelAnimationFrame(state.frame)
+    pendingSurfaces.delete(element)
+    if (!pendingSurfaces.size) { cancelAnimationFrame(surfaceFrame); surfaceFrame = 0 }
     state.observer.disconnect()
     state.headObserver.disconnect()
     window.removeEventListener('resize', state.resize)

@@ -1,7 +1,6 @@
 function registerAnalysisIpc({ ipcMain, backendGateway, markRecordDirty }) {
   ipcMain.handle('analysis:visibility', (event, visibility) => backendGateway.setAnalysisVisibility(visibility))
   ipcMain.handle('analysis:get', () => backendGateway.getAnalysis())
-  ipcMain.handle('debug:analysis', () => backendGateway.getAnalysisDebug())
   ipcMain.handle('debug:clear-analysis-caches', async () => {
     const response = await backendGateway.clearAnalysisCaches()
     const cleared = response.cleared || {}

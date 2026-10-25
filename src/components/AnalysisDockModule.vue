@@ -52,9 +52,7 @@
       />
       <p v-else-if="loadError" class="analysis-panel-state is-error">{{ loadError }}</p>
       <p v-else class="analysis-panel-state">{{ t('common.loading') }}</p>
-      <div v-if="loading && analysis" class="analysis-loading-overlay" role="status">
-        <span>{{ t('common.loading') }}</span>
-      </div>
+      <AnalysisLoadingOverlay v-if="loading && analysis" />
     </div>
   </section>
 </template>
@@ -66,6 +64,7 @@ import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
 import type { PerceptualSurfaceBinding } from '../perceptualSurface'
 import type { TableState } from '../contracts/game'
 import AnalysisPanel from './AnalysisPanel.vue'
+import AnalysisLoadingOverlay from './AnalysisLoadingOverlay.vue'
 
 const { t } = useI18n()
 

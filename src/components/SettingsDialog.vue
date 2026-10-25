@@ -7,7 +7,7 @@
           <button class="settings-btn-secondary" @click="emit('close')">
             {{ t('common.close') }}
           </button>
-          <button class="settings-btn-primary" @click="emit('save')">
+          <button class="settings-btn-primary" :disabled="invalidBudget" @click="emit('save')">
             {{ t('settings.save') }}
           </button>
         </div>
@@ -53,6 +53,11 @@
           <span class="settings-checkbox-label">{{ t('settings.reduceMotion') }}</span>
         </label>
         <label class="settings-checkbox">
+          <input v-model="props.draft.display.tileMotionBlur" type="checkbox" :disabled="props.draft.display.reduceMotion" />
+          <span class="settings-checkbox-control" aria-hidden="true"></span>
+          <span class="settings-checkbox-label">{{ t('settings.flightCoverage') }}</span>
+        </label>
+        <label class="settings-checkbox">
           <input v-model="props.draft.display.showTsumogiriInPlay" type="checkbox" />
           <span class="settings-checkbox-control" aria-hidden="true"></span>
           <span class="settings-checkbox-label">{{ t('settings.showTsumogiri') }}</span>
@@ -89,14 +94,35 @@
             </span>
           </span>
         </label>
+        <label>
+          <span>{{ t('settings.analysisCache') }}</span>
+          <select v-model="cachePolicy">
+            <option value="default">{{ t('settings.cacheDefault', { value: recordCachePolicy.defaultMiB }) }}</option>
+            <option value="custom">{{ t('settings.cacheCustom') }}</option>
+          </select>
+        </label>
+        <label v-if="cachePolicy === 'custom'">
+          <span>{{ t('settings.cacheBudget') }}</span>
+          <input v-model.number="props.draft.records.analysisCacheMiB" type="number"
+            :min="recordCachePolicy.minimumMiB" :max="recordCachePolicy.maximumMiB" step="1"
+            :aria-invalid="invalidBudget" />
+        </label>
+        <p v-if="invalidBudget" class="cache-warning" role="alert">
+          {{ t('settings.cacheInvalid', { min: recordCachePolicy.minimumMiB, max: recordCachePolicy.maximumMiB }) }}
+        </p>
+        <p v-else-if="exceedsAvailableMemory" class="cache-warning" role="status">
+          {{ t('settings.cacheMemoryWarning') }}
+        </p>
       </div>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useI18n } from '../i18n'
 import type { StudioSettings } from '../contracts/settings'
+import recordCachePolicy from '../../electron/record-cache-policy.json'
 
 type SettingsDialogDraft = Pick<StudioSettings, 'display' | 'audio' | 'records'>
 type SoundPack = NonNullable<StudioSettings['runtime']>['soundPackCatalog']['packs'][number]
@@ -105,7 +131,20 @@ const props = defineProps<{
   draft: SettingsDialogDraft
   soundPacks: SoundPack[]
   uiScaleOptions: number[]
+  availableMemoryBytes?: number
 }>()
+
+const cachePolicy = computed({
+  get: () => props.draft.records.analysisCacheMiB == null ? 'default' : 'custom',
+  set: value => { props.draft.records.analysisCacheMiB = value === 'default' ? null : recordCachePolicy.defaultMiB },
+})
+const invalidBudget = computed(() => cachePolicy.value === 'custom' && (
+  !Number.isInteger(props.draft.records.analysisCacheMiB)
+  || props.draft.records.analysisCacheMiB! < recordCachePolicy.minimumMiB
+  || props.draft.records.analysisCacheMiB! > recordCachePolicy.maximumMiB
+))
+const exceedsAvailableMemory = computed(() => Boolean(props.availableMemoryBytes)
+  && (props.draft.records.analysisCacheMiB ?? recordCachePolicy.defaultMiB) * 1024 ** 2 > props.availableMemoryBytes!)
 
 const mistakeThreshold = defineModel<number>('mistakeThreshold', { required: true })
 const emit = defineEmits<{
@@ -126,4 +165,5 @@ const { t } = useI18n()
   margin-bottom: calc(0.2rem * var(--chrome-scale));
   font-size: var(--ui-text-heading);
 }
+.cache-warning { margin: 0; color: var(--status-loading); font-size: var(--ui-text-caption); }
 </style>

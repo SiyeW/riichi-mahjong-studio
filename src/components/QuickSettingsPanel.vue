@@ -284,7 +284,7 @@ const trainingModes = computed(() => [
 }
 
 .quick-time-track-fill {
-  background: #1a931a;
+  background: var(--accent-green);
 }
 
 .quick-time-thumb,

@@ -4,7 +4,7 @@ import path from 'node:path'
 import process from 'node:process'
 
 const root = path.resolve(import.meta.dirname, '..')
-const testRoots = ['electron', 'locales', 'src']
+const testRoots = ['electron', 'locales', 'src', 'scripts/visual-tests']
 
 function collectTests(directory) {
   return readdirSync(directory, { withFileTypes: true })

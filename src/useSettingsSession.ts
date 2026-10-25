@@ -93,6 +93,7 @@ export function useSettingsSession(t: Translate) {
       language: 'system',
       colorScheme: 'default',
       reduceMotion: false,
+      tileMotionBlur: true,
       uiScale: 1,
       showTsumogiriInPlay: true,
       tablePosition: 'center',
@@ -100,6 +101,7 @@ export function useSettingsSession(t: Translate) {
     },
     records: {
       saveRecoveryOnExit: true,
+      analysisCacheMiB: null,
     },
     audio: {
       volume: 50,
@@ -239,6 +241,7 @@ export function useSettingsSession(t: Translate) {
       colorScheme: normalizeColorScheme(nextSettings.display?.colorScheme),
       uiScale: normalizeUiScale(nextSettings.display?.uiScale),
       showTsumogiriInPlay: nextSettings.display?.showTsumogiriInPlay !== false,
+      tileMotionBlur: nextSettings.display?.tileMotionBlur !== false,
       tablePosition: normalizeTablePosition(nextSettings.display?.tablePosition),
       workspaceLayout: normalizeWorkspaceLayout(nextSettings.display?.workspaceLayout),
     })

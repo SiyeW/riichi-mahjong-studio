@@ -126,29 +126,6 @@
   outline-offset: calc(0.125rem * var(--ui-scale));
 }
 
-.footer-memory-status {
-  position: relative;
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  margin-left: auto;
-  gap: calc(0.5rem * var(--chrome-scale));
-  color: var(--text-dim);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: default;
-  outline: none;
-}
-
-.footer-memory-status:focus-visible {
-  color: var(--text-main);
-}
-
-.footer-memory-separator {
-  color: rgba(213, 232, 228, 0.34);
-}
-
 .ui-hover-tooltip {
   position: absolute;
   z-index: 40;
@@ -168,39 +145,25 @@
 
 .ui-hover-tooltip-portal {
   position: fixed;
-  z-index: 100;
+  z-index: 10000;
+}
+
+.ui-hover-tooltip-portal.is-inline-reveal {
+  display: block;
+  box-sizing: border-box;
+  width: max-content;
+  margin: 0;
+  border: 0;
+  outline: 1px solid var(--border-strong);
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: left;
 }
 
 .ui-hover-tooltip > strong {
   color: var(--text-main);
   font-size: var(--ui-text-body);
-  font-weight: 600;
-}
-
-.exit-saving-overlay {
-  position: fixed;
-  z-index: 200;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: rgba(0, 24, 30, 0.72);
-}
-
-.exit-saving-card {
-  display: grid;
-  min-width: min(22rem, calc(100vw - 2rem));
-  gap: calc(0.35rem * var(--chrome-scale));
-  padding: calc(0.85rem * var(--chrome-scale)) calc(1rem * var(--chrome-scale));
-  border: 1px solid var(--border-strong);
-  color: var(--text-dim);
-  background: var(--surface-overlay);
-  font-size: var(--ui-text-body);
-  line-height: 1.35;
-}
-
-.exit-saving-card > strong {
-  color: var(--text-main);
-  font-size: var(--ui-text-heading);
   font-weight: 600;
 }
 
@@ -217,8 +180,7 @@
   text-align: right;
 }
 
-.footer-model-tooltip,
-.footer-memory-tooltip {
+.footer-model-tooltip {
   opacity: 0;
   visibility: hidden;
 }
@@ -231,18 +193,6 @@
 
 .footer-model-indicator:hover .footer-model-tooltip,
 .footer-model-indicator:focus-within .footer-model-tooltip {
-  opacity: 1;
-  visibility: visible;
-}
-
-.footer-memory-tooltip {
-  right: 0;
-  bottom: calc(100% + 0.55rem * var(--chrome-scale));
-  min-width: calc(17rem * var(--chrome-scale));
-}
-
-.footer-memory-status:hover .footer-memory-tooltip,
-.footer-memory-status:focus-visible .footer-memory-tooltip {
   opacity: 1;
   visibility: visible;
 }

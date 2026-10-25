@@ -28,7 +28,7 @@ export function formatDelta(delta: number): string {
 }
 
 export function useDecisionEntryPresentation(options: {
-  gameView: GameView
+  gameView: Pick<GameView, 'analysis'>
   t: Translate
   reactionTypeLabel: (type: string) => string
 }) {
@@ -200,6 +200,10 @@ export function useDecisionEntryPresentation(options: {
       : t('evaluation.actionSuffix', { action: t('action.tedashi') })
   }
 
+  // The accepted grammar has only 0..12 fraction digits plus automatic precision.
+  // Reuse formats across rows and metric ids without retaining arbitrary values.
+  const metricNumberFormatters = new Map<number | null, Intl.NumberFormat>()
+
   function formatDecisionMetric(
     value: number | null | undefined,
     metric: DecisionMetricDefinition,
@@ -211,16 +215,14 @@ export function useDecisionEntryPresentation(options: {
       && Number(metric.fractionDigits) <= 12
       ? Number(metric.fractionDigits)
       : null
-    const text = fractionDigits === null
-      ? new Intl.NumberFormat('en-US', {
-          useGrouping: false,
-          maximumSignificantDigits: 15,
-        }).format(displayedValue)
-      : new Intl.NumberFormat('en-US', {
-          useGrouping: false,
-          minimumFractionDigits: fractionDigits,
-          maximumFractionDigits: fractionDigits,
-        }).format(displayedValue)
+    let formatter = metricNumberFormatters.get(fractionDigits)
+    if (!formatter) {
+      formatter = new Intl.NumberFormat('en-US', fractionDigits === null
+        ? { useGrouping: false, maximumSignificantDigits: 15 }
+        : { useGrouping: false, minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits })
+      metricNumberFormatters.set(fractionDigits, formatter)
+    }
+    const text = formatter.format(displayedValue)
     return metric.format === 'percentage' ? `${text}%` : text
   }
 

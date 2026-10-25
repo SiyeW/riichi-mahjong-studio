@@ -19,7 +19,9 @@ function createMainWindow({
   isDev,
   rendererUrl,
   gameFileStore,
-  writeRecoveryGameRecord,
+  prepareRecordClose,
+  cancelRecordClose,
+  confirmRecordClose,
   t,
   loadSettingsImpl = loadSettings,
   saveSettingsImpl = saveSettings,
@@ -84,42 +86,123 @@ function createMainWindow({
     console.warn(`[renderer] load failed (${code}: ${description}) for ${validatedUrl}`)
     scheduleRendererRetry()
   })
+  let windowResizeTimer = null
+  let savedWindowSize = [settings.window.width, settings.window.height]
+  window.on('resize', () => {
+    if (windowResizeTimer !== null) clearTimeoutImpl(windowResizeTimer)
+    windowResizeTimer = setTimeoutImpl(() => {
+      windowResizeTimer = null
+      if (window.isDestroyed()) return
+      const [width, height] = window.getSize()
+      if (width === savedWindowSize[0] && height === savedWindowSize[1]) return
+      try {
+        const latest = loadSettingsImpl(appOptions)
+        latest.window = { ...latest.window, width, height }
+        saveSettingsImpl(latest, appOptions)
+        savedWindowSize = [width, height]
+      } catch (error) {
+        console.warn('[settings] failed to save window size:', error)
+      }
+    }, 250)
+  })
   window.on('closed', () => {
     if (rendererRetryTimer !== null) clearTimeoutImpl(rendererRetryTimer)
+    if (windowResizeTimer !== null) clearTimeoutImpl(windowResizeTimer)
   })
   loadRenderer()
 
   let closeAllowed = false
   let closeInProgress = false
+  let exitRequested = false
+  let closeIsSlow = false
+  let slowClosePrompt = null
+  let closeAttempt = 0
   const publishCloseState = (active, stage = '') => {
     if (!window.isDestroyed()) window.webContents.send('record:close-state', { active, stage })
+  }
+  const askAboutSlowClose = (attempt = closeAttempt) => {
+    if (attempt !== closeAttempt) return Promise.resolve()
+    if (!closeInProgress || closeAllowed || window.isDestroyed()) return Promise.resolve()
+    if (slowClosePrompt) return slowClosePrompt
+    slowClosePrompt = dialog.showMessageBox(window, {
+      type: 'warning',
+      title: t('native.closeSavePending.title'),
+      message: t('native.closeSavePending.message'),
+      buttons: [t('native.keepWaiting'), t('native.cancelExit'), t('native.exitAnyway')],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(result => {
+      if (attempt !== closeAttempt) return
+      if (result.response === 1) {
+        exitRequested = false
+        closeInProgress = false
+        closeAttempt++
+        void cancelRecordClose?.().catch(error => console.error('[close] cancellation failed:', error))
+        publishCloseState(false)
+      } else if (result.response === 2) {
+        closeAllowed = true
+        window.close()
+      } else {
+        exitRequested = true
+        publishCloseState(true, 'waiting')
+      }
+    }).catch(error => { console.error('[close] could not show save choices:', error) })
+      .finally(() => { slowClosePrompt = null })
+    return slowClosePrompt
   }
   window.on('close', (event) => {
     if (closeAllowed) return
     event.preventDefault()
-    if (closeInProgress) return
+    if (closeInProgress) {
+      if (closeIsSlow || !exitRequested) void askAboutSlowClose()
+      return
+    }
     closeInProgress = true
+    const attempt = ++closeAttempt
+    exitRequested = true
+    closeIsSlow = false
     publishCloseState(true, 'preparing')
     void (async () => {
-      try {
-        const latest = loadSettingsImpl(appOptions)
-        const [width, height] = window.getSize()
-        latest.window = { ...latest.window, width, height }
-        saveSettingsImpl(latest, appOptions)
-      } catch (error) {
-        console.warn('[settings] failed to save window state during close:', error)
+      // This is a choice to keep waiting, not a failed/cancelled save. The
+      // original operation retains ownership until its actual completion.
+      const slowTimer = setTimeoutImpl(() => {
+        if (attempt !== closeAttempt) return
+        closeIsSlow = true
+        void askAboutSlowClose(attempt)
+      }, 30_000)
+      slowTimer?.unref?.()
+      let stageStarted = performance.now()
+      let activeStage = 'preparing'
+      const stageChanged = (stage) => {
+        console.info(`[close] ${activeStage}: ${Math.round(performance.now() - stageStarted)} ms`)
+        activeStage = stage
+        stageStarted = performance.now()
+        if (attempt === closeAttempt && exitRequested) publishCloseState(true, stage)
       }
       try {
         await persistBeforeCloseImpl(
-          () => requestRendererFlushImpl(window, ipcMain, t('native.closeSaveTimeout')),
-          () => loadSettingsImpl(appOptions).records?.saveRecoveryOnExit && gameFileStore.isDirty(),
-          writeRecoveryGameRecord,
-          (stage) => publishCloseState(true, stage),
+          () => requestRendererFlushImpl(window, ipcMain, t('native.closeSaveTimeout'), {
+            unavailableMessage: t('native.rendererUnavailable'),
+            onSlow: () => stageChanged('waiting'),
+          }),
+          // Flushing edits is still allowed to finish after cancellation, but
+          // its acknowledgement no longer authorizes a new close barrier.
+          () => attempt === closeAttempt && exitRequested && !closeAllowed && !window.isDestroyed(),
+          () => prepareRecordClose(stageChanged),
+          stageChanged,
         )
+        console.info(`[close] ${activeStage}: ${Math.round(performance.now() - stageStarted)} ms`)
+        clearTimeoutImpl(slowTimer)
+        if (slowClosePrompt) await slowClosePrompt
+        if (attempt !== closeAttempt || !exitRequested || closeAllowed || window.isDestroyed()) return
+        await confirmRecordClose()
         closeAllowed = true
         window.close()
       } catch (error) {
-        console.error('[close] failed to save pending changes:', error)
+        clearTimeoutImpl(slowTimer)
+        if (slowClosePrompt) await slowClosePrompt
+        if (attempt !== closeAttempt || closeAllowed || window.isDestroyed()) return
+        console.error(`[close] ${activeStage} failed after ${Math.round(performance.now() - stageStarted)} ms:`, error)
         const result = await dialog.showMessageBox(window, {
           type: 'error',
           title: t('native.closeSaveFailed.title'),
@@ -134,8 +217,14 @@ function createMainWindow({
           window.close()
           return
         }
-        closeInProgress = false
-        publishCloseState(false)
+        await cancelRecordClose?.()
+      } finally {
+        clearTimeoutImpl(slowTimer)
+        if (attempt === closeAttempt) {
+          closeInProgress = false
+          closeIsSlow = false
+          if (!closeAllowed) publishCloseState(false)
+        }
       }
     })()
   })

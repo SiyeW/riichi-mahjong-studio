@@ -1,6 +1,7 @@
 import { ref, type Ref } from 'vue'
 import type { GameAction, GameView } from './contracts/game'
 import type { BackendResponse, StudioStatus } from './contracts/runtime'
+import { recordCommandScope } from './recordCommandScope.ts'
 
 interface UseGameplayActionsOptions {
   gameView: GameView
@@ -39,7 +40,8 @@ export function useGameplayActions(options: UseGameplayActionsOptions) {
     const requestGeneration = responseGeneration
     actionRequestInFlight.value = true
     try {
-      const response = await window.studioAPI.submitUserAction({ type: 'dahai', pai: tile, fromDrawn })
+      const response = await window.studioAPI.submitUserAction({ type: 'dahai', pai: tile, fromDrawn,
+        recordViewScope: recordCommandScope(options.gameView) })
       if (requestGeneration !== responseGeneration) return
       options.applyStatus(response.state)
       options.applyGameView(response.view)
@@ -62,6 +64,7 @@ export function useGameplayActions(options: UseGameplayActionsOptions) {
         type: action.type,
         variant: action.variant,
         candidateId: action.candidateId || action.id,
+        recordViewScope: recordCommandScope(options.gameView),
       })
       if (requestGeneration !== responseGeneration) return
       options.applyStatus(response.state)
@@ -78,7 +81,7 @@ export function useGameplayActions(options: UseGameplayActionsOptions) {
     advanceRequestInFlight.value = true
     options.beginPlayPrefetchAdvance()
     try {
-      const response = await window.studioAPI.advanceGame()
+      const response = await window.studioAPI.advanceGame(recordCommandScope(options.gameView))
       if (requestGeneration !== responseGeneration) return
       options.applyStatus(response.state)
       if (response.playPrefetch?.committed !== false) options.applyGameView(response.view)
@@ -92,7 +95,7 @@ export function useGameplayActions(options: UseGameplayActionsOptions) {
   async function confirmPendingReview() {
     if (!window.studioAPI || options.readOnlyRecord.value || options.status.mode !== 'play') return
     const requestGeneration = responseGeneration
-    const response = await window.studioAPI.confirmPendingReview()
+    const response = await window.studioAPI.confirmPendingReview(recordCommandScope(options.gameView))
     if (requestGeneration !== responseGeneration) return
     options.applyStatus(response.state)
     options.applyGameView(response.view)

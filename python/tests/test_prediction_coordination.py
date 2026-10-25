@@ -15,21 +15,17 @@ class PredictionCoordinationTests(unittest.TestCase):
         }
         accepted.request_background_predict.return_value = True
         callback = Mock()
-        self.assertTrue(coordinator.request_background_predict({}, 0, context={'nodeId': 'new'}, on_complete=callback))
+        discarded = Mock()
+        self.assertFalse(coordinator.request_background_predict({}, 0, context={'nodeId': 'new'}, on_complete=callback, on_discard=discarded))
         callback.assert_not_called()
-        child_callback = accepted.request_background_predict.call_args.kwargs['on_complete']
-        child_callback({'status': 'ready', 'context': {'nodeId': 'new'}, 'outputs': {'new': 2}})
-        callback.assert_called_once()
-        result = callback.call_args.args[0]
-        self.assertEqual(result['status'], 'request_rejected')
-        self.assertEqual(result['context'], {'nodeId': 'new'})
-        self.assertEqual(result['outputs'], {'new': 2})
+        discarded.assert_called_once()
+        accepted.request_background_predict.assert_not_called()
         rejected.get_latest.assert_not_called()
 
     def test_callbacks_are_counted_once_per_engine_and_merged_in_engine_order(self):
         coordinator = OpponentPredictionCoordinator()
         callback = Mock()
-        first, second = coordinator._combined_callback([Mock(), Mock()], callback)
+        (first, second), discard = coordinator._request_callbacks([Mock(), Mock()], callback, None)
         second({'status': 'ready', 'outputs': {'shared': 2}})
         second({'status': 'ready', 'outputs': {'shared': 99}})
         callback.assert_not_called()

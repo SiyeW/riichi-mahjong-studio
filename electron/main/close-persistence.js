@@ -1,7 +1,11 @@
 let requestSerial = 0
 
-function requestRendererFlush(window, ipcMain, timeoutMessage, timeoutMs = 5000) {
-  if (!window || window.isDestroyed() || window.webContents.isLoading()) return Promise.resolve()
+function requestRendererFlush(window, ipcMain, timeoutMessage, {
+  timeoutMs = 60_000, slowMs = 5000, onSlow = () => {},
+  unavailableMessage = 'Renderer unavailable; pending changes could not be confirmed.',
+} = {}) {
+  if (!window || window.isDestroyed()) return Promise.resolve()
+  if (window.webContents.isLoading()) return Promise.reject(new Error(unavailableMessage))
   const contents = window.webContents
   const token = `${Date.now()}-${++requestSerial}`
   return new Promise((resolve, reject) => {
@@ -10,6 +14,7 @@ function requestRendererFlush(window, ipcMain, timeoutMessage, timeoutMs = 5000)
       if (settled) return
       settled = true
       clearTimeout(timer)
+      clearTimeout(slowTimer)
       ipcMain.removeListener('record:close-ready', onReady)
       contents.removeListener('destroyed', onDestroyed)
       if (error) reject(error)
@@ -17,10 +22,13 @@ function requestRendererFlush(window, ipcMain, timeoutMessage, timeoutMs = 5000)
     }
     const onReady = (event, receivedToken, errorMessage) => {
       if (event.sender !== contents || receivedToken !== token) return
-      finish(errorMessage ? new Error(String(errorMessage)) : null)
+      finish(errorMessage ? new Error(errorMessage === 'RENDERER_UNAVAILABLE'
+        ? unavailableMessage : String(errorMessage)) : null)
     }
-    const onDestroyed = () => finish(new Error(timeoutMessage))
+    const onDestroyed = () => finish(new Error(unavailableMessage))
     const timer = setTimeout(() => finish(new Error(timeoutMessage)), timeoutMs)
+    // Keep accepting the original acknowledgement after the slow-save hint.
+    const slowTimer = setTimeout(onSlow, slowMs)
     ipcMain.on('record:close-ready', onReady)
     contents.once('destroyed', onDestroyed)
     try {

@@ -1,8 +1,10 @@
 import { onBeforeUnmount, watch, type Ref } from 'vue'
+import { PERCEPTUAL_SURFACE_CHANGE_EVENT } from './perceptualSurface.ts'
 
 type ResponsiveGeometryOptions = Readonly<{
   resizeAncestorSelector?: string
   styleAncestorSelector?: string
+  synchronousResize?: boolean
 }>
 
 export function useResponsiveGeometry(
@@ -13,7 +15,7 @@ export function useResponsiveGeometry(
   let frame = 0
   let resizeObserver: ResizeObserver | null = null
   let styleObserver: MutationObserver | null = null
-  let listeningForWindowResize = false
+  let listening = false
   let disposed = false
 
   function schedule() {
@@ -33,19 +35,36 @@ export function useResponsiveGeometry(
     styleObserver = null
   }
 
-  function setWindowResizeListener(enabled: boolean) {
-    if (enabled === listeningForWindowResize) return
-    listeningForWindowResize = enabled
-    if (enabled) window.addEventListener('resize', schedule)
-    else window.removeEventListener('resize', schedule)
+  function setGlobalListeners(enabled: boolean) {
+    if (enabled === listening) return
+    listening = enabled
+    if (enabled) {
+      window.addEventListener('resize', schedule)
+      document.addEventListener(PERCEPTUAL_SURFACE_CHANGE_EVENT, surfaceChanged, true)
+    } else {
+      window.removeEventListener('resize', schedule)
+      document.removeEventListener(PERCEPTUAL_SURFACE_CHANGE_EVENT, surfaceChanged, true)
+    }
+  }
+
+  function surfaceChanged(event: Event) {
+    const element = target.value
+    const owner = event.target
+    // Calibrated colors can change after layout has settled. Refresh cached
+    // paint colors only for the affected owner/subtree, not unrelated panels.
+    if (element && owner instanceof Element && (owner.contains(element) || element.contains(owner))) schedule()
   }
 
   function connect(element: HTMLElement | null) {
     disconnect()
-    setWindowResizeListener(Boolean(element))
+    setGlobalListeners(Boolean(element))
     if (!element) return
 
-    resizeObserver = new ResizeObserver(schedule)
+    resizeObserver = new ResizeObserver(options.synchronousResize ? () => {
+      // ResizeObserver runs after layout and before paint. Deferring this work
+      // to rAF would present one frame of old pixels inside the new box.
+      if (!disposed && target.value) update()
+    } : schedule)
     resizeObserver.observe(element)
     const resizeAncestor = options.resizeAncestorSelector
       ? element.closest(options.resizeAncestorSelector)
@@ -69,7 +88,7 @@ export function useResponsiveGeometry(
   onBeforeUnmount(() => {
     disposed = true
     disconnect()
-    setWindowResizeListener(false)
+    setGlobalListeners(false)
   })
 
   return schedule

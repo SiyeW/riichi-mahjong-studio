@@ -3,7 +3,7 @@ import random
 import unittest
 from unittest.mock import patch
 
-from rms_backend import game_record_storage
+from rms_backend.records import authored_projection as game_record_storage
 from rms_backend import service
 from rms_backend.service_helpers import (
     DORA_INDICATOR_POSITIONS,
@@ -114,7 +114,7 @@ class GameRecordFormatTests(unittest.TestCase):
 
     def test_serialized_record_omits_machine_local_runtime_details(self):
         record = game_record_storage.serialize_game_record_parts(
-            {"gameId": "test", "nodes": {}},
+            game_record_storage.copy_game_for_record({"gameId": "test", "nodes": {}}),
             {
                 "mode": "research",
                 "controlledSeat": 2,
@@ -138,7 +138,7 @@ class GameRecordFormatTests(unittest.TestCase):
 
     def test_read_only_state_remains_in_game_metadata_without_a_redundant_record_type(self):
         record = game_record_storage.serialize_game_record_parts(
-            {"metadata": {"readOnly": True}, "nodes": {}},
+            game_record_storage.copy_game_for_record({"metadata": {"readOnly": True}, "nodes": {}}),
             {
                 "mode": "research",
                 "controlledSeat": 0,
@@ -163,7 +163,7 @@ class GameRecordFormatTests(unittest.TestCase):
         }
 
         record = game_record_storage.serialize_game_record_parts(
-            game,
+            game_record_storage.copy_game_for_record(game),
             {
                 "mode": "research",
                 "controlledSeat": 0,
@@ -229,7 +229,7 @@ class GameRecordFormatTests(unittest.TestCase):
         game["nodes"]["n_root"]["snapshot"]["actionHistory"] = [{"type": "old"}]
         game["nodes"]["n_1"]["snapshot"]["actionHistory"] = [{"type": "start_kyoku"}]
         record = game_record_storage.serialize_game_record_parts(
-            game,
+            game_record_storage.copy_game_for_record(game),
             {
                 "mode": "play",
                 "controlledSeat": 0,
@@ -275,7 +275,7 @@ class GameRecordFormatTests(unittest.TestCase):
             },
         }
         record = game_record_storage.serialize_game_record_parts(
-            game,
+            game_record_storage.copy_game_for_record(game),
             {
                 "mode": "research",
                 "controlledSeat": 0,
@@ -382,7 +382,7 @@ class GameRecordFormatTests(unittest.TestCase):
             },
         }
         record = game_record_storage.serialize_game_record_parts(
-            game,
+            game_record_storage.copy_game_for_record(game),
             {
                 "mode": "research",
                 "controlledSeat": 0,
@@ -412,7 +412,7 @@ class GameRecordFormatTests(unittest.TestCase):
             self.assertEqual(snapshot["wallOrigin"], "imported")
 
             record = game_record_storage.serialize_game_record_parts(
-                service.STATE["game"],
+                game_record_storage.copy_game_for_record(service.STATE["game"]),
                 {
                     "mode": "research",
                     "controlledSeat": 0,

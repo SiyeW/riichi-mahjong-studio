@@ -52,8 +52,7 @@ function javascriptGraph() {
   return graph
 }
 
-function pythonGraph() {
-  const packageRoot = path.join(root, 'python', 'rms_backend')
+export function pythonGraph(packageRoot = path.join(root, 'python', 'rms_backend')) {
   const files = walk(packageRoot, new Set(['.py']))
   const fileSet = new Set(files)
   const graph = new Map(files.map((file) => [file, new Set()]))
@@ -64,9 +63,14 @@ function pythonGraph() {
       let base = path.dirname(file)
       for (let index = 1; index < levels; index += 1) base = path.dirname(base)
       if (match[2]) {
-        const dependency = path.join(base, ...match[2].split('.')) + '.py'
-        if (fileSet.has(dependency)) graph.get(file).add(dependency)
-        continue
+        base = path.join(base, ...match[2].split('.'))
+        const dependency = `${base}.py`
+        if (fileSet.has(dependency)) {
+          graph.get(file).add(dependency)
+          continue
+        }
+        const packageInit = path.join(base, '__init__.py')
+        if (fileSet.has(packageInit)) graph.get(file).add(packageInit)
       }
       for (const imported of match[3].split(',').map((part) => part.trim().split(/\s+as\s+/)[0])) {
         if (!/^\w+$/.test(imported)) continue
@@ -78,7 +82,7 @@ function pythonGraph() {
   return graph
 }
 
-function findCycles(graph) {
+export function findCycles(graph) {
   const complete = new Set()
   const active = new Map()
   const stack = []
@@ -103,13 +107,14 @@ function findCycles(graph) {
   return cycles
 }
 
-const cycles = [javascriptGraph(), pythonGraph()].flatMap(findCycles)
-if (cycles.length) {
-  console.error('Dependency cycles detected:')
-  for (const cycle of cycles) {
-    console.error(cycle.map((file) => path.relative(root, file)).join(' -> '))
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
+  const cycles = [javascriptGraph(), pythonGraph()].flatMap(findCycles)
+  if (cycles.length) {
+    console.error('Dependency cycles detected:')
+    for (const cycle of cycles) {
+      console.error(cycle.map((file) => path.relative(root, file)).join(' -> '))
+    }
+    process.exit(1)
   }
-  process.exit(1)
+  console.log('Frontend, Electron, and Python production dependency graphs are acyclic.')
 }
-
-console.log('Frontend, Electron, and Python production dependency graphs are acyclic.')

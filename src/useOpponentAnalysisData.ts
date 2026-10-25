@@ -7,7 +7,7 @@ import { isPossibleRiichiHandValue } from './riichiScoring.ts'
 import { useAnalysisOutputs } from './useAnalysisOutputs.ts'
 import type { Ref } from 'vue'
 
-export const OPPONENT_DORA_BASE_SCALE = 0.5
+export const OPPONENT_DORA_BASE_SCALE = 0.6
 export const OPPONENT_SCORE_BASE_SCALE = 0.3
 
 const NON_DEALER_SCORE_GROUP_BOUNDS = [1000, 2000, 3900, 7700, 32000] as const

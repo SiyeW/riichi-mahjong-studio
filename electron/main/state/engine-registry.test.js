@@ -58,6 +58,33 @@ function testInstalledPackageRefreshesProfileIdentity() {
   assert.deepEqual(engines.loadedProfileIds, ['profile.example'])
 }
 
+function testExplicitExecutableDoesNotFollowAnotherPackageWithTheSameEngineId() {
+  const catalog = {
+    engines: [{
+      id: 'example.engine',
+      version: '1.0.0',
+      executablePath: 'C:\\installed\\engine.exe',
+      packageRoot: 'C:\\installed',
+      launchAvailable: true,
+    }],
+  }
+  const [profile] = normalizeEngineSettings({
+    profiles: [{
+      id: 'profile.preview',
+      engineId: 'example.engine',
+      enginePath: 'C:\\preview\\engine.exe',
+      engineCommand: ['C:\\preview\\engine.exe'],
+      engineCwd: 'C:\\preview',
+      engineVersion: '2.0.0-preview',
+    }],
+  }, null, catalog).profiles
+  assert.equal(profile.enginePath, 'C:\\preview\\engine.exe')
+  assert.deepEqual(profile.engineCommand, ['C:\\preview\\engine.exe'])
+  assert.equal(profile.engineCwd, 'C:\\preview')
+  assert.equal(profile.engineVersion, '2.0.0-preview')
+}
+
 testFreshRegistryIsEmpty()
 testInstalledPackageRefreshesProfileIdentity()
+testExplicitExecutableDoesNotFollowAnotherPackageWithTheSameEngineId()
 console.log('engine registry tests passed')

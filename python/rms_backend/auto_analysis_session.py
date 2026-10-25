@@ -13,6 +13,7 @@ from .action_recommendation_adapter import analyze_action_choices, analyze_disca
 from .analysis_cache import OPPONENT_ANALYSIS_CACHE_FIELD
 from .auto_analysis_runtime import AutoAnalysisRuntime
 from .service_helpers import now_iso
+from .records.analysis_refs import AnalysisReference
 
 
 @dataclass
@@ -26,6 +27,7 @@ class AutoAnalysisDependencies:
     build_state: Callable[..., dict[str, Any]]
     emit: Callable[[dict[str, Any]], None]
     timer_factory: Callable[..., Any] = threading.Timer
+    record_access: Any = None
 
 
 class AutoAnalysisSession:
@@ -55,6 +57,7 @@ class AutoAnalysisSession:
         self.executor = executor
         self.dependencies = dependencies
         self.runtime = runtime or AutoAnalysisRuntime()
+        self._storage_tickets = {}
 
     def invalidate_timeline(self) -> None:
         if self.dependencies.play_prefetch_active():
@@ -159,6 +162,8 @@ class AutoAnalysisSession:
                 round_root_map,
             ):
                 node = game["nodes"][node_id]
+                if auto_analysis_plan.is_terminal_analysis_node(node):
+                    continue
                 snapshot = node.get("snapshot") or {}
                 self.dependencies.sync_snapshot(snapshot)
                 phase = snapshot.get("phase")
@@ -226,7 +231,11 @@ class AutoAnalysisSession:
         emit_progress: bool = True,
         cancel_opponent_analysis: bool = True,
     ) -> dict[str, Any]:
-        was_running, future, timer, status = self.runtime.cancel(message)
+        with self.state_lock:
+            was_running, future, timer, status = self.runtime.cancel(message)
+            if self.dependencies.record_access is not None:
+                self.dependencies.record_access.cancel(role='auto')
+            self._storage_tickets.clear()
         if future is not None:
             try:
                 future.cancel()
@@ -329,6 +338,14 @@ class AutoAnalysisSession:
         result: Optional[dict[str, Any]] = None,
         error: Optional[BaseException | str] = None,
     ) -> Optional[bool]:
+        ticket = self._storage_tickets.pop((generation, auto_analysis_plan.item_key(item)), None)
+        try:
+            return self._finish_item_locked(generation, item, result, error, ticket)
+        finally:
+            if ticket is not None:
+                self.dependencies.record_access.cancel(ticket)
+
+    def _finish_item_locked(self, generation, item, result, error, ticket):
         context = self.runtime.completion_context(generation, item)
         if context is None or context["game"] is not self.state.get("game"):
             return None
@@ -349,6 +366,7 @@ class AutoAnalysisSession:
                     item["cacheKey"],
                     result,
                     source=item.get("source"),
+                    ticket=ticket,
                 )
                 if stored is not None:
                     self.set_timeline_cached("decision", item.get("nodeId"), True)
@@ -359,10 +377,13 @@ class AutoAnalysisSession:
                         seat,
                     )
                     success = True
+                    if isinstance(stored, AnalysisReference):
+                        self.decision_analysis.publish_current(node, stored)
             else:
                 success = self.opponent_analysis.cache_result(
                     result,
                     require_current=False,
+                    ticket=ticket,
                 )
 
         context = self.runtime.complete_item(generation, item, success, error)
@@ -382,6 +403,7 @@ class AutoAnalysisSession:
             if (
                 item.get("kind") == "decision"
                 and context["game"].get("currentNodeId") == item.get("nodeId")
+                and not isinstance(stored, AnalysisReference)
             ):
                 self.dependencies.emit(
                     {
@@ -572,6 +594,16 @@ class AutoAnalysisSession:
                         seat = context["seat"]
                         model_path = context["modelPath"]
                         game_id = context["gameId"]
+                access = self.dependencies.record_access
+                if not finished and access is not None and access.enabled(game):
+                    ticket = access.reserve(game, item['kind'], role='auto')
+                    if ticket is None:
+                        with self.runtime.lock:
+                            context['pending'].appendleft(item)
+                            self.runtime.status.update(currentNodeId=None, currentModel=None)
+                        access.defer(game, item['kind'], lambda: self.schedule_next(generation), role='auto')
+                        return
+                    self._storage_tickets[(generation, auto_analysis_plan.item_key(item))] = ticket
 
             if finished:
                 self.emit_progress()
@@ -643,6 +675,8 @@ class AutoAnalysisSession:
                     on_complete=lambda result, g=generation, current_item=item: (
                         self._on_opponent_complete(g, current_item, result)
                     ),
+                    on_discard=lambda g=generation, current_item=item: self.complete_item(
+                        g, current_item, error="对手分析任务已取消"),
                     mjai_events=prediction_bundle["events"],
                     mjai_prefix_hashes=prediction_bundle["prefixHashes"],
                     mjai_events_hash=prediction_bundle["eventHash"],
@@ -657,6 +691,10 @@ class AutoAnalysisSession:
                 self.emit_progress()
                 return
             if not self.kind_enabled("opponent"):
+                with self.state_lock:
+                    ticket = self._storage_tickets.pop((generation, auto_analysis_plan.item_key(item)), None)
+                    if ticket is not None:
+                        access.cancel(ticket)
                 self.schedule_next(generation)
                 return
             self.complete_item(

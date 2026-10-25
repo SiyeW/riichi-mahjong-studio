@@ -14,8 +14,15 @@ function registerFixture(overrides = {}) {
   }
   registerRecordIpc({
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
+    dialog: { showOpenDialog: overrides.showOpenDialog || (async () => ({ canceled: true, filePaths: [] })) },
+    getMainWindow: () => null,
     shell: { showItemInFolder: (filePath) => calls.push(['showItemInFolder', filePath]) },
     backendGateway: {
+      importReplayFile: async (...args) => {
+        calls.push(['importReplayFile', ...args])
+        if (overrides.importError) throw overrides.importError
+        return { state: { loaded: true }, view: { currentNodeId: 'file-node' } }
+      },
       exportCustomTenhou: async () => ({ customTenhou: 'exported' }),
       importCustomTenhou: async (...args) => {
         calls.push(['importCustomTenhou', ...args])
@@ -44,10 +51,12 @@ test('record IPC registers the complete record exchange boundary', () => {
     'game:export-custom-tenhou',
     'game:import-custom-tenhou',
     'game:import-mortal-report',
+    'game:import-replay-file',
     'game:open',
     'game:restore-startup-recovery',
     'game:save',
     'game:save-as',
+    'game:select-import-file',
     'record:dirty-get',
     'record:show-in-folder',
   ])
@@ -72,6 +81,32 @@ test('custom Tenhou import establishes one dirty unsaved record', async () => {
     view: { currentNodeId: 'custom-node' },
     recordDirty: true,
   })
+})
+
+test('replay picker cancellation does not alter the active record', async () => {
+  const { calls, handlers } = registerFixture()
+  assert.equal(await handlers.get('game:select-import-file')(), null)
+  assert.deepEqual(calls, [])
+})
+
+test('replay file path is delegated to the backend before marking a new record', async () => {
+  const { calls, handlers } = registerFixture()
+  const request = { path: 'D:\\arena\\match.json.gz', reconstructWalls: true, seed: 17 }
+  const result = await handlers.get('game:import-replay-file')(null, request)
+  assert.deepEqual(calls, [
+    ['importReplayFile', request.path, request],
+    ['prepareUnsavedRecord', 'match'],
+    ['beginRecordTracking', { dirty: true, nodeId: 'file-node' }],
+  ])
+  assert.equal(result.recordDirty, true)
+  assert.equal(result.view.currentNodeId, 'file-node')
+})
+
+test('failed replay imports do not replace record tracking', async () => {
+  const { calls, handlers } = registerFixture({ importError: new Error('invalid replay') })
+  await assert.rejects(handlers.get('game:import-replay-file')(null, { path: 'bad.gz' }), /invalid replay/)
+  assert.equal(calls.length, 1)
+  await assert.rejects(handlers.get('game:import-replay-file')(null, {}), /path/)
 })
 
 test('Mortal report download validates and returns the normalized report', async () => {

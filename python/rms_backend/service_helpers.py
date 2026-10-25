@@ -361,6 +361,16 @@ def get_forbidden_discard_families_after_self_furo(snapshot, actor):
     return forbidden
 
 
+def get_pon_tiles(meld):
+    """Return the three original physical tiles, excluding any added kan tile."""
+    consumed = list(meld.get("consumed") or [])
+    if len(consumed) == 2:
+        consumed.append(meld["pai"])
+    if len(consumed) != 3:
+        raise ValueError("Pon requires three original physical tiles.")
+    return consumed
+
+
 def get_reaction_hand_consumed(response, called_tile, normalize_tile_family):
     action_type = str(response.get("type") or "")
     expected = get_reaction_expected_hand_count(action_type)

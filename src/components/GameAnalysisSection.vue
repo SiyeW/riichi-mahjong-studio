@@ -134,6 +134,7 @@ import type { DistributionEntry } from '../numericPrediction'
 import { vPerceptualSurface, type PerceptualSurfaceBinding } from '../perceptualSurface'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
+import { useCanvasPaintSnapshots } from '../canvasPaintSnapshot'
 
 const props = defineProps<AnalysisPanelDataProps & {
   perceptualSurface: PerceptualSurfaceBinding
@@ -158,12 +159,14 @@ type GameCanvasGeometry = {
   deltaColors: Array<{ positive: string; negative: string }>
   placementColors: string[][]
 }
-type GameCanvasElement = HTMLCanvasElement & { rmsGameAnalysisRenderSignature?: string }
+type GameCanvasElement = HTMLCanvasElement & { readonly rmsGameAnalysisRenderSignature?: string }
 const sectionElement = ref<HTMLElement | null>(null)
 const canvasElement = ref<GameCanvasElement | null>(null)
 let displayedCanvasData: GameCanvasData | null = null
 let canvasGeometry: GameCanvasGeometry | null = null
 let canvasAnimationFrame = 0
+const { publish: publishSnapshot } = useCanvasPaintSnapshots<GameCanvasData>('rmsGameAnalysisRenderSignature',
+  data => JSON.stringify(data, (_key, value) => typeof value === 'number' ? Math.round(value * 10000) : value))
 const { t, numberLocale } = useI18n()
 const tooltip = useAnalysisHoverTooltipController()
 const {
@@ -212,6 +215,17 @@ function copyCanvasData(data: GameCanvasData): GameCanvasData {
     deltas: [...data.deltas],
     placements: data.placements.map(values => [...values]),
   }
+}
+
+function canvasDataMatches(left: GameCanvasData, right: GameCanvasData): boolean {
+  const numbersMatch = (a: readonly number[], b: readonly number[]) => a.length === b.length
+    && a.every((value, index) => Math.abs(value - b[index]) <= 1e-6)
+  return numbersMatch(left.outcome, right.outcome) && numbersMatch(left.deltas, right.deltas)
+    && left.offense.length === right.offense.length
+    && left.offense.every((value, index) => Math.abs(value.win - right.offense[index].win) <= 1e-6
+      && Math.abs(value.dealIn - right.offense[index].dealIn) <= 1e-6)
+    && left.placements.length === right.placements.length
+    && left.placements.every((values, index) => numbersMatch(values, right.placements[index]))
 }
 
 function interpolateCanvasData(source: GameCanvasData, target: GameCanvasData, progress: number): GameCanvasData {
@@ -265,10 +279,10 @@ function measureCanvasGeometry() {
     deltas: deltas.map(element => relativeRect(element, rootRect, ratio)),
     placements: placements.map(element => relativeRect(element, rootRect, ratio)),
     outcomeColors: outcome ? [
-      variable(outcome, '--analysis-draw-color'),
       variable(outcome, '--analysis-self-win-color'),
       variable(outcome, '--analysis-self-deal-in-color'),
       variable(outcome, '--analysis-horizontal-color'),
+      variable(outcome, '--analysis-draw-color'),
     ] : [],
     offenseColors: offense.map(element => ({
       win: variable(element, '--analysis-self-win-color'),
@@ -286,11 +300,9 @@ function fillSegments(context: CanvasRenderingContext2D, rect: Rect, values: rea
   const width = rect.right - rect.left
   let cumulative = 0
   values.forEach((value, index) => {
-    const left = rect.left + Math.round(cumulative * width)
+    const left = rect.left + Math.round(Math.min(1, cumulative) * width)
     cumulative += Math.max(0, value)
-    const right = index === values.length - 1
-      ? rect.right
-      : rect.left + Math.round(cumulative * width)
+    const right = rect.left + Math.round(Math.min(1, cumulative) * width)
     if (right <= left || !colors[index]) return
     context.fillStyle = colors[index]
     context.fillRect(left, rect.top, right - left, rect.bottom - rect.top)
@@ -332,9 +344,7 @@ function renderCanvas() {
     const colors = geometry.placementColors[index]
     if (values && colors) fillSegments(context, rect, values, colors)
   })
-  canvas.rmsGameAnalysisRenderSignature = JSON.stringify(data, (_key, value) => (
-    typeof value === 'number' ? Math.round(value * 10000) : value
-  ))
+  publishSnapshot(canvas, data)
 }
 
 function stopCanvasAnimation() {
@@ -343,9 +353,10 @@ function stopCanvasAnimation() {
 }
 
 function animateCanvas() {
+  if (!canvasElement.value) return
   stopCanvasAnimation()
   const target = targetCanvasData()
-  if (!displayedCanvasData || props.reduceMotion) {
+  if (!displayedCanvasData || props.reduceMotion || canvasDataMatches(displayedCanvasData, target)) {
     displayedCanvasData = copyCanvasData(target)
     renderCanvas()
     return
@@ -373,10 +384,13 @@ function updateCanvasGeometry() {
 useResponsiveGeometry(sectionElement, updateCanvasGeometry, { styleAncestorSelector: '.dock-module' })
 watch(() => [props.analysis, props.controlledSeat, props.dealer, props.reduceMotion, props.perceptualSurface], () => {
   void nextTick(() => {
-    measureCanvasGeometry()
+    if (!canvasGeometry) measureCanvasGeometry()
     animateCanvas()
   })
 }, { immediate: true, flush: 'post' })
+watch(() => [props.controlledSeat, props.perceptualSurface], () => {
+  void nextTick(updateCanvasGeometry)
+}, { flush: 'post' })
 onBeforeUnmount(stopCanvasAnimation)
 
 function deltaBarStyle(value: number | null) {

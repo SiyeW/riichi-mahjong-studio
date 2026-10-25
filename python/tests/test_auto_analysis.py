@@ -152,6 +152,65 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         self.assertEqual(passive_kinds, ["opponent"])
 
+    def test_resolved_hora_node_has_no_new_prediction(self):
+        game = service.create_empty_game(222223)
+        start_id = game["currentNodeId"]
+        start_node = game["nodes"][start_id]
+        terminal_id = "n_terminal"
+        terminal_snapshot = copy.deepcopy(start_node["snapshot"])
+        terminal_snapshot["phase"] = "game_end"
+        start_node["children"] = [terminal_id]
+        start_node["mainChildId"] = terminal_id
+        game["nodes"][terminal_id] = {
+            "id": terminal_id, "type": "action", "parentId": start_id,
+            "children": [], "mainChildId": None,
+            "action": {"type": "hora", "actor": 0, "target": 0},
+            "snapshot": terminal_snapshot, "analysisCache": {},
+            "depth": int(start_node["depth"]) + 1,
+        }
+        items = service.AUTO_ANALYSIS.build_plan(
+            game, 0, service.ENGINE_MANAGEMENT.action_weight_path()
+        )
+        self.assertFalse(any(item["nodeId"] == terminal_id for item in items))
+        previous = (
+            service.STATE.get("game"), service.STATE.get("gameLoaded"),
+            service.STATE.get("opponentAnalysisEnabled"),
+        )
+        service.STATE.update({
+            "game": game, "gameLoaded": True,
+            "opponentAnalysisEnabled": True,
+        })
+        game["currentNodeId"] = terminal_id
+        try:
+            self.assertTrue(service.OPPONENT_ANALYSIS.current_context()["terminal"])
+            with mock.patch.object(
+                service.OPPONENT_PREDICTIONS, "request_predict"
+            ) as request:
+                self.assertFalse(service.OPPONENT_ANALYSIS.request_current())
+                request.assert_not_called()
+            # Missing predecessor data retains the previous presentation, rather
+            # than publishing an empty terminal result that clears the panels.
+            self.assertEqual(service.OPPONENT_ANALYSIS.current()["status"], "loading")
+            cache_key = service.OPPONENT_ANALYSIS.cache_key()
+            cached = {"status": "ready", "predictions": {"opponents": {"kamicha": [0.2, 0.8]}}}
+            start_node["opponentAnalysisCache"] = {cache_key: cached}
+            with mock.patch.object(service.OPPONENT_PREDICTIONS, "request_predict") as request:
+                for phase in ("game_end", "round_result", "match_end"):
+                    terminal_snapshot["phase"] = phase
+                    result = service.OPPONENT_ANALYSIS.current()
+                    self.assertEqual(result["status"], "terminal")
+                    self.assertEqual(result["predictions"], cached["predictions"])
+                    self.assertEqual(result["context"]["nodeId"], terminal_id)
+                    self.assertEqual(result['context']['sourceNodeId'], start_id)
+                    source_table = result['context']['sourceTable']
+                    self.assertEqual(source_table['phase'], start_node['snapshot']['phase'])
+                    self.assertNotIn('actionHistory', source_table)
+                request.assert_not_called()
+            self.assertEqual(cached["status"], "ready")
+            self.assertNotIn("context", cached)
+        finally:
+            service.STATE["game"], service.STATE["gameLoaded"], service.STATE["opponentAnalysisEnabled"] = previous
+
     def test_unavailable_models_are_left_uncached_without_failures(self):
         game = service.create_empty_game(229944)
         service.STATE["game"] = game
@@ -216,6 +275,7 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         self.assertTrue(service.get_node_legal_actions(game, node["id"]))
         with (
+            mock.patch.object(service.OPPONENT_PREDICTIONS, "accepts_requests", return_value=True),
             mock.patch.object(service.OPPONENT_PREDICTIONS, "has_request", return_value=False),
             mock.patch.object(service.OPPONENT_PREDICTIONS, "request_predict") as request_predict,
             mock.patch.object(service.AUTO_ANALYSIS, "owns_item", return_value=False),
@@ -224,6 +284,16 @@ class AutoAnalysisPlanTest(unittest.TestCase):
 
         self.assertTrue(requested)
         request_predict.assert_called_once()
+
+    def test_unavailable_opponent_engine_does_not_build_history_on_browsing(self):
+        service.STATE.update(game=service.create_empty_game(223344), gameLoaded=True,
+                             mode='research', opponentAnalysisEnabled=True)
+        with (
+            mock.patch.object(service.OPPONENT_PREDICTIONS, 'accepts_requests', return_value=False),
+            mock.patch.object(service.MJAI_STREAMS, 'get_bundle') as stream,
+        ):
+            self.assertFalse(service.OPPONENT_ANALYSIS.request_current())
+            stream.assert_not_called()
 
     def test_response_samples_model_activity_after_view_scheduling(self):
         order = []

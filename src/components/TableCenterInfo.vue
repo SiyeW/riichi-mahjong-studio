@@ -1,5 +1,5 @@
 <template>
-  <div class="grid-info">
+  <div class="grid-info" :class="{ 'is-live-play': mode === 'play' }">
     <button class="info-round" @click.stop="$emit('toggle-round-map')">{{ roundLabel }}</button>
     <span class="info-tiles-left">x{{ table.wallRemaining }}</span>
     <span class="info-doras">
@@ -30,9 +30,11 @@
 import { computed } from 'vue'
 import type { TableSeatView } from '../useTablePresentation'
 import type { GameView } from '../contracts/game'
+import type { StudioStatus } from '../contracts/runtime'
 
 const props = defineProps<{
   table: NonNullable<GameView['table']>
+  mode: StudioStatus['mode']
   views: TableSeatView[]
   roundLabel: string
   doraSlots: string[]
@@ -60,6 +62,7 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
 
 <style scoped>
 .grid-info {
+  --gi-turn-color: var(--text-soft);
   --gi-side-width: calc(40px * var(--center-ui-scale));
   --gi-score-width: calc(76px * var(--center-ui-scale));
   --gi-strip-width: calc((2 * var(--gi-side-width)) + var(--gi-score-width));
@@ -84,6 +87,10 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
     ". ai-tiles ai-tiles ai-tiles ."
     ". ai-doras ai-doras ai-doras ."
     ". . . . .";
+}
+
+.grid-info.is-live-play {
+  --gi-turn-color: var(--text-main);
 }
 
 .info-round {
@@ -140,6 +147,7 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
 .gi-p1-outer,
 .gi-p2-outer,
 .gi-p3-outer {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -216,7 +224,8 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   font-size: var(--table-text-center-label);
   font-weight: 700;
   color: inherit;
-  transform: translateY(calc(-0.5px * var(--center-ui-scale)));
+  text-align: center;
+  transform: translateY(calc(-0.5px * var(--center-ui-scale))) translateX(calc(-4.5px * var(--center-ui-scale)));
 }
 
 .gi-score {
@@ -235,7 +244,6 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   font-size: var(--table-text-bet);
   color: inherit;
   visibility: hidden;
-  transform: translateX(calc(-2px * var(--center-ui-scale)));
 }
 
 .gi-riichi-bet.on {
@@ -263,13 +271,6 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   flex-shrink: 0;
 }
 
-.gi-p0-outer .gi-seat,
-.gi-p1-outer .gi-seat,
-.gi-p2-outer .gi-seat,
-.gi-p3-outer .gi-seat {
-  text-align: right;
-}
-
 .gi-p0-outer .gi-riichi-bet,
 .gi-p1-outer .gi-riichi-bet,
 .gi-p2-outer .gi-riichi-bet,
@@ -277,11 +278,14 @@ const orderedViews = computed(() => positionOrder.flatMap((position) => (
   text-align: left;
 }
 
-.gi-p0-outer.is-actor,
-.gi-p1-outer.is-actor,
-.gi-p2-outer.is-actor,
-.gi-p3-outer.is-actor {
-  background: rgba(255, 193, 78, 0.12);
-  border: 1px solid rgba(255, 193, 78, 0.55);
+.is-actor::after {
+  content: '';
+  position: absolute;
+  right: calc(-1rem * var(--center-ui-scale));
+  bottom: calc(-1 * var(--indicator-thickness) * var(--center-ui-scale));
+  left: calc(-1rem * var(--center-ui-scale));
+  height: calc(var(--indicator-thickness) * var(--center-ui-scale));
+  background: var(--gi-turn-color);
+  pointer-events: none;
 }
 </style>

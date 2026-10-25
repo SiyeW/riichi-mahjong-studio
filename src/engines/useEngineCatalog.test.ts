@@ -76,6 +76,25 @@ test('a forced describe asks the engine again instead of answering from the cach
   assert.equal(describeCalls, 2)
 })
 
+test('descriptions with the same executable but different launch arguments are cached separately', async () => {
+  let describeCalls = 0
+  const bridge = {
+    describeEngine: async () => { describeCalls++; return description },
+  } as unknown as DesktopBridge
+  const catalog = useEngineCatalog({
+    bridge: () => bridge,
+    settings: reactive({} as StudioSettings),
+    locale: ref('en-US'),
+    t: (key) => key,
+  })
+  const first = { ...profile, engineCommand: ['C:\\engine.exe', '--mode=a'] }
+  const second = { ...profile, engineCommand: ['C:\\engine.exe', '--mode=b'] }
+  await catalog.describe(first)
+  await catalog.describe(second)
+  await catalog.describe(first)
+  assert.equal(describeCalls, 2)
+})
+
 test('catalog description errors remain attached to the requested engine', async () => {
   const bridge = {
     describeEngine: async () => { throw new Error('broken engine') },

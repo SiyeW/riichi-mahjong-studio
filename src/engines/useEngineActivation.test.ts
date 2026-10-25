@@ -63,12 +63,19 @@ test('activation owns the save, bridge, status, and runtime capture sequence', a
   const settingsDraft = reactive({ engines: engines(structuredClone(engineProfile)) } as StudioSettings)
   const currentStatus = reactive(status())
   const activated: EngineSettings[] = []
+  const unloaded: string[] = []
   const bridge = {
     activateEngine: async ({ engines: snapshot }: { profileId: string; engines: EngineSettings }) => {
       activated.push(snapshot)
       return { engines: snapshot } as StudioSettings
     },
     getStatus: async () => status(true),
+    unloadEngine: async ({ profileId }: { profileId: string }) => {
+      unloaded.push(profileId)
+      const next = status(false)
+      next.modelRuntime.decision.unloaded = true
+      return { state: next, settings: { engines: engines(engineProfile) } as StudioSettings }
+    },
   } as unknown as DesktopBridge
   const scope = effectScope()
   const draft = scope.run(() => useEngineSettingsDraft({
@@ -87,7 +94,6 @@ test('activation owns the save, bridge, status, and runtime capture sequence', a
     settingsDraft,
     status: currentStatus,
     profiles: ref(settingsDraft.engines.profiles),
-    activeProfile,
     opponentOutputIds: ['opponent-shanten'],
     draft,
     t: (key) => key,
@@ -100,6 +106,10 @@ test('activation owns the save, bridge, status, and runtime capture sequence', a
     requiredWeightsReady: () => true,
   }, state)
 
+  assert.equal(activation.profileStatus(activeProfile.value), 'unloaded')
+  state.loadingProfileId.value = engineProfile.id
+  assert.equal(activation.profileStatus(activeProfile.value), 'loading')
+  state.loadingProfileId.value = ''
   await activation.load(engineProfile.id)
 
   assert.equal(activated.length, 1)
@@ -107,5 +117,17 @@ test('activation owns the save, bridge, status, and runtime capture sequence', a
   assert.equal(state.loadingProfileId.value, '')
   assert.equal(draft.message.value, 'engine.loaded')
   assert.equal(activation.profileIsLoaded(activeProfile.value), true)
+  assert.equal(activation.profileStatus(activeProfile.value), 'loaded')
+  state.loadErrors[engineProfile.id] = 'weight failed'
+  assert.equal(activation.profileStatus(activeProfile.value), 'error')
+  delete state.loadErrors[engineProfile.id]
+  currentStatus.modelRuntime.decision = { profileId: engineProfile.id, ready: false, unloaded: true }
+  assert.equal(activation.profileStatus(activeProfile.value), 'unloaded')
+  currentStatus.modelRuntime.decision = { profileId: engineProfile.id, ready: true, unloaded: false }
+  const unloading = activation.unload(engineProfile.id)
+  assert.equal(activation.profileStatus(activeProfile.value), 'unloading')
+  await unloading
+  assert.deepEqual(unloaded, [engineProfile.id])
+  assert.equal(activation.profileStatus(activeProfile.value), 'unloaded')
   scope.stop()
 })

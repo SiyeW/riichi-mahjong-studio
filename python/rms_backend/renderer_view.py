@@ -29,6 +29,8 @@ class RendererViewDependencies:
     auto_analysis: Any
     consume_thinking_time: Callable[[], float]
     now_iso: Callable[[], str]
+    view_token: Callable[[], dict | None] = lambda: None
+    begin_visit: Callable[[int], None] = lambda intent: None
 
 
 class RendererView:
@@ -41,6 +43,9 @@ class RendererView:
     ) -> None:
         self.state = state
         self.dependencies = dependencies
+
+    def begin_visit(self, intent: int) -> None:
+        self.dependencies.begin_visit(intent)
 
     def normalize_tree_cursor(
         self,
@@ -83,6 +88,7 @@ class RendererView:
 
     def build_view_payload(self, compact_tree: bool = False) -> dict[str, Any]:
         if not self.state["gameLoaded"] or not self.state["game"]:
+            self.dependencies.view_token()
             return self._empty_view()
 
         game = self.state["game"]
@@ -95,6 +101,7 @@ class RendererView:
         snapshot = current_node["snapshot"]
         self.dependencies.sync_snapshot(snapshot)
         opponent_analysis = None
+        view_token = self.dependencies.view_token()
         if self.state.get("opponentAnalysisEnabled"):
             opponent_analysis = self.dependencies.opponent_analysis.current()
         legal_actions = self.dependencies.get_node_legal_actions(
@@ -116,10 +123,12 @@ class RendererView:
         )
         return {
             "gameId": game["gameId"],
+            "viewToken": view_token,
             "matchId": game.get("matchId") or game["gameId"],
             "readOnly": bool(metadata.get("readOnly")),
             "sourceUrl": metadata.get("sourceUrl"),
             "readOnlyReason": metadata.get("readOnlyReason"),
+            "playerNames": list(metadata.get("playerNames") or ['', '', '', '']),
             "currentNodeId": current_node_id,
             "nodeComment": str(current_node.get("comment") or ""),
             "opponentAnalysis": opponent_analysis,
@@ -218,6 +227,14 @@ class RendererView:
             auto_advance_mode=self._resolve_auto_advance_mode(snapshot),
             result_info=self.build_result_info(snapshot),
         )
+
+    def build_analysis_table(self, snapshot, seat, input_mode):
+        self.dependencies.sync_snapshot(snapshot)
+        game = self.state.get('game')
+        return table_view.build_table_view(snapshot, controlled_seat=seat,
+            visible_hands=input_mode == 'full-information',
+            match_id=game.get('matchId') if isinstance(game, dict) else None,
+            auto_advance_mode=None, result_info=None, include_history=False)
 
     def _build_match_summary(
         self,

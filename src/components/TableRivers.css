@@ -9,6 +9,10 @@
   transition: transform var(--ui-motion-duration) var(--ui-motion-easing);
 }
 
+.grid-discard > .river-row > .tileDiv:not(.tileDivPending) {
+  pointer-events: auto;
+}
+
 .pov-p0 > .river-row > div:has(.last-discard) {
   transform: translate(var(--pending-offset-x), var(--pending-offset-y));
   z-index: 4;
@@ -114,6 +118,8 @@
   display: flex;
   flex-wrap: nowrap;
   z-index: 2;
+  /* Empty layout space must not intercept the annotation editors underneath. */
+  pointer-events: none;
 }
 
 .river-row {

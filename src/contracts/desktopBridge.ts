@@ -1,5 +1,5 @@
 import type { EngineDescription, EngineSettings } from './engines'
-import type { GameView } from './game'
+import type { GameView, RecordCommandScope } from './game'
 import type {
   BackendResponse,
   PythonEvent,
@@ -15,6 +15,13 @@ export interface RecordFileResult {
   view: GameView
   recordDirty: boolean
   recoveryRecord: boolean
+}
+
+export type RecordSaveResult = Pick<RecordFileResult, 'path' | 'recordDirty' | 'recoveryRecord'> & { recoveryWarning?: string }
+
+export interface CloseState {
+  active: boolean
+  stage: 'preparing' | 'flushing' | 'waiting' | 'recovery' | 'encoding' | 'writing' | ''
 }
 
 export interface DesktopBridge {
@@ -37,23 +44,25 @@ export interface DesktopBridge {
     state: StudioStatus
     settings: StudioSettings
   }>
+  notifyBootstrapComplete: () => void
   getStatus: () => Promise<StudioStatus>
   getRuntimeMetrics: () => Promise<RuntimeMetrics>
   getGameView: () => Promise<BackendResponse>
   createGame: () => Promise<StudioStatus>
   closeGame: () => Promise<BackendResponse>
-  advanceGame: () => Promise<BackendResponse>
-  confirmPendingReview: () => Promise<BackendResponse>
+  advanceGame: (scope?: RecordCommandScope) => Promise<BackendResponse>
+  confirmPendingReview: (scope?: RecordCommandScope) => Promise<BackendResponse>
   submitUserAction: (action: {
     type: string
     pai?: string
     variant?: string
     fromDrawn?: boolean
     candidateId?: string
+    recordViewScope?: RecordCommandScope
   }) => Promise<BackendResponse>
-  jumpToNode: (nodeId: string, treeRevision?: number) => Promise<BackendResponse>
-  setMainBranch: (nodeId: string) => Promise<BackendResponse>
-  setNodeComment: (nodeId: string, comment: string) => Promise<{
+  jumpToNode: (nodeId: string, treeRevision?: number, navigationIntent?: number) => Promise<BackendResponse>
+  setMainBranch: (nodeId: string, scope?: RecordCommandScope) => Promise<BackendResponse>
+  setNodeComment: (nodeId: string, comment: string, scope?: RecordCommandScope) => Promise<{
     request_id: string
     command: string
     nodeId: string
@@ -61,10 +70,10 @@ export interface DesktopBridge {
     changed: boolean
     timestamp: string
   }>
-  deleteNode: (nodeId: string) => Promise<BackendResponse>
+  deleteNode: (nodeId: string, scope?: RecordCommandScope) => Promise<BackendResponse>
   getRecordDirty: () => Promise<boolean>
-  saveGame: () => Promise<RecordFileResult | null>
-  saveGameAs: () => Promise<RecordFileResult | null>
+  saveGame: () => Promise<RecordSaveResult | null>
+  saveGameAs: () => Promise<RecordSaveResult | null>
   openGame: () => Promise<RecordFileResult | null>
   showRecordInFolder: () => Promise<boolean>
   restoreStartupRecovery: () => Promise<RecordFileResult | null>
@@ -78,6 +87,9 @@ export interface DesktopBridge {
     reconstructWalls?: boolean
     seed?: string
   }) => Promise<RecordImportResult>
+  selectRecordImportFile: () => Promise<string | null>
+  importReplayFile: (payload: { path: string; reconstructWalls?: boolean; seed?: string }) => Promise<RecordImportResult>
+  setPlayerName: (seat: number, name: string, scope?: RecordCommandScope) => Promise<{ seat: number; name: string; changed: boolean }>
   exportCustomTenhou: () => Promise<{
     tenhou: string
     mortal: string
@@ -103,9 +115,7 @@ export interface DesktopBridge {
     reconstruction: { seed: number; roundCount: number }
   }>
   importWall: (tiles: string[]) => Promise<BackendResponse>
-  getLatestMjaiDebug: () => Promise<{ debug: Record<string, unknown> }>
   getAnalysis: () => Promise<Record<string, unknown>>
-  getAnalysisDebug: () => Promise<{ debug: Record<string, unknown> }>
   clearAnalysisCaches: () => Promise<{
     state: StudioStatus
     cleared: {
@@ -133,8 +143,5 @@ export interface DesktopBridge {
   onPythonEvent: (callback: (event: PythonEvent) => void) => () => void
   onRecordDirtyChanged: (callback: (dirty: boolean) => void) => () => void
   onBeforeClose: (callback: () => void | Promise<void>) => () => void
-  onCloseState: (callback: (state: {
-    active: boolean
-    stage: 'preparing' | 'flushing' | 'recovery' | ''
-  }) => void) => () => void
+  onCloseState: (callback: (state: CloseState) => void) => () => void
 }

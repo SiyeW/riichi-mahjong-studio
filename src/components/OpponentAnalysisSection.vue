@@ -3,6 +3,7 @@
     ref="sectionElement"
     v-perceptual-surface="opponentSurface"
     class="analysis-opponent-section"
+    :class="{ 'has-distributions': hasOpponentDoraDistributions || hasOpponentScoreDistributions }"
     :style="scoreModeLayoutStyle"
   >
     <div class="analysis-opponent-grid">
@@ -18,11 +19,12 @@
           @slice-leave="tooltip.clear"
         />
       </div>
-    </div>
-    <div class="analysis-shanten-legend" :aria-label="t('analysis.shantenLegend')">
-      <span v-for="(label, index) in shantenLabels" :key="label">
-        <i :style="{ backgroundColor: shantenColors[index] }" />{{ label }}
-      </span>
+      <div class="analysis-shanten-legend" :aria-label="t('analysis.shantenLegend')">
+        <span v-for="(label, index) in shantenLabels" :key="label">
+          <i :style="{ backgroundColor: shantenColors[index] }" />
+          <span class="analysis-shanten-legend-label">{{ index === shantenLabels.length - 1 ? t('shanten.furitenLegend') : label }}</span>
+        </span>
+      </div>
     </div>
     <div
       class="analysis-opponent-prediction-grid"
@@ -31,7 +33,7 @@
         'has-score-distributions': hasOpponentScoreDistributions,
       }"
     >
-      <div v-for="opponent in opponentCards" :key="opponent.key" class="analysis-opponent-predictions">
+      <div v-for="(opponent, index) in opponentCards" :key="opponent.key" class="analysis-opponent-predictions">
         <div
           class="analysis-opponent-prediction is-dora-prediction"
           tabindex="0"
@@ -44,8 +46,10 @@
             <small>{{ t('analysis.dora') }}</small>
             <strong>{{ opponent.dora }}</strong>
           </div>
+          <!-- Preserve canvas owners, not old predictions. Empty charts have
+               no data cells; the last may retain the group's shared axis. -->
           <DistributionBarChart
-            v-if="opponent.doraPrediction.distribution.length"
+            v-show="opponent.doraPrediction.distribution.length || (index === 2 && hasOpponentDoraDistributions)"
             class="analysis-dora-distribution"
             :entries="distributionEntries(opponent.doraPrediction.distribution, doraDistributionScale, true)"
             color-variable="--analysis-dora-color"
@@ -53,6 +57,9 @@
             :show-labels="true"
             :track-surface="distributionTrackSurface"
             :reference-ratio="doraDistributionReferenceRatio"
+            :probability-scale="doraDistributionScale"
+            :show-axis="index === 2"
+            :outside-axis="true"
             @item-enter="(event, index) => showDistributionEntryTooltip(event, opponent.label, t('analysis.dora'), opponent.doraPrediction.distribution, index, 'tile')"
             @item-leave="tooltip.clear"
           />
@@ -70,7 +77,7 @@
             <strong>{{ opponent.score }}</strong>
           </div>
           <DistributionBarChart
-            v-if="opponent.scorePrediction.distribution.length"
+            v-show="opponent.scorePrediction.distribution.length || (index === 2 && hasOpponentScoreDistributions)"
             class="analysis-score-distribution"
             :entries="scoreDistributionEntries(opponent.scorePrediction.distribution, opponent.seat === dealer)"
             color-variable="--analysis-score-color"
@@ -78,10 +85,13 @@
             :show-labels="false"
             :track-surface="distributionTrackSurface"
             :reference-ratio="scoreDistributionReferenceRatio"
+            :probability-scale="scoreDistributionScale"
+            :show-axis="index === 2"
+            :outside-axis="true"
             @item-enter="(event, index) => showDistributionEntryTooltip(event, opponent.label, t('analysis.score'), opponent.scorePrediction.distribution, index, 'point')"
             @item-leave="tooltip.clear"
           />
-          <div v-if="opponent.scoreModes.length" class="analysis-score-modes">
+          <div v-if="opponent.scoreModes.length || hasOpponentScoreDistributions" class="analysis-score-modes">
             <span
               v-for="entry in visibleScoreModes(opponent.scoreModes)"
               :key="entry.value"
@@ -97,13 +107,17 @@
           </div>
         </div>
       </div>
+      <div class="analysis-opponent-scale-gutter" aria-hidden="true">
+        <span v-for="label in percentageLabels" :key="label">{{ label }}</span>
+      </div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { analysisSurface } from '../analysisSurface'
+import { probabilityScaleTicks } from '../analysisProbabilityScale'
 import type { AnalysisPanelDataProps } from '../analysisPanelTypes'
 import { scoreModeGeometry } from '../analysisScoreModeGeometry'
 import type { AnalysisRecord } from '../useAnalysisOutputs'
@@ -159,6 +173,11 @@ const {
   formatProbability,
 } = useOpponentAnalysisData(props, t, numberLocale)
 
+const percentageLabels = computed(() => [...new Set(
+  [doraDistributionScale.value, scoreDistributionScale.value]
+    .flatMap(scale => probabilityScaleTicks(scale).map(tick => tick.label).filter(Boolean)),
+)])
+
 const scoreModeMeasurementKey = computed(() => opponentCards.value.map((opponent) => (
   opponent.scoreModes.map((entry) => formatMahjongScore(entry.value)).join(',')
 )).join('|'))
@@ -172,27 +191,45 @@ function finitePixels(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0
 }
 
+let scoreWidthStyle = ''
+let scoreWidths = new Map<string, number>()
+
 function scoreModeIntrinsicWidths(sample: HTMLElement, labels: readonly string[]): ReadonlyMap<string, number> {
-  const measurer = sample.cloneNode(false) as HTMLElement
-  measurer.removeAttribute('tabindex')
-  measurer.setAttribute('aria-hidden', 'true')
-  Object.assign(measurer.style, {
-    position: 'fixed',
-    visibility: 'hidden',
-    width: 'max-content',
-    maxWidth: 'none',
-    overflow: 'visible',
-    textOverflow: 'clip',
-    pointerEvents: 'none',
-  })
-  sample.parentElement?.appendChild(measurer)
-  const widths = new Map<string, number>()
-  for (const label of new Set(labels)) {
+  const style = getComputedStyle(sample)
+  const signature = [style.font, style.fontVariantNumeric, style.fontFeatureSettings,
+    style.fontVariationSettings, style.letterSpacing, style.wordSpacing, style.textTransform,
+    style.paddingLeft, style.paddingRight, style.borderLeftWidth, style.borderRightWidth].join('|')
+  if (signature !== scoreWidthStyle) { scoreWidthStyle = signature; scoreWidths.clear() }
+  const unique = [...new Set(labels)]
+  const fragment = document.createDocumentFragment()
+  const measurers = unique.filter(label => !scoreWidths.has(label)).map(label => {
+    const measurer = sample.cloneNode(false) as HTMLElement
+    measurer.removeAttribute('tabindex')
+    measurer.setAttribute('aria-hidden', 'true')
+    Object.assign(measurer.style, {
+      position: 'fixed',
+      visibility: 'hidden',
+      width: 'max-content',
+      maxWidth: 'none',
+      overflow: 'visible',
+      textOverflow: 'clip',
+      pointerEvents: 'none',
+    })
     measurer.textContent = label
-    widths.set(label, measurer.getBoundingClientRect().width)
+    fragment.appendChild(measurer)
+    return { label, measurer }
+  })
+  if (measurers.length) sample.parentElement?.appendChild(fragment)
+  try {
+    // Read every intrinsic width before removing any probe. Interleaving each
+    // text write with a measurement forces one global layout per score value.
+    for (const { label, measurer } of measurers) scoreWidths.set(label, measurer.getBoundingClientRect().width)
+    // Retain only the current distribution's labels, not every value ever seen.
+    scoreWidths = new Map(unique.map(label => [label, scoreWidths.get(label) || 0]))
+    return scoreWidths
+  } finally {
+    for (const { measurer } of measurers) measurer.remove()
   }
-  measurer.remove()
-  return widths
 }
 
 function updateScoreModeCount() {
@@ -255,6 +292,9 @@ const scheduleScoreModeCount = useResponsiveGeometry(sectionElement, updateScore
   resizeAncestorSelector: '.dock-module',
   styleAncestorSelector: '.dock-module',
 })
+function resetScoreWidths() { scoreWidths.clear(); scheduleScoreModeCount() }
+document.fonts?.addEventListener('loadingdone', resetScoreWidths)
+onBeforeUnmount(() => document.fonts?.removeEventListener('loadingdone', resetScoreWidths))
 
 watch([scoreModeMeasurementKey, numberLocale], () => {
   void nextTick(scheduleScoreModeCount)

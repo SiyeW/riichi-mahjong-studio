@@ -12,6 +12,8 @@ export interface NextMoveHint {
   consumed?: string[]
 }
 
+export type TileNextMoveClass = '' | 'tile-next-main' | 'tile-next-side'
+
 function normalizeSpecialActionVariant(
   actionType?: string,
   actionVariant?: string,
@@ -35,7 +37,7 @@ export function buildNextMoveHints(
   const hints: NextMoveHint[] = []
   for (const childId of children) {
     const child = nodeMap.get(childId)
-    if (!child || !child.action) continue
+    if (!child || !child.action || child.isDecision !== true) continue
     const action = child.action as Record<string, unknown>
     if (Number(action.actor) !== controlledSeat || typeof action.type !== 'string') {
       continue
@@ -102,7 +104,7 @@ export function useNextMoveHints(options: {
     )) || null
   }
 
-  function tileNextMoveClass(tile: string, fromDrawn: boolean): string {
+  function tileNextMoveClass(tile: string, fromDrawn: boolean): TileNextMoveClass {
     const hint = getTileNextMoveHint(tile, fromDrawn)
     if (!hint) return ''
     return hint.isMainBranch ? 'tile-next-main' : 'tile-next-side'

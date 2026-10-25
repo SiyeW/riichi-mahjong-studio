@@ -45,11 +45,11 @@ function normalizeProfile(source, catalog) {
   const maps = catalogMaps(catalog)
   const requestedEngineId = String(profile.engineId || '')
   const requestedEnginePath = String(profile.enginePath || '')
-  const engine = maps.engines.get(requestedEngineId)
-    || (catalog.engines || []).find((item) => (
-      requestedEnginePath
-      && String(item.enginePath || '').toLowerCase() === requestedEnginePath.toLowerCase()
+  const engine = requestedEnginePath
+    ? (catalog.engines || []).find((item) => (
+      String(item.executablePath || '').toLowerCase() === requestedEnginePath.toLowerCase()
     ))
+    : maps.engines.get(requestedEngineId)
   const entrypoint = engine?.manifest?.entrypoints
     ? Object.values(engine.manifest.entrypoints)[0]
     : null

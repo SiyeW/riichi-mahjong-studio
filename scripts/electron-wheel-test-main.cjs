@@ -1,0 +1,12 @@
+const { app, BrowserWindow } = require('electron')
+if (!process.env.RMS_NATIVE_WHEEL_TEST_DATA) throw Error('An isolated wheel test directory is required')
+app.setPath('userData', process.env.RMS_NATIVE_WHEEL_TEST_DATA)
+app.whenReady().then(async () => {
+  const window = new BrowserWindow({ x: 0, y: 0, width: 700, height: 500 })
+  await window.loadURL('data:text/html,<body style="background:%2302191e;color:white">Isolated wheel input verification<script>window.samples=[];addEventListener("wheel",e=>{samples.push({deltaY:e.deltaY,wheelDeltaY:e.wheelDeltaY,deltaMode:e.deltaMode,dpr:devicePixelRatio,isTrusted:e.isTrusted});e.preventDefault()},{passive:false})</script>')
+  // Studio uses CSS UI scaling, not browser page zoom (main-window fixes it at1).
+  window.webContents.setZoomFactor(1)
+  await window.webContents.executeJavaScript(`document.body.style.fontSize = '${16 * Number(process.env.RMS_NATIVE_WHEEL_TEST_UI_SCALE || 1)}px'`)
+  window.show(); window.focus()
+})
+app.on('window-all-closed', () => app.quit())

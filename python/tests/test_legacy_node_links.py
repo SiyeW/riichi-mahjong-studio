@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 
 from rms_backend import service
-from rms_backend.game_record_storage import hydrate_game_structure
+from rms_backend.records.authored_projection import hydrate_game_structure
 
 
 class LegacyNodeLinksTests(unittest.TestCase):

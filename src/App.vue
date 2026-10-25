@@ -1,8 +1,9 @@
 <template>
   <div
+    ref="shellEl"
     class="shell"
     :class="{ 'tile-artwork-pending': !tileArtworkReady }"
-    :style="[{ '--zoom': tableZoom, '--ui-scale': uiScale }, colorSchemeCssVariables]"
+    :style="[{ '--ui-scale': uiScale }, colorSchemeCssVariables]"
   >
     <svg class="wall-tint-filters" aria-hidden="true">
       <defs>
@@ -30,7 +31,7 @@
         </filter>
       </defs>
     </svg>
-    <header class="topbar">
+    <header class="topbar" :inert="recordOperationBlocking">
       <div class="title-block" :class="{ 'app-title-only': !recordHeaderTitle }">
         <div>
           <p v-if="recordHeaderTitle" class="eyebrow">Riichi Mahjong Studio</p>
@@ -49,18 +50,18 @@
       <div class="toolbar">
         <span class="toolbar-section">
           <button
-            :class="{ 'is-pending': gameFileOperation === 'create' }"
+            :class="{ 'is-pending': gameFileOperation === 'create', 'confirm-discard': discardConfirmation === 'create' }"
             :disabled="gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'create'"
             @click="createGame"
-          >{{ t('toolbar.new') }}</button>
+          >{{ t(discardConfirmation === 'create' ? 'toolbar.discard' : 'toolbar.new') }}</button>
           <button
-            :class="{ 'is-pending': gameFileOperation === 'open' }"
+            :class="{ 'is-pending': gameFileOperation === 'open', 'confirm-discard': discardConfirmation === 'open' }"
             :disabled="gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'open'"
             @click="openGame"
-          >{{ t('toolbar.open') }}</button>
-          <button @click="openRecordImportPanel">{{ t('toolbar.import') }}</button>
+          >{{ t(discardConfirmation === 'open' ? 'toolbar.discard' : 'toolbar.open') }}</button>
+          <button :class="{ 'confirm-discard': discardConfirmation === 'import' }" :disabled="gameFileOperation !== null" @click="openRecordImportPanel">{{ t(discardConfirmation === 'import' ? 'toolbar.discard' : 'toolbar.import') }}</button>
           <button
             :class="{ 'is-pending': gameFileOperation === 'save' }"
             :disabled="!recordDirty || gameFileOperation !== null"
@@ -76,22 +77,27 @@
           <button
             :class="{
               'is-pending': gameFileOperation === 'close',
-              'confirm-discard': closeRecordConfirmationPending,
+              'confirm-discard': discardConfirmation === 'close',
             }"
             :disabled="!status.gameLoaded || gameFileOperation !== null"
             :aria-busy="gameFileOperation === 'close'"
             @click="closeGame"
-          >{{ closeRecordConfirmationPending ? t('toolbar.discard') : t('toolbar.close') }}</button>
+          >{{ t(discardConfirmation === 'close' ? 'toolbar.discard' : 'toolbar.close') }}</button>
         </span>
         <span class="toolbar-section">
           <span
             class="toolbar-button-hint"
             v-ui-tooltip="isReadOnlyRecord ? READ_ONLY_RECORD_HINT : undefined"
           >
-            <button @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
+            <button :class="{ active: status.mode === 'play' }" @click="toggleMode" :disabled="!status.gameLoaded || isReadOnlyRecord">{{ modeButtonLabel }}</button>
           </span>
-          <button @click="openWallView" :disabled="!gameView.table">{{ t('toolbar.wall') }}</button>
-          <span class="toolbar-panel-menu">
+          <button
+            :class="{ active: showWallView }"
+            :aria-pressed="showWallView"
+            @click="showWallView ? closeWallView() : openWallView()"
+            :disabled="!gameView.table"
+          >{{ t('toolbar.wall') }}</button>
+          <span class="hover-action-menu">
             <button
               :class="{ active: showAnalysisDock }"
               :aria-pressed="showAnalysisDock"
@@ -99,7 +105,7 @@
               @click="toggleAnalysisDock"
               :disabled="!gameView.table"
             >{{ t('toolbar.analysis') }}</button>
-            <span class="toolbar-panel-menu-items" role="menu" :aria-label="t('toolbar.analysis')">
+            <span class="hover-action-menu-items" role="menu" :aria-label="t('toolbar.analysis')">
               <label
                 v-for="definition in ANALYSIS_PANEL_DEFINITIONS"
                 :key="definition.id"
@@ -128,7 +134,11 @@
           </button>
         </span>
         <span class="toolbar-section">
-          <button @click="openEngineWindow">{{ t('toolbar.engine') }}</button>
+          <button
+            :class="{ active: showEngineWindow }"
+            :aria-pressed="showEngineWindow"
+            @click="showEngineWindow ? closeEngineWindow() : openEngineWindow()"
+          >{{ t('toolbar.engine') }}</button>
           <button @click="openSettingsPanel">{{ t('toolbar.settings') }}</button>
           <button @click="showAboutPanel = true">{{ t('toolbar.about') }}</button>
         </span>
@@ -143,14 +153,20 @@
       </button>
     </div>
 
-    <div v-if="closeState.active" class="exit-saving-overlay" role="status" aria-live="assertive">
-      <div class="exit-saving-card">
-        <strong>{{ closingExitLabel }}</strong>
-        <span>{{ t('close.keepOpen') }}</span>
-      </div>
+    <div v-if="recordOperationError" class="startup-banner" role="alert">
+      <span>{{ recordOperationError }}</span>
+      <button @click="recordOperationError = ''">{{ t('common.close') }}</button>
     </div>
 
+    <RecordOperationOverlay
+      v-if="closeState.active || gameFileOperation !== null"
+      :title="closeState.active ? closingExitLabel : t(`recordOperation.${gameFileOperation}`)"
+      :detail="closeState.active ? t('close.keepOpen') : t(recordOperationBlocking ? 'recordOperation.wait' : 'recordOperation.saveContinue')"
+      :blocking="recordOperationBlocking"
+    />
+
     <main
+      :inert="recordOperationBlocking"
       ref="workspaceRoot"
       class="workspace"
       :class="{
@@ -183,7 +199,6 @@
           <div
             v-perceptual-surface="activePerceptualSurfaceBinding"
             class="grid-main"
-            :class="{ 'reset-without-motion': suppressAnalysisTransitions }"
           >
             <!-- 用户手牌（屏幕下方，south 方位） -->
             <div class="grid-hand-p0-container" :style="southLaneStyle">
@@ -339,6 +354,7 @@
             <TableCenterInfo
               v-if="gameView.table"
               :table="gameView.table"
+              :mode="status.mode"
               :views="tableSeatViews"
               :round-label="roundLabel"
               :dora-slots="centerDoraSlots"
@@ -347,6 +363,17 @@
               :tile-face-label="tileFaceLabel"
               :tile-image-src="tileImageSrc"
               @toggle-round-map="toggleRoundMapOverlay"
+            />
+            <TablePlayerNames
+              v-if="gameView.table"
+              :views="tableSeatViews"
+              :river-display-rows="riverDisplayRows"
+              :player-names="gameView.playerNames"
+              :name-drafts="playerNames.drafts"
+              :name-error="playerNames.error.value"
+              :save-names="playerNames.flush"
+              @name-draft="playerNames.draft"
+              @name-cancel="playerNames.cancel"
             />
             <TableActionAnnouncement
               :game-view="gameView"
@@ -407,6 +434,9 @@
           v-if="status.mode === 'research'"
           :status="status"
           :apply-status="applyStatus"
+          :cache-clear-message="analysisCacheClearMessage"
+          :clearing-analysis-caches="clearingAnalysisCaches"
+          @clear-cache="clearLoadedAnalysisCaches"
         />
         <QuickSettingsPanel
           :mode="status.mode"
@@ -464,6 +494,7 @@
           @export="openCustomTenhouExport"
           @jump-to-node="jumpToNode"
           @tree-scroll="onTreeScroll"
+          @resized="updateTreeViewport"
           @suspend-auto-follow="suspendTreeAutoFollow"
           @resume-auto-follow="resumeTreeAutoFollow"
           @expanded="updateTreeViewport"
@@ -476,6 +507,9 @@
 
         <DecisionEvaluationPanel
           :game-view="gameView"
+          :controlled-seat="status.controlledSeat"
+          :loading="decisionFeedback.pending"
+          :load-error="decisionFeedback.error"
           :effective-recommendations-enabled="effectiveDecisionRecommendationsEnabled"
           :show-recommendations="showTrainingRecommendations"
           :localized-engine-text="localizedEngineText"
@@ -522,27 +556,13 @@
           </span>
         </span>
       </div>
-      <div
-        class="footer-memory-status"
-        :aria-label="runtimeMemoryDetail"
-        aria-describedby="runtime-memory-detail"
-        tabindex="0"
-      >
-        <span>{{ t('status.applicationMemory', { value: formatMemorySize(runtimeMetrics?.applicationBytes) }) }}</span>
-        <span class="footer-memory-separator" aria-hidden="true">·</span>
-        <span>{{ t('status.systemAvailable', { value: formatMemorySize(runtimeMetrics?.systemAvailableBytes) }) }}</span>
-        <div id="runtime-memory-detail" class="ui-hover-tooltip footer-memory-tooltip" role="tooltip">
-          <div v-for="row in runtimeMemoryRows" :key="row.label" class="ui-hover-tooltip-row">
-            <span>{{ row.label }}</span>
-            <span>{{ row.value }}</span>
-          </div>
-        </div>
-      </div>
+      <RuntimeResources :metrics="runtimeMetrics" :format-size="formatMemorySize" />
     </footer>
 
     <RecordImportDialog
       v-if="showRecordImportPanel"
-      :before-import="flushNodeComment"
+      :before-import="flushRecordEdits"
+      @busy-change="handleImportBusy"
       @close="closeRecordImportPanel"
       @imported="handleRecordImported"
       @open-external="openExternalLink"
@@ -554,6 +574,7 @@
       :draft="settingsDraft"
       :sound-packs="settings.runtime?.soundPackCatalog.packs || []"
       :ui-scale-options="uiScaleOptions"
+      :available-memory-bytes="runtimeMetrics?.systemAvailableBytes ?? undefined"
       @close="closeSettingsPanel"
       @save="saveSettingsPanel"
     />
@@ -619,6 +640,7 @@
     <EngineManagerWindow
       v-if="showEngineWindow"
       :scale="uiScale"
+      :perceptual-surface="activePerceptualSurfaceBinding"
       :z-index="floatingPanelZ.engine"
       :footer-message="engineFooterMessage"
       :busy="Boolean(loadingEngineProfileId || unloadingEngineProfileId)"
@@ -650,21 +672,6 @@
       @source="openExternalLink"
     />
 
-    <MjaiDebugDialog
-      v-if="showMjaiDebug"
-      :cache-clear-message="analysisCacheClearMessage"
-      :clearing-analysis-caches="clearingAnalysisCaches"
-      :debug-data="mjaiDebugData"
-      :debug-json="mjaiDebugJson"
-      :game-loaded="status.gameLoaded"
-      :has-shanten-raw-data="Boolean(shantenRawData.kamicha)"
-      :analysis-json="analysisDebugJson"
-      :shanten-raw-json="shantenRawJson"
-      :shanten-status="shantenStatus"
-      @clear-cache="clearLoadedAnalysisCaches"
-      @close="showMjaiDebug = false"
-    />
-
     <AboutDialog v-if="showAboutPanel" @close="showAboutPanel = false" />
     <PerceptualColorDebugger
       v-if="showPerceptualColorDebugger"
@@ -682,6 +689,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, proxyRefs, reactive, ref, watch, watchEffect } from 'vue'
 import { installAnalysisTestHarness } from './testing/analysisHarness'
+import { usePlayerNames } from './usePlayerNames'
 import type { StudioSettings } from './contracts/settings'
 import type { GameTreeNode, GameView, GameViewTransitionDirection } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
@@ -701,6 +709,7 @@ import {
   useDecisionEntryPresentation,
 } from './useDecisionPresentation'
 import { useDesktopBridgeSubscriptions } from './useDesktopBridgeSubscriptions'
+import type { CloseState } from './contracts/desktopBridge'
 import { useRecordSession } from './useRecordSession'
 import { localizedResultTitle } from './useRoundResultPresentation'
 import { useRuntimeMetrics } from './useRuntimeMetrics'
@@ -726,14 +735,16 @@ import CustomTenhouExportPanel from './components/CustomTenhouExportPanel.vue'
 import DecisionEvaluationPanel from './components/DecisionEvaluationPanel.vue'
 import DockLayoutNode from './workspace/DockLayoutNode.vue'
 import EngineManagerWindow from './engines/components/EngineManagerWindow.vue'
-import MjaiDebugDialog from './components/MjaiDebugDialog.vue'
 import QuickSettingsPanel from './components/QuickSettingsPanel.vue'
 import RecordImportDialog from './components/RecordImportDialog.vue'
+import RecordOperationOverlay from './components/RecordOperationOverlay.vue'
 import RoundMapWindow from './components/RoundMapWindow.vue'
 import RoundResultOverlay from './components/RoundResultOverlay.vue'
 import SettingsDialog from './components/SettingsDialog.vue'
+import RuntimeResources from './components/RuntimeResources.vue'
 import TableActionAnnouncement from './components/TableActionAnnouncement.vue'
 import TableCenterInfo from './components/TableCenterInfo.vue'
+import TablePlayerNames from './components/TablePlayerNames.vue'
 import TableOpponentHands, { type OpponentHandPresentation } from './components/TableOpponentHands.vue'
 import TableRecommendationBars from './components/TableRecommendationBars.vue'
 import TableRonRiskBars from './components/TableRonRiskBars.vue'
@@ -796,11 +807,6 @@ const {
 const showAboutPanel = ref(false)
 const showCustomTenhouExport = ref(false)
 const customTenhouExportRefreshKey = ref(0)
-const showMjaiDebug = ref(false)
-const mjaiDebugData = ref<Record<string, unknown>>({})
-const mjaiDebugJson = computed(() => JSON.stringify(mjaiDebugData.value, null, 2))
-const analysisDebugData = ref<Record<string, unknown>>({})
-const analysisDebugJson = computed(() => JSON.stringify(analysisDebugData.value, null, 2))
 
 const {
   analysisPanelIsSelected,
@@ -870,12 +876,14 @@ function startDragFloatingPanel(e: MouseEvent) {
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
 }
+const shellEl = ref<HTMLElement | null>(null)
 const {
   tableStageEl,
   tableZoom,
   scheduleTableZoomRecalc,
 } = useTableViewport({
   uiScale,
+  zoomStyleTarget: shellEl,
   afterLayoutChange: () => {
     updateTreeViewport()
   },
@@ -925,11 +933,9 @@ const status = reactive<StudioStatus>({
 })
 const {
   runtimeMetrics,
-  runtimeMemoryRows,
-  runtimeMemoryDetail,
   formatMemorySize,
   startRuntimeMetrics,
-} = useRuntimeMetrics(t)
+} = useRuntimeMetrics()
 const showTsumogiriTone = computed(() => (
   status.mode !== 'play' || settings.display.showTsumogiriInPlay !== false
 ))
@@ -955,6 +961,33 @@ const gameView = reactive<GameView>({
 })
 
 const {
+  tileArtworkReady,
+  tileArtworkLoadingLabel,
+  tileImageSrc,
+  prepareTileArtwork,
+} = useTileArtwork(t)
+
+const {
+  autoAdvanceMotionDelayMs,
+  cancelPendingDiscardFlight,
+  cancelPendingDiscardReturnFlight,
+  hasPendingDiscardFlight,
+  tableMotionActive,
+  holdAutoAdvanceForTableMotion,
+  pendingDiscardFromTable,
+  pendingDiscardSignature,
+  preparePendingDiscardReturnFlight,
+  schedulePendingDiscardFlight,
+  schedulePendingDiscardReturnFlight,
+} = useDiscardFlight({
+  status,
+  motionBlurEnabled: computed(() => settings.display.tileMotionBlur !== false),
+  reduceMotionEnabled,
+  tileImageSrc,
+  scheduleAutoAdvance: () => scheduleAutoAdvance(),
+})
+
+const {
   SHANTEN_LABELS,
   acceptsDecisionEventEpoch,
   acceptsOpponentEventEpoch,
@@ -966,6 +999,7 @@ const {
   clearOpponentAnalysisWithoutMotion,
   clearingAnalysisCaches,
   decisionRecommendationsEnabled,
+  decisionFeedback,
   displayedOpponentAnalysis,
   displayedAnalysisTable,
   displayedAnalysisControlledSeat,
@@ -977,15 +1011,12 @@ const {
   opponentAnalysisLoadingVisible,
   opponentAnalysisLoadError,
   opponentAnalysisNeeded,
-  opponentAnalysisPermanentlyUnavailable,
   resetForBackendLifecycle,
   resetForNewGame,
   resolveNextDecisionAnalysis,
   stageOpponentAnalysisForView,
   ronWaitPredData,
   analysisOpponents,
-  shantenRawData,
-  shantenRawJson,
   shantenStatus,
   shantenViewMode,
   showTrainingRecommendations,
@@ -997,6 +1028,7 @@ const {
   status,
   gameView,
   showAnalysisDock,
+  tableMotionActive,
   t,
   applyStatus,
   applyGameView,
@@ -1085,10 +1117,7 @@ const bootstrapError = ref('')
 const backendRecoveryNeeded = ref(false)
 const backendHasCheckpoint = ref(false)
 const backendRetrying = ref(false)
-const closeState = reactive<{
-  active: boolean
-  stage: 'preparing' | 'flushing' | 'recovery' | ''
-}>({ active: false, stage: '' })
+const closeState = reactive<CloseState>({ active: false, stage: '' })
 const closingExitLabel = computed(() => t(`close.${closeState.stage || 'preparing'}`))
 
 async function retryBackend() {
@@ -1119,7 +1148,7 @@ const { clearAutoAdvanceTimer, scheduleAutoAdvance } = useAutoAdvance({
   prefetchWaiting: playPrefetchWaiting,
   motionDelayMs: () => autoAdvanceMotionDelayMs(),
   hasPendingMotion: () => hasPendingDiscardFlight(),
-  advance: () => advanceGame(),
+  advance: () => recordOperationBlocking.value ? undefined : advanceGame(),
 })
 const {
   advanceGame,
@@ -1360,7 +1389,6 @@ const southRecommendationBarSlots = computed(() => southDiscardBarSlots.value.ma
 
 const {
   ROUND_BASE_X,
-  activeRoundRootId,
   isCurrentTreeDot,
   closeRoundMapOverlay,
   nodeMapById,
@@ -1418,7 +1446,9 @@ const {
 })
 
 function registerTreeScrollElement(element: Element | null) {
-  treeScrollEl.value = element instanceof HTMLElement ? element : null
+  const next = element instanceof HTMLElement ? element : null
+  if (treeScrollEl.value === next) return
+  treeScrollEl.value = next
   if (treeScrollEl.value) void nextTick(updateTreeViewport)
 }
 
@@ -1439,6 +1469,7 @@ const {
   invalidateNavigation,
   jumpToNode,
   navigateTreeByOffset,
+  navigateTreeByWheel,
   nodeCommentDraft,
   nodeMutationRequestInFlight,
   onNodeCommentInput,
@@ -1450,30 +1481,46 @@ const {
   status,
   isReadOnlyRecord,
   nodeMapById,
-  activeRoundRootId,
   roundRootById,
   confirmationTimeoutMs: CONFIRMATION_TIMEOUT_MS,
   getGameplayResponseGeneration: currentGameplayResponseGeneration,
   markRecordDirty: () => markRecordDirty(),
   applyStatus,
   applyGameView,
+  expectAnalysisVisit: (intent, nodeId) => handlePythonEvent.expectAnalysisVisit(intent, nodeId),
+  invalidateAnalysisVisit: () => handlePythonEvent.invalidateAnalysisVisit(),
+  settleAnalysisVisit: () => {
+    handlePythonEvent.invalidateAnalysisVisit()
+    handlePythonEvent.commitAnalysisVisit(gameView.viewToken)
+  },
 })
+
+const playerNames = usePlayerNames(gameView, () => markRecordDirty())
+watch(() => gameView.playerNames, () => {
+  if (showCustomTenhouExport.value) customTenhouExportRefreshKey.value += 1
+})
+async function flushRecordEdits() {
+  await playerNames.flush()
+  await flushNodeComment()
+}
 
 const {
   clearRecordMetadata,
   closeGame,
-  closeRecordConfirmationPending,
+  discardConfirmation,
   closeRecordImportPanel,
   createGame,
   gameFileOperation,
   handleRecordDirtyChanged,
   handleRecordImported,
+  handleImportBusy,
   markRecordDirty,
   openGame,
   openRecordImportPanel,
   recordDirty,
   recordHeaderTitle,
   recordPath,
+  recordOperationError,
   restoreRecordMetadata,
   saveGame,
   saveGameAs,
@@ -1483,8 +1530,8 @@ const {
 } = useRecordSession({
   status,
   gameView,
-  flushNodeComment,
-  hasNodeCommentDrafts,
+  flushRecordEdits,
+  hasRecordDrafts: () => hasNodeCommentDrafts() || playerNames.drafts.size > 0,
   applyStatus,
   applyGameView,
   refreshGameView,
@@ -1501,40 +1548,23 @@ const {
   },
 })
 
+const recordOperationBlocking = computed<boolean>(() => closeState.active || (
+  gameFileOperation.value !== null && gameFileOperation.value !== 'save' && gameFileOperation.value !== 'save-as'
+))
+watch(recordOperationBlocking, (blocking, previous) => {
+  if (blocking) { clearAutoAdvanceTimer(); cancelPendingWheelNavigation() }
+  else if (previous) scheduleAutoAdvance()
+}, { flush: 'sync' })
+
 async function jumpToRoundRoot(roundRootId: string) {
   await jumpToNode(roundRootId)
 }
-
-
-const {
-  tileArtworkReady,
-  tileArtworkLoadingLabel,
-  tileImageSrc,
-  prepareTileArtwork,
-} = useTileArtwork(t)
 
 
 function applyStatus(nextStatus: StudioStatus) {
   Object.assign(status, nextStatus)
 }
 
-const {
-  autoAdvanceMotionDelayMs,
-  cancelPendingDiscardFlight,
-  cancelPendingDiscardReturnFlight,
-  hasPendingDiscardFlight,
-  holdAutoAdvanceForTableMotion,
-  pendingDiscardFromTable,
-  pendingDiscardSignature,
-  preparePendingDiscardReturnFlight,
-  schedulePendingDiscardFlight,
-  schedulePendingDiscardReturnFlight,
-} = useDiscardFlight({
-  status,
-  reduceMotionEnabled,
-  tileImageSrc,
-  scheduleAutoAdvance,
-})
 function treeNodeCount(tree: GameView['tree']): number {
   const nodes = tree?.nodes
   if (Array.isArray(nodes)) return nodes.length
@@ -1556,17 +1586,23 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
     pendingReview: gameView.pendingReview,
   }
   const isNewGame = nextView.gameId !== gameView.gameId
+    || nextView.viewToken?.sessionId !== gameView.viewToken?.sessionId
   const nextAnalysis = resolveNextDecisionAnalysis(nextView, isNewGame)
   const previousPendingDiscard = pendingDiscardFromTable(gameView.table)
-  const previousPendingSignature = pendingDiscardSignature(previousPendingDiscard)
+  const previousPendingSignature = pendingDiscardSignature(gameView.table)
   const nextPendingDiscard = pendingDiscardFromTable(nextView.table)
-  const nextPendingSignature = pendingDiscardSignature(nextPendingDiscard)
+  const nextPendingSignature = pendingDiscardSignature(nextView.table)
   const pendingDiscardChanged = previousPendingSignature !== nextPendingSignature
   if (pendingDiscardChanged) {
     cancelPendingDiscardFlight()
     cancelPendingDiscardReturnFlight()
     holdAutoAdvanceForTableMotion()
   }
+  // The hand's branch mark belongs to the departing presentation. Capture it
+  // before replacing the cursor/tree that supplies tileNextMoveClass.
+  const departingHandHint = !isNewGame && transitionDirection === 'forward'
+    && pendingDiscardChanged && nextPendingDiscard && nextPendingDiscard.actor === status.controlledSeat
+    ? tileNextMoveClass(nextPendingDiscard.pai, Boolean(nextPendingDiscard.tsumogiri)) : ''
   const returnFlight = !isNewGame
     && transitionDirection === 'backward'
     && previousPendingDiscard
@@ -1578,10 +1614,12 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
     resetBranchNavigationForNewGame()
   }
   gameView.gameId = nextView.gameId
+  gameView.viewToken = nextView.viewToken
   gameView.matchId = nextView.matchId
   gameView.readOnly = Boolean(nextView.readOnly)
   gameView.sourceUrl = nextView.sourceUrl || null
   gameView.readOnlyReason = nextView.readOnlyReason || null
+  gameView.playerNames = nextView.playerNames || ['', '', '', '']
   gameView.currentNodeId = nextView.currentNodeId
   gameView.nodeComment = nextView.nodeComment || ''
   syncBranchNavigationFromGameView(nextView)
@@ -1594,7 +1632,7 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   gameView.pendingReview = nextView.pendingReview
   stageOpponentAnalysisForView(nextView.opponentAnalysis, {
     resetDisplay: isNewGame,
-    withoutMotion: reduceMotionEnabled.value || opponentAnalysisPermanentlyUnavailable.value,
+    withoutMotion: reduceMotionEnabled.value,
   })
   const nextTree = nextView.tree
   const currentTree = gameView.tree
@@ -1627,10 +1665,11 @@ function applyGameView(nextView: GameView, transitionDirection: GameViewTransiti
   if (returnFlight) {
     schedulePendingDiscardReturnFlight(returnFlight)
   } else if (!isNewGame && transitionDirection === 'forward' && pendingDiscardChanged && nextPendingDiscard) {
-    schedulePendingDiscardFlight(nextPendingDiscard.actor)
+    schedulePendingDiscardFlight(nextPendingDiscard.actor, departingHandHint)
   }
   if (showWallView.value) void refreshWallView()
   if (showCustomTenhouExport.value) customTenhouExportRefreshKey.value += 1
+  handlePythonEvent.commitAnalysisVisit(nextView.viewToken)
 }
 
 function hasRecommendationAnalysis(): boolean {
@@ -1670,6 +1709,7 @@ async function refreshBootstrapState() {
     bootstrapError.value = t('error.desktopBridge')
     return
   }
+  gameFileOperation.value = 'open'
   try {
     // Load settings first — this works even if the Python backend is down
     let nextSettings: StudioSettings
@@ -1709,6 +1749,8 @@ async function refreshBootstrapState() {
     } else {
       bootstrapError.value = t('error.bootstrap', { message })
     }
+  } finally {
+    gameFileOperation.value = null
   }
 }
 
@@ -1724,6 +1766,7 @@ async function prepareRendererForDisplay() {
   const bootstrapRefresh = refreshBootstrapState()
   await prepareTileArtwork()
   await bootstrapRefresh
+  window.studioAPI?.notifyBootstrapComplete()
 }
 
 async function toggleMode() {
@@ -1780,8 +1823,7 @@ watchEffect(() => {
 function onTableWheel(event: WheelEvent) {
   event.preventDefault()
   if (status.mode !== 'research') return
-  if (event.deltaY > 0) navigateTreeByOffset(1)
-  if (event.deltaY < 0) navigateTreeByOffset(-1)
+  navigateTreeByWheel(event)
 }
 
 function onTableContextMenu(event: MouseEvent) {
@@ -1838,26 +1880,11 @@ const handlePythonEvent = createPythonEventRouter({
   cacheDecisionAnalysis,
 })
 
-async function fetchAndShowMjaiDebug() {
-  showMjaiDebug.value = true
-  analysisCacheClearMessage.value = ''
-  if (window.studioAPI?.getLatestMjaiDebug) {
-    try {
-      const result = await window.studioAPI.getLatestMjaiDebug()
-      mjaiDebugData.value = (result as Record<string, unknown>).debug as Record<string, unknown> || {}
-    } catch {
-      mjaiDebugData.value = { error: 'Failed to fetch mjai debug data' }
-    }
-  }
-  if (window.studioAPI?.getAnalysisDebug) {
-    try {
-      const result = await window.studioAPI.getAnalysisDebug()
-      analysisDebugData.value = (result as Record<string, unknown>).debug as Record<string, unknown> || {}
-    } catch {
-      analysisDebugData.value = { error: 'Failed to fetch opponent analysis debug data' }
-    }
-  }
-}
+watch(gameFileOperation, (operation, previous) => {
+  const replacesRecord = (value: typeof operation) => value === 'open' || value === 'create' || value === 'import'
+  if (replacesRecord(operation)) handlePythonEvent.expectRecordReplacement()
+  else if (replacesRecord(previous)) handlePythonEvent.commitAnalysisVisit(gameView.viewToken)
+}, { flush: 'sync' })
 
 let lastUiScaleWheelAt = 0
 function onUiScaleWheel(event: WheelEvent) {
@@ -1893,14 +1920,6 @@ function onKeyDown(e: KeyboardEvent) {
     showPerceptualColorDebugger.value = !showPerceptualColorDebugger.value
     return
   }
-  if (e.key === 'F1') {
-    e.preventDefault()
-    if (showMjaiDebug.value) {
-      showMjaiDebug.value = false
-    } else {
-      void fetchAndShowMjaiDebug()
-    }
-  }
 }
 
 useDesktopBridgeSubscriptions({
@@ -1912,9 +1931,15 @@ useDesktopBridgeSubscriptions({
     closeState.stage = state.stage || ''
   },
   beforeClose: () => flushBeforeClose(
-    flushNodeComment,
+    flushRecordEdits,
     flushEngineAutosave,
     () => engineSaveMessage.value || t('native.closeSaveFailed.message'),
+    async () => {
+      if (status.autoAnalysis.status === 'running' && window.studioAPI) {
+        const response = await window.studioAPI.cancelAutoAnalysis()
+        if (response.state) applyStatus(response.state)
+      }
+    },
   ),
 })
 
@@ -1932,6 +1957,14 @@ onBeforeUnmount(() => {
 })
 if (import.meta.env.MODE === 'ui-test') {
   installAnalysisTestHarness(proxyRefs({
+    createGame,
+    closeGame,
+    openRecordImportPanel,
+    discardConfirmation,
+    openGame,
+    closeRecordImportPanel,
+    showRecordImportPanel,
+    recordOperationError,
     recordDirty,
     recordPath,
     saveGame,
@@ -1951,7 +1984,6 @@ if (import.meta.env.MODE === 'ui-test') {
     showWallView,
     wallTiles,
     showEngineWindow,
-    showMjaiDebug,
     handlePythonEvent,
     fetchAnalysisOnce,
     jumpToNode,

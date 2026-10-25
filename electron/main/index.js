@@ -26,6 +26,10 @@ const {
 } = require('./state/game-file-store')
 const { createTranslator } = require('./i18n')
 const { createMainWindow } = require('./window/main-window')
+const { registerStartupEngineRestore } = require('./services/startup-engine-restore')
+const { configurePageRasterization } = require('./rendering-policy')
+
+configurePageRasterization(app)
 
 const projectRoot = path.resolve(__dirname, '..', '..')
 const isDev = !app.isPackaged
@@ -83,7 +87,6 @@ const {
   restoreStartupRecovery,
   saveGame,
   saveGameAs,
-  writeRecoveryGameRecord,
 } = createRecordWorkflow({
   app,
   appOptions,
@@ -105,7 +108,6 @@ function startStartupServices() {
   }
   startupServicesStarted = true
   backend.startAll()
-  void engineIpcController.restoreLoadedProfiles()
 }
 
 function openMainWindow() {
@@ -118,7 +120,10 @@ function openMainWindow() {
     isDev,
     rendererUrl,
     gameFileStore,
-    writeRecoveryGameRecord,
+    prepareRecordClose: (stageChanged) => backend.backendGateway.prepareRecordClose(
+      Boolean(loadSettings(appOptions).records?.saveRecoveryOnExit), stageChanged),
+    cancelRecordClose: backend.backendGateway.cancelRecordClose,
+    confirmRecordClose: backend.backendGateway.confirmRecordClose,
     t,
   })
   startStartupServices()
@@ -126,7 +131,8 @@ function openMainWindow() {
 }
 
 function registerIpcHandlers() {
-  registerSettingsIpc(ipcMain, appOptions)
+  registerStartupEngineRestore(ipcMain, () => engineIpcController.restoreLoadedProfiles())
+  registerSettingsIpc(ipcMain, appOptions, next => backend.backendGateway.updateRecordPreferences(next.records))
   registerApplicationIpc({
     ipcMain,
     appOptions,
@@ -160,6 +166,8 @@ function registerIpcHandlers() {
   })
   registerRecordIpc({
     ipcMain,
+    dialog,
+    getMainWindow: () => mainWindow,
     shell,
     backendGateway: backend.backendGateway,
     gameFileStore,
@@ -198,6 +206,15 @@ app.on('window-all-closed', () => {
   }
 })
 
-app.on('before-quit', () => {
-  backend.stopAll()
+let quitReady = false
+let quitPending = null
+app.on('before-quit', (event) => {
+  if (quitReady) return
+  // A first quit still goes through the window's edit/recovery close guard.
+  if (mainWindow && !mainWindow.isDestroyed()) { event.preventDefault(); mainWindow.close(); return }
+  event.preventDefault()
+  if (!quitPending) quitPending = backend.stopAll().then(() => {
+    quitReady = true
+    app.quit()
+  }).catch(error => { quitPending = null; console.error('[shutdown] backend did not exit:', error) })
 })

@@ -115,6 +115,7 @@ import { buildRandomTileCountBaseline, randomBaselinePrediction } from '../rando
 import { useCountAnalysisData } from '../useCountAnalysisData'
 import { useI18n } from '../i18n'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
+import { useCanvasPaintSnapshots } from '../canvasPaintSnapshot'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 import CountPredictionTooltip from './CountPredictionTooltip.vue'
 
@@ -147,11 +148,13 @@ type CountCanvasGeometry = {
   tracks?: CountTrackGeometry[]
 }
 type CountCanvasElement = HTMLCanvasElement & {
-  rmsCountRenderSignature?: string
+  readonly rmsCountRenderSignature?: string
   rmsCountGeometry?: CountCanvasGeometry
 }
 const countCanvasElements = new Map<string, { canvas: CountCanvasElement; row: readonly string[] }>()
 const sourceCanvasElements = new Map<string, { canvas: CountCanvasElement; source: TileSource }>()
+const { publish: publishSnapshot, retire: retireSnapshot } = useCanvasPaintSnapshots<readonly (readonly number[])[]>('rmsCountRenderSignature',
+  values => values.flat().map(value => Math.round(value * 10000)).join(','))
 let displayedCountDistributions = new Map<string, number[]>()
 let countAnimationFrame = 0
 const countHoverTarget = ref<{
@@ -277,12 +280,16 @@ function updateCountBarGeometry() {
   const groupedTileHeightPixels = Math.round(groupedGeometry.tileHeight * ratio)
   const tilePixels = props.countLayout === 'tile-groups' ? groupedTilePixels : desiredTilePixels
   const tileHeightPixels = props.countLayout === 'tile-groups' ? groupedTileHeightPixels : desiredTileHeightPixels
-  grid.style.setProperty('--analysis-tile-width', `${tilePixels / ratio}px`)
-  grid.style.setProperty('--analysis-tile-height', `${tileHeightPixels / ratio}px`)
-  grid.style.setProperty('--analysis-count-source-gap', '0px')
-  grid.style.setProperty('--analysis-count-wall-gap', `${wallGapPixels / ratio}px`)
-  grid.style.setProperty('--analysis-count-tile-gap', `${tileGapPixels / ratio}px`)
-  grid.style.setProperty('--analysis-count-main-row-width', `${groupedGeometry.mainRowWidth}px`)
+  // The shell/legend sizes and palette depend on the enclosing panel, not the
+  // tile-width variables being calculated. Finish these reads before mutation.
+  const variables = new Map<string, string>()
+  const setVariable = (name: string, value: string) => { variables.set(name, value) }
+  setVariable('--analysis-tile-width', `${tilePixels / ratio}px`)
+  setVariable('--analysis-tile-height', `${tileHeightPixels / ratio}px`)
+  setVariable('--analysis-count-source-gap', '0px')
+  setVariable('--analysis-count-wall-gap', `${wallGapPixels / ratio}px`)
+  setVariable('--analysis-count-tile-gap', `${tileGapPixels / ratio}px`)
+  setVariable('--analysis-count-main-row-width', `${groupedGeometry.mainRowWidth}px`)
   const sourceShell = grid.querySelector<HTMLElement>('.analysis-count-source-sequence-shell')
   let sourceTilePixels = Math.max(4, Math.floor(desiredTilePixels * 0.3))
   if (sourceShell && countSourceTiles.value.length) {
@@ -293,9 +300,9 @@ function updateCountBarGeometry() {
     const groupedGapPixels = groupGapPixels * groupCount
     sourceTilePixels = Math.max(4, Math.floor((availablePixels - ordinaryGapPixels - groupedGapPixels) / countSourceTiles.value.length))
     const sourceContentPixels = (sourceTilePixels * countSourceTiles.value.length) + ordinaryGapPixels + groupedGapPixels
-    grid.style.setProperty('--analysis-count-source-tile-width', `${sourceTilePixels / ratio}px`)
-    grid.style.setProperty('--analysis-count-source-group-gap', `${groupGapPixels / ratio}px`)
-    grid.style.setProperty('--analysis-count-source-content-width', `${sourceContentPixels / ratio}px`)
+    setVariable('--analysis-count-source-tile-width', `${sourceTilePixels / ratio}px`)
+    setVariable('--analysis-count-source-group-gap', `${groupGapPixels / ratio}px`)
+    setVariable('--analysis-count-source-content-width', `${sourceContentPixels / ratio}px`)
   }
   const groupedRowMinimumPixels = groupedGeometry.rowMinimumHeight * ratio
   const groupedBarMinimumPixels = groupedGeometry.barMinimumHeight * ratio
@@ -308,18 +315,21 @@ function updateCountBarGeometry() {
   const sourceRowGapPixels = desiredTilePixels * COUNT_SOURCE_ROW_GAP_RATIO
   const sourceGridMinimumPixels = toggleHeightPixels + sourceLegendPixels + (sourceGridGapPixels * 2)
     + (sourceRowMinimumPixels * sourceCount) + (sourceRowGapPixels * Math.max(0, sourceCount - 1))
-  grid.style.setProperty('--analysis-count-row-min-height', `${groupedRowMinimumPixels / ratio}px`)
-  grid.style.setProperty('--analysis-count-bar-min-height', `${groupedBarMinimumPixels / ratio}px`)
-  grid.style.setProperty('--analysis-count-source-row-min-height', `${sourceRowMinimumPixels / ratio}px`)
-  grid.style.setProperty('--analysis-count-grid-min-height', `${(props.countLayout === 'tile-groups' ? groupedGridMinimumPixels : sourceGridMinimumPixels) / ratio}px`)
-  updateCountPaletteVariables(grid)
-  measureCountCanvases()
-}
-function updateCountPaletteVariables(grid: HTMLElement) {
-  const style = getComputedStyle(grid)
+  setVariable('--analysis-count-row-min-height', `${groupedRowMinimumPixels / ratio}px`)
+  setVariable('--analysis-count-bar-min-height', `${groupedBarMinimumPixels / ratio}px`)
+  setVariable('--analysis-count-source-row-min-height', `${sourceRowMinimumPixels / ratio}px`)
+  setVariable('--analysis-count-grid-min-height', `${(props.countLayout === 'tile-groups' ? groupedGridMinimumPixels : sourceGridMinimumPixels) / ratio}px`)
+  // CSSStyleDeclaration is live: writing one source's colors before reading the
+  // next source used to flush the entire chart's style repeatedly.
   for (const source of countSources.value) {
-    countSourcePalette(source.key, style).forEach((color, value) => grid.style.setProperty(countPaletteVariable(source.key, value), color))
+    countSourcePalette(source.key, gridStyle).forEach((color, value) => setVariable(countPaletteVariable(source.key, value), color))
   }
+  for (const [name, value] of variables) {
+    if (grid.style.getPropertyValue(name) !== value) grid.style.setProperty(name, value)
+  }
+  // One dependent layout after the complete CSS batch; no bitmap size writes
+  // between the canvas/track measurements below.
+  measureCountCanvases()
 }
 function prepareCountCanvas(canvas: CountCanvasElement) {
   const geometry = canvas.rmsCountGeometry
@@ -336,17 +346,16 @@ function measureCanvasBox(canvas: CountCanvasElement) {
   const ratio = Math.max(1, window.devicePixelRatio || 1)
   const width = Math.max(1, Math.round(rect.width * ratio))
   const height = Math.max(1, Math.round(rect.height * ratio))
-  if (canvas.width !== width) canvas.width = width
-  if (canvas.height !== height) canvas.height = height
   return { rect, ratio, width, height }
 }
 
 function measureCountCanvases() {
+  const measured: { canvas: CountCanvasElement; geometry: CountCanvasGeometry }[] = []
   for (const { canvas } of countCanvasElements.values()) {
     const { ratio, width, height } = measureCanvasBox(canvas)
     const style = getComputedStyle(canvas)
     const sources = countSources.value
-    canvas.rmsCountGeometry = {
+    measured.push({ canvas, geometry: {
       width,
       height,
       tileGap: Math.max(0, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-tile-gap')) * ratio)),
@@ -355,7 +364,7 @@ function measureCountCanvases() {
         ? Math.max(0, Math.round(Number.parseFloat(style.getPropertyValue('--analysis-count-wall-gap')) * ratio))
         : 0,
       palettes: sources.map(source => countSourcePalette(source.key, style)),
-    }
+    } })
   }
   for (const { canvas, source } of sourceCanvasElements.values()) {
     const { rect, ratio, width, height } = measureCanvasBox(canvas)
@@ -370,12 +379,17 @@ function measureCountCanvases() {
           bottom: Math.min(height, Math.round((trackRect.bottom - rect.top) * ratio)),
         }
       })
-    canvas.rmsCountGeometry = {
+    measured.push({ canvas, geometry: {
       width,
       height,
       palettes: [countSourcePalette(source.key, style)],
       tracks,
-    }
+    } })
+  }
+  for (const { canvas, geometry } of measured) {
+    if (canvas.width !== geometry.width) canvas.width = geometry.width
+    if (canvas.height !== geometry.height) canvas.height = geometry.height
+    canvas.rmsCountGeometry = geometry
   }
 }
 
@@ -391,6 +405,7 @@ function renderCountCanvas(row: readonly string[], canvas: CountCanvasElement) {
   const wallGap = geometry.wallGap || 0
   const sourceWidth = Math.max(sources.length, tileWidth - wallGap)
   const palettes = geometry.palettes
+  const paintedProbabilities: number[][] = []
   for (let tileIndex = 0; tileIndex < row.length; tileIndex += 1) {
     const tile = row[tileIndex]
     const blockLeft = tileIndex * (tileWidth + tileGap)
@@ -400,6 +415,7 @@ function renderCountCanvas(row: readonly string[], canvas: CountCanvasElement) {
       const left = blockLeft + sourceLeft + (sourceIndex === sources.length - 1 ? wallGap : 0)
       const laneWidth = Math.max(1, sourceRight - sourceLeft)
       const probabilities = displayedProbabilities(tile, sources[sourceIndex])
+      paintedProbabilities.push(probabilities)
       const total = probabilities.reduce((sum, probability) => sum + probability, 0)
       let cumulative = 0
       for (let segmentIndex = 0; segmentIndex < probabilities.length; segmentIndex += 1) {
@@ -414,9 +430,7 @@ function renderCountCanvas(row: readonly string[], canvas: CountCanvasElement) {
       }
     }
   }
-  canvas.rmsCountRenderSignature = row.flatMap(tile => sources.flatMap(source => (
-    displayedProbabilities(tile, source).map(value => Math.round(value * 10000))
-  ))).join(',')
+  publishSnapshot(canvas, paintedProbabilities)
 }
 
 function renderSourceCanvas(canvas: CountCanvasElement, source: TileSource) {
@@ -424,6 +438,7 @@ function renderSourceCanvas(canvas: CountCanvasElement, source: TileSource) {
   if (!prepared) return
   const { context, geometry } = prepared
   const palette = geometry.palettes[0]
+  const paintedProbabilities = countSourceTiles.value.map(entry => displayedProbabilities(entry.tile, source))
   geometry.tracks?.forEach((track, tileIndex) => {
     const entry = countSourceTiles.value[tileIndex]
     if (!entry) return
@@ -431,7 +446,7 @@ function renderSourceCanvas(canvas: CountCanvasElement, source: TileSource) {
     if (right <= left || bottom <= top) return
     context.fillStyle = 'rgba(255, 255, 255, 0.04)'
     context.fillRect(left, top, right - left, bottom - top)
-    const probabilities = displayedProbabilities(entry.tile, source)
+    const probabilities = paintedProbabilities[tileIndex]
     const total = probabilities.reduce((sum, probability) => sum + probability, 0)
     let cumulative = 0
     probabilities.forEach((probability, segmentIndex) => {
@@ -445,9 +460,7 @@ function renderSourceCanvas(canvas: CountCanvasElement, source: TileSource) {
       context.fillRect(left, segmentTop, right - left, segmentBottom - segmentTop)
     })
   })
-  canvas.rmsCountRenderSignature = countSourceTiles.value.flatMap(entry => (
-    displayedProbabilities(entry.tile, source).map(value => Math.round(value * 10000))
-  )).join(',')
+  publishSnapshot(canvas, paintedProbabilities)
 }
 function renderCountCanvases() {
   for (const { canvas, row } of countCanvasElements.values()) renderCountCanvas(row, canvas)
@@ -458,12 +471,21 @@ const scheduleCountBarGeometry = useResponsiveGeometry(countGridElement, () => {
   renderCountCanvases()
 }, { resizeAncestorSelector: '.analysis-tiles-view', styleAncestorSelector: '.dock-module' })
 function setCountCanvasElement(key: string, row: readonly string[], element: unknown) {
+  if (countCanvasElements.get(key)?.canvas === element) return
+  const previous = countCanvasElements.get(key)?.canvas
+  if (previous) retireSnapshot(previous)
   if (!(element instanceof HTMLCanvasElement)) countCanvasElements.delete(key)
   else countCanvasElements.set(key, { canvas: element as CountCanvasElement, row })
   scheduleCountBarGeometry()
 }
 
 function setSourceCanvasElement(key: string, source: TileSource, element: unknown) {
+  const existing = sourceCanvasElements.get(key)
+  if (existing && existing.canvas === element) {
+    existing.source = source
+    return
+  }
+  if (existing) retireSnapshot(existing.canvas)
   if (!(element instanceof HTMLCanvasElement)) sourceCanvasElements.delete(key)
   else sourceCanvasElements.set(key, { canvas: element as CountCanvasElement, source })
   scheduleCountBarGeometry()
@@ -475,6 +497,7 @@ function stopCountAnimation() {
 }
 
 function animateCountCanvases() {
+  if (!countGridElement.value) return
   stopCountAnimation()
   const target = targetCountDistributions()
   const unchanged = target.size === displayedCountDistributions.size
@@ -548,10 +571,15 @@ watch(() => [props.analysis, props.table, props.controlledSeat, props.reduceMoti
     || !hasCountPrediction(countHoverTooltip.value.prediction)
   )) clearCountTooltip()
   void nextTick(() => {
-    scheduleCountBarGeometry()
     animateCountCanvases()
   })
 }, { flush: 'post', immediate: true })
+// Prediction changes do not change the chart's layout. Measure again only
+// when its actual tile/source structure or legend text changes (plus resize).
+watch([
+  () => countSourceTiles.value.map(entry => entry.tile).join(','),
+  () => countSources.value.map(source => `${source.key}:${source.label}`).join(','),
+], scheduleCountBarGeometry, { flush: 'post' })
 watch(theoreticalBaselineAvailable, (available) => {
   if (!available) theoreticalBaselineEnabled.value = false
 })

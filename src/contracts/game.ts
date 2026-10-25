@@ -212,6 +212,7 @@ export interface TableState {
 }
 
 export interface DecisionAnalysis {
+  context?: AnalysisPresentationContext
   model: string
   seat: number
   mode?: string
@@ -290,8 +291,31 @@ export interface GameTreeView {
   rounds?: RoundSummary[]
 }
 
+export type RecordCommandScope = Pick<AnalysisViewToken, 'sessionId' | 'nodeId' | 'seat' | 'mode' | 'intent'>
+
+export interface AnalysisViewToken {
+  sessionId: string
+  sequence: number
+  intent: number
+  gameId: string
+  nodeId: string
+  seat: number
+  mode: string
+  visibleHands: boolean
+  decisionEpoch: number
+  opponentEpoch: number
+}
+
+export interface AnalysisPresentationContext extends Record<string, unknown> {
+  sourceNodeId?: string | null
+  sourceTable?: TableState | null
+  dataState?: 'reading' | 'running' | 'ready' | 'failed' | 'missing'
+}
+
 export interface GameView {
+  viewToken?: AnalysisViewToken | null
   gameId: string | null
+  playerNames?: string[]
   matchId?: string | null
   readOnly?: boolean
   sourceUrl?: string | null

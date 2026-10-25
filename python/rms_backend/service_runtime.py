@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
 from typing import Any
 
 
@@ -25,13 +26,38 @@ class ServiceRuntime:
         self._request_executors = {
             "command": executor_factory(max_workers=1),
             "checkpoint": executor_factory(max_workers=1),
+            "record_control": executor_factory(max_workers=1),
+            "record_release": executor_factory(max_workers=1),
             "status": executor_factory(max_workers=1),
             "metrics": executor_factory(max_workers=1),
             "engine_inspection": executor_factory(max_workers=1),
             "engine_reload": executor_factory(max_workers=1),
         }
         self._shutdown_callbacks: list[Callable[[], None]] = []
+        self._record_codec = None
+        self._codec_owner = Lock()
+        self._shutdown_callbacks.append(self._close_record_codec)
         self._closed = False
+
+    @property
+    def record_codec(self):
+        with self._codec_owner:
+            if self._closed:
+                raise RuntimeError('Service runtime is already closed.')
+            if self._record_codec is None:
+                from .records.codec_scheduler import RecordCodecScheduler
+                self._record_codec = RecordCodecScheduler()
+            return self._record_codec
+
+    def _close_record_codec(self):
+        with self._codec_owner:
+            if self._record_codec is not None:
+                self._record_codec.close()
+
+    def codec_metrics(self):
+        with self._codec_owner:
+            lane = self._record_codec
+            return (lane.client.pid, lane.metrics()) if lane is not None else (None, {})
 
     def add_shutdown(self, callback: Callable[[], None]) -> None:
         if self._closed:
@@ -41,7 +67,16 @@ class ServiceRuntime:
     @staticmethod
     def request_lane(command: str) -> str:
         return {
-            "export_recovery_checkpoint": "checkpoint",
+            "record_save_write": "checkpoint",
+            "record_close_prepare": "checkpoint",
+            "record_save_committed": "record_control",
+            "record_save_abort": "record_control",
+            "record_save_release": "record_control",
+            "record_close_cancel": "record_control",
+            "record_close_confirm": "record_control",
+            "record_wait_released": "record_release",
+            "record_abandon": "record_release",
+            "record_flush": "checkpoint",
             "get_status": "status",
             "get_runtime_metrics": "metrics",
             "describe_engine": "engine_inspection",

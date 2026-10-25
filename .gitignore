@@ -10,7 +10,7 @@ release/
 !.env.*.example
 
 config.json
-records/
+/records/
 logs/
 *.log
 

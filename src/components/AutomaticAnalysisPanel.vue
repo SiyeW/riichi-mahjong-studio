@@ -1,14 +1,25 @@
 <template>
   <div class="settings-preview auto-analysis-panel">
     <div class="auto-analysis-row">
-      <button
-        class="auto-analysis-button"
-        :class="{ running: autoAnalysisRunning }"
-        :disabled="!status.gameLoaded || autoAnalysisRequestInFlight"
-        @click="toggleAutoAnalysis"
-      >
-        {{ autoAnalysisRunning ? t('console.stop') : t('console.autoAnalysis') }}
-      </button>
+      <span class="hover-action-menu auto-analysis-menu">
+        <button
+          class="auto-analysis-button"
+          :class="{ running: autoAnalysisRunning }"
+          :disabled="!status.gameLoaded || autoAnalysisRequestInFlight"
+          @click="toggleAutoAnalysis"
+        >
+          {{ autoAnalysisRunning ? t('console.stop') : t('console.autoAnalysis') }}
+        </button>
+        <span class="hover-action-menu-items auto-analysis-menu-items" role="menu" :aria-label="t('console.autoAnalysis')">
+          <button
+            class="ui-control-button auto-analysis-menu-action"
+            role="menuitem"
+            :disabled="!status.gameLoaded || clearingAnalysisCaches"
+            @click="clearCache"
+          >{{ clearingAnalysisCaches ? t('console.clearingCache') : t('console.clearCache') }}</button>
+          <small v-if="cacheClearMessage" class="auto-analysis-menu-status" role="status">{{ cacheClearMessage }}</small>
+        </span>
+      </span>
       <div
         class="auto-analysis-progress"
         role="progressbar"
@@ -32,7 +43,15 @@ import type { StudioStatus } from '../contracts/runtime'
 const props = defineProps<{
   status: StudioStatus
   applyStatus: (status: StudioStatus) => void
+  cacheClearMessage: string
+  clearingAnalysisCaches: boolean
 }>()
+const emit = defineEmits<{ 'clear-cache': [] }>()
+
+function clearCache(event: MouseEvent) {
+  emit('clear-cache')
+  if (event.detail > 0) (event.currentTarget as HTMLButtonElement).blur()
+}
 
 const { t } = useI18n()
 const {
@@ -80,6 +99,34 @@ const {
   transition:
     background var(--ui-motion-duration) var(--ui-motion-easing),
     opacity var(--ui-motion-duration) var(--ui-motion-easing);
+}
+
+.auto-analysis-menu {
+  min-width: 0;
+}
+
+.auto-analysis-menu-items {
+  box-sizing: border-box;
+  width: max-content;
+  max-width: calc(100cqw - 1.2rem);
+  min-width: 0;
+}
+
+.auto-analysis-menu-action {
+  box-sizing: border-box;
+  width: 100%;
+  text-align: left;
+}
+
+.auto-analysis-menu-status {
+  box-sizing: border-box;
+  width: 0;
+  min-width: 100%;
+  padding: calc(0.25rem * var(--chrome-scale)) calc(0.55rem * var(--chrome-scale));
+  color: var(--text-dim);
+  font-size: var(--ui-text-caption);
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .auto-analysis-button:hover:not(:disabled) {

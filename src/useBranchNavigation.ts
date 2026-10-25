@@ -1,6 +1,8 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
-import { sameViewRequestContext } from './analysisPosition'
+import { sameViewRequestContext, sameViewRequestScope } from './analysisPosition'
 import { createNodeCommentQueue, nodeCommentKey } from './nodeCommentQueue'
+import { recordCommandScope } from './recordCommandScope.ts'
+import { createWheelStepAccumulator, type NavigationWheelInput } from './wheelNavigation'
 import type { GameTreeNode, GameView, GameViewTransitionDirection, RoundSummary } from './contracts/game'
 import type { StudioStatus } from './contracts/runtime'
 
@@ -9,26 +11,30 @@ export function useBranchNavigation(options: {
   status: StudioStatus
   isReadOnlyRecord: Readonly<Ref<boolean>>
   nodeMapById: Readonly<Ref<Map<string, GameTreeNode>>>
-  activeRoundRootId: Readonly<Ref<string | null>>
   roundRootById: Readonly<Ref<Map<string, RoundSummary>>>
   confirmationTimeoutMs: number
   getGameplayResponseGeneration: () => number
   markRecordDirty: () => void
   applyStatus: (status: StudioStatus) => void
   applyGameView: (view: GameView, direction?: GameViewTransitionDirection) => void
+  expectAnalysisVisit: (intent: number, nodeId: string) => void
+  invalidateAnalysisVisit: () => void
+  settleAnalysisVisit: () => void
 }) {
   const {
     gameView,
     status,
     isReadOnlyRecord,
     nodeMapById,
-    activeRoundRootId,
     roundRootById,
     confirmationTimeoutMs,
     getGameplayResponseGeneration,
     markRecordDirty,
     applyStatus,
     applyGameView,
+    expectAnalysisVisit,
+    invalidateAnalysisVisit,
+    settleAnalysisVisit,
   } = options
 
 const branchReturnMap = ref<Record<string, string>>({})
@@ -39,11 +45,11 @@ const nodeCommentDraft = ref('')
 const nodeComments = createNodeCommentQueue(
   async (update) => {
     if (!window.studioAPI?.setNodeComment) throw new Error('Node comment service unavailable')
-    return window.studioAPI.setNodeComment(update.nodeId, update.comment)
+    return window.studioAPI.setNodeComment(update.nodeId, update.comment, update.scope)
   },
   (update, comment) => {
     if (
-      nodeCommentKey(gameView.gameId, gameView.currentNodeId) === update.key
+      commentKey(gameView) === update.key
       && nodeCommentDraft.value === update.comment
     ) nodeCommentDraft.value = comment
   },
@@ -56,24 +62,44 @@ let wheelNavigationQueuedDirection: GameViewTransitionDirection | null = null
 let wheelNavigationRequestInFlight = false
 let wheelNavigationGeneration = 0
 let latestNavigationIntentId = 0
+let wheelNavigationEpoch = 0
+let wheelNavigationBurst = 0
+let wheelNavigationDirection: GameViewTransitionDirection | null = null
+const deferredWheelRuns: Array<{ offset: -1 | 1; count: number }> = []
+const wheelTraversalNodes = new Map<string, GameTreeNode>()
+const MAX_DEFERRED_WHEEL_RUNS = 256
+const MAX_DEFERRED_WHEEL_STEPS = 1024
+const wheelSteps = createWheelStepAccumulator()
+
+watch([() => status.mode, () => gameView.viewToken?.sessionId || gameView.gameId], () => wheelSteps.reset())
 
 function cancelPendingWheelNavigation() {
+  wheelSteps.reset()
+  wheelNavigationBurst += 1
+  wheelNavigationEpoch += 1
+  wheelNavigationDirection = null
   wheelNavigationQueuedNodeId = null
   wheelNavigationQueuedDirection = null
   wheelNavigationGeneration = 0
+  deferredWheelRuns.length = 0
+  wheelTraversalNodes.clear()
+}
+
+function commentKey(view: GameView, nodeId = view.currentNodeId) {
+  return nodeCommentKey(view.viewToken?.sessionId || view.gameId, nodeId)
 }
 
 function syncNodeCommentFromView(view: GameView) {
-  const key = nodeCommentKey(view.gameId, view.currentNodeId)
+  const key = commentKey(view)
   nodeCommentDraft.value = nodeComments.get(key) ?? String(view.nodeComment || '')
 }
 
 function onNodeCommentInput() {
   const nodeId = gameView.currentNodeId
-  const key = nodeCommentKey(gameView.gameId, nodeId)
+  const key = commentKey(gameView, nodeId)
   if (!nodeId || !key) return
   const comment = nodeCommentDraft.value
-  nodeComments.set(key, nodeId, comment)
+  nodeComments.set(key, nodeId, comment, recordCommandScope(gameView))
   markRecordDirty()
   if (nodeCommentSaveTimer !== null) window.clearTimeout(nodeCommentSaveTimer)
   nodeCommentSaveTimer = window.setTimeout(() => {
@@ -97,7 +123,7 @@ function flushNodeCommentInBackground() {
 }
 
 function discardNodeCommentDraft(nodeId: string) {
-  const key = nodeCommentKey(gameView.gameId, nodeId)
+  const key = commentKey(gameView, nodeId)
   if (!key) return
   nodeComments.discard(key)
 }
@@ -143,9 +169,11 @@ watch(deleteNodeConfirmationId, (nodeId) => {
 async function setCurrentNodeAsMainBranch() {
   if (!window.studioAPI || !gameView.currentNodeId || !canSetCurrentNodeAsMainBranch.value || nodeMutationRequestInFlight.value) return
   deleteNodeConfirmationId.value = null
+  cancelPendingWheelNavigation()
   nodeMutationRequestInFlight.value = true
   try {
-    const response = await window.studioAPI.setMainBranch(gameView.currentNodeId)
+    const response = await window.studioAPI.setMainBranch(gameView.currentNodeId, recordCommandScope(gameView))
+    cancelPendingWheelNavigation()
     applyStatus(response.state)
     applyGameView(response.view)
   } finally {
@@ -163,8 +191,9 @@ async function deleteCurrentNode() {
 
   nodeMutationRequestInFlight.value = true
   try {
+    cancelPendingWheelNavigation()
     discardNodeCommentDraft(nodeId)
-    const response = await window.studioAPI.deleteNode(nodeId)
+    const response = await window.studioAPI.deleteNode(nodeId, recordCommandScope(gameView))
     cancelPendingWheelNavigation()
     branchReturnMap.value = {}
     applyStatus(response.state)
@@ -185,6 +214,7 @@ function resolveNodeTransitionDirection(nodeId: string): GameViewTransitionDirec
 function currentViewRequestContext() {
   return {
     gameId: gameView.gameId, seat: status.controlledSeat, mode: status.mode,
+    sessionId: gameView.viewToken?.sessionId,
     generation: getGameplayResponseGeneration(), intent: latestNavigationIntentId,
   }
 }
@@ -194,6 +224,7 @@ async function jumpToNode(nodeId: string, navigationIntentId?: number) {
   cancelPendingWheelNavigation()
   const intentId = navigationIntentId ?? ++latestNavigationIntentId
   latestNavigationIntentId = Math.max(latestNavigationIntentId, intentId)
+  expectAnalysisVisit(intentId, nodeId)
   const requestContext = currentViewRequestContext()
   wheelNavigationCursorNodeId = nodeId
   const targetNode = nodeMapById.value.get(nodeId)
@@ -204,7 +235,16 @@ async function jumpToNode(nodeId: string, navigationIntentId?: number) {
       [targetNode.parentId]: nodeId,
     }
   }
-  const response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision)
+  let response
+  try {
+    response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision, intentId)
+  } catch (error) {
+    if (intentId === latestNavigationIntentId) {
+      wheelNavigationCursorNodeId = gameView.currentNodeId
+      settleAnalysisVisit()
+    }
+    throw error
+  }
   if (intentId !== latestNavigationIntentId || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
   applyStatus(response.state)
   applyGameView(response.view, transitionDirection)
@@ -216,22 +256,48 @@ async function dispatchQueuedWheelNavigation() {
   const nodeId = wheelNavigationQueuedNodeId
   const transitionDirection = wheelNavigationQueuedDirection ?? resolveNodeTransitionDirection(nodeId)
   const generation = wheelNavigationGeneration
+  const epoch = wheelNavigationEpoch
+  const burst = wheelNavigationBurst
   const requestContext = currentViewRequestContext()
   wheelNavigationQueuedNodeId = null
   wheelNavigationQueuedDirection = null
   wheelNavigationRequestInFlight = true
 
   try {
-    const response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision)
-    if (generation !== wheelNavigationGeneration || generation !== latestNavigationIntentId
-      || !sameViewRequestContext(requestContext, currentViewRequestContext())) return
+    const response = await window.studioAPI.jumpToNode(nodeId, gameView.tree?.revision, generation)
+    const sameScope = sameViewRequestScope(requestContext, currentViewRequestContext())
+    // Structural facts can unblock a reversal without displaying the old table.
+    // They are temporary to this burst and never cross record/seat/mode/edit scope.
+    const tree = response.view.tree
+    if (sameScope && burst === wheelNavigationBurst && wheelNavigationGeneration !== 0 && tree && !tree.compact
+      && (epoch === wheelNavigationEpoch || deferredWheelRuns.length > 0)
+      && (tree.revision ?? 0) >= (gameView.tree?.revision ?? 0)) {
+      wheelTraversalNodes.clear()
+      const nodes = Array.isArray(tree.nodes) ? tree.nodes : Object.values(tree.nodes || {})
+      nodes.forEach(node => wheelTraversalNodes.set(node.id, node))
+    }
+    // Keep making visible progress during a same-direction wheel burst, even
+    // when another wheel target queued before this reply. Reversal, explicit
+    // jumps and record/seat/mode changes still invalidate the old burst.
+    if (epoch !== wheelNavigationEpoch
+      || !sameScope) return
     applyStatus(response.state)
     applyGameView(response.view, transitionDirection)
+  } catch (error) {
+    if (burst === wheelNavigationBurst && sameViewRequestScope(requestContext, currentViewRequestContext())) {
+      deferredWheelRuns.length = 0
+      wheelTraversalNodes.clear()
+      if (generation === latestNavigationIntentId) settleAnalysisVisit()
+    }
+    console.error('Failed to navigate record:', error)
   } finally {
+    drainDeferredWheelSteps()
     wheelNavigationRequestInFlight = false
-    if (generation === wheelNavigationGeneration && !wheelNavigationQueuedNodeId) {
+    if (generation === wheelNavigationGeneration && !wheelNavigationQueuedNodeId && !deferredWheelRuns.length) {
       wheelNavigationGeneration = 0
+      wheelNavigationDirection = null
       wheelNavigationCursorNodeId = gameView.currentNodeId
+      wheelTraversalNodes.clear()
     }
     if (wheelNavigationQueuedNodeId) {
       void dispatchQueuedWheelNavigation()
@@ -240,22 +306,21 @@ async function dispatchQueuedWheelNavigation() {
 }
 
 
-function navigateTreeByOffset(offset: number) {
+function resolveWheelStep(offset: number): 'moved' | 'boundary' | 'waiting' {
   const cursorNodeId = wheelNavigationCursorNodeId || gameView.currentNodeId
-  if (!cursorNodeId) return
+  if (!cursorNodeId) return 'boundary'
   // Rendering filters links outside the active round, but wheel navigation must
   // retain those links to reach the adjacent round on the same branch.
-  const node = nodeMapById.value.get(cursorNodeId)
-  if (!node) return
+  const lookup = (id: string) => wheelTraversalNodes.get(id) || nodeMapById.value.get(id)
+  const node = lookup(cursorNodeId)
+  if (!node) return 'waiting'
   let targetNodeId: string | null = null
   let transitionDirection: GameViewTransitionDirection
   if (offset < 0) {
-    if (!node.parentId) return
-    if (!nodeMapById.value.has(node.parentId)) {
-      const activeRound = activeRoundRootId.value
-        ? roundRootById.value.get(activeRoundRootId.value)
-        : null
-      if (cursorNodeId !== activeRoundRootId.value || !activeRound?.parentRoundId) return
+    if (!node.parentId) return 'boundary'
+    if (!lookup(node.parentId)) {
+      const round = roundRootById.value.get(cursorNodeId)
+      if (!round?.parentRoundId) return 'boundary'
     }
     branchReturnMap.value = {
       ...branchReturnMap.value,
@@ -265,9 +330,9 @@ function navigateTreeByOffset(offset: number) {
     transitionDirection = 'backward'
   } else {
     const children = (node.children || []).filter(
-      (childId) => nodeMapById.value.has(childId) || roundRootById.value.has(childId),
+      (childId) => Boolean(lookup(childId)) || roundRootById.value.has(childId),
     )
-    if (!children.length) return
+    if (!children.length) return 'boundary'
     const rememberedChild = branchReturnMap.value[node.id]
     targetNodeId = children.includes(rememberedChild) ? rememberedChild : null
     if (!targetNodeId) {
@@ -275,7 +340,7 @@ function navigateTreeByOffset(offset: number) {
         ? node.mainChildId
         : children[0]
     }
-    if (!targetNodeId) return
+    if (!targetNodeId) return 'boundary'
     if (rememberedChild && targetNodeId === rememberedChild) {
       const nextMap = { ...branchReturnMap.value }
       delete nextMap[node.id]
@@ -284,13 +349,50 @@ function navigateTreeByOffset(offset: number) {
     transitionDirection = 'forward'
   }
 
+  if (wheelNavigationDirection && wheelNavigationDirection !== transitionDirection) wheelNavigationEpoch += 1
+  wheelNavigationDirection = transitionDirection
   wheelNavigationCursorNodeId = targetNodeId
-  if (wheelNavigationGeneration === 0) {
-    wheelNavigationGeneration = ++latestNavigationIntentId
-  }
+  wheelNavigationGeneration = ++latestNavigationIntentId
+  expectAnalysisVisit(wheelNavigationGeneration, targetNodeId)
   wheelNavigationQueuedNodeId = targetNodeId
   wheelNavigationQueuedDirection = transitionDirection
   void dispatchQueuedWheelNavigation()
+  return 'moved'
+}
+
+function drainDeferredWheelSteps() {
+  while (deferredWheelRuns.length) {
+    const run = deferredWheelRuns[0]
+    const result = resolveWheelStep(run.offset)
+    if (result === 'waiting') return
+    if (result === 'boundary' || --run.count === 0) deferredWheelRuns.shift()
+  }
+}
+
+function navigateTreeByOffset(offset: number) {
+  if (!Number.isSafeInteger(offset) || !offset) return
+  if (Math.abs(offset) + deferredWheelRuns.reduce((sum, run) => sum + run.count, 0) > MAX_DEFERRED_WHEEL_STEPS) {
+    cancelPendingWheelNavigation()
+    wheelNavigationCursorNodeId = gameView.currentNodeId
+    settleAnalysisVisit()
+    console.warn('Canceled an overloaded wheel navigation burst')
+    return
+  }
+  const step = offset < 0 ? -1 : 1
+  const direction = step < 0 ? 'backward' : 'forward'
+  if (wheelNavigationDirection && wheelNavigationDirection !== direction) wheelNavigationEpoch++
+  wheelNavigationDirection = direction
+  const previous = deferredWheelRuns.at(-1)
+  if (previous?.offset === step) previous.count += Math.abs(offset)
+  else deferredWheelRuns.push({ offset: step, count: Math.abs(offset) })
+  if (deferredWheelRuns.length > MAX_DEFERRED_WHEEL_RUNS) {
+    cancelPendingWheelNavigation()
+    wheelNavigationCursorNodeId = gameView.currentNodeId
+    settleAnalysisVisit()
+    console.warn('Canceled an overloaded wheel navigation burst')
+    return
+  }
+  drainDeferredWheelSteps()
 }
 
 
@@ -300,6 +402,7 @@ function navigateTreeByOffset(offset: number) {
   }
 
   function invalidateNavigation() {
+    invalidateAnalysisVisit()
     latestNavigationIntentId += 1
     cancelPendingWheelNavigation()
   }
@@ -343,6 +446,7 @@ function navigateTreeByOffset(offset: number) {
     invalidateNavigation,
     jumpToNode,
     navigateTreeByOffset,
+    navigateTreeByWheel: (event: NavigationWheelInput) => navigateTreeByOffset(wheelSteps.consume(event)),
     nodeCommentDraft,
     nodeMutationRequestInFlight,
     onNodeCommentInput,

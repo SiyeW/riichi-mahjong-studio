@@ -1,4 +1,4 @@
-"""Commands for analysis sessions, caches, and diagnostic payloads."""
+"""Commands for analysis sessions and caches."""
 
 from __future__ import annotations
 
@@ -25,8 +25,6 @@ class AnalysisCommands:
         opponent_analysis: Any,
         view_builder: Any,
         ensure_game_loaded: Callable[[], None],
-        get_action_debug: Callable[[], Any],
-        get_opponent_debug: Callable[[], Any],
         now_iso: Callable[[], str],
     ) -> None:
         self._state = state
@@ -38,8 +36,6 @@ class AnalysisCommands:
         self._opponent_analysis = opponent_analysis
         self._view_builder = view_builder
         self._ensure_game_loaded = ensure_game_loaded
-        self._get_action_debug = get_action_debug
-        self._get_opponent_debug = get_opponent_debug
         self._now_iso = now_iso
 
     def start_auto(self, request_id: Any, command: str) -> dict[str, Any]:
@@ -68,17 +64,6 @@ class AnalysisCommands:
             {"description": self._engine_management.describe(payload)},
         )
 
-    def latest_action_debug(
-        self,
-        request_id: Any,
-        command: str,
-    ) -> dict[str, Any]:
-        return self._view_builder.build_response(
-            request_id,
-            command,
-            {"debug": self._get_action_debug()},
-        )
-
     def current_opponent_analysis(
         self,
         request_id: Any,
@@ -88,17 +73,6 @@ class AnalysisCommands:
             request_id,
             command,
             self._opponent_analysis.current(),
-        )
-
-    def latest_opponent_debug(
-        self,
-        request_id: Any,
-        command: str,
-    ) -> dict[str, Any]:
-        return self._view_builder.build_response(
-            request_id,
-            command,
-            {"debug": self._get_opponent_debug()},
         )
 
     def clear_caches(self, request_id: Any, command: str) -> dict[str, Any]:

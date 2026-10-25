@@ -1,6 +1,6 @@
 const fs = require('node:fs')
 const path = require('node:path')
-const { writeFileAtomicallyAsync } = require('../state/atomic-file')
+const { acquireRecordLease } = require('./record-live-lease')
 const { withCurrentRecord } = require('../state/record-operation')
 const { loadSettings } = require('../state/settings')
 const {
@@ -10,11 +10,8 @@ const {
   normalizeRecordSavePath,
 } = require('../state/game-file-store')
 const {
-  decodeGameRecord,
-  encodeGameRecordAsync,
   getRecoverySourcePath,
   isRecoveryGameRecord,
-  prepareGameRecordForWrite,
 } = require('../state/game-record-codec')
 
 function createRecordWorkflow({
@@ -28,8 +25,11 @@ function createRecordWorkflow({
 }) {
   let startupRecoveryAttempted = false
   let publishedRecordDirty = false
+  let savedPathGeneration = -1
+  let rememberedPathIntent = 0
 
   function publishRecordDirty(force = false) {
+    if (backendGateway.getRecordRuntime) gameFileStore.observeRuntime(backendGateway.getRecordRuntime())
     const dirty = gameFileStore.isDirty()
     if (!force && dirty === publishedRecordDirty) return dirty
     publishedRecordDirty = dirty
@@ -52,41 +52,76 @@ function createRecordWorkflow({
 
   async function writeCurrentGameRecord(targetPath, options = {}) {
     const {
-      markSaved = true,
-      recovery = false,
       rememberPath = true,
-      exportRecord = () => backendGateway.exportGameRecord(),
+      onStage = () => {},
     } = options
-    const exportedRevision = gameFileStore.getRevision()
-    const response = await withCurrentRecord(gameFileStore, exportRecord)
-    const record = prepareGameRecordForWrite(response.record, {
-      appVersion: app.getVersion(),
-      recovery,
+    targetPath = path.resolve(targetPath)
+    await fs.promises.mkdir(path.dirname(targetPath), { recursive: true })
+    const canonical = await fs.promises.realpath(targetPath).catch(async error => {
+      if (error.code !== 'ENOENT') throw error
+      return path.join(await fs.promises.realpath(path.dirname(targetPath)), path.basename(targetPath))
     })
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true })
-    const useCompression = path.extname(targetPath).toLowerCase() !== '.json'
-    const encoded = await encodeGameRecordAsync(record, useCompression)
-    await writeFileAtomicallyAsync(targetPath, encoded)
-    if (recovery) gameFileStore.writeRecoverySourcePath(gameFileStore.getCurrentPath())
-    if (rememberPath) gameFileStore.setCurrentPath(targetPath)
-    if (markSaved) gameFileStore.markSaved(exportedRevision)
+    const targetIdentity = process.platform === 'win32' ? canonical.toLowerCase() : canonical
+    const lease = await acquireRecordLease('save-target', targetIdentity).catch(error => {
+      if (error.code === 'EADDRINUSE') throw new Error(t('native.saveTargetBusy'))
+      throw error
+    })
+    const recordGeneration = gameFileStore.getRecordGeneration()
+    let token, stagingPath, promoted = false, recoveryWarning = ''
+    try {
+      const previous = await fs.promises.stat(targetPath).catch(error => {
+        if (error.code === 'ENOENT') return null
+        throw error
+      })
+      onStage('encoding')
+      token = await backendGateway.captureRecordSave(targetPath, app.getVersion())
+      stagingPath = `${targetPath}.${token.saveId}.tmp`
+      const written = await backendGateway.writeRecordSave(token, stagingPath)
+      recoveryWarning = written?.result?.recoveryError || ''
+      const current = await fs.promises.stat(targetPath).catch(error => {
+        if (error.code === 'ENOENT') return null
+        throw error
+      })
+      if (Boolean(previous) !== Boolean(current) || previous &&
+          (previous.size !== current.size || previous.mtimeMs !== current.mtimeMs || previous.ino !== current.ino)) {
+        throw new Error('The save target changed while the record was being written.')
+      }
+      lease.assertOwned()
+      onStage('writing')
+      await fs.promises.rename(stagingPath, targetPath)
+      promoted = true
+      await backendGateway.acknowledgeRecordSave(token)
+    } catch (error) {
+      if (!promoted) {
+        if (token) await backendGateway.abortRecordSave(token).catch(() => {})
+        throw error
+      }
+      // Promotion is the file commit. A failed local ACK cannot turn a valid
+      // rescue artifact into a failed Save; keep dirty/recovery state honest.
+      recoveryWarning = error instanceof Error ? error.message : String(error)
+      await backendGateway.releaseRecordSave(token).catch(() => {})
+      console.warn('[record] file saved but recovery acknowledgement failed:', recoveryWarning)
+    } finally {
+      if (stagingPath) await fs.promises.rm(stagingPath, { force: true }).catch(() => {})
+      await lease.release()
+    }
+    if (recordGeneration === gameFileStore.getRecordGeneration() && rememberPath) {
+      if (savedPathGeneration !== recordGeneration) {
+        savedPathGeneration = recordGeneration
+        rememberedPathIntent = 0
+      }
+      if (token.pathIntent >= rememberedPathIntent) {
+        rememberedPathIntent = token.pathIntent
+        gameFileStore.setCurrentPath(targetPath)
+      }
+    }
     const recordDirty = publishRecordDirty(true)
     return {
       path: targetPath,
-      state: response.state,
-      view: response.view,
       recordDirty,
       recoveryRecord: gameFileStore.isRecoveryRecord(),
+      ...(recoveryWarning ? { recoveryWarning } : {}),
     }
-  }
-
-  function writeRecoveryGameRecord() {
-    return writeCurrentGameRecord(gameFileStore.getRecoveryPath(), {
-      markSaved: false,
-      recovery: true,
-      rememberPath: false,
-      exportRecord: () => backendGateway.exportRecoveryGameRecord(),
-    })
   }
 
   async function saveGameAs() {
@@ -107,8 +142,10 @@ function createRecordWorkflow({
   }
 
   async function importGameRecordFile(filePath) {
-    const record = decodeGameRecord(fs.readFileSync(filePath))
-    const response = await backendGateway.importGameRecord(record)
+    const response = await backendGateway.importGameRecordFile(filePath,
+      { clean: isNativeRecordPath(filePath) && !gameFileStore.isRecoveryPath(filePath),
+        target: gameFileStore.isRecoveryPath(filePath) ? '' : filePath })
+    const record = { metadata: response.recordMetadata }
     const isNativeRecord = isNativeRecordPath(filePath)
     const managedRecoveryRecord = gameFileStore.isRecoveryPath(filePath)
     const recoveryRecord = managedRecoveryRecord || isRecoveryGameRecord(record)
@@ -148,7 +185,7 @@ function createRecordWorkflow({
         name: t('native.recordFilter'),
         extensions: [RECORD_FILE_EXTENSION, LEGACY_RECORD_FILE_EXTENSION, '.json']
           .map((extension) => extension.slice(1)),
-      }],
+      }, { name: t('native.allFiles'), extensions: ['*'] }],
     }))
     if (result.canceled || !result.filePaths.length) return null
     return importGameRecordFile(result.filePaths[0])
@@ -158,10 +195,40 @@ function createRecordWorkflow({
     if (startupRecoveryAttempted) return null
     startupRecoveryAttempted = true
     const settings = loadSettings(appOptions)
-    const recoveryPath = gameFileStore.resolveRecoveryPathForRestore()
-    if (!settings.records?.saveRecoveryOnExit || !fs.existsSync(recoveryPath)) return null
+    if (!settings.records?.saveRecoveryOnExit) return null
     try {
-      return await importGameRecordFile(recoveryPath)
+      const response = await backendGateway.restoreRecordRecovery()
+      if (response) {
+        completeLegacyRecoveryMigration()
+        const runtime = backendGateway.getRecordRuntime()
+        gameFileStore.openRecoveryRecord(runtime?.savedPath || '', t('record.unsavedName'))
+        beginRecordTracking({ dirty: runtime?.contentRevision !== runtime?.savedContentRevision,
+          nodeId: response.view?.currentNodeId })
+        const warning = response.recoveryError || response.saveReconciliationErrors?.map(item => item.stagingPath
+          ? t('native.unfinishedSaveFile', { path: item.stagingPath }) : item.error).join('\n')
+        const mainWindow = getMainWindow()
+        if ((warning || response.recoveryUnclean) && mainWindow && !mainWindow.isDestroyed()) {
+          void dialog.showMessageBox(mainWindow, { type: 'warning', title: t('native.recoveryIncomplete.title'),
+            message: t('native.recoveryIncomplete.message'), detail: warning || '' })
+        }
+        return { ...response, path: runtime?.savedPath || '', recordDirty: gameFileStore.isDirty(), recoveryRecord: true }
+      }
+      // Narrow one-time reader for existing released recovery files; new exits
+      // never create another portable recovery snapshot.
+      const directory = path.resolve(gameFileStore.getDefaultDirectory())
+      const lease = await acquireRecordLease('legacy-recovery', process.platform === 'win32'
+        ? directory.toLowerCase() : directory).catch(error => {
+        if (error.code === 'EADDRINUSE') return null
+        throw error
+      })
+      if (!lease) return null
+      try {
+        const recoveryPath = gameFileStore.resolveRecoveryPathForRestore()
+        if (!recoveryPath || !fs.existsSync(recoveryPath)) return null
+        const restored = await importGameRecordFile(recoveryPath)
+        completeLegacyRecoveryMigration()
+        return restored
+      } finally { await lease.release() }
     } catch (error) {
       console.error('[record] failed to restore exit recovery record:', error)
       const mainWindow = getMainWindow()
@@ -177,6 +244,21 @@ function createRecordWorkflow({
     }
   }
 
+  function completeLegacyRecoveryMigration() {
+    try {
+      gameFileStore.completeLegacyRecoveryMigration()
+    } catch (error) {
+      // The record is already active. A bookkeeping failure must not hide its
+      // successful restoration or make the renderer keep showing an empty table.
+      console.error('[record] failed to retire legacy recovery fallback:', error)
+      const mainWindow = getMainWindow()
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        void dialog.showMessageBox(mainWindow, { type: 'warning', title: t('native.recoveryIncomplete.title'),
+          message: t('native.recoveryIncomplete.message'), detail: String(error.message || error) })
+      }
+    }
+  }
+
   return {
     beginRecordTracking,
     markRecordDirty,
@@ -185,7 +267,6 @@ function createRecordWorkflow({
     restoreStartupRecovery,
     saveGame,
     saveGameAs,
-    writeRecoveryGameRecord,
   }
 }
 

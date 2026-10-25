@@ -9,9 +9,9 @@ function fixture(): StudioSettings {
     configPath: '',
     training: { mode: 'threshold_review', mistakeThreshold: 0.25, thinkingTimeMinS: 0.25, thinkingTimeMaxS: 1 },
     modeDefaults: { autoAdvanceDelayMs: 250 },
-    display: { language: 'system', uiScale: 1, colorScheme: 'default', reduceMotion: false, tablePosition: 'center', showTsumogiriInPlay: true, workspaceLayout: normalizeWorkspaceLayout(null) },
+    display: { language: 'system', uiScale: 1, colorScheme: 'default', reduceMotion: false, tileMotionBlur: true, tablePosition: 'center', showTsumogiriInPlay: true, workspaceLayout: normalizeWorkspaceLayout(null) },
     audio: { volume: 50, soundPackId: '' },
-    records: { saveRecoveryOnExit: true },
+    records: { saveRecoveryOnExit: true, analysisCacheMiB: null },
     engines: { schemaVersion: 2, profiles: [], loadedProfileIds: [], outputAssignments: {
       'action-recommendation': '', 'opponent-shanten': '', 'opponent-deal-in-probability': '',
       'opponent-concealed-tile-count': '', 'wall-tile-count': '', 'opponent-dora-count': '',

@@ -1,4 +1,16 @@
 const { app, BrowserWindow } = require('electron')
+const fs = require('node:fs')
+const path = require('node:path')
+const os = require('node:os')
+const browserDirectory = process.env.RMS_UI_TEST_DATA_DIR || fs.mkdtempSync(path.join(os.tmpdir(), 'rms-ui-browser-'))
+fs.mkdirSync(browserDirectory, { recursive: true })
+app.setPath('userData', browserDirectory)
+app.on('will-quit', () => {
+  if (!process.env.RMS_UI_TEST_DATA_DIR) {
+    // Session files may still be held briefly on Windows; do not fail shutdown.
+    try { fs.rmSync(browserDirectory, { recursive: true, force: true }) } catch { /* OS releases remaining cache files on exit. */ }
+  }
+})
 
 const rendererUrl = process.env.RMS_UI_TEST_URL
 if (!rendererUrl) throw new Error('RMS_UI_TEST_URL is required')

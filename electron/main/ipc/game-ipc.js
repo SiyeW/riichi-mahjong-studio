@@ -24,14 +24,14 @@ function registerGameIpc({
     publishRecordDirty(true)
     return response
   })
-  ipcMain.handle('game:advance', async () => {
-    const response = await backendGateway.advanceGame()
+  ipcMain.handle('game:advance', async (_event, scope) => {
+    const response = await backendGateway.advanceGame(scope)
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     if (response.playPrefetch?.committed !== false) markRecordDirty()
     return response
   })
-  ipcMain.handle('game:confirm-review', async () => {
-    const response = await backendGateway.confirmPendingReview()
+  ipcMain.handle('game:confirm-review', async (_event, scope) => {
+    const response = await backendGateway.confirmPendingReview(scope)
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     markRecordDirty()
     return response
@@ -42,24 +42,29 @@ function registerGameIpc({
     markRecordDirty()
     return response
   })
-  ipcMain.handle('game:jump-to-node', async (event, nodeId, treeRevision) => {
-    const response = await backendGateway.jumpToNode(nodeId, treeRevision)
+  ipcMain.handle('game:jump-to-node', async (event, nodeId, treeRevision, navigationIntent) => {
+    const response = await backendGateway.jumpToNode(nodeId, treeRevision, navigationIntent)
     gameFileStore.markCurrentNode(response.view?.currentNodeId)
     publishRecordDirty()
     return response
   })
-  ipcMain.handle('game:set-main-branch', async (event, nodeId) => {
-    const response = await backendGateway.setMainBranch(nodeId)
+  ipcMain.handle('game:set-main-branch', async (event, nodeId, scope) => {
+    const response = await backendGateway.setMainBranch(nodeId, scope)
     markRecordDirty()
     return response
   })
-  ipcMain.handle('game:set-node-comment', async (event, nodeId, comment) => {
-    const response = await backendGateway.setNodeComment(nodeId, comment)
+  ipcMain.handle('game:set-node-comment', async (event, nodeId, comment, scope) => {
+    const response = await backendGateway.setNodeComment(nodeId, comment, scope)
     if (response.changed) markRecordDirty()
     return response
   })
-  ipcMain.handle('game:delete-node', async (event, nodeId) => {
-    const response = await backendGateway.deleteNode(nodeId)
+  ipcMain.handle('game:set-player-name', async (event, seat, name, scope) => {
+    const response = await backendGateway.setPlayerName(seat, name, scope)
+    if (response.changed) markRecordDirty()
+    return response
+  })
+  ipcMain.handle('game:delete-node', async (event, nodeId, scope) => {
+    const response = await backendGateway.deleteNode(nodeId, scope)
     gameFileStore.setCurrentNodeId(response.view?.currentNodeId)
     markRecordDirty()
     return response

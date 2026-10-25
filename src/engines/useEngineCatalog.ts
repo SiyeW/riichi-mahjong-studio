@@ -57,7 +57,12 @@ export function useEngineCatalog(options: EngineCatalogOptions) {
   const diagnostics = computed(() => options.settings.runtime?.engineCatalog?.diagnostics || [])
 
   function descriptionKey(profile: EngineProfile | null): string {
-    return String(profile?.enginePath || profile?.engineId || '')
+    if (!profile?.enginePath) return ''
+    return JSON.stringify([
+      profile.enginePath,
+      profile.engineCommand?.length ? profile.engineCommand : [profile.enginePath],
+      profile.engineCwd || '',
+    ])
   }
 
   function descriptionForProfile(profile: EngineProfile | null): EngineDescription | null {

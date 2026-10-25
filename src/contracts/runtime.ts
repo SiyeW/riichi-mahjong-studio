@@ -1,5 +1,5 @@
 import type { ModelActivityState, ModelRuntimeState } from './engines'
-import type { GameTreeNode, GameView } from './game'
+import type { AnalysisViewToken, GameTreeNode, GameView } from './game'
 
 export interface AutoAnalysisStatus {
   status: 'idle' | 'running' | 'canceled' | 'completed'
@@ -46,16 +46,30 @@ export interface StudioStatus {
   autoAnalysis: AutoAnalysisStatus
 }
 
+export interface RecordCacheMetrics {
+  residentBytes: number
+  budgetBytes: number
+  protectedBytes: number
+  protectedOvershootBytes: number
+  encodedPendingBytes: number
+  pendingResults: number
+  queuedWrites: number
+  error: string | null
+}
+
 export interface RuntimeMetrics {
+  memoryBasis: 'resident'
   applicationBytes: number | null
-  electronBytes: number
+  electronBytes: number | null
   backendBytes: number | null
   engineBytes: number | null
+  codecBytes?: number | null
+  recordCache?: RecordCacheMetrics | null
   backendAvailable: boolean
   electronProcessCount: number
   engineProcessCount: number | null
-  systemAvailableBytes: number
-  systemTotalBytes: number
+  systemAvailableBytes: number | null
+  systemTotalBytes: number | null
   sampledAt: number
 }
 
@@ -85,6 +99,7 @@ export interface BackendResponse {
 }
 
 export interface PythonEvent {
+  viewToken?: AnalysisViewToken | null
   hasCheckpoint?: boolean
   view?: GameView
   type: string

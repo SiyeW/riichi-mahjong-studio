@@ -7,6 +7,7 @@ import {
   useDecisionEntryPresentation,
 } from './useDecisionPresentation.ts'
 import type { GameAction } from './contracts/game.ts'
+import type { DecisionMetricDefinition } from './contracts/engines.ts'
 
 function createFixture() {
   const gameView = {
@@ -77,4 +78,32 @@ test('decision action presentation owns quick actions and normalized table bars'
   })
   showTrainingRecommendations.value = false
   assert.equal(action.resolveDisplayedActionBar(discard), 0)
+})
+
+test('decision metric formatters are reused across rows within the finite precision domain', (t) => {
+  const NumberFormat = Intl.NumberFormat
+  let constructions = 0
+  t.mock.method(Intl, 'NumberFormat', function (locales?: Intl.LocalesArgument, options?: Intl.NumberFormatOptions) {
+    constructions++
+    return new NumberFormat(locales, options)
+  })
+  const { entry } = createFixture()
+  for (const fractionDigits of [undefined, ...Array.from({ length: 13 }, (_, index) => index)]) {
+    const metric: DecisionMetricDefinition = { id: 'value', title: 'Value', format: 'number', preferredDirection: 'higher', fractionDigits }
+    const expected = new NumberFormat('en-US', fractionDigits === undefined
+      ? { useGrouping: false, maximumSignificantDigits: 15 }
+      : { useGrouping: false, minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(12345.125)
+    for (let row = 0; row < 20; row++) {
+      assert.equal(entry.formatDecisionMetric(12345.125, { ...metric, id: String(row) }), expected)
+    }
+  }
+  assert.equal(constructions, 14)
+  const percentage: DecisionMetricDefinition = { id: 'p', title: 'Probability', format: 'percentage', preferredDirection: 'higher', fractionDigits: 2 }
+  assert.equal(entry.formatDecisionMetric(0.12345, percentage), '12.35%')
+  for (const fractionDigits of [-1, 13, 1.5, Number.NaN]) {
+    assert.equal(entry.formatDecisionMetric(12345.125, { ...percentage, format: 'points', fractionDigits }), '12345.125')
+  }
+  assert.equal(entry.formatDecisionMetric(null, percentage), '—')
+  assert.equal(entry.formatDecisionMetric(Number.NaN, percentage), '—')
+  assert.equal(constructions, 14, 'metric ids, invalid precision and unavailable values do not grow the cache')
 })

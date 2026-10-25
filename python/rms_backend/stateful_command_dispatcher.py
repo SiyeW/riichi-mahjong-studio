@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import nullcontext
 from threading import RLock
 from typing import Any
 
@@ -19,6 +20,10 @@ class StatefulCommandDispatcher:
         record_commands: Any,
         view_control_commands: Any,
         gameplay_commands: Any,
+        capture_mutation: Callable[..., Any] | None = None,
+        prepare_analysis_use: Callable[[], Any] = lambda: None,
+        use_prepared_analysis: Callable[..., Any] = lambda prepared: nullcontext(),
+        validate_record_scope: Callable[..., None] = lambda command, data: None,
     ) -> None:
         self._state_lock = state_lock
         self._configure_thinking_time = configure_thinking_time
@@ -28,6 +33,9 @@ class StatefulCommandDispatcher:
         self._record = record_commands
         self._view_control = view_control_commands
         self._gameplay = gameplay_commands
+        self._capture_mutation = capture_mutation or (lambda command, payload: nullcontext())
+        self._prepare_analysis_use, self._use_prepared_analysis = prepare_analysis_use, use_prepared_analysis
+        self.validate_record_scope = validate_record_scope
 
     def dispatch(
         self,
@@ -35,15 +43,47 @@ class StatefulCommandDispatcher:
         command: str,
         payload: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        with self._state_lock:
-            data = payload or {}
-            self._configure_thinking_time()
-            if self._run_debug_scenario(command):
-                return self._view_builder.build_response(request_id, command)
-            handler = self._handlers(request_id, command, data).get(command)
-            if handler is None:
-                raise ValueError(f"Unsupported command: {command}")
-            return handler()
+        data = payload or {}
+        if command == 'create_game':
+            prepared = self._record.prepare_create()
+            with self._state_lock:
+                self._configure_thinking_time()
+                return self._record.activate_created(request_id, command, prepared)
+        if command == 'import_game_record':
+            # The command executor serializes record edits, but candidate file
+            # I/O/legacy hydration must not exclude status, inference completion
+            # or other owners merely because they also use the game-state lock.
+            prepared = self._record.prepare_import(data)
+            with self._state_lock:
+                self._configure_thinking_time()
+                return self._record.activate_import(request_id, command, prepared)
+        if command in ('import_mortal_report', 'import_custom_tenhou', 'import_replay_file'):
+            prepared = self._record.prepare_reconstruction(command, data)
+            with self._state_lock:
+                self._configure_thinking_time()
+                return self._record.activate_reconstruction(request_id, command, prepared)
+        if command == 'submit_user_action':
+            with self._state_lock:
+                prepared = self._prepare_analysis_use()
+            if prepared is not None:
+                try:
+                    prepared.load()  # Requested policy only; never I/O/codec waits under the game lock.
+                    with self._state_lock, self._use_prepared_analysis(prepared), self._capture_mutation(command, data):
+                        return self._dispatch_locked(request_id, command, data)
+                finally:
+                    prepared.close()
+        with self._state_lock, self._capture_mutation(command, data):
+            return self._dispatch_locked(request_id, command, data)
+
+    def _dispatch_locked(self, request_id, command, data):
+        self.validate_record_scope(command, data)
+        self._configure_thinking_time()
+        if self._run_debug_scenario(command):
+            return self._view_builder.build_response(request_id, command)
+        handler = self._handlers(request_id, command, data).get(command)
+        if handler is None:
+            raise ValueError(f"Unsupported command: {command}")
+        return handler()
 
     def _handlers(
         self,
@@ -64,13 +104,7 @@ class StatefulCommandDispatcher:
             "describe_engine": lambda: self._analysis.describe(
                 request_id, command, payload
             ),
-            "get_latest_mjai_debug": lambda: self._analysis.latest_action_debug(
-                request_id, command
-            ),
             "get_analysis": lambda: self._analysis.current_opponent_analysis(
-                request_id, command
-            ),
-            "get_analysis_debug": lambda: self._analysis.latest_opponent_debug(
                 request_id, command
             ),
             "clear_analysis_caches": lambda: self._analysis.clear_caches(
@@ -84,14 +118,10 @@ class StatefulCommandDispatcher:
             "import_custom_tenhou": lambda: self._record.import_custom(
                 request_id, command, payload
             ),
+            "import_replay_file": lambda: self._record.import_file(request_id, command, payload),
+            "set_player_name": lambda: self._record.set_player_name(request_id, command, payload),
             "export_custom_tenhou": lambda: self._record.export_custom(
                 request_id, command
-            ),
-            "export_game_record": lambda: self._record.export_record(
-                request_id, command, payload
-            ),
-            "import_game_record": lambda: self._record.import_record(
-                request_id, command, payload
             ),
             "jump_to_node": lambda: self._record.jump(
                 request_id, command, payload

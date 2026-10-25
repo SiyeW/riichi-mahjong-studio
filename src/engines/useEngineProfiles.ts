@@ -12,6 +12,7 @@ import type { StudioSettings } from '../contracts/settings.ts'
 import type { StudioStatus } from '../contracts/runtime.ts'
 import type { DesktopBridge } from '../contracts/desktopBridge.ts'
 import type {
+  EngineLoadStatus,
   EngineOutputFilterItem,
   EngineProfileDetailView,
   EngineProfileListItem,
@@ -63,10 +64,13 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     loadingProfileId: loadingEngineProfileId,
     unloadingProfileId: unloadingEngineProfileId,
     loadErrors: engineLoadErrors,
+    unloadErrors: engineUnloadErrors,
   } = activationState
   const deleteEngineConfirmationId = ref('')
   const engineOutputFilter = ref<SupportedEngineOutputId | null>(null)
   const editingEngineProfileId = ref('')
+  let catalogWarmupGeneration = 0
+  let catalogWarmupProfileId = ''
   let deleteEngineConfirmationTimer: ReturnType<typeof setTimeout> | null = null
   const engineDraft = useEngineSettingsDraft({
     settings,
@@ -134,24 +138,39 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     if (!settingsDraft.engines.profiles.some((profile) => profile.id === editingEngineProfileId.value)) {
       editingEngineProfileId.value = settingsDraft.engines.profiles[0]?.id || ''
     }
-    // The dialog describes live: a cached description would keep showing the
-    // engine build that was current the last time this session asked.
-    for (const profile of activeEngineProfiles.value) {
-      void describeEngineProfile(profile, { force: true })
-    }
+    warmEngineDescriptions()
     focus()
   }
 
   function closeEngineWindow() {
     showEngineWindow.value = false
+    catalogWarmupGeneration++
+    catalogWarmupProfileId = ''
     void flushEngineAutosave()
   }
 
   function selectEngineProfile(profileId: string) {
     editingEngineProfileId.value = profileId
     deleteEngineConfirmationId.value = ''
-    const profile = activeEngineProfiles.value.find((item) => item.id === profileId) || null
-    void describeEngineProfile(profile)
+    warmEngineDescriptions()
+  }
+
+  watch(() => activeEngineProfile.value?.id, () => {
+    if (showEngineWindow.value) warmEngineDescriptions()
+  })
+
+  function warmEngineDescriptions() {
+    const selected = activeEngineProfile.value
+    if (selected?.id === catalogWarmupProfileId) return
+    catalogWarmupProfileId = selected?.id || ''
+    const generation = ++catalogWarmupGeneration
+    void (async () => {
+      await describeEngineProfile(selected)
+      for (const profile of activeEngineProfiles.value) {
+        if (!showEngineWindow.value || generation !== catalogWarmupGeneration) return
+        if (profile.id !== selected?.id) await describeEngineProfile(profile)
+      }
+    })()
   }
 
   function toggleEngineOutputFilter(outputId: SupportedEngineOutputId) {
@@ -199,12 +218,11 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     outputAssignmentIsLoaded: engineOutputAssignmentIsLoaded,
     outputAssignmentIsLoading: engineOutputAssignmentIsLoading,
     markConfiguredEngineStarting,
-    profileClasses: runtimeProfileClasses,
+    profileStatus: runtimeProfileStatus,
     profileConfigurationLocked,
     profileError,
     profileIsLoaded,
-    profileSubtitle: engineProfileSubtitle,
-    shouldShowActionButton: shouldShowEngineActionButton,
+    canActivateProfile,
     statusItems: engineStatusItems,
   } = useEngineActivation({
     bridge,
@@ -212,7 +230,6 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     settingsDraft,
     status,
     profiles: activeEngineProfiles,
-    activeProfile: activeEngineProfile,
     opponentOutputIds: OPPONENT_ENGINE_OUTPUT_IDS,
     draft: engineDraft,
     t,
@@ -224,10 +241,6 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     assignOutputsForLoading: assignSupportedOutputsForLoading,
     requiredWeightsReady,
   }, activationState)
-
-  function engineProfileClasses(profile: EngineProfile) {
-    return runtimeProfileClasses(profile, profile.id === activeEngineProfile.value?.id)
-  }
 
   const engineFooterMessage = computed(() => {
     return profileError(activeEngineProfile.value) || engineSaveMessage.value
@@ -453,13 +466,19 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     return engineDraft.flush()
   }
 
+  function engineOutputStatus(outputId: SupportedEngineOutputId): EngineLoadStatus | null {
+    const profileId = settingsDraft.engines.outputAssignments[outputId]
+    if (!profileId) return null
+    if (profileId === unloadingEngineProfileId.value) return 'unloading'
+    if (engineOutputAssignmentHasError(outputId)) return 'error'
+    if (engineOutputAssignmentIsLoading(outputId)) return 'loading'
+    return engineOutputAssignmentIsLoaded(outputId) ? 'loaded' : 'unloaded'
+  }
+
   const engineOutputFilterItems = computed<EngineOutputFilterItem[]>(() => (
     SUPPORTED_ENGINE_OUTPUTS.value.map((output) => ({
       ...output,
-      assigned: Boolean(settingsDraft.engines.outputAssignments[output.id]),
-      loaded: engineOutputAssignmentIsLoaded(output.id),
-      loading: engineOutputAssignmentIsLoading(output.id),
-      error: engineOutputAssignmentHasError(output.id),
+      status: engineOutputStatus(output.id),
       selected: engineOutputFilter.value === output.id,
     }))
   ))
@@ -467,10 +486,9 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     filteredEngineProfiles.value.map((profile) => ({
       id: profile.id,
       name: profile.name,
-      subtitle: engineProfileSubtitle(profile),
-      classes: engineProfileClasses(profile),
-      showAction: shouldShowEngineActionButton(profile),
-      loaded: profileIsLoaded(profile),
+      subtitle: String(profile.engineVersion || '').trim(),
+      selected: profile.id === activeEngineProfile.value?.id,
+      status: runtimeProfileStatus(profile),
     }))
   ))
   const engineListCanMoveUp = computed(() => activeEngineProfileIndex.value > 0)
@@ -493,8 +511,22 @@ export function useEngineProfiles(options: UseEngineProfilesOptions) {
     const key = engineDescriptionKey(profile)
     const locked = profileConfigurationLocked(profile)
     const catalog = activeCatalogEngine.value
+    const loadOutputs = profileLoadOutputs(profile)
+    const actionHint = !profile.enginePath
+      ? t('engine.selectExecutable')
+      : describingEngineIds.has(key)
+        ? t('engine.readingOptions')
+        : !loadOutputs.length
+          ? t('engine.noAvailableOutput')
+          : !requiredWeightsReady(profile, loadOutputs)
+            ? t('engine.requiredWeightsMissing')
+            : ''
     return {
       id: profile.id,
+      status: runtimeProfileStatus(profile),
+      canActivate: canActivateProfile(profile),
+      actionError: engineLoadErrors[profile.id] || engineUnloadErrors[profile.id] || '',
+      actionHint: actionHint && !profileIsLoaded(profile) ? actionHint : '',
       name: profile.name,
       suggestedName: suggestedEngineProfileName(profile),
       locked,

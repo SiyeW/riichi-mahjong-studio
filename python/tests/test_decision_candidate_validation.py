@@ -17,8 +17,8 @@ class DecisionCandidateValidationTests(unittest.TestCase):
                     gateway._ready_models.add(resolve_engine_weight_path('unused'))
                 callback = Mock()
                 gateway.set_activity_callback(callback)
-                candidates = [{'id': 'duplicate', 'type': 'none'},
-                              {'id': 'duplicate', 'type': 'none'}]
+                candidates = [{'id': 'duplicate', 'type': 'none', 'actor': 0},
+                              {'id': 'duplicate', 'type': 'none', 'actor': 0}]
                 with patch.object(gateway, '_initialize') as initialize, \
                      patch.object(gateway._client, 'request') as request:
                     with self.assertRaisesRegex(ValueError, 'duplicate legal candidate'):

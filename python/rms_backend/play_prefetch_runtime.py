@@ -4,7 +4,9 @@ import threading
 
 def create_draft(game):
     current_node_id = game["currentNodeId"]
-    current_node = copy.deepcopy(game["nodes"][current_node_id])
+    current_node = copy.deepcopy({key: value for key, value in game['nodes'][current_node_id].items()
+                                  if key not in ('analysisCache', 'opponentAnalysisCache')})
+    current_node['analysisCache'] = {}
     current_node["parentId"] = None
     current_node["children"] = []
     current_node["mainChildId"] = None

@@ -21,9 +21,10 @@ from . import legal_actions
 from . import opponent_analysis_session
 from . import play_prefetch_session
 from . import reaction_decision_history
-from . import record_commands
-from . import record_workspace_commands
-from . import record_session
+from .records import authored_commands as record_commands
+from .records import commands as record_workspace_commands
+from .records import session as record_session
+from .records import new_game_candidate
 from . import review_session
 from . import round_actions
 from . import round_progression
@@ -37,17 +38,20 @@ from . import wall_reconstruction
 from .action_recommendation_adapter import (
     choose_ai_action,
     get_and_reset_ai_thinking_time_s,
-    get_latest_action_recommendation_debug,
     set_thinking_time_bounds,
 )
 from .action_recommendation_gateway import ActionRecommendationGateway
 from .engine_runtime import EngineRuntimeRegistry
 from .mjai_stream_cache import MjaiStreamCache
 from .opponent_prediction_coordinator import OpponentPredictionCoordinator
-from .opponent_prediction_gateway import get_latest_opponent_prediction_mjai
 from .service_debug import DebugScenarioDependencies, run_debug_scenario
 from .service_helpers import actor_just_drew, now_iso
 from .service_runtime import ServiceRuntime
+from .records.view_context import RecordViewContext
+from .analysis_read_presenter import AnalysisReadPresenter
+from .records.mutation_capture import RecordMutationCapture
+from .records.analysis_access import RecordAnalysisAccess
+from .records.lifecycle import RecordLifecycle
 from .rule_kernel import (
     can_ankan,
     can_declare_riichi,
@@ -100,16 +104,24 @@ def debug_flow(message):
 
 
 def emit(payload):
+    lifecycle = globals().get('RECORD_LIFECYCLE')
+    if lifecycle is not None and payload.get('type') == 'record_changed':
+        payload = {**payload, 'recordRuntime': lifecycle.resources.runtime()}
+    if payload.get('type') in ('analysis_ready', 'opponent_analysis_ready'):
+        with _STATE_LOCK:
+            payload = VIEW_CONTEXT.tag_event(payload)
     with _EMIT_LOCK:
         sys.stdout.write(json.dumps(payload, ensure_ascii=True) + "\n")
         sys.stdout.flush()
 
 
 SERVICE_RUNTIME = ServiceRuntime(emit=emit, now_iso=now_iso)
+RECORD_MUTATIONS = RecordMutationCapture(STATE, lambda: RECORD_SESSION.storage)
 
 
 def _invalidate_engine_analysis(reason):
     with _STATE_LOCK:
+        RECORD_ANALYSIS.cancel()
         AUTO_ANALYSIS.cancel(reason)
         PLAY_PREFETCH.cancel()
         active_game = STATE.get("game")
@@ -122,6 +134,7 @@ def _invalidate_engine_analysis(reason):
 
 def _prepare_for_engine_unload():
     with _STATE_LOCK:
+        RECORD_ANALYSIS.cancel()
         AUTO_ANALYSIS.cancel("分析引擎已卸载")
         PLAY_PREFETCH.cancel()
         active_game = STATE.get("game")
@@ -150,6 +163,22 @@ ENGINE_MANAGEMENT = engine_management.EngineManagement(
 )
 
 
+VIEW_CONTEXT = RecordViewContext(STATE, lambda: (
+    ENGINE_MANAGEMENT.decision_cache_epoch, ENGINE_MANAGEMENT.opponent_cache_epoch))
+ANALYSIS_READS = AnalysisReadPresenter(_STATE_LOCK, VIEW_CONTEXT.current, emit)
+SERVICE_RUNTIME.add_shutdown(ANALYSIS_READS.close)
+RECORD_ANALYSIS = RecordAnalysisAccess(STATE, _STATE_LOCK, lambda: RECORD_SESSION.storage,
+    lambda kind: ENGINE_MANAGEMENT.decision_cache_epoch if kind == 'decision' else ENGINE_MANAGEMENT.opponent_cache_epoch)
+
+
+def _cancel_record_analysis():
+    with _STATE_LOCK:
+        RECORD_ANALYSIS.cancel()
+
+
+SERVICE_RUNTIME.add_shutdown(_cancel_record_analysis)
+
+
 OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
     STATE,
     _STATE_LOCK,
@@ -164,6 +193,9 @@ OPPONENT_ANALYSIS = opponent_analysis_session.OpponentAnalysisSession(
         ),
         get_auto_analysis_status=lambda **kwargs: AUTO_ANALYSIS.status(**kwargs),
         emit=emit,
+        read_presenter=ANALYSIS_READS,
+        record_access=RECORD_ANALYSIS,
+        build_analysis_table=lambda snapshot, seat, mode: VIEW_BUILDER.build_analysis_table(snapshot, seat, mode),
     ),
 )
 
@@ -175,6 +207,7 @@ DECISION_ANALYSIS = decision_analysis_session.DecisionAnalysisSession(
     ENGINE_MANAGEMENT,
     SERVICE_RUNTIME.background,
     decision_analysis_session.DecisionAnalysisDependencies(
+        comparisons_changed=RECORD_MUTATIONS.comparisons_changed,
         play_prefetch_owns=lambda node_id, analysis_key: PLAY_PREFETCH.owns_decision(
             node_id, analysis_key
         ),
@@ -192,6 +225,8 @@ DECISION_ANALYSIS = decision_analysis_session.DecisionAnalysisSession(
         ),
         build_state=lambda: VIEW_BUILDER.build_state_payload(),
         emit=emit,
+        read_presenter=ANALYSIS_READS,
+        record_access=RECORD_ANALYSIS,
     ),
 )
 
@@ -222,6 +257,7 @@ AUTO_ANALYSIS = auto_analysis_session.AutoAnalysisSession(
             *args, **kwargs
         ),
         emit=emit,
+        record_access=RECORD_ANALYSIS,
     ),
 )
 
@@ -338,6 +374,8 @@ PLAY_PREFETCH = play_prefetch_session.PlayPrefetchSession(
             *args, **kwargs
         ),
         emit=emit,
+        changed_nodes=RECORD_MUTATIONS.changed_nodes,
+        record_access=RECORD_ANALYSIS,
     ),
 )
 
@@ -396,10 +434,12 @@ def get_current_snapshot():
 
 
 def reset_runtime_for_game_change():
+    RECORD_ANALYSIS.cancel()
     PLAY_PREFETCH.cancel()
     AUTO_ANALYSIS.reset_for_game_change()
     ENGINE_MANAGEMENT.advance_cache_epochs()
     DECISION_ANALYSIS.reset()
+    ANALYSIS_READS.reset()
     MJAI_STREAMS.clear()
     LEGAL_ACTIONS.clear_cache()
     OPPONENT_PREDICTIONS.cancel_all()
@@ -509,6 +549,7 @@ TREE_EDITS = game_tree_coordinator.GameTreeCoordinator(
         is_meaningful_decision=action_is_meaningful_decision,
         active_draft=lambda: PLAY_PREFETCH.active_draft(),
         invalidate_analysis_timeline=lambda: AUTO_ANALYSIS.invalidate_timeline(),
+        changed_nodes=RECORD_MUTATIONS.changed_nodes,
     ),
 )
 
@@ -525,6 +566,8 @@ ROUND_WALL_REPLACEMENT = round_wall_replacement.RoundWallReplacement(
         invalidate_analysis_timeline=AUTO_ANALYSIS.invalidate_timeline,
         promote_mainline=TREE_EDITS.promote_path_to_mainline,
         purge_mjai_cache=MJAI_STREAMS.purge_game,
+        deleted_nodes=RECORD_MUTATIONS.deleted_nodes,
+        changed_nodes=RECORD_MUTATIONS.changed_nodes,
     ),
 )
 
@@ -557,6 +600,8 @@ VIEW_BUILDER = renderer_view.RendererView(
         auto_analysis=AUTO_ANALYSIS,
         consume_thinking_time=get_and_reset_ai_thinking_time_s,
         now_iso=now_iso,
+        view_token=VIEW_CONTEXT.current,
+        begin_visit=VIEW_CONTEXT.begin_visit,
     ),
 )
 
@@ -582,12 +627,13 @@ RECORD_SESSION = record_session.RecordSession(
     record_session.RecordSessionDependencies(
         reset_runtime=reset_runtime_for_game_change,
         create_empty_game=create_empty_game,
-        advance_to_next_user_turn=GAME_FLOW.advance,
+        advance_new_game=lambda game, seat: new_game_candidate.advance_new_game(
+            game, seat, tree=TREE_EDITS, flow=GAME_FLOW, reactions=REACTION_DECISIONS,
+            choose_ai=choose_ai_action_for_snapshot),
         prewarm_action_engine=_prewarm_record_action_engine,
         repair_reaction_decisions=REACTION_DECISIONS.repair,
         backfill_child_comparisons=DECISION_ANALYSIS.backfill_child_comparisons,
         update_child_comparisons=DECISION_ANALYSIS.update_child_comparisons,
-        current_snapshot=get_current_snapshot,
         request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
         purge_mjai_cache=MJAI_STREAMS.purge_game,
         invalidate_auto_timeline=AUTO_ANALYSIS.invalidate_timeline,
@@ -611,6 +657,8 @@ RECORD_COMMANDS = record_commands.RecordCommands(
         request_opponent_analysis=OPPONENT_ANALYSIS.request_current,
         promote_mainline=TREE_EDITS.promote_path_to_mainline,
         invalidate_auto_timeline=AUTO_ANALYSIS.invalidate_timeline,
+        deleted_nodes=RECORD_MUTATIONS.deleted_nodes,
+        changed_nodes=RECORD_MUTATIONS.changed_nodes,
     ),
 )
 
@@ -664,8 +712,6 @@ ANALYSIS_COMMANDS = analysis_commands.AnalysisCommands(
     opponent_analysis=OPPONENT_ANALYSIS,
     view_builder=VIEW_BUILDER,
     ensure_game_loaded=ensure_game_loaded,
-    get_action_debug=get_latest_action_recommendation_debug,
-    get_opponent_debug=get_latest_opponent_prediction_mjai,
     now_iso=now_iso,
 )
 
@@ -700,36 +746,37 @@ STATEFUL_COMMANDS = stateful_command_dispatcher.StatefulCommandDispatcher(
     record_commands=RECORD_WORKSPACE_COMMANDS,
     view_control_commands=VIEW_CONTROL_COMMANDS,
     gameplay_commands=GAMEPLAY_COMMANDS,
+    capture_mutation=RECORD_MUTATIONS.command,
+    prepare_analysis_use=DECISION_ANALYSIS.prepare_use,
+    use_prepared_analysis=DECISION_ANALYSIS.use_prepared,
 )
 
+RECORD_LIFECYCLE = None
 
-def _export_recovery_checkpoint(request_id, command):
-    # Only detach the mutable tree structure while foreground commands are
-    # excluded. Recursive copying and storage normalization run afterwards on
-    # the dedicated checkpoint executor.
-    with _STATE_LOCK:
-        prepared = RECORD_SESSION.prepare_recovery_checkpoint()
-        visibility = {
-            "decisionRecommendations": bool(
-                STATE.get("decisionRecommendationsEnabled", True)
-            ),
-            "opponentAnalysis": bool(STATE.get("opponentAnalysisEnabled", False)),
-        }
-    return {
-        "request_id": request_id,
-        "command": command,
-        "record": RECORD_SESSION.serialize_prepared_recovery_checkpoint(prepared),
-        "state": {"analysisVisibility": visibility},
-    }
+
+def _dispatch_record_command(request_id, command, payload):
+    if RECORD_LIFECYCLE is not None:
+        return RECORD_LIFECYCLE.dispatch(request_id, command, payload)
+    return STATEFUL_COMMANDS.dispatch(request_id, command, payload)
+
+
+def _collect_runtime_metrics():
+    codec_pid, queue = SERVICE_RUNTIME.codec_metrics()
+    metrics = runtime_metrics.collect_runtime_memory_metrics(codec_pid=codec_pid,
+        engine_pids=ENGINE_RUNTIME_REGISTRY.process_ids())
+    lifecycle = RECORD_LIFECYCLE
+    if lifecycle is not None:
+        metrics['recordCache'] = {**lifecycle.resources.cache_metrics(),
+            'pendingResults': queue.get('backgroundReserved', 0) + queue.get('foregroundReserved', 0)}
+    return metrics
 
 
 COMMAND_TRANSPORT = command_transport.CommandTransport(
     state_lock=_STATE_LOCK,
     view_builder=VIEW_BUILDER,
     engine_management=ENGINE_MANAGEMENT,
-    collect_runtime_metrics=runtime_metrics.collect_runtime_memory_metrics,
-    export_recovery_checkpoint=_export_recovery_checkpoint,
-    dispatch_stateful=STATEFUL_COMMANDS.dispatch,
+    collect_runtime_metrics=_collect_runtime_metrics,
+    dispatch_stateful=_dispatch_record_command,
     emit=emit,
     now_iso=now_iso,
 )
@@ -740,6 +787,15 @@ SERVICE_RUNTIME.add_shutdown(ACTION_RECOMMENDATIONS.shutdown)
 
 
 def main():
+    global RECORD_LIFECYCLE
+    RECORD_LIFECYCLE = RecordLifecycle(
+        PORTABLE_ROOT / 'records' / '.recovery' / 'workspaces',
+        lambda: SERVICE_RUNTIME.record_codec, RECORD_SESSION, _STATE_LOCK,
+        STATEFUL_COMMANDS, VIEW_BUILDER, view_context=VIEW_CONTEXT, emit=emit,
+        cancel_analysis=reset_runtime_for_game_change)
+    SERVICE_RUNTIME.add_shutdown(RECORD_LIFECYCLE.shutdown)
+    RECORD_LIFECYCLE.resources.set_cache_preference(
+        ENGINE_MANAGEMENT.load_project_config().get('records', {}).get('analysisCacheMiB'))
     SERVICE_RUNTIME.run(
         sys.stdin,
         service_name="backend",

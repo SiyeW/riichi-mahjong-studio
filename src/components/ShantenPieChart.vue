@@ -55,6 +55,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from '../i18n'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
+import { normalizeShantenProbabilities, pieCoordinate, shantenPieSlices } from './shantenPieGeometry'
 
 const { t } = useI18n()
 
@@ -72,13 +73,6 @@ const emit = defineEmits<{
   'slice-leave': []
 }>()
 
-type SliceGeometry = Readonly<{
-  path: string
-  probability: number
-  textX: number
-  textY: number
-}>
-
 const emptyRingElement = ref<SVGCircleElement | null>(null)
 const sliceElements: Array<SVGPathElement | null> = []
 const labelElements: Array<SVGTextElement | null> = []
@@ -86,35 +80,18 @@ const highlightedSliceIndex = ref<number | null>(null)
 const highlightedSlicePath = ref('')
 let displayedProbabilities: number[] = []
 let animationFrame = 0
+let disposed = false
 
 function normalizeProbabilities(values: readonly number[]): number[] {
-  const sanitized = props.sliceLabels.map((_, index) => Math.max(0, Number(values[index]) || 0))
-  const total = sanitized.reduce((sum, probability) => sum + probability, 0)
-  if (total > 0) return sanitized.map((probability) => probability / total)
-  return props.sliceLabels.map(() => 0)
+  return normalizeShantenProbabilities(values, props.sliceLabels.length)
 }
 
-function sliceGeometry(probabilities: readonly number[]): SliceGeometry[] {
-  let cumulative = 0
-  return probabilities.map((probability) => {
-    const startAngle = (cumulative * 2 * Math.PI) - (Math.PI / 2)
-    cumulative += probability
-    const endAngle = (cumulative * 2 * Math.PI) - (Math.PI / 2)
-    const middleAngle = (startAngle + endAngle) / 2
-    const isFullCircle = probability >= 0.999999
-    const x1 = Math.cos(startAngle)
-    const y1 = Math.sin(startAngle)
-    const x2 = Math.cos(endAngle)
-    const y2 = Math.sin(endAngle)
-    return {
-      path: isFullCircle
-        ? 'M 0 -1 A 1 1 0 1 1 0 1 A 1 1 0 1 1 0 -1 Z'
-        : `M 0 0 L ${x1} ${y1} A 1 1 0 ${probability > 0.5 ? 1 : 0} 1 ${x2} ${y2} Z`,
-      probability,
-      textX: Math.cos(middleAngle) * 0.62,
-      textY: Math.sin(middleAngle) * 0.62,
-    }
-  })
+function setChangedAttribute(element: SVGElement, name: string, value: string) {
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value)
+}
+
+function setDisplay(element: SVGElement, value: string) {
+  if (element.style.display !== value) element.style.display = value
 }
 
 function setSliceElement(index: number, element: unknown) {
@@ -126,26 +103,31 @@ function setLabelElement(index: number, element: unknown) {
 }
 
 function renderProbabilities(probabilities: readonly number[]) {
-  const slices = sliceGeometry(probabilities)
+  if (disposed) return
+  const slices = shantenPieSlices(probabilities)
   const empty = slices.every(slice => slice.probability === 0)
-  if (emptyRingElement.value) emptyRingElement.value.style.display = empty ? '' : 'none'
+  if (emptyRingElement.value) setDisplay(emptyRingElement.value, empty ? '' : 'none')
   slices.forEach((slice, index) => {
     const path = sliceElements[index]
     if (path) {
-      path.setAttribute('d', slice.path)
-      path.setAttribute('stroke-width', slice.probability > 0 ? '0.012' : '0')
-      path.setAttribute('tabindex', slice.probability > 0 ? '0' : '-1')
-      path.style.display = empty ? 'none' : ''
+      setChangedAttribute(path, 'd', slice.path)
+      setChangedAttribute(path, 'stroke-width', slice.probability > 0 ? '0.012' : '0')
+      setChangedAttribute(path, 'tabindex', slice.probability > 0 ? '0' : '-1')
+      setDisplay(path, empty ? 'none' : '')
     }
     const label = labelElements[index]
     if (label) {
-      label.setAttribute('x', String(slice.textX))
-      label.setAttribute('y', String(slice.textY))
-      label.style.display = !empty && slice.probability > 0.05 ? '' : 'none'
+      const visible = !empty && slice.probability > 0.05
+      if (visible) {
+        setChangedAttribute(label, 'x', pieCoordinate(slice.textX))
+        setChangedAttribute(label, 'y', pieCoordinate(slice.textY))
+      }
+      setDisplay(label, visible ? '' : 'none')
     }
   })
   const highlighted = highlightedSliceIndex.value
-  if (highlighted !== null) highlightedSlicePath.value = slices[highlighted]?.path || ''
+  if (highlighted !== null) highlightedSlicePath.value = slices[highlighted]?.probability
+    ? slices[highlighted].path : ''
 }
 
 function enterSlice(event: Event, index: number) {
@@ -170,6 +152,7 @@ function stopAnimation() {
 }
 
 function animateTo(values: readonly number[]) {
+  if (disposed) return
   stopAnimation()
   const source = normalizeProbabilities(displayedProbabilities)
   const target = normalizeProbabilities(values)
@@ -178,11 +161,12 @@ function animateTo(values: readonly number[]) {
     renderProbabilities(displayedProbabilities)
     return
   }
-  const startedAt = performance.now()
+  let startedAt: number | null = null
   const duration = getUiMotionDurationMs()
   const easing = getUiMotionEasingFunction()
   const step = (now: number) => {
-    const progress = Math.min(1, (now - startedAt) / duration)
+    if (startedAt === null) startedAt = now
+    const progress = Math.max(0, Math.min(1, (now - startedAt) / duration))
     const eased = easing(progress)
     displayedProbabilities = source.map(
       (value, index) => value + ((target[index] - value) * eased),
@@ -216,7 +200,12 @@ onMounted(() => {
   displayedProbabilities = normalizeProbabilities(props.probabilities)
   renderProbabilities(displayedProbabilities)
 })
-onBeforeUnmount(stopAnimation)
+onBeforeUnmount(() => {
+  disposed = true
+  stopAnimation()
+  sliceElements.length = 0
+  labelElements.length = 0
+})
 </script>
 
 <style scoped>

@@ -7,6 +7,7 @@ from .seat import normalize_seat
 from .service_helpers import (
     actor_just_drew,
     get_forbidden_discard_families_after_self_furo,
+    get_pon_tiles,
     normalize_tile_family,
     sort_tiles,
     unique_preserving_order,
@@ -42,8 +43,10 @@ def build_legal_actions(
             return []
 
         is_riichi = snapshot.get("riichiAccepted", [False, False, False, False])[actor]
+        if is_riichi and snapshot.get("riichiDiscardState") in {"pending_pause", "tsumogiri"}:
+            return []
 
-        if is_riichi and snapshot.get("riichiDiscardState") == "ankan_choice":
+        if is_riichi and actor_just_drew(snapshot, actor):
             kan_actions = get_legal_kan_actions(snapshot, actor)
             valid_candidates = set(get_ankan_candidates(snapshot, actor))
             actions = [
@@ -78,11 +81,14 @@ def build_legal_actions(
                     "tsumogiri": True,
                     "label": "Skip (Tsumogiri)",
                 })
-            return actions
+                if can_declare_tsumo(snapshot, actor):
+                    actions.insert(0, {
+                        "id": "hora:tsumo", "type": "hora", "variant": "tsumo",
+                        "actor": actor, "label": "Tsumo",
+                    })
+                return actions
 
         if is_riichi:
-            if snapshot.get("riichiDiscardState") == "pending_pause":
-                return []
             if actor_just_drew(snapshot, actor) and can_declare_tsumo(snapshot, actor):
                 hand = snapshot.get("hands", [[], [], [], []])[actor]
                 action_history = snapshot.get("actionHistory") or []
@@ -316,8 +322,7 @@ def get_legal_kan_actions(snapshot, actor):
         matching_tiles = grouped_hand.get(family) or []
         if not matching_tiles:
             continue
-        pon_tiles = list(meld.get("consumed") or [])
-        consumed = copy.deepcopy((pon_tiles + [matching_tiles[0]])[:3])
+        consumed = get_pon_tiles(meld)
         actions.append(
             {
                 "type": "kakan",

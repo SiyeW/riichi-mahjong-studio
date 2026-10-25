@@ -315,7 +315,7 @@ def reconstruct_imported_walls(
     generated_at: str,
 ) -> Dict[str, Any]:
     metadata = game.get("metadata")
-    if not isinstance(metadata, dict) or metadata.get("source") not in ("mortal-report", "tenhou-custom"):
+    if not isinstance(metadata, dict) or metadata.get("source") not in ("mortal-report", "tenhou-custom", "mjai"):
         raise ValueError("只有导入的牌谱可以重建牌山。")
 
     seed = normalize_reconstruction_seed(seed_value)

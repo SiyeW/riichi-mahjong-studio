@@ -3,7 +3,7 @@ import unittest
 from dataclasses import replace
 from unittest import mock
 
-from rms_backend import game_record_storage
+from rms_backend.records import authored_projection as game_record_storage
 from rms_backend import legal_actions
 from rms_backend import reaction_decision_history
 from rms_backend import service
@@ -524,7 +524,7 @@ class ReactionDecisionNodeTests(unittest.TestCase):
             service.GAME_FLOW.advance_reaction_window(game, game["nodes"][discard_id]["snapshot"])
         pass_id = game["nodes"][discard_id]["mainChildId"]
         record = game_record_storage.serialize_game_record_parts(
-            copy.deepcopy(game),
+            game_record_storage.copy_game_for_record(game),
             {
                 "mode": "play",
                 "controlledSeat": 0,

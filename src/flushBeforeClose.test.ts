@@ -43,3 +43,14 @@ test('synchronous save errors do not prevent the other save from running', async
   ), /engine failed/)
   assert.equal(commentsSaved, true)
 })
+
+test('close stops automatic analysis without skipping pending edits', async () => {
+  const calls: string[] = []
+  await flushBeforeClose(
+    async () => { calls.push('comments') },
+    async () => { calls.push('engines'); return true },
+    () => 'failed',
+    async () => { calls.push('stop-analysis') },
+  )
+  assert.deepEqual(calls, ['comments', 'engines', 'stop-analysis'])
+})

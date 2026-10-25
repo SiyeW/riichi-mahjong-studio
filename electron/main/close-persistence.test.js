@@ -35,9 +35,31 @@ test('renderer save errors block closing and clean up the listener', async () =>
   assert.equal(f.ipc.listenerCount('record:close-ready'), 0)
 })
 
+test('unavailable renderer fails immediately without masquerading as a slow save', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const f = fixture()
+  let slow = false
+  let recovery = false
+  const saving = persistBeforeClose(
+    () => requestRendererFlush(f.window, f.ipc, 'timeout', {
+      unavailableMessage: 'interface failed',
+      onSlow: () => { slow = true },
+    }),
+    () => true,
+    async () => { recovery = true },
+  )
+  f.reply('RENDERER_UNAVAILABLE')
+  await assert.rejects(saving, /interface failed/)
+  t.mock.timers.tick(60_000)
+  assert.equal(slow, false)
+  assert.equal(recovery, false)
+  assert.equal(f.ipc.listenerCount('record:close-ready'), 0)
+  assert.equal(f.contents.listenerCount('destroyed'), 0)
+})
+
 test('timeout is a failure, not permission to close', async () => {
   const f = fixture()
-  await assert.rejects(requestRendererFlush(f.window, f.ipc, 'timed out', 5), /timed out/)
+  await assert.rejects(requestRendererFlush(f.window, f.ipc, 'timed out', { timeoutMs: 5 }), /timed out/)
   assert.equal(f.ipc.listenerCount('record:close-ready'), 0)
   assert.equal(f.contents.listenerCount('destroyed'), 0)
   f.reply()
@@ -49,10 +71,34 @@ test('send failure and renderer destruction clean up pending flush requests', as
   await assert.rejects(requestRendererFlush(f.window, f.ipc, 'timeout'), /send failed/)
   assert.equal(f.ipc.listenerCount('record:close-ready'), 0)
   const g = fixture()
-  const saving = requestRendererFlush(g.window, g.ipc, 'renderer unavailable')
+  const saving = requestRendererFlush(g.window, g.ipc, 'timeout', { unavailableMessage: 'renderer unavailable' })
   g.contents.emit('destroyed')
   await assert.rejects(saving, /renderer unavailable/)
   assert.equal(g.ipc.listenerCount('record:close-ready'), 0)
+})
+
+test('a loading renderer is unavailable, not a successfully flushed renderer', async () => {
+  const f = fixture()
+  f.contents.isLoading = () => true
+  await assert.rejects(requestRendererFlush(f.window, f.ipc, 'timeout', {
+    unavailableMessage: 'renderer unavailable',
+  }), /renderer unavailable/)
+  assert.equal(f.token, undefined)
+  assert.equal(f.ipc.listenerCount('record:close-ready'), 0)
+})
+
+test('slow flush reports waiting but still accepts the original acknowledgement', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const f = fixture()
+  let slow = false
+  const saving = requestRendererFlush(f.window, f.ipc, 'timeout', { onSlow: () => { slow = true } })
+  t.mock.timers.tick(5000)
+  assert.equal(slow, true)
+  assert.equal(f.ipc.listenerCount('record:close-ready'), 1)
+  f.reply()
+  await saving
+  t.mock.timers.tick(60_000)
+  assert.equal(f.ipc.listenerCount('record:close-ready'), 0)
 })
 
 test('recovery disabled still flushes the renderer', async () => {

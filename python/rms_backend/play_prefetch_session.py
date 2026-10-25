@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from .auto_analysis_plan import is_terminal_analysis_node
 from . import play_prefetch_runtime
 from .analysis_cache import (
     OPPONENT_ANALYSIS_CACHE_FIELD,
@@ -19,6 +20,7 @@ from .analysis_cache import (
 )
 from .play_prefetch_runtime import PlayPrefetchRuntime
 from .service_helpers import now_iso
+from .records.analysis_refs import AnalysisReference
 
 
 @dataclass
@@ -32,6 +34,8 @@ class PlayPrefetchDependencies:
     attach_mainline: Callable[..., None]
     promote_mainline: Callable[..., None]
     emit: Callable[[dict[str, Any]], None]
+    changed_nodes: Callable[..., None] = lambda *args, **kwargs: None
+    record_access: Any = None
 
 
 class PlayPrefetchSession:
@@ -93,7 +97,10 @@ class PlayPrefetchSession:
         return self.runtime.current_status(self.state.get("game"))
 
     def cancel(self):
-        self.runtime.cancel()
+        with self.state_lock:
+            self.runtime.cancel()
+            if self.dependencies.record_access is not None:
+                self.dependencies.record_access.cancel(role='prefetch')
 
     def _emit_ready(self, context, draft_node_id):
         with self.runtime.lock:
@@ -112,6 +119,13 @@ class PlayPrefetchSession:
         self.dependencies.emit(payload)
 
     def _fail(self, context, error):
+        if self.dependencies.record_access is not None:
+            with self.state_lock:
+                for ticket in context.get('storageTickets', {}).values():
+                    self.dependencies.record_access.cancel(ticket)
+                context.get('storageTickets', {}).clear()
+                context.get('opponentResults', {}).clear()
+                context.get('decisionResults', {}).clear()
         game = self.state.get("game")
         actual_node_id = game.get("currentNodeId") if isinstance(game, dict) else None
         notification_node_id = self.runtime.fail(
@@ -140,6 +154,17 @@ class PlayPrefetchSession:
         node = game.get("nodes", {}).get(actual_node_id)
         if not isinstance(node, dict):
             return False
+
+        access = self.dependencies.record_access
+        if access is not None and access.enabled(game):
+            ticket = context.get('storageTickets', {}).pop(('opponent', draft_node_id), None)
+            context['opponentResults'].pop(draft_node_id, None)
+            input_mode = str(context.get('opponentInputMode') or 'public')
+            analysis_context = dict(gameId=context['gameId'], nodeId=actual_node_id, seat=context['seat'],
+                                    inputMode=input_mode, cacheKey=self.opponent_analysis.build_cache_key(context['seat'], input_mode),
+                                    cacheEpoch=self.engine_management.opponent_cache_epoch)
+            return self.opponent_analysis.cache_result({**result, 'context': analysis_context},
+                                                       require_current=False, ticket=ticket)
 
         input_mode = str(context.get("opponentInputMode") or "public")
         cache_key = self.opponent_analysis.build_cache_key(context["seat"], input_mode)
@@ -183,9 +208,7 @@ class PlayPrefetchSession:
             })
         return True
 
-    def _complete_opponent(self, generation, draft_node_id, result):
-        if not isinstance(result, dict) or result.get("status") != "ready":
-            return
+    def _complete_opponent(self, generation, draft_node_id, result, ticket=None):
         with self.state_lock:
             with self.runtime.lock:
                 context = self.runtime.context
@@ -193,13 +216,24 @@ class PlayPrefetchSession:
                     not isinstance(context, dict)
                     or context.get("generation") != generation
                 ):
+                    if ticket is not None:
+                        self.dependencies.record_access.cancel(ticket)
                     return
                 context["opponentPending"].discard(draft_node_id)
-                context["opponentResults"][draft_node_id] = compact_opponent_analysis(result)
+                if not isinstance(result, dict) or result.get('status') != 'ready':
+                    context['opponentResults'].pop(draft_node_id, None)
+                    if ticket is not None:
+                        self.dependencies.record_access.cancel(ticket)
+                        context.get('storageTickets', {}).pop(('opponent', draft_node_id), None)
+                    return
+                context["opponentResults"][draft_node_id] = result if ticket is not None else compact_opponent_analysis(result)
             self._commit_opponent_result(context, draft_node_id)
 
     def _schedule_opponent(self, context, draft_node_id):
         if not self.state.get("opponentAnalysisEnabled"):
+            return
+        node = context["draftGame"].get("nodes", {}).get(draft_node_id)
+        if not isinstance(node, dict) or is_terminal_analysis_node(node):
             return
         with self.runtime.lock:
             if (
@@ -239,6 +273,17 @@ class PlayPrefetchSession:
             "cacheKey": self.opponent_analysis.cache_key(seat),
             "cacheEpoch": self.engine_management.opponent_cache_epoch,
         }
+        access, ticket = self.dependencies.record_access, None
+        with self.state_lock:
+            if access is not None and access.enabled(self.state.get('game')):
+                if self.runtime.context is not context:
+                    return
+                ticket = access.reserve(self.state['game'], 'opponent', role='prefetch')
+                if ticket is None:
+                    with self.runtime.lock:
+                        context['opponentPending'].discard(draft_node_id)
+                    return  # Speculation yields; actual gameplay can still advance.
+                context.setdefault('storageTickets', {})[('opponent', draft_node_id)] = ticket
         accepted = self.opponent_predictions.request_background_predict(
             snapshot,
             seat,
@@ -248,7 +293,10 @@ class PlayPrefetchSession:
                 context["generation"],
                 draft_node_id,
                 result,
+                ticket=ticket,
             ),
+            on_discard=lambda: self._complete_opponent(
+                context['generation'], draft_node_id, None, ticket=ticket),
             mjai_events=prediction_bundle["events"],
             mjai_prefix_hashes=prediction_bundle["prefixHashes"],
             mjai_events_hash=prediction_bundle["eventHash"],
@@ -257,6 +305,10 @@ class PlayPrefetchSession:
             target_mjai_events_hash=target_bundle["eventHash"],
         )
         if not accepted:
+            if ticket is not None:
+                with self.state_lock:
+                    access.cancel(ticket)
+                    context.get('storageTickets', {}).pop(('opponent', draft_node_id), None)
             with self.runtime.lock:
                 if self.runtime.context is context:
                     context["opponentPending"].discard(draft_node_id)
@@ -286,15 +338,23 @@ class PlayPrefetchSession:
             context["modelPath"],
         )
         cache = node.setdefault("analysisCache", {})
-        if cache.get(cache_key) == result:
+        access, ticket = self.dependencies.record_access, None
+        owned = access is not None and access.enabled(game)
+        if not owned and cache.get(cache_key) == result:
             return True
+        if owned:
+            ticket = context.get('storageTickets', {}).pop(('decision', draft_node_id), None)
+            context['decisionResults'].pop(draft_node_id, None)
         stored = self.decision_analysis.store(
             game,
             node,
             cache_key,
             result,
             source=self.engine_management.decision_source(context["modelPath"]),
+            ticket=ticket,
         )
+        if ticket is not None:
+            access.cancel(ticket)
         if stored is None:
             return False
         tree_updates = self.decision_analysis.update_child_comparisons(
@@ -303,6 +363,23 @@ class PlayPrefetchSession:
             result,
             context["seat"],
         )
+        if isinstance(stored, AnalysisReference):
+            self.decision_analysis.publish_current(node, stored)
+            if tree_updates:
+                self.dependencies.emit(dict(type='auto_analysis_tree_updates', gameId=context['gameId'],
+                                            cacheEpoch=self.engine_management.decision_cache_epoch,
+                                            treeComparisons=tree_updates, treeRevision=int(game.get('treeRevision', 0))))
+        else:
+            self._emit_decision_ready(context, actual_node_id, cache_key, result, tree_updates, game)
+        self.dependencies.emit({
+            "type": "record_changed",
+            "gameId": context["gameId"],
+            "change": "decision_analysis_cache",
+            "timestamp": now_iso(),
+        })
+        return True
+
+    def _emit_decision_ready(self, context, actual_node_id, cache_key, result, tree_updates, game):
         self.dependencies.emit({
             "type": "analysis_ready",
             "cacheEpoch": self.engine_management.decision_cache_epoch,
@@ -315,13 +392,6 @@ class PlayPrefetchSession:
             "state": self.dependencies.build_state(consume_thinking_time=False),
             "timestamp": now_iso(),
         })
-        self.dependencies.emit({
-            "type": "record_changed",
-            "gameId": context["gameId"],
-            "change": "decision_analysis_cache",
-            "timestamp": now_iso(),
-        })
-        return True
 
     def _run_decision(self, context, draft_node_id):
         if not self.state.get("decisionRecommendationsEnabled", True):
@@ -340,6 +410,15 @@ class PlayPrefetchSession:
             node["snapshot"],
             context["modelPath"],
         )
+        access, ticket = self.dependencies.record_access, None
+        with self.state_lock:
+            if access is not None and access.enabled(self.state.get('game')):
+                if self.runtime.context is not context:
+                    return
+                ticket = access.reserve(self.state['game'], 'decision', role='prefetch')
+                if ticket is None:
+                    return
+                context.setdefault('storageTickets', {})[('decision', draft_node_id)] = ticket
         with self.runtime.lock:
             if self.runtime.context is not context:
                 return
@@ -355,6 +434,10 @@ class PlayPrefetchSession:
                 context["modelPath"],
             )
         except Exception:
+            if ticket is not None:
+                with self.state_lock:
+                    access.cancel(ticket)
+                    context.get('storageTickets', {}).pop(('decision', draft_node_id), None)
             return
         finally:
             with self.runtime.lock:
@@ -363,8 +446,10 @@ class PlayPrefetchSession:
         with self.state_lock:
             with self.runtime.lock:
                 if self.runtime.context is not context:
+                    if ticket is not None:
+                        access.cancel(ticket)
                     return
-                context["decisionResults"][draft_node_id] = copy.deepcopy(result)
+                context["decisionResults"][draft_node_id] = result if ticket is not None else copy.deepcopy(result)
             self._commit_decision_result(context, draft_node_id)
 
     def _capture_step(self, context):
@@ -483,6 +568,7 @@ class PlayPrefetchSession:
             context["steps"].popleft()
 
         current_node["snapshot"] = copy.deepcopy(step["afterBaseSnapshot"])
+        self.dependencies.changed_nodes(game, [actual_before_id], snapshots=True)
         actual_cursor_id = actual_before_id
         committed_draft_ids = []
         for draft_node in step["transitionNodes"]:
@@ -501,6 +587,7 @@ class PlayPrefetchSession:
                 game["nodes"][actual_child_id]["snapshot"] = copy.deepcopy(
                     draft_node["snapshot"]
                 )
+                self.dependencies.changed_nodes(game, [actual_child_id], snapshots=True)
             self.dependencies.attach_mainline(actual_cursor_id, actual_child_id)
             game["currentNodeId"] = actual_child_id
             self.dependencies.promote_mainline(game, actual_child_id)

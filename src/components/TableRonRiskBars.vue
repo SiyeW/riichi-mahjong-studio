@@ -40,6 +40,7 @@ import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { DEFAULT_PROBABILITY_SCALE, probabilityScaleRatio } from '../analysisProbabilityScale'
 import { getUiMotionDurationMs, getUiMotionEasingFunction } from '../uiMotion'
 import { useResponsiveGeometry } from '../useResponsiveGeometry'
+import { useCanvasPaintSnapshots } from '../canvasPaintSnapshot'
 
 export type TableRonRiskSlot = Readonly<{
   index: number
@@ -67,11 +68,16 @@ const props = defineProps<{
 const emit = defineEmits<{ toggle: [] }>()
 
 type RonRiskCanvasElement = HTMLCanvasElement & {
-  rmsRonRiskRenderSignature?: string
+  readonly rmsRonRiskRenderSignature?: string
   rmsRonRiskGuideBounds?: CanvasBox | null
 }
 const rootElement = ref<HTMLElement | null>(null)
 const canvasElement = ref<RonRiskCanvasElement | null>(null)
+const { publish: publishSnapshot } = useCanvasPaintSnapshots<{
+  threshold: number; scales: readonly (readonly number[])[]
+} | null>('rmsRonRiskRenderSignature', state => state ? [
+  Math.round(state.threshold * 10000), ...state.scales.flat().map(value => Math.round(value * 10000)),
+].join(',') : '')
 let displayedScales: number[][] = []
 let displayedThresholdScale = 1
 let animationFrame = 0
@@ -91,6 +97,11 @@ interface RonRiskCanvasGeometry {
 }
 
 let renderGeometry: RonRiskCanvasGeometry | null = null
+let measuredStructure = ''
+
+function structureKey() {
+  return `${props.visible}:` + props.slots.map(slot => `${Number(slot.isDrawn)}${Number(slot.isGap)}:${slot.risks.map(risk => risk.key).join(',')}`).join(';')
+}
 
 function targetScales(): number[][] {
   return props.slots.map(slot => (
@@ -153,6 +164,7 @@ function measureGeometry() {
     })
   }).filter((track): track is CanvasBox & { color: string } => Boolean(track))
   renderGeometry = { width, height, thresholdLine, tracks }
+  measuredStructure = structureKey()
 }
 
 function render() {
@@ -163,7 +175,8 @@ function render() {
   if (!context) return
   context.clearRect(0, 0, geometry.width, geometry.height)
   if (!props.visible) {
-    canvas.rmsRonRiskRenderSignature = ''
+    canvas.rmsRonRiskGuideBounds = null
+    publishSnapshot(canvas, null)
     return
   }
 
@@ -198,10 +211,7 @@ function render() {
   } else {
     canvas.rmsRonRiskGuideBounds = null
   }
-  canvas.rmsRonRiskRenderSignature = [
-    Math.round(displayedThresholdScale * 10000),
-    ...displayedScales.flat().map(value => Math.round(value * 10000)),
-  ].join(',')
+  publishSnapshot(canvas, { threshold: displayedThresholdScale, scales: displayedScales })
 }
 
 function stopAnimation() {
@@ -210,6 +220,7 @@ function stopAnimation() {
 }
 
 function animate() {
+  if (!canvasElement.value) return
   stopAnimation()
   const target = targetScales()
   const thresholdTarget = targetThresholdScale()
@@ -262,7 +273,7 @@ useResponsiveGeometry(rootElement, updateGeometry, {
 
 watch(() => [props.slots, props.adaptiveMax, props.showThreshold, props.visible, props.reduceMotion], () => {
   void nextTick(() => {
-    measureGeometry()
+    if (!renderGeometry || measuredStructure !== structureKey()) measureGeometry()
     animate()
   })
 }, { immediate: true, flush: 'post' })

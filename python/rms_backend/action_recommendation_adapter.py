@@ -26,33 +26,6 @@ def resolve_engine_weight_path(path_value: str) -> str:
     return str(path if path.is_absolute() else PROJECT_ROOT / path)
 
 
-_LATEST_DEBUG: Dict[str, Any] = {}
-_DEBUG_LOCK = threading.Lock()
-
-
-def _store_debug(
-    *,
-    caller: str,
-    seat: int,
-    events: List[Dict[str, Any]],
-    result: Dict[str, Any],
-) -> None:
-    global _LATEST_DEBUG
-    with _DEBUG_LOCK:
-        _LATEST_DEBUG = {
-            "caller": caller,
-            "seat": int(seat),
-            "eventCount": len(events),
-            "events": copy.deepcopy(events),
-            "result": copy.deepcopy(result),
-        }
-
-
-def get_latest_action_recommendation_debug() -> Dict[str, Any]:
-    with _DEBUG_LOCK:
-        return copy.deepcopy(_LATEST_DEBUG)
-
-
 _ACCUMULATED_THINKING_TIME_S = 0.0
 _THINKING_TIME_MIN_S = 0.5
 _THINKING_TIME_MAX_S = 1.0
@@ -192,7 +165,6 @@ def _request_recommendation(
     events: List[Dict[str, Any]],
     legal_actions: Optional[List[Dict[str, Any]]],
     position_id: str,
-    caller: str,
 ) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
     if not legal_actions:
         raise ValueError("Action recommendation requires host legal actions.")
@@ -205,7 +177,6 @@ def _request_recommendation(
         position_id=position_id,
         priority=priority,
     )
-    _store_debug(caller=caller, seat=seat, events=events, result=result)
     return result, _scored_actions(result, legal_actions)
 
 
@@ -232,7 +203,6 @@ def choose_ai_action(
         events=events,
         legal_actions=legal_actions,
         position_id=position_id,
-        caller="choose_ai_action",
     )
     result = _best_action(response, legal_actions or [])
     thinking_time_s = _compute_thinking_time([
@@ -272,7 +242,6 @@ def analyze_discard_choices(
         events=events,
         legal_actions=legal_actions,
         position_id=position_id,
-        caller="analyze_discard_choices",
     )
     entries = [
         {key: copy.deepcopy(value) for key, value in entry.items() if key != "id"}
@@ -315,7 +284,6 @@ def analyze_action_choices(
         events=events,
         legal_actions=legal_actions,
         position_id=position_id,
-        caller="analyze_action_choices",
     )
     return {
         "mode": "reaction",

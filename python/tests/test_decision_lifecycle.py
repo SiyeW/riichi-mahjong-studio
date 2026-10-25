@@ -134,7 +134,7 @@ class DecisionLifecycleTests(unittest.TestCase):
                 gateway._client.request.side_effect = request
                 with patch('rms_backend.action_recommendation_gateway.initialize_engine_client', return_value=initialized_result()):
                     with self.assertRaises(RuntimeError):
-                        gateway.analyze_candidates(0, 'unused', 'test', [], [{'id': 'a', 'type': 'none'}])
+                        gateway.analyze_candidates(0, 'unused', 'test', [], [{'id': 'a', 'type': 'none', 'actor': 0}])
                 self.assertEqual(gateway.activity_state(), 'loading')
                 self.assertEqual(gateway.active_seat(), 2)
                 self.assertIsNone(gateway.activity_error())

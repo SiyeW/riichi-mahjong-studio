@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from . import game_tree
@@ -13,6 +13,7 @@ class GameTreeDependencies:
     is_meaningful_decision: Callable[[dict[str, Any], dict[str, Any]], bool]
     active_draft: Callable[[], dict[str, Any] | None]
     invalidate_analysis_timeline: Callable[[], None]
+    changed_nodes: Callable[..., None] = lambda *args, **kwargs: None
 
 
 class GameTreeCoordinator:
@@ -25,6 +26,11 @@ class GameTreeCoordinator:
     ) -> None:
         self._state = state
         self._dependencies = dependencies
+
+    def for_private_game(self, game):
+        return GameTreeCoordinator({'game': game, 'mode': 'play'}, replace(
+            self._dependencies, active_draft=lambda: None,
+            invalidate_analysis_timeline=lambda: None, changed_nodes=lambda *args, **kwargs: None))
 
     def refresh_reused_imported_child(
         self,
@@ -39,6 +45,7 @@ class GameTreeCoordinator:
             action,
             snapshot,
         ):
+            self._dependencies.changed_nodes(game, [child_id], snapshots=True)
             self._dependencies.invalidate_analysis_timeline()
 
     def create_node(
@@ -62,6 +69,8 @@ class GameTreeCoordinator:
             snapshot,
             is_decision=is_decision,
         )
+        self._dependencies.changed_nodes(game, [parent_id])
+        self._dependencies.changed_nodes(game, [node_id], snapshots=True)
         if int(game.get("treeRevision", 0)) != previous_revision:
             self._dependencies.invalidate_analysis_timeline()
         return node_id
@@ -80,6 +89,7 @@ class GameTreeCoordinator:
             child_id,
             replace_existing=self._may_promote_mainline(game, force),
         ):
+            self._dependencies.changed_nodes(game, [parent_id])
             self._dependencies.invalidate_analysis_timeline()
 
     def promote_path_to_mainline(
@@ -92,6 +102,7 @@ class GameTreeCoordinator:
         if not self._may_promote_mainline(game, force):
             return
         if game_tree.promote_path_to_mainline(game, node_id):
+            self._dependencies.changed_nodes(game, game_tree.find_path_to_root(game, node_id))
             self._dependencies.invalidate_analysis_timeline()
 
     def replace_pending_review_main_child(
@@ -108,6 +119,7 @@ class GameTreeCoordinator:
             chosen_id,
         )
         if changed:
+            self._dependencies.changed_nodes(game, [parent_id])
             self._dependencies.invalidate_analysis_timeline()
         return changed
 

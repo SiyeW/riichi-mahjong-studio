@@ -36,9 +36,10 @@ jobs:
         with:
           activate-environment: ""
           auto-activate: false
+          run-init: false
           channels: conda-forge
           conda-remove-defaults: "true"
-          miniforge-version: latest
+          miniforge-version: 26.7.2-1
 
       - name: Create backend environment
         shell: pwsh

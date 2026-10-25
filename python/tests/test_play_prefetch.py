@@ -6,6 +6,7 @@ from unittest import mock
 from rms_backend import play_prefetch_runtime
 from rms_backend import legal_actions
 from rms_backend import service
+from rms_backend.opponent_prediction_completion import PredictionCompletion
 
 
 class PlayPrefetchTest(unittest.TestCase):
@@ -61,6 +62,26 @@ class PlayPrefetchTest(unittest.TestCase):
 
         evaluate.assert_not_called()
         self.assertIsNone(next_snapshot["reactionWindow"])
+
+    def test_discarded_opponent_request_releases_prefetch_ownership_and_can_be_scheduled_again(self):
+        draft = play_prefetch_runtime.create_draft(service.STATE['game'])
+        context = self._install_context(draft)
+        context['committedNodeIds'].clear()
+        node_id = draft['currentNodeId']
+        service.STATE['opponentAnalysisEnabled'] = True
+        bundle = dict(events=[], prefixHashes=[], eventHash=0)
+        with mock.patch.object(service.OPPONENT_PREDICTIONS, 'request_background_predict', return_value=True) as request, \
+             mock.patch.object(service.PLAY_PREFETCH.dependencies, 'build_mjai_stream_bundle', return_value=bundle):
+            service.PLAY_PREFETCH._schedule_opponent(context, node_id)
+            self.assertIn(node_id, context['opponentPending'])
+            hooks = request.call_args.kwargs
+            completion = PredictionCompletion(hooks['on_complete'], hooks['on_discard'])
+            completion.discard()
+            completion.discard()
+            self.assertNotIn(node_id, context['opponentPending'])
+            self.assertNotIn(node_id, context['opponentResults'])
+            service.PLAY_PREFETCH._schedule_opponent(context, node_id)
+            self.assertEqual(request.call_count, 2)
 
     def test_legal_actions_mark_only_the_exact_drawn_tile_as_tsumogiri(self):
         snapshot = copy.deepcopy(service.get_current_snapshot())
@@ -373,6 +394,24 @@ class PlayPrefetchTest(unittest.TestCase):
         self.assertFalse(result["committed"])
         self.assertTrue(result["waiting"])
         self.assertEqual(game, before)
+
+    def test_terminal_draft_node_is_not_sent_to_opponent_engine(self):
+        game = service.STATE["game"]
+        draft_game = play_prefetch_runtime.create_draft(game)
+        context = self._install_context(draft_game)
+        node_id = draft_game["currentNodeId"]
+        node = draft_game["nodes"][node_id]
+        node["snapshot"]["phase"] = "game_end"
+        node["action"] = {"type": "hora", "actor": 0, "target": 0}
+        service.STATE["opponentAnalysisEnabled"] = True
+
+        with mock.patch.object(
+            service.OPPONENT_PREDICTIONS, "request_background_predict"
+        ) as request:
+            service.PLAY_PREFETCH._schedule_opponent(context, node_id)
+
+        request.assert_not_called()
+        self.assertNotIn(node_id, context["opponentPending"])
 
     def test_play_state_payload_skips_hidden_auto_analysis_timeline(self):
         with mock.patch.object(service.AUTO_ANALYSIS, "_ensure_timeline_locked") as ensure_timeline:

@@ -136,7 +136,7 @@ class EngineManagement:
             base = self._load_json_file(paths[0])
             if len(paths) > 1:
                 user = self._load_json_file(paths[1])
-                for key in ("training", "modeDefaults", "audio", "engines"):
+                for key in ("training", "modeDefaults", "audio", "engines", "records"):
                     if key in user:
                         base[key] = user[key]
             self._project_config_signature = resolved_signature

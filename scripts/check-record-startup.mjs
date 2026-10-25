@@ -1,0 +1,414 @@
+import assert from 'node:assert/strict'
+import fs from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import { createHash } from 'node:crypto'
+import { createServer } from 'vite'
+import { _electron as electron } from 'playwright'
+import { stableForegroundSample } from '../src/testing/motionProbeSurface.ts'
+import { readRenderingTrace } from '../src/testing/renderingTrace.ts'
+
+// Exercise the old exit file through real startup, including the next empty
+// startup after explicit discard. An optional source is copied, never edited.
+const root = path.resolve(import.meta.dirname, '..')
+const source = path.resolve(process.argv[2] || path.join(root, 'examples/example-record.mjstudio'))
+const rasterization = process.env.RMS_RECORD_MOTION_RASTERIZATION || 'default'
+const motionSteps = Number(process.env.RMS_RECORD_MOTION_STEPS || 20)
+const motionStepDelay = Number(process.env.RMS_RECORD_MOTION_STEP_DELAY || 80)
+const motionDirection = process.env.RMS_RECORD_MOTION_DIRECTION || 'round-trip'
+assert.ok(Number.isInteger(motionSteps) && motionSteps >= 1 && motionSteps <= 200)
+assert.ok(Number.isFinite(motionStepDelay) && motionStepDelay >= 1 && motionStepDelay <= 2000)
+assert.ok(['forward', 'backward', 'round-trip'].includes(motionDirection))
+assert.ok(['default', 'cpu', 'gpu'].includes(rasterization), 'motion rasterization must be default, cpu or gpu')
+assert.ok(rasterization === 'default' || process.env.RMS_RECORD_MOTION_PROFILE,
+  'a rasterization intervention requires an explicit motion profile')
+const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'rms-record-startup-'))
+const recovery = path.join(directory, 'records', '.recovery')
+const externalRendererUrl = process.env.RMS_RECORD_TEST_URL || null
+let server
+let application
+const errors = []
+async function launch() {
+  const rasterFlags = rasterization === 'cpu' ? ['--disable-gpu-rasterization']
+    : rasterization === 'gpu' ? ['--enable-gpu-rasterization'] : []
+  application = await electron.launch({ args: [...rasterFlags,
+    path.join(root, 'scripts/electron-record-test-main.cjs')],
+    env: { ...process.env, VITE_DEV_SERVER_URL: externalRendererUrl || server.resolvedUrls.local[0], RMS_RECORD_DESKTOP_TEST_DIR: directory } })
+  const page = await application.firstWindow()
+  page.setDefaultTimeout(30_000)
+  page.on('pageerror', error => errors.push(error.message))
+  if (process.env.RMS_RECORD_MOTION_PROFILE) page.on('console', message => {
+    if (message.type() === 'error') console.error(message.text())
+  })
+  await page.locator('.shell:not(.tile-artwork-pending)').waitFor()
+  await page.locator('.record-operation-overlay').waitFor({ state: 'hidden' })
+  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), Boolean(process.env.RMS_RECORD_MOTION_PROFILE))
+  assert.equal(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isFocused()),
+    Boolean(process.env.RMS_RECORD_MOTION_PROFILE && process.env.RMS_RECORD_MOTION_FOCUSED === '1'
+      && process.env.RMS_RECORD_MOTION_VISIBLE === '1'))
+  return page
+}
+async function closeWindow() {
+  const exited = application.waitForEvent('close')
+  await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())
+  await exited
+  application = null
+}
+try {
+  await fs.mkdir(recovery, { recursive: true })
+  await fs.copyFile(source, path.join(recovery, '未保存的对局.mjstudio'))
+  await fs.writeFile(path.join(directory, 'config.json'), JSON.stringify({ display: { language: 'zh-CN' },
+    records: { saveRecoveryOnExit: true },
+    engines: { schemaVersion: 2, profiles: [], loadedProfileIds: [], outputAssignments: {} } }))
+  if (!externalRendererUrl) {
+    server = await createServer({ root, mode: 'desktop-test', cacheDir: path.join(directory, 'vite-cache'),
+      optimizeDeps: { entries: ['src/main.ts'] },
+      server: { host: '127.0.0.1', port: 0, strictPort: false } })
+  }
+  await server?.listen()
+  let page = await launch()
+  await page.locator('textarea.node-comment').waitFor()
+  const initial = await page.evaluate(() => window.studioAPI.getGameView())
+  assert.equal(initial.state.gameLoaded, true)
+  assert.ok(initial.view.tree.nodes.some(node => node.id === initial.view.currentNodeId && node.parentId),
+    'the recovered cursor has a previous frame for the wheel test')
+  if (initial.state.mode === 'play') {
+    await page.locator('.grid-main').dispatchEvent('wheel', { deltaY: -100 })
+    assert.equal((await page.evaluate(() => window.studioAPI.getGameView())).view.currentNodeId, initial.view.currentNodeId)
+    await page.locator('.toolbar').getByRole('button', { name: '进入研究模式', exact: true }).click()
+    await page.locator('.toolbar').getByRole('button', { name: '进入对局模式', exact: true }).waitFor()
+  }
+  await page.locator('.grid-main').dispatchEvent('wheel', { deltaY: -100 })
+  await page.waitForFunction(async original => (await window.studioAPI.getGameView()).view.currentNodeId !== original,
+    initial.view.currentNodeId)
+  assert.equal(await page.locator('[inert]').count(), 0)
+  assert.equal(JSON.parse(await fs.readFile(path.join(recovery, 'legacy-migration.json'), 'utf8')).version, 1)
+
+  if (process.env.RMS_RECORD_MOTION_PROFILE) {
+    const pair = process.env.RMS_RECORD_MOTION_PAIR?.split(',')
+    if (pair && (pair.length !== 2 || pair.some(node => !node.trim()))) {
+      throw new Error('RMS_RECORD_MOTION_PAIR must contain previous,next node IDs.')
+    }
+    assert.ok(!(pair && process.env.RMS_RECORD_MOTION_START_NODE), 'choose a fixed pair or a starting node, not both')
+    if (process.env.RMS_RECORD_MOTION_SEAT !== undefined) {
+      const seat = Number(process.env.RMS_RECORD_MOTION_SEAT)
+      assert.ok(Number.isInteger(seat) && seat >= 0 && seat < 4, 'motion seat must be 0-3')
+      await page.evaluate(async seat => {
+        const vm = document.querySelector('#app').__vue_app__._instance.setupState
+        if (vm.status.controlledSeat !== seat) vm.applyStatus(await window.studioAPI.requestSeatSwitch(seat))
+      }, seat)
+    }
+    if (pair) await page.evaluate(async ([previous]) => {
+      const vm = document.querySelector('#app').__vue_app__._instance.setupState
+      vm.applyGameView((await window.studioAPI.jumpToNode(previous)).view)
+    }, pair)
+    else if (process.env.RMS_RECORD_MOTION_START_NODE) await page.evaluate(async node => {
+      const vm = document.querySelector('#app').__vue_app__._instance.setupState
+      vm.applyGameView((await window.studioAPI.jumpToNode(node)).view)
+    }, process.env.RMS_RECORD_MOTION_START_NODE)
+    await page.waitForTimeout(350)
+    if (process.env.RMS_RECORD_MOTION_COVERAGE !== undefined) {
+      await page.evaluate(enabled => { document.querySelector('#app').__vue_app__._instance.setupState.settings.display.tileMotionBlur = enabled }, process.env.RMS_RECORD_MOTION_COVERAGE === '1')
+    }
+    const coverageEnabled = await page.evaluate(() => document.querySelector('#app').__vue_app__._instance.setupState.settings.display.tileMotionBlur)
+    if (coverageEnabled) {
+      await page.locator('.discard-motion-surface[data-ready="true"]').waitFor({ state: 'attached' })
+    }
+    if (process.env.RMS_RECORD_MOTION_WAIT_ARTWORK === '1') {
+      await page.waitForFunction(() => [...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
+        .every(image => image.complete && image.naturalWidth > 0), null, { timeout: 30_000 })
+    }
+    const artwork = await page.evaluate(async () => ({ pixelRatio: window.devicePixelRatio,
+      formats: await Promise.all([...new Set([...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
+        .map(image => image.src))].map(async src => (await (await fetch(src)).blob()).type)),
+      images: document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork').length,
+      decodedImages: [...document.querySelectorAll('img.tileImg,img.mahjong-tile-artwork')]
+        .filter(image => image.complete && image.naturalWidth > 0).length }))
+    if (process.env.RMS_RECORD_MOTION_WAIT_ARTWORK === '1') {
+      assert.ok(artwork.formats.every(type => type === 'image/svg+xml'), 'every rendered face uses its native resolution-independent source')
+    }
+    async function readSurface() {
+      const surface = await application.evaluate(({ BrowserWindow, screen, powerMonitor }) => {
+        const window = BrowserWindow.getAllWindows()[0]
+        return { visible: window.isVisible(), focused: window.isFocused(), opacity: window.getOpacity(),
+          maximized: window.isMaximized(), contentBounds: window.getContentBounds(),
+          mode: global.recordDesktopTest.surfaceMode,
+          invalidations: window.rmsRecordSurfaceEvents.invalidations,
+          locks: window.rmsRecordSurfaceEvents.locks,
+          power: { idleState: powerMonitor.getSystemIdleState(5), idleSeconds: powerMonitor.getSystemIdleTime(),
+            onBattery: powerMonitor.isOnBatteryPower(), preventDisplaySleep: global.recordDesktopTest.preventDisplaySleep },
+          bounds: window.getBounds(), display: screen.getDisplayMatching(window.getBounds()) }
+      })
+      return { ...surface, ...await page.evaluate(() => ({ documentVisibility: document.visibilityState, pixelRatio: window.devicePixelRatio })) }
+    }
+    const surface = await readSurface()
+    if (surface.mode === 'native') assert.equal(surface.maximized, true,
+      'native motion samples must follow production window maximization')
+    if (process.env.RMS_RECORD_MOTION_VISIBLE === '1') {
+      assert.equal(surface.opacity, 1)
+      if (process.env.RMS_RECORD_MOTION_FOCUSED === '1') assert.equal(surface.focused, true)
+      if (process.env.RMS_RECORD_MOTION_ALLOW_LOCKED !== '1') {
+        assert.notEqual(surface.power.idleState, 'locked',
+          'A locked desktop is not foreground rendering acceptance; explicit diagnostic override is required.')
+        assert.notEqual(surface.power.idleState, 'unknown', 'OS foreground state is unavailable.')
+      }
+      assert.equal(surface.documentVisibility, 'visible', 'an occluded surface is not a visible rendering baseline')
+    }
+    const client = await page.context().newCDPSession(page)
+    let wheelPoint = null
+    if (process.env.RMS_RECORD_MOTION_INPUT === 'trusted') {
+      const bounds = await page.locator('.grid-main').boundingBox()
+      assert.ok(bounds, 'trusted wheel needs a visible table hit target')
+      wheelPoint = { x: bounds.x + bounds.width / 2, y: bounds.y + 4 }
+      await page.mouse.move(wheelPoint.x, wheelPoint.y)
+      if (pair) await page.exposeFunction('__rmsMotionWheel', deltaY => page.mouse.wheel(0, deltaY))
+    }
+    await client.send('Performance.enable')
+    const recordCpu = !process.env.RMS_RECORD_MOTION_SAMPLE_ONLY
+    if (recordCpu) {
+      await client.send('Profiler.enable')
+      await client.send('Profiler.start')
+    }
+    let traceEvents = [], traceError = null
+    if (process.env.RMS_RECORD_MOTION_TRACE) {
+      const categories = 'devtools.timeline,blink,cc,benchmark,gpu,viz,disabled-by-default-devtools.timeline.frame'
+      await client.send('Tracing.start', { categories: process.env.RMS_RECORD_MOTION_TRACE_CATEGORIES || categories, transferMode: 'ReturnAsStream' })
+    }
+    const before = await client.send('Performance.getMetrics')
+    const externalInput = Boolean(wheelPoint && !pair)
+    const motionTask = page.evaluate(async ({ pair, steps, stepDelay, direction, externalInput }) => {
+      const frameTimes = [], timelineTimes = [], visits = [], longTasks = [], zooms = new Set(), flights = [], inputs = [], commits = [], coverage = []
+      const animations = new Map()
+      let lastCoverage = ''
+      const probeStartedAt = performance.now()
+      console.timeStamp(`RMS-MOTION-START:${probeStartedAt}`)
+      performance.mark(`RMS-MOTION-START:${probeStartedAt}`, { startTime: probeStartedAt })
+      const vm = document.querySelector('#app').__vue_app__._instance.setupState
+      const initial = { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode }
+      visits.push(initial.node)
+      const table = document.querySelector('.grid-main')
+      const wheel = event => inputs.push({ at: performance.now(), deltaY: event.deltaY, trusted: event.isTrusted,
+        deltaMode: event.deltaMode, legacyDeltaY: event.wheelDeltaY ?? null,
+        beforeNode: vm.gameView.currentNodeId })
+      table.addEventListener('wheel', wheel, { capture: true })
+      const dispatchWheel = deltaY => window.__rmsMotionWheel ? window.__rmsMotionWheel(deltaY)
+        : table.dispatchEvent(new WheelEvent('wheel', { deltaY, bubbles: true, cancelable: true }))
+      const observer = new PerformanceObserver(list => longTasks.push(...list.getEntries().map(({ startTime, duration }) => ({ startTime, duration }))))
+      observer.observe({ type: 'longtask' })
+      let active = true, frame = 0
+      const sample = timeline => {
+        const arrival = performance.now()
+        frameTimes.push(arrival)
+        timelineTimes.push(timeline)
+        zooms.add(vm.tableZoom)
+        for (const [flight, animation] of animations) {
+          if (flight.startTime === null && typeof animation.startTime === 'number') flight.startTime = animation.startTime
+        }
+        const surface = document.querySelector('.discard-motion-surface')
+        const latest = flights.at(-1)
+        if (surface?.dataset.active && latest?.startTime === null) latest.startTime = Number(surface.dataset.startTime)
+        const completed = surface?.dataset.intervals
+        if (completed && completed !== lastCoverage) {
+          lastCoverage = completed
+          coverage.push({ admissionMs: Number(surface.dataset.admissionMs), snapshotMs: Number(surface.dataset.snapshotMs),
+            snapshotStages: JSON.parse(surface.dataset.snapshotStages || '{}'), workerPreparationMs: Number(surface.dataset.workerPreparationMs),
+            intervals: JSON.parse(completed) })
+        }
+        if (visits.at(-1) !== vm.gameView.currentNodeId) {
+          visits.push(vm.gameView.currentNodeId)
+          commits.push({ node: vm.gameView.currentNodeId, observedAt: arrival })
+        }
+        if (active) frame = requestAnimationFrame(sample)
+      }
+      const animate = Element.prototype.animate
+      Element.prototype.animate = function (keyframes, options) {
+        const animation = animate.call(this, keyframes, options)
+        if (this.hasAttribute('data-pending-discard-seat') || this.classList.contains('discard-return-ghost')) {
+          const flight = { node: vm.gameView.currentNodeId, createdAt: performance.now(),
+            duration: Number(animation.effect?.getTiming().duration) || 0,
+            easing: animation.effect?.getTiming().easing, startTime: null, cancelRequestedAt: null, finishedAt: null }
+          flights.push(flight)
+          animations.set(flight, animation)
+          const cancel = animation.cancel.bind(animation)
+          animation.cancel = () => { flight.cancelRequestedAt ??= performance.now(); return cancel() }
+          animation.addEventListener('finish', () => { flight.finishedAt = performance.now() }, { once: true })
+          void animation.ready.then(() => {
+            if (flight.startTime === null && typeof animation.startTime === 'number') flight.startTime = animation.startTime
+          }).catch(() => {})
+        }
+        return animation
+      }
+      frame = requestAnimationFrame(sample)
+      try {
+        if (externalInput) {
+          await new Promise(resolve => { window.__rmsFinishMotionProbe = resolve })
+          delete window.__rmsFinishMotionProbe
+        } else if (pair) {
+          for (let round = 0; round < 4; round++) for (const direction of [1, -1]) {
+            await dispatchWheel(direction * 100)
+            await new Promise(resolve => setTimeout(resolve, 700))
+            const expected = pair[direction > 0 ? 1 : 0]
+            if (vm.gameView.currentNodeId !== expected) throw new Error(`Expected ${expected}, got ${vm.gameView.currentNodeId}`)
+          }
+        } else for (const stepDirection of direction === 'forward' ? [1] : direction === 'backward' ? [-1] : [-1, 1]) for (let i = 0; i < steps; i++) {
+          await dispatchWheel(stepDirection * 100)
+          await new Promise(resolve => setTimeout(resolve, stepDelay))
+        }
+        await new Promise(resolve => setTimeout(resolve, 350))
+      } finally {
+        active = false
+        cancelAnimationFrame(frame)
+        observer.disconnect()
+        table.removeEventListener('wheel', wheel, true)
+        Element.prototype.animate = animate
+      }
+      const intervals = frameTimes.slice(1).map((time, index) => time - frameTimes[index]).sort((a, b) => a - b)
+      return { initial, final: { node: vm.gameView.currentNodeId, context: vm.currentViewRequestContext(), mode: vm.status.mode },
+        backendNode: (await window.studioAPI.getGameView()).view.currentNodeId,
+        zooms: [...zooms], visits: visits.length, inputs, commits,
+        coverage, motionPending: vm.tableMotionActive, frames: frameTimes.length, median: intervals[Math.floor(intervals.length / 2)],
+        cleanup: {
+          ghostsAndOverlays: document.querySelectorAll('.discard-return-ghost, .discard-flight-back, .discard-flight-regular-pose').length,
+          activeCoverage: document.querySelectorAll('.discard-flight-coverage').length,
+          workerSurfaces: document.querySelectorAll('.discard-motion-surface').length,
+          pausedTableAnimations: document.getAnimations().filter(animation => animation.playState === 'paused'
+            && animation.effect?.target instanceof Element && animation.effect.target.closest('.grid-main')).length,
+        },
+        p95: intervals[Math.floor(intervals.length * .95)], max: intervals.at(-1), longTasks,
+        flightWindows: flights.map(flight => {
+          if (!Number.isFinite(flight.startTime)) return { ...flight, callbackCount: null, maximumCallbackGapMs: null }
+          const end = Math.max(flight.startTime, Math.min(flight.startTime + flight.duration, flight.cancelRequestedAt ?? Infinity))
+          const callbacks = frameTimes.filter(time => time >= flight.startTime && time < end)
+          const times = [flight.startTime, ...callbacks, end]
+          return { ...flight, observedDuration: end - flight.startTime, callbackCount: callbacks.length,
+            maximumCallbackGapMs: Math.max(...times.slice(1).map((time, index) => time - times[index])) }
+        }), probeStartedAt, callbackArrivals: frameTimes, callbackTimelineStamps: timelineTimes }
+    }, { pair: pair || null, steps: motionSteps, stepDelay: motionStepDelay, direction: motionDirection, externalInput })
+    // Observe early renderer failure while its independent input producer is
+    // still waiting for admission; the awaited task below retains that error.
+    void motionTask.catch(() => {})
+    const injectedInputs = [], pendingInputs = new Set(), inputTasks = []
+    let inputError = null
+    if (externalInput) {
+      try {
+        await page.waitForFunction(() => typeof window.__rmsFinishMotionProbe === 'function')
+        const directions = motionDirection === 'forward' ? [1] : motionDirection === 'backward' ? [-1] : [-1, 1]
+        const began = performance.now()
+        for (const direction of directions) for (let index = 0; index < motionSteps; index++) {
+          const target = began + injectedInputs.length * motionStepDelay
+          await new Promise(resolve => setTimeout(resolve, Math.max(0, target - performance.now())))
+          assert.ok(pendingInputs.size < 32, 'native input acknowledgements exceeded the bounded producer capacity')
+          const deltaY = direction * 100
+          injectedInputs.push({ at: performance.now() - began, deltaY })
+          const task = client.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...wheelPoint, deltaX: 0, deltaY })
+            .then(() => { pendingInputs.delete(task) }, error => { pendingInputs.delete(task); inputError ??= String(error) })
+          pendingInputs.add(task); inputTasks.push(task)
+        }
+      } catch (error) { inputError ??= String(error) }
+      finally {
+        await Promise.all(inputTasks)
+        await page.evaluate(() => window.__rmsFinishMotionProbe?.())
+      }
+    }
+    const motion = await motionTask
+    motion.inputProducer = { independent: externalInput, intervalMs: motionStepDelay, inputs: injectedInputs, error: inputError }
+    const surfaceAfter = await readSurface()
+    const stableForeground = stableForegroundSample(surface, surfaceAfter)
+    const after = await client.send('Performance.getMetrics')
+    const { profile } = recordCpu ? await client.send('Profiler.stop') : { profile: { nodes: [], samples: [], timeDeltas: [] } }
+    if (process.env.RMS_RECORD_MOTION_TRACE) {
+      const complete = new Promise(resolve => client.once('Tracing.tracingComplete', resolve))
+      let timer
+      try {
+        await client.send('Tracing.end')
+        const result = await Promise.race([complete, new Promise((_, reject) => {
+          timer = setTimeout(() => reject(new Error('Rendering trace did not complete.')), 15000)
+        })])
+        assert.ok(result?.stream, 'a completed trace must provide its raw JSON stream')
+        traceEvents = await readRenderingTrace(client, result.stream)
+        assert.ok(traceEvents.length, 'a completed trace must contain events')
+      } catch (error) { traceError = String(error) }
+      finally { clearTimeout(timer) }
+    }
+    await client.detach()
+    const rendererFeatures = await application.evaluate(({ app }) => app.getGPUFeatureStatus())
+    if (rasterization === 'cpu') assert.equal(rendererFeatures.rasterization, 'disabled_software',
+      'the rasterization intervention must reach the actual renderer')
+    if (rasterization === 'gpu') assert.ok(rendererFeatures.rasterization.startsWith('enabled'),
+      'the GPU-rasterization control must reach the actual renderer')
+    // Optional adapter attribution is outside the sampled animation/CPU window.
+    const gpu = process.env.RMS_RECORD_MOTION_GPU_INFO === '1'
+      ? await application.evaluate(async ({ app }) => ({ features: app.getGPUFeatureStatus(),
+        versions: { electron: process.versions.electron, chrome: process.versions.chrome }, info: await app.getGPUInfo('complete') }))
+        .catch(error => ({ error: String(error) }))
+      : undefined
+    const first = Object.fromEntries(before.metrics.map(({ name, value }) => [name, value]))
+    const work = Object.fromEntries(after.metrics.filter(({ name }) => /Duration|Count/.test(name))
+      .map(({ name, value }) => [name, value - (first[name] || 0)]))
+    const totals = new Map()
+    profile.samples.forEach((id, index) => totals.set(id, (totals.get(id) || 0) + profile.timeDeltas[index]))
+    const hotFunctions = profile.nodes.map(node => ({ ...node.callFrame, milliseconds: (totals.get(node.id) || 0) / 1000 }))
+      .sort((a, b) => b.milliseconds - a.milliseconds).slice(0, 35)
+    const navigation = await application.evaluate(() => global.recordDesktopTest.navigation)
+    await fs.writeFile(process.env.RMS_RECORD_MOTION_PROFILE, JSON.stringify({ motion, work, artwork, hotFunctions, profile, navigation, traceEvents, traceError, gpu, rendererFeatures,
+      source: { bytes: (await fs.stat(source)).size, sha256: createHash('sha256').update(await fs.readFile(source)).digest('hex') },
+      surface, surfaceAfter,
+      evidence: { desktopControlToolsUsed: false, overlayState: process.env.RMS_RECORD_MOTION_OVERLAY_STATE || 'unverified',
+        nativeWindowSurface: surface.mode === 'native',
+        stableForeground,
+        inputMode: process.env.RMS_RECORD_MOTION_INPUT === 'trusted' ? 'trusted-browser-wheel' : 'dom-wheel',
+        rasterizationRequested: rasterization,
+        coverageEnabled,
+        traversal: { steps: motionSteps, stepDelayMs: motionStepDelay, direction: motionDirection, startNode: process.env.RMS_RECORD_MOTION_START_NODE || null },
+        lockedSession: surface.power.idleState === 'locked' || surfaceAfter.power.idleState === 'locked'
+          || surfaceAfter.locks !== surface.locks,
+        frameMetric: 'main-thread callback arrivals, not physical presented frames' } }))
+    console.log(JSON.stringify({ profile: process.env.RMS_RECORD_MOTION_PROFILE,
+      motion: { initial: motion.initial.node, final: motion.final.node, visits: motion.visits,
+        flights: motion.flightWindows.length, completedCoverage: motion.coverage.length,
+        maximumCallbackGap: Math.max(0, ...motion.flightWindows.map(flight => flight.maximumCallbackGapMs || 0)),
+        longTasks: motion.longTasks.length, maximumLongTask: Math.max(0, ...motion.longTasks.map(task => task.duration)) },
+      work, navigationRequests: navigation.length }))
+    assert.equal(traceError, null, 'optional trace failed; the primary metrics were preserved in the profile')
+    assert.equal(inputError, null, 'independent input failed; its primary metrics were preserved in the profile')
+    if (process.env.RMS_RECORD_MOTION_INPUT === 'trusted') {
+      assert.ok(motion.inputs.length && motion.inputs.every(input => input.trusted), 'native-input trials must receive trusted wheel events')
+    }
+    if (surface.mode === 'native' && process.env.RMS_RECORD_MOTION_ALLOW_LOCKED !== '1') {
+      assert.equal(stableForeground, true, 'The foreground surface changed during sampling; results are diagnostic only.')
+    }
+    const minimumVisits = pair ? 9 : Math.min(10, motionSteps * (motionDirection === 'round-trip' ? 2 : 1) + 1)
+    assert.ok(motion.visits >= minimumVisits, 'the motion probe must observe actual renderer frame commits')
+    assert.equal(motion.backendNode, motion.final.node, 'the browser must settle on the actual requested backend cursor')
+    assert.equal(motion.motionPending, false, 'navigation must not strand a motion owner after settling')
+    const { workerSurfaces, ...retiredMotion } = motion.cleanup
+    assert.deepEqual(retiredMotion, { ghostsAndOverlays: 0, activeCoverage: 0, pausedTableAnimations: 0 },
+      'settled rapid navigation must retire overlays and paused effects')
+    assert.ok(workerSurfaces <= 1, 'rapid navigation must not accumulate worker surfaces')
+    if (pair) assert.ok(motion.flightWindows.length >= 4, 'the selected pair must exercise actual discard motion')
+  }
+
+  await page.locator('.toolbar').getByRole('button', { name: '关闭', exact: true }).click()
+  await page.locator('.toolbar').getByRole('button', { name: '丢弃', exact: true }).click()
+  await page.locator('textarea.node-comment').waitFor({ state: 'hidden' })
+  await closeWindow()
+  page = await launch()
+  assert.equal((await page.evaluate(() => window.studioAPI.getGameView())).state.gameLoaded, false,
+    'an explicitly closed record must not be resurrected from the old exit file')
+  assert.ok((await fs.stat(path.join(recovery, '未保存的对局.mjstudio'))).size > 0,
+    'retiring the automatic fallback does not destroy the original recovery data')
+  await closeWindow()
+  assert.deepEqual(errors, [])
+  console.log(JSON.stringify({ result: 'Legacy startup, mode-aware wheel navigation, discard and empty restart passed',
+    restoredMode: initial.state.mode, restoredNode: initial.view.currentNodeId }))
+} finally {
+  try {
+    await application?.close()
+  } finally {
+    try {
+      await server?.close()
+    } finally {
+      await fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+from .records.legacy_codec import JsonReference
 
 
 ANALYSIS_SOURCES_FIELD = "analysisSources"
@@ -104,10 +105,18 @@ def prune_stale_cache_entries(cache, current_key):
             and candidate["mode"] == current["mode"]
             and cache_key != current_key
         ):
-            cache.pop(cache_key, None)
+            del cache[cache_key]
 
 
-def find_stale_cache_entry(game, node, current_key, cache_field):
+def cache_presentation_metadata(game, actual_key, requested_key):
+    source = cache_key_context(actual_key)
+    if source is None or actual_key == requested_key:
+        return {}
+    return {'cacheStatus': 'stale', 'cacheSource': copy.deepcopy(
+        (game.get(ANALYSIS_SOURCES_FIELD) or {}).get(source['sourceId']))}
+
+
+def find_stale_cache_entry(game, node, current_key, cache_field, *, resolve=True):
     current = cache_key_context(current_key)
     cache = node.get(cache_field) if isinstance(node, dict) else None
     if current is None or not isinstance(cache, dict):
@@ -123,11 +132,10 @@ def find_stale_cache_entry(game, node, current_key, cache_field):
             and isinstance(result, dict)
             and not result.get("error")
         ):
-            payload = copy.deepcopy(result)
-            payload["cacheStatus"] = "stale"
-            payload["cacheSource"] = copy.deepcopy(
-                (game.get(ANALYSIS_SOURCES_FIELD) or {}).get(candidate["sourceId"])
-            )
+            if not resolve and isinstance(result, JsonReference):
+                return result
+            payload = copy.deepcopy(result.resolve() if isinstance(result, JsonReference) else result)
+            payload.update(cache_presentation_metadata(game, cache_key, current_key))
             return payload
     return None
 
@@ -141,13 +149,13 @@ def migrate_analysis_cache_storage(game):
         if isinstance(decision_cache, dict):
             for cache_key in list(decision_cache):
                 if cache_key_context(cache_key) is None:
-                    decision_cache.pop(cache_key, None)
+                    del decision_cache[cache_key]
 
         opponent_cache = node.get(OPPONENT_ANALYSIS_CACHE_FIELD)
         if isinstance(opponent_cache, dict):
             for cache_key in list(opponent_cache):
                 if cache_key_context(cache_key) is None:
-                    opponent_cache.pop(cache_key, None)
+                    del opponent_cache[cache_key]
 
 
 def quantize_probability(value):
@@ -194,6 +202,6 @@ def same_analysis_context(left, right):
 
 
 def attach_analysis_context(result, context):
-    payload = copy.deepcopy(result)
+    payload = copy.deepcopy(result.resolve() if isinstance(result, JsonReference) else result)
     payload["context"] = copy.deepcopy(context)
     return payload
