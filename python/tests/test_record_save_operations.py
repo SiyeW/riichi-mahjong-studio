@@ -17,7 +17,7 @@ class RecordSaveFixture:
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
+        self.root = Path(self.directory.name).resolve()
         self.lane = RecordCodecScheduler()
         self.addCleanup(self.lane.close)
         self.resources = RecordResourceManager(self.root / 'workspaces', lambda: self.lane)
