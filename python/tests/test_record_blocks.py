@@ -16,7 +16,7 @@ from rms_backend.records.legacy_blocks import (
     MAGIC, HEADER, BlockEntry, BlockSource, open_record_source, read_block_record,
 )
 from tests.legacy_record_fixture import RecordFileWriter, read_record_file
-from rms_backend.records.legacy_codec import AnalysisReadError
+from rms_backend.records.analysis_values import AnalysisReadError
 from rms_backend.records.legacy_codec import pack_json
 from rms_backend import service
 from rms_backend.records.session import RecordSession

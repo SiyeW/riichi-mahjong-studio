@@ -5,6 +5,14 @@ from unittest import mock
 
 from rms_backend.stateful_command_dispatcher import StatefulCommandDispatcher
 
+REPLACEMENT_CASES = (
+    ('create_game', 'prepare_create', 'activate_created'),
+    ('import_game_record', 'prepare_import', 'activate_import'),
+    ('import_mortal_report', 'prepare_reconstruction', 'activate_reconstruction'),
+    ('import_custom_tenhou', 'prepare_reconstruction', 'activate_reconstruction'),
+    ('import_replay_file', 'prepare_reconstruction', 'activate_reconstruction'),
+)
+
 
 class StatefulCommandDispatcherTests(unittest.TestCase):
     def setUp(self):
@@ -69,6 +77,75 @@ class StatefulCommandDispatcherTests(unittest.TestCase):
             return 'candidate'
         self.record.prepare_import.side_effect = prepare
         self.dispatcher.dispatch(1, 'import_game_record', {'path': 'test'})
+
+    def test_every_replacement_prepares_without_lock_and_activates_under_lock(self):
+        for command, prepare_name, activate_name in REPLACEMENT_CASES:
+            with self.subTest(command=command):
+                old, candidate = object(), object()
+                live = {'game': old}
+                payload = {'path': 'isolated-record'}
+                prepared_args = () if command == 'create_game' else ((payload,) if command == 'import_game_record' else (command, payload))
+                blocked, readers = threading.Event(), []
+
+                def prepare(*args):
+                    self.assertEqual(args, prepared_args)
+                    ready = threading.Event()
+                    def read_current():
+                        with self.dispatcher._state_lock:
+                            self.assertIs(live['game'], old)
+                            ready.set()
+                    reader = threading.Thread(target=read_current)
+                    readers.append(reader)
+                    reader.start()
+                    self.assertTrue(ready.wait(1), 'Replacement preparation blocked live-state reads')
+                    return candidate
+
+                def activate(request_id, actual_command, prepared):
+                    self.assertEqual((request_id, actual_command), ('request', command))
+                    self.assertIs(prepared, candidate)
+                    attempted = threading.Event()
+                    def read_after_commit():
+                        attempted.set()
+                        with self.dispatcher._state_lock:
+                            blocked.set()
+                    reader = threading.Thread(target=read_after_commit)
+                    readers.append(reader)
+                    reader.start()
+                    self.assertTrue(attempted.wait(1))
+                    self.assertFalse(blocked.wait(.02), 'Replacement activation did not own the live-state lock')
+                    live['game'] = prepared
+                    return {'activated': actual_command}
+
+                self.dispatcher._record = SimpleNamespace(**{
+                    prepare_name: mock.Mock(side_effect=prepare),
+                    activate_name: mock.Mock(side_effect=activate),
+                })
+                try:
+                    result = self.dispatcher.dispatch('request', command, payload)
+                    self.assertEqual(result, {'activated': command})
+                    self.assertIs(live['game'], candidate)
+                    self.assertTrue(blocked.wait(1), 'Activation did not release its lock')
+                finally:
+                    for reader in readers:
+                        reader.join(1)
+                        self.assertFalse(reader.is_alive())
+
+    def test_every_failed_replacement_preparation_leaves_the_old_record_untouched(self):
+        for command, prepare_name, activate_name in REPLACEMENT_CASES:
+            with self.subTest(command=command):
+                old = {'comment': 'unsaved'}
+                live = {'game': old}
+                def activate(*_args):
+                    live['game'] = {'replaced': True}
+                prepared = mock.Mock(side_effect=ValueError('invalid candidate'))
+                activated = mock.Mock(side_effect=activate)
+                self.dispatcher._record = SimpleNamespace(**{prepare_name: prepared, activate_name: activated})
+                self.configure_thinking_time.reset_mock()
+                with self.assertRaisesRegex(ValueError, 'invalid candidate'):
+                    self.dispatcher.dispatch('request', command, {'path': 'damaged'})
+                self.assertIs(live['game'], old)
+                activated.assert_not_called()
+                self.configure_thinking_time.assert_not_called()
 
     def test_debug_scenario_returns_fresh_view(self):
         self.run_debug_scenario.return_value = True

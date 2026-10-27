@@ -2,12 +2,16 @@ from contextlib import contextmanager
 from pathlib import Path
 from threading import Event, RLock, Thread
 from types import SimpleNamespace
+import gc
 import tempfile
 import unittest
+import weakref
+from unittest.mock import patch
 
 from rms_backend.analysis_read_presenter import AnalysisReadPresenter
 from rms_backend.opponent_analysis_session import OpponentAnalysisDependencies, OpponentAnalysisSession
 from rms_backend.records.analysis_refs import AnalysisReference
+from rms_backend.records.analysis_values import AnalysisReadError
 from rms_backend.records.codec_scheduler import RecordCodecScheduler
 from rms_backend.records.results import RecordResultStore
 from rms_backend.records.view_context import RecordViewContext
@@ -48,6 +52,64 @@ def stored(store, writer, value):
 
 
 class AnalysisReadPresenterTests(unittest.TestCase):
+    def test_idle_presenter_releases_completed_error_after_subscription_reset(self):
+        with environment() as (store, lane, writer, lock, state, visits, presenter, events, delivered):
+            reference = stored(store, writer, dict(status='ready', outputs={'extension': [0, 1]}))
+            error = AnalysisReadError('damaged saved result')
+            retained = weakref.ref(error)
+            store._versions[reference.identity].error = error
+            with lock:
+                presenter.publish(reference, kind='opponent', context=dict(nodeId='A'))
+            self.assertTrue(delivered.wait(5))
+            with lock:
+                store._versions[reference.identity].error = None
+                presenter.reset()
+            del error
+            for _ in range(100):
+                gc.collect()
+                if retained() is None:
+                    break
+                Event().wait(.01)
+            self.assertIsNone(retained(), 'Idle delivery retained its completed error/traceback')
+
+    def test_publish_preserves_immediate_read_failure_including_terminal_display(self):
+        for kind in ('decision', 'opponent'):
+            for terminal in (False, True):
+                with self.subTest(kind=kind, terminal=terminal), environment() as (
+                        store, lane, writer, lock, state, visits, presenter, events, delivered):
+                    reference = stored(store, writer, dict(status='ready', outputs={'extension': [0, 1]}))
+                    store._versions[reference.identity].error = AnalysisReadError('damaged saved result')
+                    context = dict(cacheEpoch=1, nodeId='A')
+                    metadata = dict(cacheStatus='stale', cacheSource={'id': 'saved-source'})
+                    with lock:
+                        presenter.publish(reference, kind=kind, context=context,
+                                          terminal=terminal, metadata=metadata)
+                    self.assertTrue(delivered.wait(5))
+                    result = events[0]['opponentAnalysis' if kind == 'opponent' else 'analysis']
+                    self.assertEqual(result['error'], 'damaged saved result')
+                    self.assertEqual(result['cacheSource'], metadata['cacheSource'])
+                    if kind == 'opponent':
+                        self.assertEqual(result['context']['dataState'], 'failed')
+                        self.assertTrue(result['status'].startswith('prediction_error:'))
+                    self.assertEqual(context, dict(cacheEpoch=1, nodeId='A'))
+
+    def test_hot_publish_formats_once_without_changing_canonical_saved_data(self):
+        with environment() as (store, lane, writer, lock, state, visits, presenter, events, delivered):
+            store.cache.set_budget(1024 * 1024)
+            reference = stored(store, writer, dict(status='ready', outputs={'extension': [.25, .75]}))
+            original = reference.ready_value()
+            self.assertIsNotNone(original)
+            metadata = dict(cacheStatus='stale', cacheSource={'id': 'saved-source'})
+            with patch.object(presenter, '_payload', wraps=presenter._payload) as format_payload:
+                with lock:
+                    presenter.publish(reference, kind='opponent', context=dict(nodeId='A'), metadata=metadata)
+                self.assertTrue(delivered.wait(5))
+                self.assertEqual(format_payload.call_count, 1)
+            self.assertEqual(events[0]['opponentAnalysis']['context']['dataState'], 'ready')
+            self.assertEqual(events[0]['opponentAnalysis']['cacheSource'], metadata['cacheSource'])
+            self.assertNotIn('context', original)
+            self.assertNotIn('cacheSource', original)
+
     def test_cold_stale_result_keeps_its_actual_source_in_the_delivered_presentation(self):
         with environment() as (store, lane, writer, lock, state, visits, presenter, events, delivered):
             store.cache.set_budget(1024 * 1024)

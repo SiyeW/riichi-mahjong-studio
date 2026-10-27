@@ -7,8 +7,9 @@ import os
 import struct
 from threading import RLock
 
+from .analysis_values import AnalysisReadError, JsonReference
 from .legacy_codec import (
-    AnalysisReadError, DeferredJsonObject, EncodedJsonValue, JsonReference, index_json_array,
+    DeferredJsonObject, EncodedJsonValue, index_json_array,
 )
 from .binary import DIRECTORY_LIMIT, RESULT_LIMIT, inflate, load_json, json_bytes
 from .archive import ArchiveSource, BodyDescriptor

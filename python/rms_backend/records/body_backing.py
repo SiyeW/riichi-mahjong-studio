@@ -7,7 +7,7 @@ import tempfile
 import weakref
 
 from .archive import PortableBody, COPY_CHUNK
-from .legacy_codec import AnalysisReadError
+from .analysis_values import AnalysisReadError
 
 
 class FileSpanSource:

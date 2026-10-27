@@ -16,7 +16,7 @@ import tempfile
 import weakref
 
 from .body_codec import AnalysisBodyCodec, POLICY
-from .legacy_codec import AnalysisReadError, JsonReference
+from .analysis_values import AnalysisReadError, JsonReference
 from .binary import DIRECTORY_LIMIT, RESULT_LIMIT, U64, inflate, json_bytes, load_json
 
 MAGIC = b'MJSTBLK2'

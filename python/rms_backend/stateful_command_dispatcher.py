@@ -110,15 +110,7 @@ class StatefulCommandDispatcher:
             "clear_analysis_caches": lambda: self._analysis.clear_caches(
                 request_id, command
             ),
-            "create_game": lambda: self._record.create(request_id, command),
             "close_game": lambda: self._record.close(request_id, command),
-            "import_mortal_report": lambda: self._record.import_mortal(
-                request_id, command, payload
-            ),
-            "import_custom_tenhou": lambda: self._record.import_custom(
-                request_id, command, payload
-            ),
-            "import_replay_file": lambda: self._record.import_file(request_id, command, payload),
             "set_player_name": lambda: self._record.set_player_name(request_id, command, payload),
             "export_custom_tenhou": lambda: self._record.export_custom(
                 request_id, command

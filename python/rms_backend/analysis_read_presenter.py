@@ -7,7 +7,7 @@ replaceable delivery per kind, not an unbounded executor queue or decoded cache.
 from threading import Condition, Thread, Timer
 from concurrent.futures import Future
 
-from .records.legacy_codec import AnalysisReadError
+from .records.analysis_values import AnalysisReadError
 from .records.analysis_refs import AnalysisReference
 
 
@@ -30,6 +30,14 @@ class AnalysisReadPresenter:
 
     def read(self, reference, *, kind, context=None, terminal=False, metadata=None):
         """Called under game lock. No filesystem/codec wait or inference here."""
+        try:
+            value = self._subscribe(reference, kind, context, terminal, metadata)
+        except AnalysisReadError as error:
+            return self._error(kind, error, context, metadata)
+        return self._payload(kind, value, context, terminal, metadata) if value is not None else None
+
+    def _subscribe(self, reference, kind, context, terminal, metadata):
+        """Return canonical data, or subscribe to its read; never format it here."""
         if not isinstance(reference, AnalysisReference):
             raise TypeError('Async reads require record-owned analysis references.')
         token = self.view_token()
@@ -37,17 +45,17 @@ class AnalysisReadPresenter:
         hot = reference.ready_value()
         if hot is not None:
             self._cancel_retry(kind)
-            return self._payload(kind, hot, context, terminal, metadata)
+            return hot
         try:
             future = reference.request(group=('visible-analysis', kind))
-        except AnalysisReadError as error:
+        except AnalysisReadError:
             self._cancel_retry(kind)
-            return self._error(kind, error, context, metadata)
+            raise
         if future is None:
             hot = reference.ready_value()
             if hot is not None:
                 self._cancel_retry(kind)
-                return self._payload(kind, hot, context, terminal, metadata)
+                return hot
             self._retry_read(kind)
         else:
             self._cancel_retry(kind)
@@ -91,12 +99,18 @@ class AnalysisReadPresenter:
 
     def publish(self, reference, *, kind, context=None, terminal=False, metadata=None):
         """Model completion also publishes if encoding won the subscription race."""
-        ready = self.read(reference, kind=kind, context=context, terminal=terminal, metadata=metadata)
-        if ready is not None:
+        try:
+            ready = self._subscribe(reference, kind, context, terminal, metadata)
+        except AnalysisReadError as error:
+            future = Future()
+            future.set_exception(error)
+        else:
+            if ready is None:
+                return
             future = Future()
             future.set_result(ready)
-            self._observed[kind] = (reference.identity, future)
-            self._enqueue(kind, reference.identity, future)
+        self._observed[kind] = (reference.identity, future)
+        self._enqueue(kind, reference.identity, future)
 
     def _enqueue(self, kind, identity, future):
         if future.cancelled():
@@ -141,7 +155,7 @@ class AnalysisReadPresenter:
             if event is not None:
                 self.emit(event)
             # An idle presenter must not retain the last canonical result/future.
-            subscribed = reference = payload = event = future = metadata = context = token = None
+            subscribed = reference = payload = event = future = metadata = context = token = error = None
 
     def close(self):
         with self._condition:

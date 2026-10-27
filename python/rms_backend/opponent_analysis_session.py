@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .records.legacy_codec import AnalysisReadError
+from .records.analysis_values import AnalysisReadError
 
 import copy
 from dataclasses import dataclass

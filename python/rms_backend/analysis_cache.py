@@ -1,7 +1,7 @@
 import copy
 import hashlib
 import json
-from .records.legacy_codec import JsonReference
+from .records.analysis_values import JsonReference
 
 
 ANALYSIS_SOURCES_FIELD = "analysisSources"

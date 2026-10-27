@@ -47,7 +47,7 @@ class ImportGameFailureTests(unittest.TestCase):
              patch.object(service.VIEW_BUILDER, 'build_response', side_effect=lambda _id, _cmd, extra: extra):
             source = Path(directory) / 'source'
             RecordFileWriter().write(source, self.record)
-            service.RECORD_WORKSPACE_COMMANDS.import_record(1, 'import_game_record', {'path': str(source)})
+            service.STATEFUL_COMMANDS.dispatch(1, 'import_game_record', {'path': str(source)})
             service.STATE['game']['nodes']['n_root']['comment'] = 'new comment'
             for recovery in (False, True):
                 prepared = service.RECORD_SESSION.prepare_export()
@@ -67,7 +67,7 @@ class ImportGameFailureTests(unittest.TestCase):
                               side_effect=RuntimeError('activation failed')), \
                  patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'):
                 with self.assertRaisesRegex(RuntimeError, 'activation failed'):
-                    service.RECORD_WORKSPACE_COMMANDS.import_record(1, 'import_game_record', {'path': str(source)})
+                    service.STATEFUL_COMMANDS.dispatch(1, 'import_game_record', {'path': str(source)})
         self.assertIs(service.RECORD_SESSION._analysis_packer, previous_packer)
         self.assert_old_record_preserved()
 
@@ -131,7 +131,7 @@ class ImportGameFailureTests(unittest.TestCase):
         with patch('rms_backend.records.commands.read_record_file', side_effect=ValueError('damaged')), \
              patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime') as reset:
             with self.assertRaisesRegex(ValueError, 'damaged'):
-                service.RECORD_WORKSPACE_COMMANDS.import_record(1, 'import_game_record', {'path': 'bad'})
+                service.STATEFUL_COMMANDS.dispatch(1, 'import_game_record', {'path': 'bad'})
             reset.assert_not_called()
         self.assert_old_record_preserved()
 
@@ -141,7 +141,7 @@ class ImportGameFailureTests(unittest.TestCase):
              patch.object(service.RECORD_SESSION.dependencies, 'request_opponent_analysis'), \
              patch.object(service.RECORD_SESSION.dependencies, 'reset_runtime'), \
              patch.object(service.VIEW_BUILDER, 'build_response', side_effect=lambda _id, _cmd, extra: extra):
-            result = service.RECORD_WORKSPACE_COMMANDS.import_record(1, 'import_game_record', {'path': 'record'})
+            result = service.STATEFUL_COMMANDS.dispatch(1, 'import_game_record', {'path': 'record'})
         self.assertEqual(result['recordMetadata'], self.record['metadata'])
         self.assertIs(service.STATE['game'], self.record['game'])
 

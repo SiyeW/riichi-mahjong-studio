@@ -10,8 +10,9 @@ import tempfile
 from rms_backend.records.file import read_record_file as _read_record_file, _gzip_members
 from rms_backend.records.legacy_blocks import MAGIC, HEADER, CACHE_FIELDS, BlockResult
 from rms_backend.records.binary import json_bytes
+from rms_backend.records.analysis_values import JsonReference
 from rms_backend.records.legacy_codec import (
-    EncodedJsonValue, JsonReference, index_json_array, json_string_seed, pack_json, raw_json_items,
+    EncodedJsonValue, index_json_array, json_string_seed, pack_json, raw_json_items,
 )
 
 _COMPRESSION_LEVEL = 3
