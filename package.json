@@ -1,6 +1,6 @@
 {
   "name": "riichi-mahjong-studio",
-  "version": "1.0.0-dev.1",
+  "version": "1.0.0-dev.2",
   "private": true,
   "author": "SiyeWu",
   "description": "Desktop application for reviewing riichi mahjong game records and practicing against engines.",
@@ -13,7 +13,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:renderer": "vite",
     "dev:electron": "node scripts/run-electron.mjs",
-    "build": "npm run type-check && vite build",
+    "build": "npm run type-check && vite build && node scripts/check-production-bundle.mjs",
     "build:backend:win": "powershell -NoProfile -ExecutionPolicy Bypass -File ./packaging/windows/build-backend.ps1",
     "collect:licenses": "powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/collect-third-party-licenses.ps1",
     "check:release-inputs": "node scripts/check-release-inputs.mjs",
@@ -38,7 +38,7 @@
   "devDependencies": {
     "@types/node": "^22.15.30",
     "@vitejs/plugin-vue": "^6.0.1",
-    "electron": "^43.3.0",
+    "electron": "^43.8.4",
     "electron-builder": "^26.15.3",
     "playwright": "^1.60.0",
     "typescript": "^5.8.3",

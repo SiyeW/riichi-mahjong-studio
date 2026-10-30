@@ -15,13 +15,15 @@ let textures: WebGLTexture[] = [], fence: WebGLSync | null = null, frame = 0
 let retirementTimer: ReturnType<typeof setTimeout> | null = null, retiringSince = 0
 let job: Omit<Extract<MotionRequest, { type: 'prepare' }>, 'pixels'> | null = null
 let previous = 0, previousTime = 0, started = 0, phase: 'motion' | 'sharp' | 'finish' = 'motion'
-let intervals: SubmittedInterval[] = []
+let diagnostics = false
+let intervals: SubmittedInterval[] | null = null
 let ease = (value: number) => value
 
 function release() {
   if (frame) scope.cancelAnimationFrame(frame)
   frame = 0
   job = null
+  intervals = null
   // Deleting a sync object does not cancel the submitted GPU work. Retain its
   // fence/textures until completion, and reject another preparation while it is
   // draining so rapid supersession cannot build a hidden GPU queue.
@@ -124,7 +126,7 @@ function draw(progress: number, last: number, time: number) {
   fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)
   if (!fence) { usable = false; throw Error('Motion fence allocation failed') }
   gl.flush()
-  intervals.push({ fromTime: previousTime, time, previous: last, progress, span })
+  intervals?.push({ fromTime: previousTime, time, previous: last, progress, span })
 }
 
 function fenceReady() {
@@ -146,7 +148,9 @@ function tick() {
     if (fenceReady()) {
       if (phase === 'finish') {
         const id = job.id, submitted = intervals
-        release(); scope.postMessage({ type: 'done', id, intervals: submitted }); return
+        release()
+        scope.postMessage(submitted ? { type: 'done', id, intervals: submitted } : { type: 'done', id })
+        return
       }
       const progress = phase === 'sharp' ? 1 : ease(Math.max(0, Math.min(1, (time - started) / job.duration)))
       if (progress < previous || progress < 0 || progress > 1) throw Error('Unsupported nonmonotone flight')
@@ -190,7 +194,8 @@ async function prepare(request: Extract<MotionRequest, { type: 'prepare' }>) {
     else gl.uniform1i(uniforms.planeB, 0)
     if (request.mode === 'crossfade') texture(rowIntegrals(a, g.spriteWidth, g.spriteHeight, b), 2, 'product')
     else gl.uniform1i(uniforms.product, 0)
-    previous = 0; started = performance.timeOrigin + performance.now(); previousTime = started; phase = 'motion'; intervals = []
+    previous = 0; started = performance.timeOrigin + performance.now(); previousTime = started; phase = 'motion'
+    intervals = diagnostics ? [] : null
     draw(0, 0, started)
     const id = request.id
     const ready = () => {
@@ -202,7 +207,7 @@ async function prepare(request: Extract<MotionRequest, { type: 'prepare' }>) {
         // getError is a synchronous command-buffer round trip in Chromium; it
         // must not serialize each submitted animation frame with the GPU.
         if (gl.getError() !== gl.NO_ERROR) throw Error('Motion preparation draw failed')
-        intervals = []
+        intervals = diagnostics ? [] : null
         if (id === 0) { release(); scope.postMessage({ type: 'warm' }) }
         else scope.postMessage({ type: 'ready', id, preparationMs: performance.now() - before })
       } catch (error) { failed(error) }
@@ -214,7 +219,10 @@ async function prepare(request: Extract<MotionRequest, { type: 'prepare' }>) {
 scope.onmessage = event => {
   const message = event.data
   try {
-    if (message.type === 'init') initialize(message.canvas)
+    if (message.type === 'init') {
+      diagnostics = message.diagnostics === true
+      initialize(message.canvas)
+    }
     else if (message.type === 'prepare') void prepare(message)
     else if (message.type === 'cancel') {
       if (job?.id === message.id) release()

@@ -154,7 +154,7 @@ async function check(page, label, dense) {
   results.push(await checkMotionSupport(page,label,evidence))
   const lifecycle = await page.evaluate(async () => {
     window.motionOutput.remove(); window.motionSource.style.removeProperty('opacity')
-    const renderer=window.coverageApi.createDiscardCoverageRenderer();renderer.start()
+    const renderer=window.coverageApi.createDiscardCoverageRenderer({diagnostics:true});renderer.start()
     const until=async test=>{const end=performance.now()+4000;while(!test()){if(performance.now()>end)throw Error('Worker warm/start timeout');await new Promise(r=>setTimeout(r,2))}}
     await until(()=>renderer.ready)
     const source=window.motionSource

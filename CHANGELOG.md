@@ -5,6 +5,59 @@ incompatible changes.
 
 ## [Unreleased]
 
+## [1.0.0-dev.2] - 2026-10-31
+
+<div lang="zh-CN">
+
+### 中文
+
+- 优化牌谱存储与读取，减小存档体积，改善打开、保存与恢复体验。
+- 为打开、导入、保存和关闭牌谱提供统一的操作反馈。
+- 支持导入本地 MJAI 和天凤 JSON 牌谱，包括 gzip 压缩文件。可在牌桌上编辑四家的玩家备注。
+- 改善滚轮浏览、牌张移动和分析图表的动画表现。
+- 改进分析图表的分布、刻度、图例与悬浮信息。
+- 枚数预测增加理论基准。
+- 调整引擎管理界面，并加快引擎设置的读取。
+- 增加分析读取缓存容量设置，完善系统内存、程序内存及缓存使用情况的详情展示。
+- 更新 Electron 至 43.8.4、内置 Node.js 至 24.22.1，包含相关安全修复。
+- 修复多项影响牌谱浏览、对局和分析的错误。
+
+</div>
+
+<div lang="ja-JP">
+
+### 日本語
+
+- 牌譜の保存・読み込みを最適化し、ファイルサイズを縮小しました。牌譜を開く、保存する、復元する際の使い勝手も改善しました。
+- 牌譜を開く、インポートする、保存する、閉じる際の処理状況の表示を統一しました。
+- ローカルの MJAI および天鳳 JSON 牌譜のインポートに対応しました。gzip 圧縮ファイルも読み込めます。牌卓上で各プレイヤーのメモを編集できます。
+- マウスホイールによる牌譜の閲覧、牌の移動、解析グラフのアニメーションを改善しました。
+- 解析グラフの分布表示、目盛り、凡例、ホバー時の詳細表示を改善しました。
+- 枚数予測に理論値との比較機能を追加しました。
+- エンジン管理画面を調整し、エンジン設定の読み込みを高速化しました。
+- 解析読み込みキャッシュの容量設定を追加し、システムメモリ、アプリの使用メモリ、キャッシュ使用状況の詳細表示を改善しました。
+- Electron を 43.8.4、内蔵 Node.js を 24.22.1 に更新し、関連するセキュリティ修正を取り込みました。
+- 牌譜の閲覧、対局、解析に影響する複数の不具合を修正しました。
+
+</div>
+
+<div lang="en-US">
+
+### English
+
+- Optimize record storage and loading, reduce file sizes, and improve opening, saving, and recovery.
+- Provide consistent feedback when opening, importing, saving, and closing records.
+- Support importing local MJAI and Tenhou JSON records, including gzip-compressed files. Player notes for all four seats can be edited on the table.
+- Improve mouse-wheel navigation, tile movement, and analysis chart animations.
+- Improve distribution displays, scales, legends, and hover details in analysis charts.
+- Add a theoretical baseline to tile count predictions.
+- Refine engine management and speed up loading engine settings.
+- Add an analysis read-cache capacity setting and improve the details shown for system memory, application memory, and cache usage.
+- Update Electron to 43.8.4 and its embedded Node.js to 24.22.1, including related security fixes.
+- Fix various issues affecting record browsing, play, and analysis.
+
+</div>
+
 ## [1.0.0-dev.1] - 2026-09-16
 
 <div lang="zh-CN">

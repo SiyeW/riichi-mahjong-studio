@@ -753,9 +753,9 @@ import WallViewWindow from './components/WallViewWindow.vue'
 import { useI18n } from './i18n'
 import { vPerceptualSurface } from './perceptualSurface'
 
-const PerceptualColorDebugger = defineAsyncComponent(
-  () => import('./components/PerceptualColorDebugger.vue'),
-)
+const PerceptualColorDebugger = import.meta.env.DEV
+  ? defineAsyncComponent(() => import('./components/PerceptualColorDebugger.vue'))
+  : null
 
 const { locale, numberLocale, t } = useI18n()
 

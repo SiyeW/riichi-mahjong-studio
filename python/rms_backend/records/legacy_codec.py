@@ -12,6 +12,7 @@ from itertools import chain
 from threading import RLock
 
 from .legacy_index import attach_index, read_index
+from . import analysis_values
 
 
 _NULL, _FALSE, _TRUE, _NUMBER, _STRING, _ARRAY, _OBJECT = range(7)
@@ -93,7 +94,7 @@ def pack_json(value, *, display_probabilities=False, strings_seed=(), indexed=Fa
     fragment_sources = set()
 
     def visit(current, probability=False, depth=0):
-        if isinstance(current, JsonReference) and not isinstance(current, EncodedJsonValue):
+        if isinstance(current, analysis_values.JsonReference) and not isinstance(current, EncodedJsonValue):
             # Explicit aggregate/in-memory export may combine independently
             # encoded blocks with different string tables. Materialize this
             # requested value instead of copying incompatible token fragments.
@@ -249,22 +250,8 @@ def _unpack_parts(strings, token_data, number_data, zero_bits):
     return value
 
 
-class AnalysisReadError(ValueError):
-    """A persisted analysis value could not be read; authored state is intact."""
-
-
-class JsonReference:
-    """Immutable deferred value; persistence can retain it without resolving."""
-
-    def resolve(self):
-        raise NotImplementedError
-
-    def __deepcopy__(self, memo):
-        return self
-
-
 @dataclass(frozen=True, slots=True)
-class EncodedJsonValue(JsonReference):
+class EncodedJsonValue(analysis_values.JsonReference):
     source: 'PackedJsonIndex'
     start: int
     end: int
@@ -297,7 +284,7 @@ class DeferredJsonObject(dict):
     def __getitem__(self, key):
         with self._lock:
             raw = dict.__getitem__(self, key)
-            if not isinstance(raw, JsonReference):
+            if not isinstance(raw, analysis_values.JsonReference):
                 return raw
             if key not in self._resolved:
                 self._resolved[key] = raw.resolve()

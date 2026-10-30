@@ -14,7 +14,7 @@ from threading import Condition, RLock
 from uuid import uuid4
 
 from .body_codec import POLICY
-from .legacy_codec import AnalysisReadError, JsonReference
+from .analysis_values import AnalysisReadError, JsonReference
 from .decoded_cache import DecodedAnalysisCache
 from .archive import PortableBody
 from .codec_packets import result_packet
@@ -419,7 +419,7 @@ class RecordResultStore:
         with self._lock:
             version = self._versions[identity]
             if version.error is not None and not retry:
-                raise version.error
+                raise version.error.for_raise() from version.error
             if version.pending is not None:
                 if retry and version.pending.done():
                     version.pending = None
@@ -592,7 +592,7 @@ class RecordResultStore:
             raise ValueError('Gameplay use requires decision analysis.')
         with self._lock:
             if version.error is not None:
-                raise version.error
+                raise version.error.for_raise() from version.error
             raw = version.raw
             if version.revision and isinstance(raw, dict) and not isinstance(raw, JsonReference):
                 return raw
@@ -607,7 +607,7 @@ class RecordResultStore:
                 raw, provider, portable, fields, error = (version.raw, version.read, version.portable,
                                                           version.fields, version.error)
             if error is not None:
-                raise error
+                raise error.for_raise() from error
             if portable is not None:
                 reply = lane.codec(self.identity, self.schemas, 'read', data=provider(), fields=fields)
             else:

@@ -34,9 +34,6 @@ class RecordWorkspaceCommands:
         self._reset_round_wall = reset_round_wall
         self._now_iso = now_iso
 
-    def create(self, request_id: Any, command: str) -> dict[str, Any]:
-        return self.activate_created(request_id, command, self.prepare_create())
-
     def prepare_create(self):
         return self._record_session.prepare_create()
 
@@ -51,14 +48,6 @@ class RecordWorkspaceCommands:
     def close(self, request_id: Any, command: str) -> dict[str, Any]:
         self._record_session.close()
         return self._view_builder.build_response(request_id, command)
-
-    def import_mortal(
-        self,
-        request_id: Any,
-        command: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        return self.activate_reconstruction(request_id, command, self.prepare_reconstruction(command, payload))
 
     def prepare_reconstruction(self, command, payload):
         if command == 'import_mortal_report':
@@ -78,23 +67,12 @@ class RecordWorkspaceCommands:
         self._record_session.activate_load(prepared)
         return self._reconstruction_response(request_id, command, reconstruction)
 
-    def import_custom(
-        self,
-        request_id: Any,
-        command: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        return self.activate_reconstruction(request_id, command, self.prepare_reconstruction(command, payload))
-
     def export_custom(self, request_id: Any, command: str) -> dict[str, Any]:
         return self._view_builder.build_response(
             request_id,
             command,
             {"customTenhou": self._record_session.export_custom()},
         )
-
-    def import_file(self, request_id: Any, command: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.activate_reconstruction(request_id, command, self.prepare_reconstruction(command, payload))
 
     def set_player_name(self, request_id: Any, command: str, payload: dict[str, Any]) -> dict[str, Any]:
         changed, name = self._record_commands.set_player_name(payload.get('seat'), payload.get('name'))
@@ -106,14 +84,6 @@ class RecordWorkspaceCommands:
             'name': name,
             'timestamp': self._now_iso(),
         }
-
-    def import_record(
-        self,
-        request_id: Any,
-        command: str,
-        payload: dict[str, Any],
-    ) -> dict[str, Any]:
-        return self.activate_import(request_id, command, self.prepare_import(payload))
 
     def prepare_import(self, payload):
         if "path" in payload and "record" in payload:

@@ -11,6 +11,8 @@ from rms_backend.records.codec_packets import result_packet, materialize_packet
 from rms_backend.records.codec_scheduler import RecordCodecScheduler
 from rms_backend.records.codec_client import RecordCodecClient
 from rms_backend.records.results import RecordResultStore
+from rms_backend.records.analysis_refs import AnalysisReference
+from rms_backend.records.analysis_values import AnalysisReadError
 from rms_backend.records.workspace_writer import RecordWorkspaceWriter
 
 
@@ -30,6 +32,26 @@ def storage(budget=1024 * 1024, *, client=None):
 
 
 class RecordResultStoreTests(unittest.TestCase):
+    def test_repeated_read_failures_do_not_mutate_the_stored_failure_traceback(self):
+        with storage() as (store, writer, lane, directory):
+            identity = store.register('failed', raw={'status': 'ready', 'discardEntries': []},
+                                      fields={'status': [True, 'ready'], 'discardEntries': [False, None]}, kind='decision')
+            version = store._versions[identity]
+            reference = AnalysisReference(store, identity)
+            failure = AnalysisReadError('saved analysis unavailable')
+            version.error = failure
+            for read in (reference.resolve, reference.request, lambda: store.load_for_use(version)):
+                with self.subTest(read=read):
+                    for _ in range(10):
+                        try:
+                            read()
+                        except AnalysisReadError as observed:
+                            self.assertEqual(observed.args, failure.args)
+                            self.assertIsNot(observed, failure, 'A reader mutated the stored failure object')
+                        else:
+                            self.fail('Unavailable analysis unexpectedly became ready')
+                        self.assertIsNone(failure.__traceback__)
+
     def test_reclamation_respects_export_pins_then_removes_obsolete_versions_and_bodies(self):
         with storage() as (store, writer, lane, directory):
             identity = store.accept('slot', {'status': 'ready', 'extension': [.25, .75]}, revision=1,

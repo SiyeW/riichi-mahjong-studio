@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from rms_backend.records.analysis_refs import AnalysisReference
 from rms_backend.records.body_codec import AnalysisBodyCodec
-from rms_backend.records.legacy_codec import AnalysisReadError
+from rms_backend.records.analysis_values import AnalysisReadError
 from rms_backend.records.archive import PortableBody, write_archive
 from rms_backend.records.codec_scheduler import RecordCodecScheduler
 from rms_backend.records.file import read_record_file

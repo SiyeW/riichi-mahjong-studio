@@ -18,10 +18,13 @@ try {
   const html = (Array.isArray(built) ? built : [built]).flatMap(result => result.output)
     .find(result => result.type === 'asset' && result.fileName.endsWith('/compiled.html'))
   assert.ok(html, 'the production build must include its standalone HTML entry')
-  for (const disabled of [false, true]) {
+  for (const diagnostics of [false, true]) for (const disabled of [false, true]) {
+    const query = new URLSearchParams()
+    if (disabled) query.set('no-webgl', '1')
+    if (diagnostics) query.set('diagnostics', '1')
     application = await electron.launch({ args: [path.join(root, 'scripts/electron-ui-test-main.cjs')],
-      env: { ...process.env, RMS_UI_TEST_DATA_DIR: path.join(temporary, disabled ? 'unsupported' : 'normal'),
-        RMS_UI_TEST_URL: pathToFileURL(path.join(output, html.fileName)).href + (disabled ? '?no-webgl=1' : '') } })
+      env: { ...process.env, RMS_UI_TEST_DATA_DIR: path.join(temporary, `${disabled ? 'unsupported' : 'normal'}-${diagnostics}`),
+        RMS_UI_TEST_URL: pathToFileURL(path.join(output, html.fileName)).href + `?${query}` } })
     const page = await application.firstWindow()
     await page.waitForFunction(() => document.body.dataset.completed === 'true', null, { timeout: 20000 })
     const result = await page.evaluate(() => window.compiledMotionResult)
@@ -34,6 +37,10 @@ try {
     assert.equal(result.fallback, disabled, 'unsupported WebGL remains sharp; capable packaged worker must actually render')
     assert.equal(result.owner.defaultStarted, true, 'production motion owner starts without a DEV trial toggle')
     assert.equal(result.owner.supported, !disabled)
+    assert.equal(result.diagnostics, diagnostics)
+    assert.equal(result.rendered, !disabled, 'default production worker must render even without interval tracing')
+    assert.equal(result.workerHasIntervals, diagnostics && !disabled, 'only explicit diagnostics transfer interval arrays')
+    if (!diagnostics) assert.deepEqual(result.diagnosticAttributes, [], 'default production surface has no detailed diagnostics')
     assert.equal(await page.locator('.discard-motion-surface').count(), 0, 'compiled worker/surface retires')
     await application.close(); application = null
   }

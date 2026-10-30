@@ -25,7 +25,7 @@ try {
   document.body.style.cssText='margin:0;background:#02191e;display:block;overflow:hidden;--zoom:2'
   await document.querySelector('img').decode()
   const {createDiscardCoverageRenderer}=await import('/src/discardMotion/coverage.ts')
-  window.surfaceProbe=createDiscardCoverageRenderer();window.surfaceProbe.start()
+  window.surfaceProbe=createDiscardCoverageRenderer({diagnostics:true});window.surfaceProbe.start()
  })
  await page.waitForFunction(()=>window.surfaceProbe.ready)
  const readSurface=async()=>({...await application.evaluate(({app,BrowserWindow,screen,powerMonitor})=>{

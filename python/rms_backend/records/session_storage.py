@@ -14,7 +14,8 @@ from uuid import uuid4
 
 from .results import RecordResultStore
 from ..analysis_cache import cache_key_context
-from .legacy_codec import EncodedJsonValue, JsonReference, raw_json_items
+from .analysis_values import JsonReference
+from .legacy_codec import EncodedJsonValue, raw_json_items
 from .analysis_refs import AnalysisReference
 from .legacy_blocks import BlockResult
 from .body_codec import POLICY

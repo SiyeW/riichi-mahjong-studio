@@ -3,7 +3,7 @@
 import copy
 import json
 
-from .legacy_codec import AnalysisReadError, JsonReference
+from .analysis_values import AnalysisReadError, JsonReference
 
 _UNRESOLVED = object()
 
@@ -51,8 +51,9 @@ class AnalysisReference(dict, JsonReference):
         if value is not None:
             return value
         description = self.store.describe(self.identity)
-        if description['error'] is not None:
-            raise description['error']
+        error = description['error']
+        if error is not None:
+            raise error.for_raise() from error
         raise AnalysisPending('Saved analysis is not ready for presentation.')
 
     def __getitem__(self, key):
