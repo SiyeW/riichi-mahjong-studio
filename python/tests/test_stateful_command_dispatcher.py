@@ -17,7 +17,6 @@ REPLACEMENT_CASES = (
 class StatefulCommandDispatcherTests(unittest.TestCase):
     def setUp(self):
         self.configure_thinking_time = mock.Mock()
-        self.run_debug_scenario = mock.Mock(return_value=False)
         self.view_builder = SimpleNamespace(
             build_status_response=mock.Mock(return_value={"status": True}),
             build_response=mock.Mock(return_value={"state": True}),
@@ -38,7 +37,6 @@ class StatefulCommandDispatcherTests(unittest.TestCase):
         self.dispatcher = StatefulCommandDispatcher(
             state_lock=threading.RLock(),
             configure_thinking_time=self.configure_thinking_time,
-            run_debug_scenario=self.run_debug_scenario,
             view_builder=self.view_builder,
             analysis_commands=self.analysis,
             record_commands=self.record,
@@ -147,16 +145,13 @@ class StatefulCommandDispatcherTests(unittest.TestCase):
                 activated.assert_not_called()
                 self.configure_thinking_time.assert_not_called()
 
-    def test_debug_scenario_returns_fresh_view(self):
-        self.run_debug_scenario.return_value = True
-
-        result = self.dispatcher.dispatch("request", "debug_case", None)
-
-        self.assertEqual(result, {"state": True})
-        self.view_builder.build_response.assert_called_once_with(
-            "request",
-            "debug_case",
-        )
+    def test_retired_debug_commands_are_rejected_without_changing_the_view(self):
+        for name in ('pon', 'chi', 'riichi', 'tsumo', 'ron', 'ankan', 'kakan', 'chankan'):
+            command = f'debug_setup_user_{name}'
+            with self.subTest(command=command):
+                with self.assertRaisesRegex(ValueError, f'Unsupported command: {command}'):
+                    self.dispatcher.dispatch('request', command, {})
+        self.view_builder.build_response.assert_not_called()
 
     def test_unknown_command_is_rejected(self):
         with self.assertRaisesRegex(ValueError, "Unsupported command: unknown"):

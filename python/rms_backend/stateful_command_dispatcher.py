@@ -14,7 +14,6 @@ class StatefulCommandDispatcher:
         *,
         state_lock: RLock,
         configure_thinking_time: Callable[[], None],
-        run_debug_scenario: Callable[[str], bool],
         view_builder: Any,
         analysis_commands: Any,
         record_commands: Any,
@@ -27,7 +26,6 @@ class StatefulCommandDispatcher:
     ) -> None:
         self._state_lock = state_lock
         self._configure_thinking_time = configure_thinking_time
-        self._run_debug_scenario = run_debug_scenario
         self._view_builder = view_builder
         self._analysis = analysis_commands
         self._record = record_commands
@@ -78,8 +76,6 @@ class StatefulCommandDispatcher:
     def _dispatch_locked(self, request_id, command, data):
         self.validate_record_scope(command, data)
         self._configure_thinking_time()
-        if self._run_debug_scenario(command):
-            return self._view_builder.build_response(request_id, command)
         handler = self._handlers(request_id, command, data).get(command)
         if handler is None:
             raise ValueError(f"Unsupported command: {command}")

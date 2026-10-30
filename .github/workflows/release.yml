@@ -57,6 +57,9 @@ jobs:
       - name: Run project checks
         run: npm run check
 
+      - name: Verify release inputs
+        run: npm run check:release-inputs
+
       - name: Build backend
         run: npm run build:backend:win
 
@@ -76,6 +79,9 @@ jobs:
             }
             exit $exitCode
           }
+
+      - name: Verify packaged application
+        run: node scripts/check-packaged-app.mjs
 
       - name: Prepare release archive
         shell: powershell

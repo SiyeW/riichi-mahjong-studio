@@ -69,6 +69,7 @@
 
 * [Mortal 在线分析](https://mjai.ekyu.moe/zh-cn.html)报告
 * [天凤自定义牌谱](https://tenhou.net/6/)的地址或内容
+* 本地 MJAI 和天凤 JSON 文件，包括 gzip 压缩文件
 
 导入后可以直接查看牌局，也可以添加评注、建立研究分支，或从其中的局面进入对局模式继续练习。
 
@@ -82,7 +83,7 @@
 
 * **新建牌局：** 点击“新建”，从随机生成的完整牌山开始练习。
 * **打开存档：** 点击“打开”，选择此前保存的 `.mjstudio` 文件。旧 `.mjtrain` 存档也可以打开。
-* **导入牌谱：** 点击“导入”，粘贴 Mortal 在线分析报告地址，或天凤自定义牌谱的地址或内容。
+* **导入牌谱：** 点击“导入”，选择本地牌谱文件，或粘贴 Mortal 在线分析报告地址、天凤自定义牌谱的地址或内容。
 * **研究牌局：** 在研究模式中浏览牌局、建立分支、切换节点并添加评注。
 * **保存存档：** 使用“保存”或“另存为”保存当前牌局及其研究内容。
 
@@ -194,6 +195,7 @@ Studio 通过 [Riichi Engine Protocol](https://github.com/SiyeW/riichi-engine-pr
 
 * [Mortal Online Analysis](https://mjai.ekyu.moe/ja.html) のレポート
 * [天鳳カスタム牌譜](https://tenhou.net/6/) のURLまたは内容
+* ローカルの MJAI および天鳳 JSON ファイル（gzip 圧縮にも対応）
 
 インポート後は牌譜を閲覧できるほか、コメントの追加、研究分岐の作成、局面から対局モードへ移っての練習もできます。
 
@@ -207,7 +209,7 @@ Studio 通过 [Riichi Engine Protocol](https://github.com/SiyeW/riichi-engine-pr
 
 * **新しい対局：** 「新規」をクリックし、ランダムに生成された完全な牌山から練習を開始します。
 * **保存データを開く：** 「開く」をクリックし、保存済みの `.mjstudio` ファイルを選択します。旧 `.mjtrain` ファイルも開けます。
-* **牌譜をインポート：** 「インポート」をクリックし、Mortal Online Analysis のレポートURL、または天鳳カスタム牌譜のURLや内容を入力します。
+* **牌譜をインポート：** 「インポート」をクリックしてローカルの牌譜ファイルを選択するか、Mortal Online Analysis のレポートURL、または天鳳カスタム牌譜のURLや内容を入力します。
 * **牌譜を研究：** 研究モードで牌局を確認し、分岐の作成、ノードの切り替え、コメントの追加を行います。
 * **保存：** 「保存」または「名前を付けて保存」で、現在の牌局と研究内容を保存します。
 
@@ -319,6 +321,7 @@ Studio currently supports:
 
 * [Mortal Online Analysis](https://mjai.ekyu.moe/) reports
 * [Tenhou custom game records](https://tenhou.net/6/) by URL or content
+* Local MJAI and Tenhou JSON files, including gzip-compressed files
 
 After importing a game, you can review it directly, add annotations, create study branches, or enter Game Mode from one of its positions.
 
@@ -332,7 +335,7 @@ The current release is available as a portable build for Windows x64.
 
 * **New Game:** Click “New” to start practicing from a randomly generated complete wall.
 * **Open:** Click “Open” and select a previously saved `.mjstudio` file. Legacy `.mjtrain` files are also supported.
-* **Import:** Click “Import” and enter a Mortal Online Analysis report URL or a Tenhou custom game-record URL or its contents.
+* **Import:** Click “Import” to select a local record file, or enter a Mortal Online Analysis report URL or a Tenhou custom game-record URL or its contents.
 * **Study:** Use Study Mode to review the game, create branches, switch between nodes, and add annotations.
 * **Save:** Use “Save” or “Save As” to save the current game and study content.
 
